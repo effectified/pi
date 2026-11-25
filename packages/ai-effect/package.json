@@ -49,14 +49,14 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@earendil-works/pi-ai": "1.6.0",
+		"@earendil-works/pi-ai": "1.6.1",
 		"@gunta/pi-schema-effect": "0.1.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-schema": "1.6.0",
+		"@earendil-works/pi-schema": "1.6.1",
 		"effect": "4.1.5",
 		"vitest": "4.1.12"
 	}

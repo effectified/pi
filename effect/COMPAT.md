@@ -5,13 +5,18 @@ only after the whole suite ran on those versions (`npm run check`, each package'
 
 | pi-effect | Pi packages (`@earendil-works/*`) | `effect` | Node | Bun | Tested at upstream commit |
 |---|---|---|---|---|---|
-| 0.1.0 (unreleased) | 1.6.0 | 4.1.5 (peer `~4.1.5`) | 26.13.1 and 22.19.0 (24.22.0 ran an earlier state) | 1.4.5 | `f8149d1ab` |
+| 0.1.0 (unreleased) | 1.6.1 | 4.1.5 (peer `~4.1.5`) | 26.13.1 (22.19.0 and 24.22.0 ran earlier states, on Pi 1.6.0) | 1.4.5 | `745338811` |
 
 Also installed and run outside this repository beside the published `@earendil-works/*` 1.6.0 (the quick start of
 `durable-effect`, from packed tarballs, on Node and on Bun with its isolated linker). `rivetkit` 3.1.1 is the peer of
 `durable-rivet-effect`; its engine tests ran on macOS only. Node 22.19.0 is the lowest version the packages declare:
-all fifteen suites pass on it (1,747 tests, 2026-11-25). Not yet run against a real model provider, and CI
-(`effect-ci.yml`, Node 22) has never run: the branch is not pushed.
+all fifteen suites passed on it on Pi 1.6.0 (1,747 tests, 2026-11-25). On Pi 1.6.1 they pass on Node 26.13.1 (1,748
+tests) and on Bun (2026-11-26); between the two versions Pi Durable changed only its Node environment (shell lookup,
+line reader). Not yet run against a real model provider.
+
+CI (`effect-ci.yml`, Node 22, Linux) first ran on 2026-11-25 and was red in upstream's own check and tests, not in
+these packages: upstream's build fetches the model catalogs of the day, and the tests at `f8149d1ab` named models
+that had left them. A `main` behind upstream goes red that way; the cure is to sync it.
 
 `./test.sh` exits 1 on this machine: three tests of upstream's `packages/coding-agent` fail (`exec`, `mcp-command`,
 `output-file-failures`), and the same three fail on an untouched copy of `main` at `f8149d1ab` in the same

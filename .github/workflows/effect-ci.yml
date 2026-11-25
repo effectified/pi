@@ -60,25 +60,36 @@ jobs:
 
       # Also generates the gitignored model data the type check needs.
       - name: Build upstream
+        id: upstream
         run: npm run build
 
+      # Upstream's build fetches the model catalogs of the day, and upstream's tests name models of them. So this
+      # step fails on a branch whose `main` is behind upstream once a named model leaves a catalog: sync `main`.
+      # The steps below run all the same, so that such a day still says how the pi-effect packages stand.
       - name: Upstream check
         run: npm run check
 
       - name: Build the pi-effect packages
+        id: packages
+        if: ${{ !cancelled() && steps.upstream.outcome == 'success' }}
         run: node effect/scripts/build.ts
 
       - name: Fast type check
+        if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
         run: node_modules/.bin/tsc --noEmit -p effect/tsconfig.json
 
       # Storage conformance runs in both lanes: on node:sqlite here, on bun:sqlite in the Bun lane.
       - name: Tests on Node
+        if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
         run: |
+          failed=0
           for dir in packages/*-effect/; do
-            npm run test --workspace "${dir%/}"
+            npm run test --workspace "${dir%/}" || failed=1
           done
+          exit "$failed"
 
       - name: Tests on Bun
+        if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
         run: node effect/scripts/test-bun.ts
 
   # Upstream's own suites, unchanged, so a sync that breaks them is seen here.

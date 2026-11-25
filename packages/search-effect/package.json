@@ -52,7 +52,7 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@earendil-works/pi-durable": "1.6.0",
+		"@earendil-works/pi-durable": "1.6.1",
 		"@gunta/pi-durable-effect": "0.1.0"
 	},
 	"peerDependencies": {

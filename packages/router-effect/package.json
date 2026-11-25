@@ -42,7 +42,7 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@earendil-works/pi-ai": "1.6.0",
+		"@earendil-works/pi-ai": "1.6.1",
 		"@gunta/pi-ai-effect": "0.1.0"
 	},
 	"peerDependencies": {
