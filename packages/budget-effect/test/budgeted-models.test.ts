@@ -18,7 +18,18 @@ import { fauxAssistantMessage, ScriptedModels } from "@gunta/pi-ai-effect/testin
 import { Effect, Exit, Fiber, Layer, Option, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { BudgetedModels, Estimator, type ModelPrice, Prices, refusalOf } from "../src/index.ts";
-import { type Budgeted, budgetedModels, ESTIMATE, expectedCost, PRICE, TestLease, withEvents } from "./support.ts";
+import {
+	type Budgeted,
+	budgetedHarness,
+	budgetedModels,
+	ESTIMATE,
+	expectedCost,
+	PRICE,
+	prices,
+	root,
+	TestLease,
+	withEvents,
+} from "./support.ts";
 
 const HELLO = { messages: [{ role: "user" as const, content: "Hello", timestamp: 0 }] };
 
@@ -158,6 +169,71 @@ describe("a request that returns", () => {
 				yield* Fiber.interrupt(fiber);
 				expect(lease.steps).toEqual([]);
 			}),
+		));
+});
+
+describe("a request that is sent again", () => {
+	/** Budgeted models without shares: a request that names a session is sent at once. */
+	const unshared = () =>
+		BudgetedModels.layer.pipe(
+			Layer.provideMerge(Layer.mergeAll(TestLease.layer, Estimator.fixed(ESTIMATE))),
+			Layer.provide(prices()),
+			Layer.provideMerge(ScriptedModels.layer({ api: "scripted" })),
+		);
+	/** The `requestKey` of each reservation the lease was asked for, in order, after `sends` were made. */
+	const keys = (sends: ReadonlyArray<readonly [typeof HELLO, string | undefined]>) =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				const scripted = yield* ScriptedModels;
+				const lease = yield* TestLease;
+				yield* scripted.setResponses(sends.map(() => fauxAssistantMessage("Hi there")));
+				for (const [asked, sessionId] of sends) {
+					yield* complete(scripted.model, asked, sessionId === undefined ? {} : { sessionId });
+				}
+				return lease.steps.flatMap((step) => (step.step === "reserve" ? [step.request.requestKey] : []));
+			}).pipe(Effect.provide(unshared())),
+		);
+
+	it("is reserved under the key of what it asks: every send of it has that key, also in a later process", async () => {
+		// The context as Pi builds it again from storage: equal, but made anew, its keys in another order.
+		const rebuilt = { messages: [{ timestamp: 0, content: "Hello", role: "user" as const }] };
+		const more = { messages: [...HELLO.messages, { role: "user" as const, content: "And more", timestamp: 1 }] };
+		const [sent, resent, asksMore, otherSession, noSession] = await keys([
+			[HELLO, "session-1"],
+			[rebuilt, "session-1"],
+			[more, "session-1"],
+			[HELLO, "session-2"],
+			[HELLO, undefined],
+		]);
+		expect(sent).toMatch(/^[0-9a-f]{64}$/);
+		expect(resent).toBe(sent);
+		// A request that asks more, and one of another conversation, have keys of their own; one without a session none.
+		expect(new Set([sent, asksMore, otherSession]).size).toBe(3);
+		expect(noSession).toBeUndefined();
+		// The budget of another process, as after a crash, makes the same key of the same request.
+		expect(await keys([[rebuilt, "session-1"]])).toEqual([sent]);
+	});
+
+	it("is reserved under the key of the send that failed when Pi retries it after a provider error", () =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				const scripted = yield* ScriptedModels;
+				const lease = yield* TestLease;
+				yield* scripted.setResponses([
+					fauxAssistantMessage([], { stopReason: "error", errorMessage: "overloaded" }),
+					fauxAssistantMessage("Hi there"),
+				]);
+				const conversation = yield* root;
+				yield* conversation.submit({ type: "input", content: "Hello", requestId: "run" });
+				yield* conversation.waitForIdle;
+				const reserved = lease.steps.flatMap((step) => (step.step === "reserve" ? [step.request] : []));
+				// Pi keeps the failed answer as an entry and leaves it out of what it sends: the retry asks the same,
+				// and only the lease's own record (the first reservation is settled) tells it from a resend.
+				expect(reserved.map((request) => request.session)).toEqual([reserved[0]?.session, reserved[0]?.session]);
+				expect(reserved[0]?.requestKey).toMatch(/^[0-9a-f]{64}$/);
+				expect(reserved[1]?.requestKey).toBe(reserved[0]?.requestKey);
+				expect(lease.steps.map(({ step }) => step)).toEqual(["reserve", "settle", "reserve", "settle"]);
+			}).pipe(Effect.provide(budgetedHarness({ harness: { settings: { retry: { baseDelayMs: 1 } } } }))),
 		));
 });
 

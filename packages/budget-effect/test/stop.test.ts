@@ -87,7 +87,8 @@ describe("a run on a live lease", () => {
 					{ usage: usages[1], cost: expectedCost(second), outcome: "returned" },
 				]);
 				expect(expectedCost(first)).toBeGreaterThan(0n);
-				// Both requests carry the conversation's provider session, and nothing else of it.
+				// Both requests carry the conversation's provider session, and a digest of what each asks: nothing else
+				// of it. The second asks more than the first, so its key is another.
 				const requests = lease.steps.flatMap((step) => (step.step === "reserve" ? [step] : []));
 				expect(requests.map(({ estimate }) => estimate)).toEqual([ESTIMATE, ESTIMATE]);
 				expect(requests[0]?.request).toEqual({
@@ -95,9 +96,12 @@ describe("a run on a live lease", () => {
 					provider: scripted.model.provider,
 					model: scripted.model.id,
 					session: requests[0]?.request.session,
+					requestKey: expect.stringMatching(/^[0-9a-f]{64}$/),
 				});
 				expect(requests[0]?.request.session).toMatch(/^[0-9a-f-]{36}$/);
 				expect(requests[1]?.request.session).toBe(requests[0]?.request.session);
+				expect(requests[1]?.request.requestKey).toMatch(/^[0-9a-f]{64}$/);
+				expect(requests[1]?.request.requestKey).not.toBe(requests[0]?.request.requestKey);
 				expect(yield* stopOf(root.id)).toEqual(Option.none());
 			}),
 		));

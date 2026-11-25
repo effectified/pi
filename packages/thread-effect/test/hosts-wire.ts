@@ -16,6 +16,8 @@ export type Ask = { readonly host: string } & (
 			readonly model: string;
 			readonly session: string | null;
 			readonly conversation: number | null;
+			/** The key of what the request asks (`BudgetRequest.requestKey`). */
+			readonly requestKey: string | null;
 	  }
 	| { readonly kind: "settle"; readonly actor: string; readonly token: string; readonly settlement: Settlement }
 	| { readonly kind: "records"; readonly actor: string; readonly batch: ReadonlyArray<Records.Record> }

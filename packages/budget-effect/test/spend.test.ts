@@ -35,6 +35,7 @@ const ATTEMPTS = [
 	{
 		requestId: "lz4k2q9xw-1",
 		sessionId: "session-7",
+		requestKey: "6b1f",
 		attempt: 1,
 		route: { provider: "faux", model: "faux-1" },
 		outcome: "failed",
@@ -44,6 +45,7 @@ const ATTEMPTS = [
 	{
 		requestId: "lz4k2q9xw-1",
 		sessionId: "session-7",
+		requestKey: "6b1f",
 		attempt: 2,
 		route: BACKUP,
 		outcome: "served",
@@ -52,7 +54,10 @@ const ATTEMPTS = [
 	},
 ] as const;
 
-/** What a product forwards: the attempts another route took over, each under the key of its request and number. */
+/**
+ * What a product forwards: the attempts another route took over, each under the key of its request and number, with
+ * the key of what the request asked.
+ */
 function forwarded(attempts: ReadonlyArray<(typeof ATTEMPTS)[number]>): ReadonlyArray<SpentUsage> {
 	return attempts
 		.filter((attempt) => attempt.fallback)
@@ -61,6 +66,7 @@ function forwarded(attempts: ReadonlyArray<(typeof ATTEMPTS)[number]>): Readonly
 			provider: attempt.route.provider,
 			model: attempt.route.model,
 			session: attempt.sessionId,
+			requestKey: attempt.requestKey,
 			usage: attempt.usage,
 			// An attempt another route took over failed: an abort never starts a fallback.
 			outcome: "failed",
@@ -86,6 +92,8 @@ describe("Spend.record", () => {
 					provider: "faux",
 					model: "faux-1",
 					session: "session-7",
+					// The lease sees the charge of the attempt with the key of the request it was an attempt of.
+					requestKey: "6b1f",
 					key: "lz4k2q9xw-1#1",
 				};
 				expect(lease.steps).toEqual([

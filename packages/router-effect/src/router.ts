@@ -7,7 +7,7 @@ import type {
 	Provider,
 	SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
-import { Models, type RequestOptions, type ResponseEvent } from "@gunta/pi-ai-effect";
+import { Models, type RequestOptions, type ResponseEvent, requestKey } from "@gunta/pi-ai-effect";
 import { Clock, Context, Effect, Layer, Queue, Random, Stream } from "effect";
 import { AttemptSettlement } from "./attempt-settlement.ts";
 import { type RoutedRequest, serve } from "./attempts.ts";
@@ -120,7 +120,8 @@ const make = Effect.fnUntraced(function* (input: RouteTable, options: RouterOpti
 		);
 		requests += 1;
 		const options = forwarded(requestOptions);
-		const routed = { request: requests, id: `${instance}-${requests}`, alias, routes, context, options, emit };
+		const key = sessionId === undefined ? undefined : yield* requestKey(sessionId, context);
+		const routed = { request: requests, id: `${instance}-${requests}`, key, alias, routes, context, options, emit };
 		// The attempts read the settlement of their fiber, and a request runs in its caller's: the one this router was
 		// built with is put there, so `Router.complete` and a pi-ai request settle through the same port.
 		return yield* Effect.provideService(serve(services, routed), AttemptSettlement, settlement);

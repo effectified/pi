@@ -63,6 +63,15 @@ const program = Effect.gen(function* () {
 A request that ends in pi-ai's `error` event fails with `ModelRequestError` (`reason` is `"error"`, or `"aborted"`
 when the provider gave the request up). Interrupting the fiber is interruption, never this error.
 
+### The key of a request
+
+`requestKey(session, context)` is the SHA-256 of the canonical JSON of a provider session and a whole context, as
+64 hexadecimal digits: the same each time one request is sent, in this process or a later one, and another for
+every other request. Pi builds a context from committed entries only, so a request sent again after a crash, and
+Pi's retry after a provider error, have the key of the first send. `@gunta/pi-router-effect` puts it on its route
+events and `@gunta/pi-budget-effect` on its reservations, so a product's lease and its event store name one
+request alike. It is no idempotency key for a provider: a retry after an error has the same key by design.
+
 ## Pi serves Effect
 
 `PiLanguageModel.layer(ref)` gives an `effect/ai` `LanguageModel` backed by a pi-ai model, so an Effect AI program

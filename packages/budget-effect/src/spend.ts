@@ -20,6 +20,11 @@ export const SpentUsage = Schema.Struct({
 	model: Schema.String,
 	/** pi-ai's `sessionId` of the request the usage belongs to; with it the spend counts against that conversation. */
 	session: Schema.optional(Schema.String),
+	/**
+	 * The `requestKey` of the request the usage belongs to, given to the lease with the spend. For a router's attempt:
+	 * its route event's. It is not the spend's name: `key` is.
+	 */
+	requestKey: Schema.optional(Schema.String),
 	usage: TokenUsage,
 	/** How the request that used it ended. A spend the wrapper did not see is `failed` or `aborted` as a rule. */
 	outcome: Outcome,
@@ -81,6 +86,7 @@ export function make(budget: Budget): Effect.Effect<SpendService> {
 				model: spent.model,
 				...(spent.session === undefined ? {} : { session: spent.session }),
 				...(payer.share === undefined ? {} : { conversation: payer.share.conversation }),
+				...(spent.requestKey === undefined ? {} : { requestKey: spent.requestKey }),
 				key: spent.key,
 			};
 			const price = yield* Effect.catch(budget.prices.priceOf(spent.provider, spent.model), (missing) =>

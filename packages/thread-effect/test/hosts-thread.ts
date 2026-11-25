@@ -85,6 +85,7 @@ export function threadOn(url: string, host: string) {
 									model: request.model,
 									session: request.session ?? null,
 									conversation: request.conversation ?? null,
+									requestKey: request.requestKey ?? null,
 								}),
 								String,
 							),

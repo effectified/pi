@@ -17,6 +17,16 @@ export const BudgetRequest = Schema.Struct({
 	/** The conversation the session belongs to, known when the conversation has a share (see `Shares`). */
 	conversation: Schema.optional(Schema.Number),
 	/**
+	 * The key of what a chat request with a session asks: a digest of the session and the whole context, which the
+	 * router's route events of the request carry too. Every send of one request has it, by this process or a later
+	 * one: the resend of a request a crash cut off, and Pi's retry after a provider error, whose context is the same.
+	 * Every other request has another. So a lease that finds a reservation of the key still open knows the process
+	 * that made it died in the request: it can release that one, or refuse this one. One that finds it settled sees a
+	 * retry. Copies of a storage repeat it (the lease tells them apart by who asks). It is no charge's identity: every
+	 * send is billed. A spend recorded for a request's failed route attempt carries the request's key too.
+	 */
+	requestKey: Schema.optional(Schema.String),
+	/**
 	 * The caller's key of a spend recorded through `Spend`; absent for a request of the budgeted `Models`. It is the
 	 * same when the same spend is told again, also by a later process, so a lease can refuse to charge it twice.
 	 */

@@ -58,6 +58,7 @@ function request(
 	return {
 		request: 1,
 		id: "router-a-1",
+		key: undefined,
 		alias: "fast",
 		routes,
 		context,

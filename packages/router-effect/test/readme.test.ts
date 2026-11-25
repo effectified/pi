@@ -77,6 +77,7 @@ interface Spent {
 	readonly provider: string;
 	readonly model: string;
 	readonly session?: string | undefined;
+	readonly requestKey?: string | undefined;
 	readonly usage: {
 		readonly input: number;
 		readonly output: number;
@@ -115,6 +116,7 @@ function routedWithBudget(table: RouteTable, providers: Layer.Layer<Models>, bud
 						provider: event.route.provider,
 						model: event.route.model,
 						session: event.sessionId,
+						requestKey: event.requestKey,
 						usage: event.usage,
 						outcome: "failed",
 					}),
@@ -246,14 +248,16 @@ describe("the README", () => {
 			[2, "served", false, true],
 			[1, "served", false, true],
 		]);
-		// One spend: the failed attempt, under its request's id and its number, with the session it came with. Neither
-		// attempt that served, though each cost something.
+		// One spend: the failed attempt, under its request's id and its number, with the session it came with and the
+		// key of what its request asked. Neither attempt that served, though each cost something.
+		expect(seen[0].requestKey).toMatch(/^[0-9a-f]{64}$/);
 		expect(recorded).toEqual([
 			{
 				key: `${seen[0].requestId}#1`,
 				provider: "openrouter",
 				model: "anthropic/claude-haiku-5.5",
 				session: "0197-session-of-a-public-thread",
+				requestKey: seen[0].requestKey,
 				usage: seen[0].usage,
 				outcome: "failed",
 			},

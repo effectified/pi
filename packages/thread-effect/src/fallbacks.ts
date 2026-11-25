@@ -13,7 +13,9 @@ import { Effect, Layer } from "effect";
  *
  * - **Which attempts.** Exactly those the router hands over, with no filter here: never a request's last attempt,
  *   which the budgeted `Models` settles, and never one that cost nothing.
- * - **Once.** The key is the attempt's own name, the request id and the attempt number.
+ * - **Once.** The key is the attempt's own name, the request id and the attempt number. The charge also carries
+ *   the key of what the request asked (`requestKey`), which its own reservation has: the lease sees both as one
+ *   request's.
  * - **In order.** The router waits for the settlement, so the lease is told inside the request: `reserve` for the
  *   request, `reserve` and `settle` for the failed attempt, `settle` for the request. An outcome read as the thread
  *   ends has the attempt.
@@ -37,6 +39,7 @@ export const layer = Layer.effect(
 					provider: event.route.provider,
 					model: event.route.model,
 					session: event.sessionId,
+					requestKey: event.requestKey,
 					usage: event.usage,
 					outcome: "failed",
 				}),

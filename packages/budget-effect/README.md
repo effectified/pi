@@ -69,8 +69,9 @@ const WalletLease = Layer.succeed(Lease, {
 
 - `reserve(estimate, request)` gives the token of a reservation, or fails with `LeaseFenced` and the product's own
   `reason` (gone, expired, out of money). `request` says what is asked: `kind` (`chat`, `deferred`, `images`,
-  `classifier`), `provider`, `model`, `session` and `conversation` when known, and `key` for a spend recorded
-  through `Spend`.
+  `classifier`), `provider`, `model`, `session` and `conversation` when known, `requestKey` for a chat request with
+  a session (the same for every send of one request: see [Guarantees and their limits](#guarantees-and-their-limits)),
+  and `key` for a spend recorded through `Spend`.
 - `settle(token, { usage, cost, outcome })` is called exactly once for every token, whatever happened: `usage` is
   what the provider reported (zeros when it reported nothing), `cost` is that usage at the price table, and
   `outcome` is `returned`, `failed` or `aborted`.
@@ -232,6 +233,7 @@ const SettleAttempts = Layer.effect(
 					provider: event.route.provider,
 					model: event.route.model,
 					session: event.sessionId,
+					requestKey: event.requestKey,
 					usage: event.usage,
 					outcome: "failed",
 				}),
@@ -262,7 +264,8 @@ budgeted `Models` settles, so nothing is charged twice.
   above zero to `record` from a fiber of its own. That still works, but nothing orders it with the request, so a
   record the lease refuses, or one a stop gets ahead of, is lost; use one of the two, not both.
 
-`spend.record({ key, provider, model, session, usage, outcome })` does, in this order:
+`spend.record({ key, provider, model, session, requestKey, usage, outcome })` does, in this order (`requestKey`, the
+route event's, is passed on to the lease and is not the spend's name):
 
 1. **Once per key.** A key this process recorded before answers `{ _tag: "Duplicate" }` and charges nothing.
 2. **Price.** `usage` at the table's price of `provider` and `model`: the route's own model, never an alias.
@@ -523,7 +526,14 @@ What does not:
   implements the router's settlement port with `Spend`. Without it, the lease knows the serving route's usage alone.
 - **A crash between `reserve` and `settle`** leaves a reservation that is never settled. The provider may have
   billed the request; the lease only knows the estimate. The product's lease must expire reservations. The most
-  this costs is the requests in flight at the crash.
+  this costs is the requests in flight at the crash. A chat request with a session is reserved with `requestKey`,
+  the SHA-256 of the canonical JSON of its session and its whole context. Pi builds the context from committed
+  entries and leaves out answers that failed or were cut off, so the request it sends again (on reopen, or in
+  another process) is reserved under the key of the one the crash cut off: a lease that finds that reservation
+  still open can settle or release it at once, or refuse the repeat. Pi's retry after a provider error has the key
+  too, but its earlier reservation was settled. A new request of the conversation asks more and has another key.
+  Copies of a storage repeat a key (a request in flight when a Rivet actor was forked): the lease tells them apart
+  by who asks. Making the key costs a walk of the context and a hash per request.
 - **A crash, or a close, between `settle` and the commit of a share's total** leaves the lease right and the
   stored total short by that request, so the conversation's cap allows that much more after the restart, and what
   `shares.get` reports is that much less. A

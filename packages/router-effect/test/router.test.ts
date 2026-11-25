@@ -602,6 +602,52 @@ describe("Router.stream and Router.complete", () => {
 		expect(again.map(([id]) => id).filter((id) => first.some(([known]) => known === id))).toEqual([]);
 	});
 
+	it("give a request with a session the key of what it asks: every send of it has that key, in this router or a later one", async () => {
+		// The context as Pi builds it again from storage: equal, but every object made anew, its keys in another order.
+		const rebuilt: typeof context = { messages: [{ timestamp: 1, content: "hi", role: "user" }] };
+		const more: typeof context = {
+			messages: [...context.messages, { role: "user", content: "and more", timestamp: 2 }],
+		};
+		const keys = (sends: ReadonlyArray<readonly [typeof context, string | undefined]>) => {
+			const { open, cloud, layer } = tiers();
+			// The first send fails on its first route, which the second takes over: two attempts of one request.
+			open.setResponses([failing("overloaded"), ...sends.slice(1).map(() => fauxAssistantMessage("fine"))]);
+			cloud.setResponses([fauxAssistantMessage("first")]);
+			return Effect.runPromise(
+				Effect.scoped(
+					Effect.gen(function* () {
+						const events = yield* (yield* RouteEvents).subscribe;
+						const model = yield* getModel({ provider: "router", modelId: "fast" });
+						for (const [asked, sessionId] of sends) {
+							yield* complete(model, asked, sessionId === undefined ? {} : { sessionId });
+						}
+						const recorded = yield* Stream.runCollect(Stream.take(events, sends.length + 1));
+						return recorded.map((event) => [event.requestId, event.requestKey] as const);
+					}),
+				).pipe(Effect.provide(layer)),
+			);
+		};
+		const first = await keys([
+			[context, "session-7"],
+			[rebuilt, "session-7"],
+			[more, "session-7"],
+			[context, "session-8"],
+			[context, undefined],
+		]);
+		const [failed, served, resent, asksMore, otherSession, noSession] = first;
+		// Both attempts of the request, and the request sent again, have its key: a SHA-256 in hexadecimal.
+		expect(failed?.[1]).toMatch(/^[0-9a-f]{64}$/);
+		expect([served?.[1], resent?.[1]]).toEqual([failed?.[1], failed?.[1]]);
+		// The request id still names each send: the resent request is a request of its own.
+		expect(resent?.[0]).not.toBe(failed?.[0]);
+		// A request that asks more, and one of another conversation, have keys of their own; one without a session none.
+		expect(new Set([failed?.[1], asksMore?.[1], otherSession?.[1]]).size).toBe(3);
+		expect(noSession?.[1]).toBeUndefined();
+		// Another router, as in the process that sends the request again after a crash, makes the same key of it.
+		const later = await keys([[rebuilt, "session-7"]]);
+		expect(later[0]?.[1]).toBe(failed?.[1]);
+	});
+
 	it("abort the provider request when the Stream ends early", async () => {
 		const { open, layer } = tiers();
 		let signal: AbortSignal | undefined;

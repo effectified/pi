@@ -182,6 +182,7 @@ describe("a route that fails with a retryable error", () => {
 					model: WRITER.modelId,
 					session: failed?.sessionId,
 					conversation: result.conversation,
+					requestKey: failed?.requestKey,
 					key: `${failed?.requestId}#1`,
 				},
 				settlements: [
@@ -193,6 +194,11 @@ describe("a route that fails with a retryable error", () => {
 				],
 			},
 		]);
+		// The router and the budget make one key of the request, each its own way: the request's reservation, its
+		// route events and the charge of its failed attempt all have it.
+		expect(failed?.requestKey).toMatch(/^[0-9a-f]{64}$/);
+		expect(result.events[1]?.requestKey).toBe(failed?.requestKey);
+		expect(requests[0]?.request.requestKey).toBe(failed?.requestKey);
 		// What the lease was told is what the router priced, to the micro unit, and it is the thread's money: the
 		// outcome `work` returned has all of it, and so has one read later.
 		const told = reserved.reduce((sum, { settlements }) => sum + (settlements[0]?.cost ?? 0n), 0n);

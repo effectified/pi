@@ -137,7 +137,7 @@ export function registerSqliteSuites(describe: Describe, driver: string, client:
 				expect(second.rootAnswer).toMatchObject({ status: "done" });
 			}));
 
-		it("settles a request a close cut off as aborted, and budgets it again when it is sent again", () =>
+		it("settles a request a close cut off as aborted, and budgets it again under its key when it is sent again", () =>
 			withDatabaseFile(async (filename) => {
 				const open = opener(client(filename));
 				const warnings: string[] = [];
@@ -173,9 +173,11 @@ export function registerSqliteSuites(describe: Describe, driver: string, client:
 						const before = yield* shares.get(root.id);
 						yield* root.waitForIdle;
 						const submission = Option.getOrThrow(yield* Harness.submission(first.input));
-						const settle = lease.steps[1];
-						if (settle?.step !== "settle") throw new Error("a settle");
+						const [reserve, settle] = lease.steps;
+						if (reserve?.step !== "reserve" || settle?.step !== "settle")
+							throw new Error("a reserve and a settle");
 						return {
+							key: reserve.request.requestKey,
 							before,
 							status: (yield* submission.status).status,
 							steps: lease.steps.map(({ step }) => step),
@@ -187,6 +189,11 @@ export function registerSqliteSuites(describe: Describe, driver: string, client:
 				expect(second.status).toBe("done");
 				expect(second.steps).toEqual(["reserve", "settle"]);
 				expect(second.spent).toBeGreaterThan(0n);
+				// The request sent again by the reopened harness is reserved under the key of the one the close cut
+				// off, though part of its answer had arrived: Pi leaves a cut-off answer out of what it sends.
+				const [cutOff] = first.lease.steps;
+				expect(cutOff?.step === "reserve" && cutOff.request.requestKey).toMatch(/^[0-9a-f]{64}$/);
+				expect(second.key).toBe(cutOff?.step === "reserve" ? cutOff.request.requestKey : undefined);
 				// The limit of a share: the harness was closed when the cut-off request settled, so its cost reached
 				// the lease and not the stored total, which holds the request sent again and nothing else.
 				expect(first.warnings).toEqual(["A conversation's settled budget was not stored"]);

@@ -270,7 +270,7 @@ const record = Effect.gen(function* () {
 ```
 
 A `RouteEvent` has the router id, the request's number and its `requestId`, the pi-ai `sessionId` the request came
-with (when it had one), the alias, the whole route, the attempt number, the `outcome` (`served`, `failed`, `aborted`,
+with and the `requestKey` of what it asks (when it had a session), the alias, the whole route, the attempt number, the `outcome` (`served`, `failed`, `aborted`,
 `unavailable`), `fallback` (true when the next route is tried because of this outcome), pi-ai's error text, the token
 usage, its cost at the route's price, and three times from Effect's `Clock`: when the attempt began, how long it
 waited for the limiter and how long the request took. `events.subscribe` subscribes at once, so nothing published
@@ -281,6 +281,15 @@ afterwards is missed.
   Effect's `Random`) and the request's number. `requestId` and `attempt` together name one attempt for good.
   `request` still counts the requests of one router from 1.
 - **`sessionId`** ties an attempt to a conversation: Pi Durable sends each conversation's provider session.
+- **`requestKey`** names what a request with a session asks: the SHA-256 of the canonical JSON of the session and
+  the whole context. Unlike `requestId` it is the same for every send of one request, in this process or a later
+  one: Pi builds a request's context from its committed entries and leaves out answers that failed or were cut off,
+  so the request it sends again after a crash has the key of the one that was cut off. Pi's retry after a provider
+  error has it too. A new request of the conversation asks more (an input, a tool result, an answer), and has
+  another. `@gunta/pi-budget-effect` makes the same key of the same request for its reservation, so a lease and the
+  route events name one request alike. A copy of a storage keeps its source's sessions, so a request in flight when
+  a Rivet actor was forked is sent by both actors under one key. It costs a walk of the context and a hash per
+  request.
 - **`fallback`** says what happened, not what was meant: an attempt the product's `AttemptSettlement` was handed is
   published when the port has answered, and says `false` when the port could not settle it, because no route took
   it over.
@@ -310,6 +319,7 @@ const SettleAttempts = Layer.effect(
 					provider: event.route.provider,
 					model: event.route.model,
 					session: event.sessionId,
+					requestKey: event.requestKey,
 					usage: event.usage,
 					outcome: "failed",
 				}),
@@ -471,6 +481,13 @@ the route table: register one provider per base URL and name each in a route wit
 - It does not reserve or enforce a budget, and it does not change `usage.cost` on a message. Events carry the cost,
   and a product settles the attempts it is handed (see [With a budget](#with-a-budget)).
 - It keeps nothing across a restart: request ids, the limiter and what a `ConstraintSource` answered are in memory.
+  A `requestKey` needs nothing kept: it is made of what the request asks.
+- It sends a provider no key of the request. pi-ai has no option for one, and the one request id header it sends
+  (`x-client-request-id`, on OpenAI-style APIs) carries the session, for session affinity and the prompt cache. A `requestKey` would not
+  do either: Pi's retry after a provider error has the key of the request that failed, so a provider that answered a
+  key it has seen from its record would answer every retry with that error. What would do is a key that Pi keeps for
+  a send a crash cut off and changes after an attempt a provider answered: Pi's generation task has the attempt, but
+  counts a cut-off send as a failed attempt, and passes neither to a provider.
 - A route label is compared as text. The router does not check that a route keeps what its labels promise.
 - Deferred responses are not routed: the `deferred` option is dropped and the response arrives in the request.
 - The options of one pi-ai API are not passed on: a route's model can have any API, so both of pi-ai's entry points

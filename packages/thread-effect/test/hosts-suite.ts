@@ -204,6 +204,12 @@ function suite(engines: typeof LocalEngine): void {
 		expect(world.of("reserve")).toHaveLength(4);
 		const { open, twice, total } = lease();
 		expect([open, twice]).toEqual([["r1"], []]);
+		// The request sent again is reserved under the key of the one that was killed, whose reservation is still
+		// open: the lease can tell the resend from a new request. The request after the tool's result asks more.
+		const [killed, resent, next] = world.of("reserve");
+		expect([killed?.host, killed?.requestKey]).toEqual([first.name, expect.stringMatching(/^[0-9a-f]{64}$/)]);
+		expect([resent?.host, resent?.requestKey]).toEqual([second.name, killed?.requestKey]);
+		expect([next?.session, next?.requestKey === killed?.requestKey]).toEqual([killed?.session, false]);
 		expect(told("request").at(-1)?.settledMicros).toBe(total);
 	}, 150_000);
 

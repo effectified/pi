@@ -25,6 +25,12 @@ export const RouteEvent = Schema.Struct({
 	requestId: Schema.String,
 	/** pi-ai's `sessionId` of the request, when it had one: Pi Durable sends a conversation's provider session. */
 	sessionId: Schema.optional(Schema.String),
+	/**
+	 * The key of what the request asks, when it had a session (`requestKey`): unlike `requestId`, the same for every
+	 * send of one request of a conversation, a resend after a crash in a later process included, and the key the
+	 * budget's reservation of the request has. It names no attempt: a request sent again is attempted again.
+	 */
+	requestKey: Schema.optional(Schema.String),
 	alias: Schema.String,
 	route: Route,
 	/** The position of this attempt in its request, from 1. */

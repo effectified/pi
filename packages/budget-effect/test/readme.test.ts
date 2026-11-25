@@ -124,6 +124,7 @@ const routerPrices = Prices.layer(routerRows);
 interface RouteEvent {
 	readonly requestId: string;
 	readonly sessionId?: string | undefined;
+	readonly requestKey?: string | undefined;
 	readonly attempt: number;
 	readonly route: { readonly provider: string; readonly model: string };
 	readonly usage: {
@@ -258,6 +259,7 @@ describe("the README", () => {
 							provider: event.route.provider,
 							model: event.route.model,
 							session: event.sessionId,
+							requestKey: event.requestKey,
 							usage: event.usage,
 							outcome: "failed",
 						}),

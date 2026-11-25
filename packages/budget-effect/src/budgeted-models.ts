@@ -9,10 +9,11 @@ import {
 	createAssistantMessageEventStream,
 	type Model,
 	type MutableModels,
+	type Context as PiContext,
 	type StreamOptions,
 	type Usage,
 } from "@earendil-works/pi-ai";
-import { Models } from "@gunta/pi-ai-effect";
+import { Models, requestKey } from "@gunta/pi-ai-effect";
 import { Cause, Clock, Context, Effect, Exit, FiberSet, Layer, Option, Stream } from "effect";
 import { type Budget, gather, payerOf, refuse, reserve, settle } from "./budget.ts";
 import { BudgetEvents } from "./budget-events.ts";
@@ -39,6 +40,8 @@ import { make as makeSpend, Spend } from "./spend.ts";
  * - **Priced** at the model the response names when the table lists it (a router's response names the route that
  *   served), else at the model that was asked. A request cut off before its response ended is priced the same way,
  *   by the model that what had arrived of it names.
+ * - **Keyed** by what it asks: a chat request with a session is reserved with `requestKey`, the same for every send
+ *   of one request, so the lease can tell a request sent again after a crash from a new one.
  */
 export const layer: Layer.Layer<Models | BudgetEvents | Spend, never, Models | Lease | Estimator | Prices> =
 	Layer.provideMerge(Layer.effectContext(Effect.suspend(() => make(undefined))), BudgetEvents.layer);
@@ -64,10 +67,14 @@ const make = Effect.fnUntraced(function* (shares: SharesService | undefined) {
 	const clock = yield* Clock.Clock;
 	const runFork = yield* FiberSet.makeRuntime<never, unknown, Refusal>();
 
-	/** One budgeted chat response as the pi-ai stream a caller of `Models` expects. */
+	/**
+	 * One budgeted chat response as the pi-ai stream a caller of `Models` expects. `context` is what a chat request
+	 * asks; a deferred response is fetched by its handle and has none.
+	 */
 	const respond = (
 		kind: "chat" | "deferred",
 		model: Model<Api>,
+		context: PiContext | undefined,
 		options: Pick<StreamOptions, "signal" | "sessionId"> | undefined,
 		start: (signal: AbortSignal) => AssistantMessageEventStream,
 	): AssistantMessageEventStream => {
@@ -95,7 +102,7 @@ const make = Effect.fnUntraced(function* (shares: SharesService | undefined) {
 				return Effect.die(new Error("pi-ai ended a response without a done or error event"));
 			},
 		);
-		const request = { kind, model, session: options?.sessionId };
+		const request = { kind, model, session: options?.sessionId, context };
 		const ended = (reason: "error" | "aborted", errorMessage: string): TerminalEvent => ({
 			type: "error",
 			reason,
@@ -133,7 +140,7 @@ const make = Effect.fnUntraced(function* (shares: SharesService | undefined) {
 			}),
 		);
 		return new Promise((resolve) => {
-			const request = { kind, model, session: undefined };
+			const request = { kind, model, session: undefined, context: undefined };
 			runFork(
 				unlessAborted(
 					signal,
@@ -146,13 +153,15 @@ const make = Effect.fnUntraced(function* (shares: SharesService | undefined) {
 
 	const stream: MutableModels["stream"] = (model, context, options) =>
 		// TypeScript cannot resolve the conditional type of one API's options here; the spread only replaces `signal`.
-		respond("chat", model, options, (signal) =>
+		respond("chat", model, context, options, (signal) =>
 			inner.stream(model, context, { ...options, signal } as typeof options),
 		);
 	const streamSimple: MutableModels["streamSimple"] = (model, context, options) =>
-		respond("chat", model, options, (signal) => inner.streamSimple(model, context, { ...options, signal }));
+		respond("chat", model, context, options, (signal) => inner.streamSimple(model, context, { ...options, signal }));
 	const streamDeferred: MutableModels["streamDeferred"] = (model, handle, options) =>
-		respond("deferred", model, options, (signal) => inner.streamDeferred(model, handle, { ...options, signal }));
+		respond("deferred", model, undefined, options, (signal) =>
+			inner.streamDeferred(model, handle, { ...options, signal }),
+		);
 
 	// The wrapped `Models` does everything that is not a provider request: catalogs, credentials and the providers
 	// themselves. Its request methods are replaced one by one, because it calls its own, never these.
@@ -306,19 +315,29 @@ function unlessAborted<A, E>(signal: AbortSignal | undefined, effect: Effect.Eff
  */
 const budgeted = Effect.fnUntraced(function* <A>(
 	budget: Budget,
-	asked: { readonly kind: BudgetRequest["kind"]; readonly model: AnyModel; readonly session: string | undefined },
+	asked: {
+		readonly kind: BudgetRequest["kind"];
+		readonly model: AnyModel;
+		readonly session: string | undefined;
+		readonly context: PiContext | undefined;
+	},
 	send: Effect.Effect<Sent<A>>,
 	soFar: () => Answer | undefined,
 ): Effect.fn.Return<A, Refusal> {
 	const { prices } = budget;
 	const payer = yield* payerOf(budget, asked.session);
 	const { share } = payer;
+	const key =
+		asked.session === undefined || asked.context === undefined
+			? undefined
+			: yield* requestKey(asked.session, asked.context);
 	const request: BudgetRequest = {
 		kind: asked.kind,
 		provider: asked.model.provider,
 		model: asked.model.id,
 		...(asked.session === undefined ? {} : { session: asked.session }),
 		...(share === undefined ? {} : { conversation: share.conversation }),
+		...(key === undefined ? {} : { requestKey: key }),
 	};
 	const price = yield* Effect.catch(prices.priceOf(request.provider, request.model), (missing) =>
 		refuse(budget, request, missing),

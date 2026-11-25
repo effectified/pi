@@ -13,3 +13,4 @@ export {
 	stream,
 	streamSimple,
 } from "./request.ts";
+export { requestKey } from "./request-key.ts";

@@ -43,6 +43,8 @@ export interface RoutedRequest {
 	readonly request: number;
 	/** The id of this request in its router's events: of this request and of no other, ever. */
 	readonly id: string;
+	/** The key of what it asks (`requestKey`); none without a provider session. */
+	readonly key: string | undefined;
 	readonly alias: string;
 	/** The routes that may serve the request, in the order they are tried. */
 	readonly routes: readonly [Route, ...Route[]];
@@ -305,6 +307,7 @@ const eventOf = Effect.fnUntraced(function* (
 		request: request.request,
 		requestId: request.id,
 		...(request.options.sessionId === undefined ? {} : { sessionId: request.options.sessionId }),
+		...(request.key === undefined ? {} : { requestKey: request.key }),
 		alias: request.alias,
 		route,
 		attempt: self.number,
