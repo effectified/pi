@@ -12,8 +12,8 @@ The goal of the PRD (section 4): PatentOS deletes its hand-written agent loop
 | | Where | State |
 |---|---|---|
 | The packages | This repository, branch `effect`, pushed to `origin` | Synced with upstream Pi 1.6.1. `npm run check` passes; the suites pass on Node and on Bun (versions and counts in `COMPAT.md`) |
-| The binding | PatentOS, branches `build/s0-foundations` and `main`, from commit `15c7a11` on | Merged and pushed. PatentOS's gate `bun run check:all` passed on `0bc8147` (4,715 tests) |
-| The worktree to change it in | `/Volumes/Banana/GitHub/gunta/patentos-build-run/pi-effect-wt2`, branch `pi-effect/agent-thread-on-56fd828` | Level with `0bc8147` |
+| The binding | PatentOS, branches `build/s0-foundations` and `main`, from commit `15c7a11` on | Merged and pushed. PatentOS's gate `bun run check:all` passed on `73d1b65` (4,785 tests), which holds the packages at `eb1326eb6` |
+| The worktree to change it in | `/Volumes/Banana/GitHub/gunta/patentos-build-run/pi-effect-wt2`, branch `pi-effect/agent-thread-on-56fd828` | Kept level with the build's tip |
 
 PatentOS's shared checkout (`/Volumes/Banana/GitHub/gunta/patentos`) is never edited for this work: other
 sessions keep uncommitted files there. Section 7 says how a commit lands on it.
@@ -25,7 +25,7 @@ Fifteen packages at 0.1.0, on Pi 1.6.1 and `effect` 4.1.5. `packages/compute` de
 | Package | In PatentOS |
 |---|---|
 | `pi-thread-effect` | The agent thread: `Composition`, `Threads`, `Swarms`, and from `/rivet` `ThreadActor` and `Remote` |
-| `pi-durable-effect`, `pi-durable-rivet-effect` | Tools, the harness storage, the actor host and its client |
+| `pi-durable-effect`, `pi-durable-rivet-effect` | Tools, the harness storage, the actor host and its client, and the start of each org's local engine (`LocalEngine.serve` of `/bun`, `Host.holdBackExit`) |
 | `pi-guard-effect` | The denied verbs of the old `FORBIDDEN`, and a thread's grant |
 | `pi-budget-effect` | The `Lease` port, served by PatentOS's lease keeper |
 | `pi-router-effect` | A route table of two aliases that both lead to PatentOS's own `ModelRouter` |
@@ -93,8 +93,11 @@ In PatentOS (fake providers everywhere; engines, actors, forks and kills are rea
   (`apps/api/test/agent-swarm.test.ts`). It needed the Agents model to build `PrimerFact` (`primerFactOf`).
 - Threads and swarms of one and three jobs on actor forks through the app's own bindings, two orgs' engines kept
   apart, a cancel mid-request (`apps/node-compute/test/threads.rivet.test.ts`).
-- RivetKit's `process.exit(1)` after a failed engine start no longer ends the edition
-  (`packages/compute/test/rivet.exit.test.ts`).
+- RivetKit's `process.exit(1)` after a failed engine start, or for an engine that died, no longer ends the edition
+  (`packages/compute/test/rivet.exit.test.ts`). Since 2026-11-26 the guard and the engine start are this
+  repository's (`0341cb51c`): PatentOS's own `LocalEngine.ts` and `ExitGuard.ts` are deleted, and its nine engine
+  test files pass on the package's start (29 tests, the kill and restart of the edition among them; PatentOS
+  `73d1b65`).
 - A thread taken up after its host was killed is not stranded by its caller's polling. The restart test found it:
   the wake keeper of `pi-durable-rivet-effect` cancelled a wake whose time had come at the next call to the actor,
   and PatentOS asks a working thread's actor every 250 ms. Fixed here in `63ed08b30`; the case failed 4 of about
@@ -120,6 +123,9 @@ Here (scripted models; real engine, real host processes):
 
 ## 6. What is left
 
+The owner's direction of 2026-11-26: the packages are the owner's own library, made for PatentOS; nothing is sent
+upstream for now. So what was "for a person to raise upstream" is closed here or worked around here.
+
 **For the owner to decide**
 
 1. What of `effect/` may stay public. The branch is pushed (the owner's word of 2026-11-25), the fork is of a
@@ -137,39 +143,43 @@ Here (scripted models; real engine, real host processes):
 
 - A real model provider: every test uses scripted or fake models.
 - An engine that dies while it is up (the edition lives; that org's thread calls are untested then), several
-  machines, a network partition, engine upgrades. PatentOS's own engine tests have not run on Linux (the
-  packages' have, in CI: `COMPAT.md`); its `LocalEngine.ts` knows an ended engine by the process list alone, which on
-  Linux misses one that ended at once, so a start on a taken port would wait a minute there before it is retried.
-- Swarms across a restart of the edition; two editions started at once on one directory.
+  machines, a network partition, engine upgrades. PatentOS's own engine tests have not run on Linux; the engine
+  start they use is the packages', which has (in CI and in a container: `COMPAT.md`).
+- Swarms across a restart of the edition. Two editions started at once on one directory: the second stops the
+  first's engine and starts its own (one engine per directory, tested in the package); what the first edition
+  does without its engine is untested.
 - A real Spend context that grants one lease per fork holder.
 
-**Found and not ours to fix**
+**Found in what is not ours, and how it is lived with**
 
 - The framework PatentOS's domain runs on (`@alchemy.run/domain` 2.0.0-beta.87) deletes the callback of a drain
-  that found a lease held. PatentOS's local host now clears such leases at boot; the framework's other hosts
-  (several instances) would stall the same way. For a person to raise with its authors.
-- Upstream Pi's tests name models of the live catalogs its build fetches, so upstream's own CI, and the
-  `upstream tests` jobs of `effect-ci.yml`, go red on a day a catalog changes (2026-11-25: a Qwen model, on
-  upstream's `main` too). It is not a failure of these packages; the `check` job says how they stand.
+  that found a lease held. PatentOS's local host clears such leases at boot, which is the only host PatentOS
+  runs; the framework's other hosts (several instances) would stall the same way.
+- Upstream Pi's tests name models of the live catalogs its build fetches, so upstream's check and tests go red on
+  a day a catalog changes (three models in two days). `effect-ci.yml` still runs them and shows them, and its
+  result is that of these packages alone (`COMPAT.md`).
 
 **Known limits**
 
 - The 50-fork swarm takes about 0.2 s in one process and 5.2 to 5.8 s on a local engine (three runs at load 5 on
   18 cores, so not the machine's load), against the PRD's 5 s. A local engine forks in about 110 ms and one
   process hosts the source and all 50 forks; the cap of 8 does not help there.
-- A request resent after a host died has no key of the packages' own that a provider or a lease could recognise
-  (`thread-effect` gap 6). PatentOS is not exposed: its seam keys each call by the step.
+- A request resent after a host died has a key a lease can recognise it by (`requestKey` on the reservation and
+  the route events, `3b414f768`), and none a provider could: Pi's retry after a provider error has the same key
+  by design (`thread-effect` gap 6). PatentOS is not exposed: its seam keys each call by the step.
 - A killed host's reservations stay open until the product's lease expires them.
 - An actor wakes by itself about 17 s after its host was killed. PatentOS's `recover` runs a noted job again at
   boot, so a job given and never admitted is not lost.
 
-**Open in the packages** (`packages/thread-effect/README.md`, "Gaps"): the reviewer's model call record lacks its
-api and cost parts, and an outcome a thread left before its courier looked is not told (both in the review
-plugin, which PatentOS does not use); two that need a change in Pi (a hook cannot commit with a submission's end;
-a conversation cannot be deleted or measured); `cwd` and `compaction` of an agent change do not cross to an actor.
+**Open in the packages** (`packages/thread-effect/README.md`, "Gaps"): three that need a change in Pi itself,
+which PatentOS installs as published and so cannot get from this fork (a hook cannot commit with a submission's
+end; a conversation cannot be deleted or measured; a provider request has no key of its send). Closed on
+2026-11-26: the reviewer's model call is kept whole, every hold and deferral a thread left at once is told, and a
+swarm plan's `cwd` and `compaction` cross to an actor.
 
-**Worth doing next**: export the exit guard and a kept engine directory from `pi-durable-rivet-effect`, so that
-PatentOS's `ExitGuard.ts` and most of its `LocalEngine.ts` can go.
+**Next** (the owner's word of 2026-11-26): use Effect as fully as it goes, and follow upstream Pi by derived types
+and generated checks instead of by hand. The two surveys that plan it are outside the repository, in the run's
+store.
 
 **Not built**: `mcp-effect`, `codemode-effect`, `agent-effect`, `env-effect`, `workflow-effect`, `sandbox-effect`
 (PRD priorities P2 and P3). PatentOS's loop used none of them.
@@ -185,13 +195,14 @@ PatentOS's `ExitGuard.ts` and most of its `LocalEngine.ts` can go.
   "Addition" in `build-run.md` tells that root what landed.
 - A test that boots the edition can pass on the committed head and fail in the shared tree because of another
   lane's unfinished work there. Judge a commit in the worktree.
-- The gate is red by other causes when the machine is loaded (the UI grid benchmark above load 25, tests that run
-  into their own time limits, the auditor export about one run in five on 2026-11-26). Read which file failed
-  before suspecting the commit, run again, and land only on a green run on the tip the swap is made against.
+- The gate is red by other causes when the machine is loaded (tests that run into their own time limits; the
+  build's lanes fixed the grid benchmark and the auditor export on 2026-11-26). Read which file failed before
+  suspecting the commit, run again, and land only on a green run on the tip the swap is made against. A commit
+  that deletes files lands with `/tmp/land/land3.sh`, which removes a deleted file only when no lane changed it.
 - `patentos-db-bench/run-all.sh` runs `pkill rivet-engine` machine-wide. The host retries a start whose engine
   was stopped; a test whose engine dies later fails that run and is run again.
-- A push to this fork's `main` (a sync) starts upstream's own workflows in the fork. The ones that publish or need
-  release tags fail there (`Preview packages`, `Environments`, `CI` at "Fetch the newest release tag"): expected.
+- Upstream's own workflows are disabled in the fork since 2026-11-26 (before, a push to `main` started them, and
+  the ones that publish or need release tags failed there).
 - Early Bun runs of this repository's Rivet tests wrote test actors into the shared `~/.rivetkit/var/engine`,
   because on Bun an assignment to `process.env` does not reach rivetkit's native core. Nothing was deleted there.
   The `/bun` entry of `pi-durable-rivet-effect` now sets the variable for real.
