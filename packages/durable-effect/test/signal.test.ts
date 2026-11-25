@@ -80,7 +80,7 @@ describe("make", () => {
 		expect(await Effect.runPromise(Decision.decode(json))).toEqual({ allow: true, at });
 	});
 
-	it("fails every use with SchemaConversionError when Pi rejects the definition", async () => {
+	it("fails every use that needs Pi's token with SchemaConversionError when Pi rejects the definition", async () => {
 		const badName = Signal.make("bad/name", 1, Schema.String);
 		const badVersion = Signal.make("test.versioned", 0, Schema.String);
 		const errors = await Effect.runPromise(
@@ -91,6 +91,13 @@ describe("make", () => {
 			["SchemaConversionError", 'Signal name "bad/name" must be non-empty, without "/"'],
 			["SchemaConversionError", "Signal test.versioned version must be a positive integer"],
 		]);
+		// Reading needs the schema only: what was stored still decodes, which is why `stateIn` declares no
+		// SchemaConversionError.
+		const memos = { "pi.signal.test.versioned/k": { version: 0, value: "x" } };
+		const read = await Effect.runPromise(
+			Effect.all([badName.decode("x"), Signal.stateIn({ memos }, badVersion, "k")]),
+		);
+		expect(read).toEqual(["x", Option.some({ kind: "value", value: "x" })]);
 	});
 });
 

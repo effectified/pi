@@ -2,8 +2,9 @@
 // is made with. Everything that needs an actor is in rivet-suite.ts.
 
 import { readdirSync, readFileSync } from "node:fs";
+import { Conversation, Entry, Task } from "@gunta/pi-durable-effect";
 import { ActorInfo, type Identity } from "@gunta/pi-durable-rivet-effect";
-import { Effect, Option, type Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Package from "../src/index.ts";
 import * as Assignment from "../src/rivet/assignment.ts";
@@ -71,9 +72,9 @@ describe("the Rivet subpath", () => {
 		const input = Assignment.of({
 			swarmId: "covers-1",
 			jobKey: "rust",
-			coordinatorTaskId: 7,
-			sourceConversationId: 1,
-			at: 12,
+			coordinatorTaskId: Task.Id.make(7),
+			sourceConversationId: Conversation.Id.make(1),
+			at: Entry.Id.make(12),
 			agent: Option.some({ modelTools: [] }),
 			setup: noSetup,
 		});
@@ -92,5 +93,36 @@ describe("the Rivet subpath", () => {
 		expect(await assigned(Option.none())).toEqual(Option.none());
 		expect(await assigned(Option.some({ reason: "what if" }))).toEqual(Option.none());
 		expect(await assigned(Option.some({ _tag: "swarm.rivet.job", swarmId: "covers-1" }))).toEqual(Option.none());
+	});
+
+	it("reads a fork input and a run's answer written when their ids were plain numbers and the agent plain JSON", async () => {
+		// A fork input as the driver wrote it before: every field of an agent change, by name.
+		const input = {
+			_tag: "swarm.rivet.job",
+			swarmId: "covers-1",
+			jobKey: "rust",
+			sourceConversationId: 1,
+			at: 12,
+			agent: {
+				model: { provider: "anthropic", modelId: "claude-haiku" },
+				thinkingLevel: "low",
+				extensions: { remove: ["review"] },
+				tools: ["read", "write"],
+				modelTools: [],
+				instructions: "Be brief.",
+				cwd: null,
+				maxTurns: 3,
+				compaction: { enabled: true, reserveTokens: 1000 },
+			},
+		};
+		const assigned = await Effect.runPromise(
+			Effect.provideService(Assignment.assigned, ActorInfo, identity(Option.some(input))),
+		);
+		expect(Option.map(assigned, Schema.encodeSync(Assignment.Assignment))).toEqual(Option.some(input));
+		// What `swarmRun` answers across the wire.
+		const { output } = Rivet.actions.swarmRun;
+		expect(Schema.encodeSync(output)(Schema.decodeUnknownSync(output)({ conversationId: 4 }))).toEqual({
+			conversationId: 4,
+		});
 	});
 });

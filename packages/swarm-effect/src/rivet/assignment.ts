@@ -1,5 +1,6 @@
 // The job an actor was forked for: what the driver gives the Rivet host as the fork's input, and what the fork reads.
 
+import { Agent, Conversation, Entry } from "@gunta/pi-durable-effect";
 import { ActorInfo } from "@gunta/pi-durable-rivet-effect";
 import { Effect, Option, Schema } from "effect";
 import type { ForkRequest } from "../driver.ts";
@@ -7,14 +8,15 @@ import type { ForkRequest } from "../driver.ts";
 /**
  * One job of a swarm, as the input of the actor fork made for it: plain JSON, which the Rivet host keeps as the
  * fork's lineage input. It says where the job starts in the copied storage: the primed conversation, the entry of it
- * the job may see, and the agent change the job runs with (tools and extensions by name), null for none.
+ * the job may see, and the agent change the job runs with (tools and extensions by name), null for none. The ids
+ * are Pi's, numbers in their JSON form.
  */
 export const Assignment = Schema.TaggedStruct("swarm.rivet.job", {
 	swarmId: Schema.String,
 	jobKey: Schema.String,
-	sourceConversationId: Schema.Number,
-	at: Schema.Number,
-	agent: Schema.NullOr(Schema.Json),
+	sourceConversationId: Conversation.Id,
+	at: Entry.Id,
+	agent: Schema.NullOr(Agent.ByName),
 });
 
 /** One job of a swarm, as the input of the actor fork made for it. */
@@ -28,8 +30,7 @@ export function of(request: ForkRequest): Assignment {
 		jobKey: request.jobKey,
 		sourceConversationId: request.sourceConversationId,
 		at: request.at,
-		// The port gives the change with tools and extensions by name, which is plain JSON; its type does not say so.
-		agent: Option.getOrNull(Option.map(request.agent, (change) => change as Schema.Json)),
+		agent: Option.getOrNull(request.agent),
 	};
 }
 

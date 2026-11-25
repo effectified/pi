@@ -1,4 +1,4 @@
-import { Harness } from "@gunta/pi-durable-effect";
+import { Conversation, Harness } from "@gunta/pi-durable-effect";
 import { TestHarness } from "@gunta/pi-durable-effect/testing";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
@@ -11,7 +11,7 @@ const running: Job = {
 	correction: 0,
 	wait: { _tag: "Poll", at: 1, everyMillis: 1 },
 	attempts: 0,
-	ran: { conversationId: 4, actorId: null },
+	ran: { conversationId: Conversation.Id.make(4), actorId: null },
 };
 
 describe("what a swarm stores beside its task", () => {
@@ -26,7 +26,7 @@ describe("what a swarm stores beside its task", () => {
 		expect(progressOf(running)).toEqual({
 			status: "running",
 			reason: null,
-			ran: { conversationId: 4, actorId: null },
+			ran: { conversationId: Conversation.Id.make(4), actorId: null },
 		});
 	});
 

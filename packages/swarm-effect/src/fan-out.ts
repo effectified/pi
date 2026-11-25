@@ -1,5 +1,6 @@
 // Fan-out: one job moved forward through the driver, with every answer of the driver folded into the job's state.
 
+import type { ConversationId, EntryId, TaskId } from "@earendil-works/pi-durable";
 import type { Agent } from "@gunta/pi-durable-effect";
 import { Effect, type Option, type Schema } from "effect";
 import type { Fork, ForkDriverService, ForkGone, ForkRetryLater, Notice, Place } from "./driver.ts";
@@ -17,9 +18,9 @@ export interface Site {
 	readonly driver: ForkDriverService;
 	readonly setup: ForkSetupService;
 	readonly swarmId: string;
-	readonly coordinatorTaskId: number;
-	readonly sourceConversationId: number;
-	readonly at: number;
+	readonly coordinatorTaskId: TaskId;
+	readonly sourceConversationId: ConversationId;
+	readonly at: EntryId;
 	readonly agent: Option.Option<Agent.ByName>;
 	readonly now: number;
 }

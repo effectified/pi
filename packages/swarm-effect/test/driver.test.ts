@@ -5,14 +5,15 @@ import * as Port from "../src/driver.ts";
 import { fake } from "./fake-driver.ts";
 
 describe("the driver port", () => {
-	it("imports nothing but effect, the durable facade's types and the type of the fork setup", () => {
+	it("imports nothing but effect, Pi's id types, the durable facade and the type of the fork setup", () => {
 		const source = readFileSync(new URL("../src/driver.ts", import.meta.url), "utf8");
 		const imports = [...source.matchAll(/^import (type )?.* from "([^"]+)";$/gm)].map((match) => [
 			match[2],
 			match[1] ?? "",
 		]);
 		expect(imports).toEqual([
-			["@gunta/pi-durable-effect", "type "],
+			["@earendil-works/pi-durable", "type "],
+			["@gunta/pi-durable-effect", ""],
 			["effect", ""],
 			["./fork-setup.ts", "type "],
 		]);
@@ -52,6 +53,15 @@ describe("the driver port", () => {
 		];
 		expect(statuses.map((value) => status(value))).toEqual(statuses);
 		expect(() => status({ _tag: "Answered" })).toThrow();
+	});
+
+	it("reads and writes a place as the JSON it had when its conversation id was a plain number", () => {
+		// What a coordinator stored in a job's state, and a driver answered, before the id was typed as Pi's.
+		const stored = { conversationId: 3, actorId: "actor-1" };
+		const place = Schema.decodeUnknownSync(Port.Place)(stored);
+		expect(Schema.encodeSync(Port.Place)(place)).toEqual(stored);
+		const notice = { _tag: "Poll", afterMillis: 500, place: { conversationId: 4, actorId: null } };
+		expect(Schema.encodeSync(Port.Notice)(Schema.decodeUnknownSync(Port.Notice)(notice))).toEqual(notice);
 	});
 
 	it("is a service a product provides with a Layer", async () => {

@@ -2,9 +2,10 @@
 
 import type { Usage } from "@earendil-works/pi-ai";
 import type { Models } from "@gunta/pi-ai-effect";
+import { conditions } from "@gunta/pi-ai-effect/testing";
 import { type Conversation, type DurableError, Harness, Registry, Storage } from "@gunta/pi-durable-effect";
 import { ScriptedModels } from "@gunta/pi-durable-effect/testing";
-import { Context, Effect, Fiber, Latch, Layer, Option, Stream } from "effect";
+import { Context, Effect, Fiber, Layer, Option, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import {
 	type BudgetEvent,
@@ -47,17 +48,7 @@ export class TestLease extends Context.Service<TestLease, TestLeaseState>()("tes
 	/** A fresh lease, as the `Lease` the budget draws on and as the record a test reads. */
 	static readonly layer: Layer.Layer<TestLease | Lease> = Layer.effectContext(
 		Effect.sync(() => {
-			const waits: Array<{ readonly holds: () => boolean; readonly latch: Latch.Latch }> = [];
-			const stepped = () => {
-				for (const wait of waits) if (wait.holds()) wait.latch.openUnsafe();
-			};
-			const when = (holds: () => boolean) =>
-				Effect.suspend(() => {
-					if (holds()) return Effect.void;
-					const latch = Latch.makeUnsafe();
-					waits.push({ holds, latch });
-					return latch.await;
-				});
+			const { when, changed } = conditions();
 			const state: TestLeaseState = {
 				steps: [],
 				fenced: undefined,
@@ -73,19 +64,19 @@ export class TestLease extends Context.Service<TestLease, TestLeaseState>()("tes
 							if (state.broken !== undefined) return Effect.die(state.broken);
 							if (state.fenced !== undefined) {
 								state.steps.push({ step: "fenced", reason: state.fenced });
-								stepped();
+								changed();
 								return Effect.fail(new LeaseFenced({ reason: state.fenced }));
 							}
 							reservations += 1;
 							const token = `r${reservations}`;
 							state.steps.push({ step: "reserve", token, estimate, request });
-							stepped();
+							changed();
 							return Effect.succeed(token);
 						}),
 					settle: (token, settlement) =>
 						Effect.suspend(() => {
 							state.steps.push({ step: "settle", token, settlement });
-							stepped();
+							changed();
 							return state.brokenSettle === undefined ? Effect.void : Effect.die(state.brokenSettle);
 						}),
 				}),

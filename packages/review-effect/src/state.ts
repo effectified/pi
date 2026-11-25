@@ -230,9 +230,6 @@ function live(task: TaskId) {
  */
 function delivered<S extends Schema.Constraint>(record: Signal.Stored, signal: Signal.Signal<S>, key: string) {
 	return Signal.stateIn(record, signal, key).pipe(
-		// The signals of this package have fixed schemas with a JSON Schema: one Pi cannot take is a defect of this
-		// package, not a failure of what was stored.
-		Effect.catchTag("SchemaConversionError", (error) => Effect.die(error)),
 		Effect.map(Option.flatMap((state) => (state.kind === "value" ? Option.some(state.value) : Option.none()))),
 	);
 }

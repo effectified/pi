@@ -1,8 +1,9 @@
+import { Conversation } from "@gunta/pi-durable-effect";
 import { describe, expect, it } from "vitest";
 import { cancelled, failed, isLive, isSettled, type Job, planned, ranOf } from "../src/job.ts";
 
 const starting: Job = { status: "starting", fork: null, attempts: 1, busy: 0, retryAt: 5 };
-const place = { conversationId: 9, actorId: "actor-9" };
+const place = { conversationId: Conversation.Id.make(9), actorId: "actor-9" };
 const running: Job = {
 	status: "running",
 	fork: "f1",

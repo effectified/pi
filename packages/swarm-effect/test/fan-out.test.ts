@@ -1,3 +1,4 @@
+import { Conversation, Entry, Task } from "@gunta/pi-durable-effect";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { ForkRetryLater } from "../src/driver.ts";
@@ -14,9 +15,9 @@ function site(driver: Fake): Site {
 		work: Measure.work,
 		driver: driver.driver,
 		swarmId: "s",
-		coordinatorTaskId: 7,
-		sourceConversationId: 1,
-		at: 3,
+		coordinatorTaskId: Task.Id.make(7),
+		sourceConversationId: Conversation.Id.make(1),
+		at: Entry.Id.make(3),
 		agent: Option.none(),
 		setup: noSetup,
 		now: NOW,
@@ -97,7 +98,7 @@ describe("start", () => {
 	});
 
 	it("says where the job runs when the driver does, and keeps it for the job's later requests", async () => {
-		const place = { conversationId: 12, actorId: "actor-a" };
+		const place = { conversationId: Conversation.Id.make(12), actorId: "actor-a" };
 		const { moved } = await started({ place: () => place });
 		expect(moved).toMatchObject({ status: "running", ran: place });
 		expect((await started({})).moved).toMatchObject({ status: "running", ran: null });

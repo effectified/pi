@@ -1,7 +1,7 @@
 // The actions a fork actor serves the driver in its source: accept a request of its job, say where one stands, and
 // stop the job's work.
 
-import type { Harness } from "@gunta/pi-durable-effect";
+import { Conversation, type Harness } from "@gunta/pi-durable-effect";
 import { Action, type ActorInfo, type ActorSql } from "@gunta/pi-durable-rivet-effect";
 import { Effect, Schema } from "effect";
 import { JobStatus } from "../driver.ts";
@@ -17,7 +17,7 @@ const RunInput = Schema.Struct({
 });
 
 /** What `swarmRun` answers: the conversation of the fork actor's harness the job runs in. */
-const RunOutput = Schema.Struct({ conversationId: Schema.Number });
+const RunOutput = Schema.Struct({ conversationId: Conversation.Id });
 
 /** What `swarmJob` takes: the request to read. */
 const JobInput = Schema.Struct({ requestId: Schema.String });

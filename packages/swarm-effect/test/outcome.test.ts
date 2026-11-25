@@ -1,3 +1,4 @@
+import { Conversation } from "@gunta/pi-durable-effect";
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { InvalidValue } from "../src/errors.ts";
@@ -22,7 +23,7 @@ describe("a swarm's result", () => {
 				status: "succeeded",
 				fork: "f1",
 				value: { at: "2026-01-02T00:00:00.000Z" },
-				ran: { conversationId: 11, actorId: "actor-1" },
+				ran: { conversationId: Conversation.Id.make(11), actorId: "actor-1" },
 			},
 			failed("f2", "unanswered", "model_error"),
 		],

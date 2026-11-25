@@ -30,8 +30,11 @@ export interface Signal<S extends Schema.Constraint> {
 	readonly token: Effect.Effect<SignalToken<unknown>, SchemaConversionError>;
 	/** A value as the JSON Pi stores; fails with `SchemaDecodeError` when it does not match `schema`. */
 	readonly encode: (value: S["Type"]) => Effect.Effect<unknown, Failure, S["EncodingServices"]>;
-	/** Stored JSON as a value; fails with `SchemaDecodeError` when it does not match `schema`. */
-	readonly decode: (json: unknown) => Effect.Effect<S["Type"], Failure, S["DecodingServices"]>;
+	/**
+	 * Stored JSON as a value; fails with `SchemaDecodeError` when it does not match `schema`. It needs the schema only,
+	 * not Pi's token, so a definition Pi rejects does not fail it.
+	 */
+	readonly decode: (json: unknown) => Effect.Effect<S["Type"], SchemaDecodeError, S["DecodingServices"]>;
 }
 
 /** One wait for a signal: the signal and the key its value is delivered under. */
@@ -56,6 +59,7 @@ export type Reader = Pick<HookApi, "readSignal">;
 export function make<S extends Schema.Constraint>(name: string, version: number, schema: S): Signal<S> {
 	// Compiling the schema is the cost of a definition: paid once, at first use, and never again for this signal.
 	const compiled = Effect.runSync(Effect.cached(compile(name, version, schema)));
+	const decoder = Effect.runSync(Effect.cached(Effect.sync(() => decodeUnknown(schema))));
 	const token = Effect.map(compiled, (built) => built.token);
 	const signal: Signal<S> = {
 		name,
@@ -64,7 +68,7 @@ export function make<S extends Schema.Constraint>(name: string, version: number,
 		key: (key) => ({ signal, key }),
 		token,
 		encode: (value) => Effect.flatMap(compiled, (built) => built.encode(value)),
-		decode: (json) => Effect.flatMap(compiled, (built) => built.decode(json)),
+		decode: (json) => Effect.flatMap(decoder, (decode) => decode(json)),
 	};
 	return signal;
 }
@@ -103,13 +107,14 @@ export interface Stored {
  * `Harness.inspect` or `tx.task`. None while nothing came, and for a task that ended, whose memos Pi drops. Pi has
  * no call for this outside the task's own `readSignal`: it reads the memo Pi keeps a key's state in,
  * `pi.signal.<signal name>/<key>` (Pi's specification, 5.7). That name and the memo's shape are a convention of
- * Pi's stored data, not an API. A value stored under another version of the signal fails with `SchemaDecodeError`.
+ * Pi's stored data, not an API. A value stored under another version of the signal fails with `SchemaDecodeError`,
+ * its only failure: it decodes with the schema and never builds Pi's token.
  */
 export function stateIn<S extends Schema.Constraint>(
 	record: Stored,
 	signal: Signal<S>,
 	key: string,
-): Effect.Effect<Option.Option<State<S["Type"]>>, Failure, S["DecodingServices"]> {
+): Effect.Effect<Option.Option<State<S["Type"]>>, SchemaDecodeError, S["DecodingServices"]> {
 	const name = `pi.signal.${signal.name}/${key}`;
 	// Own memos only: a name such as `toString` must not find an inherited property.
 	if (record.memos === undefined || !Object.hasOwn(record.memos, name)) return Effect.succeedNone;
@@ -131,11 +136,10 @@ function unreadable(memo: string, why: string): SchemaDecodeError {
 	return new SchemaDecodeError({ issues: [{ path: "", message: `Memo ${memo} cannot be read: ${why}` }] });
 }
 
-/** What a signal needs of Pi and of its schema, built together so one failure covers the definition. */
+/** What a signal needs of Pi and of its schema to write, built together so one failure covers the definition. */
 interface Compiled<S extends Schema.Constraint> {
 	readonly token: SignalToken<unknown>;
 	readonly encode: (value: S["Type"]) => Effect.Effect<unknown, SchemaDecodeError, S["EncodingServices"]>;
-	readonly decode: (json: unknown) => Effect.Effect<S["Type"], SchemaDecodeError, S["DecodingServices"]>;
 }
 
 function compile<S extends Schema.Constraint>(
@@ -155,7 +159,6 @@ function compile<S extends Schema.Constraint>(
 				try: (): Compiled<S> => ({
 					token: defineSignal({ name, version, schema: jsonSchema }),
 					encode: encode(schema),
-					decode: decodeUnknown(schema),
 				}),
 				// Pi's messages name the signal themselves.
 				catch: (cause) =>

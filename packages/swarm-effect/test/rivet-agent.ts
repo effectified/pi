@@ -2,7 +2,7 @@
 // harness on a scripted model, the Rivet fork driver, the fork actions and the fork hygiene, with the swarm's host
 // operations as product actions. The test and the actors share a process, so the model's counts are the test's.
 
-import { Harness, Registry } from "@gunta/pi-durable-effect";
+import { Conversation, Entry, Harness, Registry, Task } from "@gunta/pi-durable-effect";
 import { type FauxResponseFactory, ScriptedModels, TestHarness } from "@gunta/pi-durable-effect/testing";
 import { Action, Actor, ActorInfo, type Fork, Self } from "@gunta/pi-durable-rivet-effect";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
@@ -160,7 +160,7 @@ const actions = {
 	/** Primes the root conversation with `turns` turns, and says where a fork of it starts. */
 	prime: Action.make({
 		input: Schema.Struct({ turns: Schema.Number }),
-		output: Schema.Struct({ conversationId: Schema.Number, at: Schema.Number }),
+		output: Schema.Struct({ conversationId: Conversation.Id, at: Entry.Id }),
 		handler: ({ turns }) =>
 			Effect.gen(function* () {
 				const root = yield* TestHarness.root;
@@ -227,7 +227,7 @@ const actions = {
 	/** In a fork: what the fork setup wrote for the job conversation in the commit that created it, if anything. */
 	granted: Action.make({
 		input: Schema.Null,
-		output: Schema.Option(Schema.Struct({ conversationId: Schema.Number, jobKey: Schema.String })),
+		output: Schema.Option(Schema.Struct({ conversationId: Conversation.Id, jobKey: Schema.String })),
 		handler: () =>
 			Effect.gen(function* () {
 				const job = yield* Rivet.jobConversation;
@@ -284,7 +284,7 @@ const actions = {
 					driver.fork({
 						swarmId,
 						jobKey,
-						coordinatorTaskId: 0,
+						coordinatorTaskId: Task.Id.make(0),
 						sourceConversationId: root.id,
 						at,
 						agent: Option.none(),

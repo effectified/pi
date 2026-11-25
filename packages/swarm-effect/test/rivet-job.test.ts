@@ -1,10 +1,10 @@
 // A job in its fork actor, without an engine: a harness that stands for the copied storage, and the actor's identity
 // with the fork input the driver gave. The actor is no fork of anything here, so its database is never read.
 
-import { Harness } from "@gunta/pi-durable-effect";
+import { Conversation, Doc, Harness } from "@gunta/pi-durable-effect";
 import { TestHarness } from "@gunta/pi-durable-effect/testing";
 import { ActorInfo, ActorSql, type Identity } from "@gunta/pi-durable-rivet-effect";
-import { Effect, Layer, Option, type Schema, Stream } from "effect";
+import { Effect, Layer, Option, Schema, Stream } from "effect";
 import * as Reactivity from "effect/reactivity/Reactivity";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Statement from "effect/sql/Statement";
@@ -192,7 +192,7 @@ describe("a job in its fork actor", () => {
 					_tag: "swarm.rivet.job",
 					swarmId: "s",
 					jobKey: "k",
-					sourceConversationId: root.id + 41,
+					sourceConversationId: Conversation.Id.make(root.id + 41),
 					at: Option.getOrThrow(yield* root.head),
 					agent: null,
 				};
@@ -202,6 +202,31 @@ describe("a job in its fork actor", () => {
 			}),
 		);
 		expect(refused).toMatchObject({ _tag: "SwarmJobRefused", what: "source" });
+	});
+
+	it("finds its job conversation in the record written when the conversation id was a plain number", async () => {
+		// The record as the job wrote it before: the same kind and version, the id stored as a plain number.
+		const Before = Doc.make({
+			kind: "swarm.rivet.job",
+			version: 1,
+			scope: "session",
+			schema: Schema.Struct({ conversationId: Schema.NullOr(Schema.Number) }),
+			initial: () => ({ conversationId: null }),
+			checkpointWhen: () => false,
+		});
+		const seen = await run(
+			asked(),
+			Infinity,
+			Effect.gen(function* () {
+				const root = yield* primed(1);
+				yield* Harness.commit((tx) =>
+					Effect.flatMap(tx.doc(Before), (job) => job.set({ conversationId: root.id })),
+				);
+				const found = yield* Job.conversation;
+				return { root: root.id, found: Option.map(found, (conversation) => conversation.id) };
+			}),
+		);
+		expect(seen.found).toEqual(Option.some(seen.root));
 	});
 
 	it("stops the job's work on a cancel, and forgets the job conversation on a copy", async () => {

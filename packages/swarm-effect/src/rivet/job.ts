@@ -1,8 +1,8 @@
 // A job in its fork actor: the conversation it runs in, forked at the swarm's entry inside the copied storage, and
 // what the actor does with a request of the job.
 
-import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
-import { type Agent, type Conversation, Doc, Harness, type Tx } from "@gunta/pi-durable-effect";
+import type { ConversationId } from "@earendil-works/pi-durable";
+import { Conversation, Doc, Harness, type Tx } from "@gunta/pi-durable-effect";
 import type { ActorInfo, ActorSql } from "@gunta/pi-durable-rivet-effect";
 import { Effect, Option, Schema } from "effect";
 import type { JobStatus } from "../driver.ts";
@@ -69,8 +69,7 @@ function forkedOf(job: Assignment, conversationId: ConversationId): Forked {
 	return {
 		swarmId: job.swarmId,
 		jobKey: job.jobKey,
-		// Pi brands ids in the type system only: the ids of an assignment are the numbers.
-		sourceConversationId: job.sourceConversationId as ConversationId,
+		sourceConversationId: job.sourceConversationId,
 		conversationId,
 	};
 }
@@ -133,7 +132,7 @@ const Held = Doc.make({
 	kind: "swarm.rivet.job",
 	version: 1,
 	scope: "session",
-	schema: Schema.Struct({ conversationId: Schema.NullOr(Schema.Number) }),
+	schema: Schema.Struct({ conversationId: Schema.NullOr(Conversation.Id) }),
 	initial: () => ({ conversationId: null }),
 	checkpointWhen: () => false,
 });
@@ -141,13 +140,12 @@ const Held = Doc.make({
 /** The id of the job conversation, once it was made. */
 const held: Effect.Effect<Option.Option<ConversationId>, Doc.Failure, Harness.Harness> = Effect.suspend(() =>
 	Effect.map(Harness.snapshot(Held), (stored) =>
-		// Pi brands ids in the type system only: a stored conversation id is the number.
-		Option.flatMap(stored, ({ conversationId }) => Option.fromNullOr(conversationId as ConversationId | null)),
+		Option.flatMap(stored, ({ conversationId }) => Option.fromNullOr(conversationId)),
 	),
 );
 
 /** The job conversation is made already: what fails the creating commit of a second one. */
-class Claimed extends Schema.TaggedError<Claimed>()("SwarmJobClaimed", { conversationId: Schema.Number }) {}
+class Claimed extends Schema.TaggedError<Claimed>()("SwarmJobClaimed", { conversationId: Conversation.Id }) {}
 
 /**
  * Finds the job conversation, or forks the primed conversation for it in one commit that also claims it and runs the
@@ -168,8 +166,7 @@ function conversationFor(
 	return Effect.gen(function* () {
 		const made = yield* held;
 		if (Option.isSome(made)) return yield* found(made.value);
-		// Pi brands ids in the type system only: the ids of an assignment are the numbers.
-		const source = yield* Harness.conversation(job.sourceConversationId as ConversationId);
+		const source = yield* Harness.conversation(job.sourceConversationId);
 		if (Option.isNone(source)) {
 			const reason = `The copied storage holds no conversation ${job.sourceConversationId}`;
 			return yield* new JobRefused({ what: "source", reason });
@@ -177,10 +174,10 @@ function conversationFor(
 		return yield* source.value
 			.fork({
 				// The copy is the source as it was when the actor was forked, which may be past the swarm's entry.
-				at: job.at as EntryId,
+				at: job.at,
 				ownership: { kind: "ownerless" },
-				// A decode boundary: the assignment holds the JSON the driver made of an `Agent.Change`.
-				...(job.agent === null ? {} : { agent: job.agent as Agent.Change }),
+				// Decoded with `Agent.ByName` where the assignment was read: a change `configure` takes.
+				...(job.agent === null ? {} : { agent: job.agent }),
 				// The conversation is claimed and the product has set it up, or it does not exist.
 				init: (tx, conversationId) =>
 					Effect.andThen(claim(tx, conversationId), setup.created(tx, forkedOf(job, conversationId))),
@@ -188,7 +185,7 @@ function conversationFor(
 			.pipe(
 				Effect.catchTags({
 					// Another request claimed it between the look above and this commit: its conversation is the one.
-					SwarmJobClaimed: (claimed) => found(claimed.conversationId as ConversationId),
+					SwarmJobClaimed: (claimed) => found(claimed.conversationId),
 					ForkSetupFailed: (failure) => Effect.fail(refusedBySetup(failure)),
 				}),
 			);

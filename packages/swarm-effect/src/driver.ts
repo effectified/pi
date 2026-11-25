@@ -1,6 +1,7 @@
 // The driver port: what a swarm's coordinator needs from a place where forks live, as plain data and Effects.
 
-import type { Agent } from "@gunta/pi-durable-effect";
+import type { ConversationId, EntryId, TaskId } from "@earendil-works/pi-durable";
+import { type Agent, Conversation } from "@gunta/pi-durable-effect";
 import { Context, type Effect, type Option, Schema } from "effect";
 import type { ForkSetupService } from "./fork-setup.ts";
 
@@ -63,7 +64,7 @@ export type Fork = typeof Fork.Type;
  * own; null for a fork inside the storage of the swarm itself.
  */
 export const Place = Schema.Struct({
-	conversationId: Schema.Number,
+	conversationId: Conversation.Id,
 	actorId: Schema.NullOr(Schema.String),
 });
 
@@ -126,14 +127,14 @@ export interface ForkRequest {
 	 * The coordinator's task, in the harness of the source: a driver whose forks live in that harness makes them the
 	 * task's own work, so Pi's abort of the task reaches them.
 	 */
-	readonly coordinatorTaskId: number;
+	readonly coordinatorTaskId: TaskId;
 	/** The primed conversation, in the coordinator's harness. */
-	readonly sourceConversationId: number;
+	readonly sourceConversationId: ConversationId;
 	/**
 	 * The newest entry of the source the fork may see, fixed once for the whole swarm when the source was idle. A
 	 * driver that copies a whole storage copies it as it is and continues the job from this entry.
 	 */
-	readonly at: number;
+	readonly at: EntryId;
 	/**
 	 * What the fork runs with, over what the source had at `at`: a cheaper model, fewer tools. Tools and extensions are
 	 * given by name (`Agent.ByName`), so the change is plain JSON and can cross a process boundary.
@@ -155,7 +156,7 @@ export interface RunRequest {
 	readonly requestId: string;
 	readonly prompt: string;
 	/** The coordinator's task and the signal key it sleeps on for this request: see `Notice`. */
-	readonly notify: { readonly taskId: number; readonly key: string };
+	readonly notify: { readonly taskId: TaskId; readonly key: string };
 }
 
 /**

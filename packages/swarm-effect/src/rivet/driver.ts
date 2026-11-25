@@ -1,6 +1,7 @@
 // The Rivet fork driver: a swarm's forks are actor forks of the actor that holds the primed harness, each a
 // copy-on-write copy of its storage with a harness of its own.
 
+import type { ConversationId } from "@earendil-works/pi-durable";
 import {
 	type ActorDefect,
 	type ActorGone,
@@ -110,7 +111,7 @@ function make(self: Own, context: Context.Context<Needs>, pollMillis: number): F
 			}),
 		);
 	/** Nothing is called back: the coordinator asks. The job runs in the fork actor, in the conversation it made. */
-	const notice = (fork: Fork, conversationId: number): Notice => ({
+	const notice = (fork: Fork, conversationId: ConversationId): Notice => ({
 		_tag: "Poll",
 		afterMillis: pollMillis,
 		place: { conversationId, actorId: fork.forkId },

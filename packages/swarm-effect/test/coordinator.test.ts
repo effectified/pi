@@ -3,7 +3,7 @@
 
 import type { EntryId } from "@earendil-works/pi-durable";
 import { runTest } from "@gunta/pi-ai-effect/testing";
-import { type Conversation, Extension, Harness, Signal, Task } from "@gunta/pi-durable-effect";
+import { Conversation, Extension, Harness, Signal, Task } from "@gunta/pi-durable-effect";
 import { TestHarness } from "@gunta/pi-durable-effect/testing";
 import { Effect, Fiber, Layer, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
@@ -462,7 +462,10 @@ describe("the source", () => {
 	it("that is busy when a fork is asked for is waited out, for more answers than fail a job, and the job says where it stands", async () => {
 		// A driver that forks only a source with nothing in flight: busy until the test says otherwise.
 		let busy = true;
-		const driver = fake({ forkBusy: () => busy, place: () => ({ conversationId: 3, actorId: "actor-b" }) });
+		const driver = fake({
+			forkBusy: () => busy,
+			place: () => ({ conversationId: Conversation.Id.make(3), actorId: "actor-b" }),
+		});
 		const seen = await onFake(
 			driver,
 			Effect.gen(function* () {

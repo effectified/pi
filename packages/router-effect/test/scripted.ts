@@ -10,7 +10,8 @@ import {
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import { Models, type ResponseEvent } from "@gunta/pi-ai-effect";
-import { Effect, Latch, type Layer, Stream } from "effect";
+import { conditions } from "@gunta/pi-ai-effect/testing";
+import { Effect, type Layer, Stream } from "effect";
 import type { Price, Route, RouteEvent, RouteEventsService, RouteTable } from "../src/index.ts";
 
 /** What every test asks. pi-ai's scripted provider counts it as 2 input tokens: "user:hi", four characters each. */
@@ -91,25 +92,19 @@ export interface Recording {
 /** A `RouteEvents` that keeps what is published in `seen`, so a test reads the record without a subscriber fiber. */
 export function recording(): Recording {
 	const seen: RouteEvent[] = [];
-	const waits: Array<{ readonly holds: () => boolean; readonly latch: Latch.Latch }> = [];
+	const { when, changed } = conditions();
 	return {
 		seen,
 		events: {
 			publish: (event) =>
 				Effect.sync(() => {
 					seen.push(event);
-					for (const wait of waits) if (wait.holds()) wait.latch.openUnsafe();
+					changed();
 				}),
 			stream: Stream.empty,
 			subscribe: Effect.succeed(Stream.empty),
 		},
-		when: (holds) =>
-			Effect.suspend(() => {
-				if (holds()) return Effect.void;
-				const latch = Latch.makeUnsafe();
-				waits.push({ holds, latch });
-				return latch.await;
-			}),
+		when,
 	};
 }
 

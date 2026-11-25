@@ -1,3 +1,4 @@
+import { Conversation, Entry, Task } from "@gunta/pi-durable-effect";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { fates, named, pass, plan } from "../src/cleanup.ts";
@@ -41,9 +42,9 @@ describe("clean-up", () => {
 				driver.driver.fork({
 					swarmId: "s",
 					jobKey,
-					coordinatorTaskId: 1,
-					sourceConversationId: 1,
-					at: 1,
+					coordinatorTaskId: Task.Id.make(1),
+					sourceConversationId: Conversation.Id.make(1),
+					at: Entry.Id.make(1),
 					agent: Option.none(),
 					setup: noSetup,
 				}),

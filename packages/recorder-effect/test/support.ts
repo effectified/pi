@@ -1,7 +1,8 @@
 // Test helper: a sink that keeps what it is given and can be told to fail or to wait, and the tools the tests call.
 
+import { conditions } from "@gunta/pi-ai-effect/testing";
 import { Extension, Gate, Hook, Tool } from "@gunta/pi-durable-effect";
-import { Effect, Latch, Layer, Option, Schema } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 import { RecordSink, RecordSinkError, type Records } from "../src/index.ts";
 
 /** What a test sink does with one call: nothing (the batch is stored), fail, or wait. */
@@ -22,10 +23,7 @@ export interface TestSink {
 export function testSink(behaviour: Behaviour = () => Effect.void): TestSink {
 	const attempts: Array<ReadonlyArray<Records.Record>> = [];
 	const stored: Array<Records.Record> = [];
-	const waits: Array<{ readonly holds: () => boolean; readonly latch: Latch.Latch }> = [];
-	const changed = () => {
-		for (const wait of waits) if (wait.holds()) wait.latch.openUnsafe();
-	};
+	const { when, changed } = conditions();
 	const layer = Layer.succeed(RecordSink, {
 		deliver: (records) =>
 			Effect.suspend(() => {
@@ -37,13 +35,6 @@ export function testSink(behaviour: Behaviour = () => Effect.void): TestSink {
 				});
 			}),
 	});
-	const when = (holds: () => boolean) =>
-		Effect.suspend(() => {
-			if (holds()) return Effect.void;
-			const latch = Latch.makeUnsafe();
-			waits.push({ holds, latch });
-			return latch.await;
-		});
 	return { layer, attempts, stored, when };
 }
 

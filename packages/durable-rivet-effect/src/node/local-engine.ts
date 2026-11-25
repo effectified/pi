@@ -5,6 +5,7 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
+import type { StrictOmit } from "@gunta/pi-ai-effect";
 import { Effect, Exit, FileSystem, Path, type PlatformError, Schedule, Schema, Scope, Semaphore } from "effect";
 import { EngineUnavailable } from "../errors.ts";
 import * as Host from "../host.ts";
@@ -24,7 +25,7 @@ export interface LocalEngine {
 
 /** Options of `serve`: those of `Host.serve` without the ones that say which engine, and where this engine lives. */
 export interface ServeOptions
-	extends Omit<Host.ServeOptions, "endpoint" | "startEngine" | "enginePort" | "engineHost"> {
+	extends StrictOmit<Host.ServeOptions, "endpoint" | "startEngine" | "enginePort" | "engineHost"> {
 	/**
 	 * The engine's own directory, which holds its actors' state and is kept: `serve` makes `.rivetkit` in it, stops an
 	 * engine that a process which ended left running on it, and leaves it in place when the scope closes. Never the

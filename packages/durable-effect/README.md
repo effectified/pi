@@ -629,7 +629,8 @@ const decision = (taskId: TaskId, callId: string) => Harness.signalState(taskId,
 `Harness.signalState(taskId, signal, key)` reads a key's state from the task's stored record, decoded as the task's
 own `readSignal` gives it: `Option.none` while nothing came, a value, or `expired`. `Signal.stateIn(record, signal,
 key)` reads it from a record you already hold: one of `Harness.inspect`, of `Harness.getTask`, of `tx.task` in a
-commit. Pi has no call for this. Both read the memo Pi keeps a key's state in, `pi.signal.<signal name>/<key>`, which
+commit, and fails only with `SchemaDecodeError`: it decodes with the signal's schema and needs no Pi token. Pi has
+no call for this. Both read the memo Pi keeps a key's state in, `pi.signal.<signal name>/<key>`, which
 Pi's specification (5.7) describes: a convention of Pi's stored data, not an API, so a later Pi may change it. Pi
 drops a task's memos with its outcome: for a task that ended the state is none.
 

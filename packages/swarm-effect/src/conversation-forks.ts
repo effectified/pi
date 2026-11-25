@@ -1,6 +1,6 @@
 // The in-storage driver: a swarm's forks are conversation forks of the source, in the harness its coordinator runs in.
 
-import { type ConversationId, type EntryId, SubmissionSettled, type TaskId } from "@earendil-works/pi-durable";
+import { type ConversationId, SubmissionSettled } from "@earendil-works/pi-durable";
 import { Conversation, Doc, Entry, Harness, type Tx } from "@gunta/pi-durable-effect";
 import { Deferred, Effect, Layer, Option, Schema, Stream } from "effect";
 import {
@@ -99,8 +99,7 @@ function make(harness: Deferred.Deferred<Harness.Open>): ForkDriverService {
 								type: "input",
 								content: request.prompt,
 								requestId: request.requestId,
-								// Pi brands ids in the type system only: the coordinator's task id is the number.
-								notify: { taskId: request.notify.taskId as TaskId, key: request.notify.key },
+								notify: request.notify,
 							}),
 							// Pi delivers its own signal in the commit that settles the submission: nothing is polled. The job
 							// runs in the fork's conversation, in the storage of the swarm itself.
@@ -150,8 +149,7 @@ function make(harness: Deferred.Deferred<Harness.Open>): ForkDriverService {
  * a call that was cut off after its commit is made again, and finds the fork.
  */
 function fork(request: ForkRequest): Effect.Effect<Fork, ForkGone | Doc.Failure, Harness.Harness> {
-	// Pi brands ids in the type system only: the ids of a request are the numbers.
-	const sourceConversationId = request.sourceConversationId as ConversationId;
+	const { sourceConversationId } = request;
 	const forked = (conversationId: ConversationId): Forked => ({
 		swarmId: request.swarmId,
 		jobKey: request.jobKey,
@@ -173,9 +171,9 @@ function fork(request: ForkRequest): Effect.Effect<Fork, ForkGone | Doc.Failure,
 		if (Option.isNone(source)) return yield* gone(request, "source", "The conversation does not exist");
 		return yield* source.value
 			.fork({
-				at: request.at as EntryId,
+				at: request.at,
 				// The coordinator owns its forks: Pi's abort of the task reaches their work.
-				ownership: { kind: "task", taskId: request.coordinatorTaskId as TaskId },
+				ownership: { kind: "task", taskId: request.coordinatorTaskId },
 				...(Option.isSome(request.agent) ? { agent: request.agent.value } : {}),
 				// The key is claimed and the product has set the fork up, or the fork does not exist.
 				init: (tx, conversationId) =>

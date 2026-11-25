@@ -1,7 +1,8 @@
 // The in-storage driver, operation by operation, on a harness with a scripted model.
 
+import type { EntryId } from "@earendil-works/pi-durable";
 import { runTest } from "@gunta/pi-ai-effect/testing";
-import { Extension, Harness, Signal, Task } from "@gunta/pi-durable-effect";
+import { Conversation, Extension, Harness, Signal, Task } from "@gunta/pi-durable-effect";
 import { answer, type FauxResponseFactory, ScriptedModels, TestHarness } from "@gunta/pi-durable-effect/testing";
 import { Effect, Fiber, Latch, Layer, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
@@ -63,7 +64,7 @@ const scene = Effect.gen(function* () {
 		tx.createTask(Owner, {}, { ownership: { kind: "conversation" }, background: true }),
 	);
 	yield* Harness.resume;
-	const request = (jobKey: string, at: number = second): Swarm.ForkRequest => ({
+	const request = (jobKey: string, at: EntryId = second): Swarm.ForkRequest => ({
 		swarmId: "s",
 		jobKey,
 		coordinatorTaskId: owner,
@@ -145,7 +146,9 @@ describe("fork", () => {
 		const error = await run(
 			Effect.gen(function* () {
 				const { driver, request } = yield* scene;
-				return yield* Effect.flip(driver.fork({ ...request("job-a"), sourceConversationId: 999 }));
+				return yield* Effect.flip(
+					driver.fork({ ...request("job-a"), sourceConversationId: Conversation.Id.make(999) }),
+				);
 			}),
 		);
 		expect(error).toEqual(
