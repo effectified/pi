@@ -39,11 +39,11 @@ export interface OnSwarm<A> {
 
 /**
  * A swarm as a caller plans it: `Swarms.Plan`, with the agent change of the forks as what crosses to the actor
- * (`ForkAgent.ForkAgent`): the model, the thinking level, the instructions, the turns, and tools and extensions by
- * name.
+ * (`ForkAgent.ForkAgent`): the model, the thinking level, the instructions, the working directory, the turns, the
+ * compaction settings, and tools and extensions by name.
  */
 export interface Plan<I> extends Omit<Swarms.Plan<I>, "agent"> {
-	/** What every fork runs with, over what the thread has: a cheaper model, fewer tools. */
+	/** What every fork runs with, over what the thread has: a cheaper model, fewer tools, a directory of its own. */
 	readonly agent?: ForkAgent.ForkAgent;
 }
 

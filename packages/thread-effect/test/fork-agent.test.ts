@@ -40,12 +40,26 @@ describe("an agent change as it crosses", () => {
 		expect(Schema.decodeUnknownSync(ForkAgent.Wire)(JSON.parse(JSON.stringify(wire)))).toEqual(wire);
 	});
 
+	it("is the working directory and the compaction settings as they are", async () => {
+		const compaction = {
+			enabled: true,
+			reserveTokens: 2_000,
+			keepRecentTokens: 0,
+			modelOverrides: { "router/cheap": { enabled: false, backgroundTokens: 500 } },
+		};
+		const wire = await crossed({ cwd: "/work/covers", compaction });
+		expect(wire).toEqual({ cwd: "/work/covers", compaction });
+		expect(Schema.decodeUnknownSync(ForkAgent.Wire)(JSON.parse(JSON.stringify(wire)))).toEqual(wire);
+	});
+
 	it("keeps a cleared field cleared and an absent one absent, and an edit of a selection as an edit", async () => {
 		expect(await crossed({})).toEqual({});
-		expect(await crossed({ model: null, instructions: null, tools: null })).toEqual({
+		expect(await crossed({ model: null, instructions: null, tools: null, cwd: null, compaction: null })).toEqual({
 			model: null,
 			instructions: null,
 			tools: null,
+			cwd: null,
+			compaction: null,
 		});
 		expect(await crossed({ tools: { remove: [Lookup] }, extensions: { remove: ["review"] } })).toEqual({
 			tools: { remove: ["lookup"] },
@@ -57,9 +71,22 @@ describe("an agent change as it crosses", () => {
 		const refused = await Effect.runPromise(Effect.flip(ForkAgent.toWire("t1/covers-1", { maxTurns: 0 })));
 		expect(refused).toMatchObject({ _tag: "InvalidPlan", swarmId: "t1/covers-1" });
 		expect(refused.message).toContain("The agent change of the forks cannot cross");
-		// Only a cast lets a field of `Agent.Change` that is not `ForkAgent`'s through: it stays with the caller.
-		const wider = { maxTurns: 2, cwd: "/tmp" } as ForkAgent.ForkAgent;
+		// Only a cast lets a field through that `Agent.Change` does not have: it stays with the caller.
+		const wider = { maxTurns: 2, owner: "covers" } as ForkAgent.ForkAgent;
 		expect(await crossed(wider)).toEqual({ maxTurns: 2 });
+	});
+
+	it("does not cross with a token count of its compaction that Pi's configure would refuse", async () => {
+		// Pi throws a `RangeError` in the fork's creating commit for each of these: the fork would never exist.
+		const refusedFor = (compaction: NonNullable<ForkAgent.ForkAgent["compaction"]>) =>
+			Effect.runPromise(Effect.flip(ForkAgent.toWire("t1/covers-1", { compaction })));
+		for (const compaction of [
+			{ reserveTokens: -1 },
+			{ keepRecentTokens: 1.5 },
+			{ modelOverrides: { "router/cheap": { backgroundTokens: Number.POSITIVE_INFINITY } } },
+		]) {
+			expect(await refusedFor(compaction)).toMatchObject({ _tag: "InvalidPlan", swarmId: "t1/covers-1" });
+		}
 	});
 });
 

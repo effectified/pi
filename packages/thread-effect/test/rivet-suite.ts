@@ -22,6 +22,7 @@ import { ReviewerSharesFamily, ThreadNotFound } from "../src/index.ts";
 import { OperationFailed, Remote, SwarmId } from "../src/rivet.ts";
 import {
 	Cloned,
+	configured,
 	Desk,
 	deliveries,
 	deskOf,
@@ -756,7 +757,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		expect(state.told.calls).toBe(2);
 	}, 120_000);
 
-	it("runs a swarm's forks with the agent change of its plan: on the model it names, with those of its tools a fork may have", async () => {
+	it("runs a swarm's forks with the agent change of its plan: on the model it names, with those of its tools a fork may have, in its directory and with its compaction settings", async () => {
 		// The author primes the thread. The reviewer's lab reviews it and then answers the jobs: the plan names the
 		// reviewer's alias as the model of the forks.
 		labs.author.setResponses([scripted]);
@@ -788,6 +789,11 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 			}),
 		);
 		expect(await run(Effect.flip(remote.swarms.probe(id)))).toMatchObject({ reason: "SwarmNotFound" });
+		// Settings that change nothing a short job does: no compaction, and a directory without an environment.
+		const compaction = {
+			enabled: false,
+			modelOverrides: { [`${REVIEWER.provider}/${REVIEWER.modelId}`]: { backgroundTokens: 0 } },
+		};
 		const started = await run(
 			remote.swarms.run(Covers, {
 				...plan,
@@ -795,7 +801,9 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 					model: REVIEWER,
 					thinkingLevel: "low",
 					instructions: "Answer with the JSON object alone.",
+					cwd: "/covers",
 					maxTurns: 3,
+					compaction,
 					// One tool a fork may have, by its name, and one it may not, by an object that carries its name:
 					// neither the thread's grant nor the allowance has `transfer`.
 					tools: ["lookup", { name: "transfer" }],
@@ -811,6 +819,12 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		// Each fork was offered what the plan names of what it may have: `lookup`, and neither `write_note`, which the
 		// plan leaves out, nor `transfer`, which the fork setup takes away.
 		expect(["Rust", "Go"].map((topic) => shown.get(topic)?.tools)).toEqual([["lookup"], ["lookup"]]);
+		// Each fork's conversation, in its own actor, had the plan's directory and compaction settings stored when it
+		// asked.
+		expect(["Rust", "Go"].map((topic) => configured.get(topic))).toEqual([
+			{ cwd: "/covers", compaction },
+			{ cwd: "/covers", compaction },
+		]);
 		// The jobs ran on the model the plan names: the author's lab served the priming alone, and each fork's actor
 		// reserved and settled one request to the reviewer's alias, which its route served.
 		expect([labs.author.state.callCount, labs.reviewer.state.callCount]).toEqual([1, 3]);

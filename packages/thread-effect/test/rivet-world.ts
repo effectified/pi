@@ -2,12 +2,14 @@
 // in the test's process, so the product's ports are the in-memory values of world.ts, shared by the test, the thread
 // actors and every fork: the lease and the sink note which actor asked them.
 
-import type { FauxResponseFactory } from "@earendil-works/pi-ai";
+import type { FauxResponseFactory, Message } from "@earendil-works/pi-ai";
+import type { CompactionSettings } from "@earendil-works/pi-durable";
+import { BuiltinDoc, Extension, Hook } from "@gunta/pi-durable-effect";
 import { answer } from "@gunta/pi-durable-effect/testing";
 import { Action, ActorDatabase, ActorInfo, type Client, type Fork } from "@gunta/pi-durable-rivet-effect";
 import * as Testing from "@gunta/pi-durable-rivet-effect/testing";
 import type { Records } from "@gunta/pi-recorder-effect";
-import { Effect, Layer, Queue, Schedule, Schema } from "effect";
+import { Effect, Layer, Option, Queue, Schedule, Schema } from "effect";
 import { Threads } from "../src/index.ts";
 import { ThreadActor } from "../src/rivet.ts";
 import { config, type Options, outside, ports, providers, REVIEW_POLICY, SAME_FAMILY_REVIEWER } from "./world.ts";
@@ -38,6 +40,15 @@ export interface Shown {
 /** What the scripted author was shown with each job, by topic. */
 export const shown = new Map<string, Shown>();
 
+/** What a job's conversation had stored of its agent when it made a request: what Pi passes to `env` and compacts by. */
+export interface Configured {
+	readonly cwd: string | undefined;
+	readonly compaction: CompactionSettings | undefined;
+}
+
+/** What each job's conversation had stored of its agent at its newest request, by topic. */
+export const configured = new Map<string, Configured>();
+
 /** How many job requests the scripted author answered at once, at most: what a swarm's cap bounds. */
 export const load = { live: 0, most: 0 };
 
@@ -60,6 +71,7 @@ export function reset(): void {
 	streams.length = 0;
 	opened.length = 0;
 	shown.clear();
+	configured.clear();
 	load.live = 0;
 	load.most = 0;
 	for (const lab of [labs.author, labs.backup, labs.reviewer]) {
@@ -76,7 +88,7 @@ export const scripted: FauxResponseFactory = async (context) => {
 	const spoken = context.messages.flatMap((message) =>
 		message.role === "system" ? [] : [`${message.role}: ${textOf(message.content)}`],
 	);
-	const topic = /cover (\w+)\?/.exec(spoken.findLast((line) => line.startsWith("user: ")) ?? "")?.[1];
+	const topic = topicIn(context.messages);
 	if (topic === undefined) return answer("I have read it.");
 	const tools = new Set<string>();
 	for (const message of context.messages) {
@@ -92,9 +104,34 @@ export const scripted: FauxResponseFactory = async (context) => {
 	return answer(JSON.stringify({ topic, covered: topic !== "Zig" }));
 };
 
+/** The topic of a job's request: what its newest user message asks to be covered; none for any other request. */
+function topicIn(messages: ReadonlyArray<Message>): string | undefined {
+	const asked = messages.findLast((message) => message.role === "user");
+	return /cover (\w+)\?/.exec(asked === undefined ? "" : textOf(asked.content))?.[1];
+}
+
 function textOf(content: string | ReadonlyArray<{ readonly type: string; readonly text?: string }>): string {
 	return typeof content === "string" ? content : content.map((part) => part.text ?? "").join("");
 }
+
+/**
+ * Notes, before each request of a job, what the job's conversation stored of its agent. It runs in the actor that
+ * makes the request, a fork's for a job, and changes nothing of the request.
+ */
+const storedAgent = Extension.make({
+	name: "stored-agent",
+	hooks: [
+		Hook.beforeRequest((request, api) =>
+			Effect.gen(function* () {
+				const topic = topicIn(request.messages);
+				if (topic === undefined) return Option.none();
+				const agent = Option.getOrUndefined(yield* api.snapshot(BuiltinDoc.agent, api.conversationId));
+				configured.set(topic, { cwd: agent?.cwd, compaction: agent?.compaction });
+				return Option.none();
+			}),
+		),
+	],
+});
 
 /** Every record the sink took, with the actor whose port took it, repeats included, in the order they came. */
 export function deliveries(): ReadonlyArray<{ readonly actor: string | undefined; readonly record: Records.Record }> {
@@ -119,9 +156,14 @@ export const OUTCOME_RETRY_MILLIS = 3_000;
 
 /** What every thread actor of the suite is made with, beside what one of them adds. */
 function product(options: Pick<Options, "review"> = {}) {
+	const base = config(state, labs, options);
 	return {
-		// A failed delivery of an outcome is tried again after a time a test can sleep through.
-		composition: { ...config(state, labs, options), outcomes: { retry: Schedule.spaced(OUTCOME_RETRY_MILLIS) } },
+		composition: {
+			...base,
+			extensions: [...base.extensions, storedAgent],
+			// A failed delivery of an outcome is tried again after a time a test can sleep through.
+			outcomes: { retry: Schedule.spaced(OUTCOME_RETRY_MILLIS) },
+		},
 		ports: productPorts,
 		// Short, so the tests do not wait on the interval at which a coordinator asks its forks.
 		swarm: { pollMillis: 100 },
