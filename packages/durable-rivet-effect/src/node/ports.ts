@@ -8,7 +8,7 @@ import { EngineUnavailable } from "../errors.ts";
  * What the engine of rivetkit 3.1.1 listens on, as offsets from its `enginePort`: the port itself (its guard, where
  * clients and the registry connect), the next one (its API peer, the `peer_url` of its config) and the tenth after it
  * (its metrics). Read off a running engine with `lsof`; an engine that cannot bind one of them exits at once with
- * "Address already in use", and rivetkit goes on asking for its health for a minute.
+ * that its address is in use, and rivetkit goes on asking for its health for a minute.
  */
 export const OFFSETS: ReadonlyArray<number> = [0, 1, 10];
 

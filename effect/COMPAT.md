@@ -9,14 +9,21 @@ only after the whole suite ran on those versions (`npm run check`, each package'
 
 Also installed and run outside this repository beside the published `@earendil-works/*` 1.6.0 (the quick start of
 `durable-effect`, from packed tarballs, on Node and on Bun with its isolated linker). `rivetkit` 3.1.1 is the peer of
-`durable-rivet-effect`; its engine tests ran on macOS only. Node 22.19.0 is the lowest version the packages declare:
+`durable-rivet-effect`; its engine tests run on macOS and, since 2026-11-26, on Linux in CI (x64) on Node and on Bun. Node 22.19.0 is the lowest version the packages declare:
 all fifteen suites passed on it on Pi 1.6.0 (1,747 tests, 2026-11-25). On Pi 1.6.1 they pass on Node 26.13.1 (1,748
 tests) and on Bun (2026-11-26); between the two versions Pi Durable changed only its Node environment (shell lookup,
 line reader). Not yet run against a real model provider.
 
 CI (`effect-ci.yml`, Node 22, Linux) first ran on 2026-11-25 and was red in upstream's own check and tests, not in
 these packages: upstream's build fetches the model catalogs of the day, and the tests at `f8149d1ab` named models
-that had left them. A `main` behind upstream goes red that way; the cure is to sync it.
+that had left them. A `main` behind upstream goes red that way; the cure is to sync it. After the sync the same
+jobs were red once more on one upstream test of a Qwen catalog, which was red on upstream's own `main` that hour.
+
+The first run of the package tests on Linux (after the sync) passed the Bun lane whole and fourteen packages on
+Node, and found two faults of the local engine start of `durable-rivet-effect` there: the engine's Linux binary
+says "Address in use" where macOS says "Address already in use", and an engine that ended at once has no command
+line in the process list. A start on a taken port then waited rivetkit's whole minute. Both are fixed and were
+reproduced and checked in a Linux container (Node 22, arm64).
 
 `./test.sh` exits 1 on this machine: three tests of upstream's `packages/coding-agent` fail (`exec`, `mcp-command`,
 `output-file-failures`), and the same three fail on an untouched copy of `main` at `f8149d1ab` in the same
@@ -32,7 +39,7 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@gunta/pi-ai-effect` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges | 44 | Images, classifiers, OAuth login, deferred responses |
 | `@gunta/pi-telemetry-effect` | facade | `@earendil-works/pi-telemetry` | 59 | `TelemetryStore`; histogram exemplars |
 | `@gunta/pi-durable-effect` | facade | `@earendil-works/pi-durable` | 426 | A task's own hooks, `setTimer`, prompt sections and wrappers, synchronous observers |
-| `@gunta/pi-durable-rivet-effect` | host | A harness in a Rivet actor: storage, wake-ups, forks | 166 | Linux engine runs; several machines; an engine that dies |
+| `@gunta/pi-durable-rivet-effect` | host | A harness in a Rivet actor: storage, wake-ups, forks | 166 | Several machines; an engine that dies |
 | `@gunta/pi-router-effect` | plugin | Routes, fallback, limiter, prices, constraints | 169 | A real provider; image and classifier routing |
 | `@gunta/pi-budget-effect` | plugin | Lease at the model boundary, shares | 86 | |
 | `@gunta/pi-guard-effect` | plugin | Denied verbs, grants, argument rules, ceilings | 111 | |

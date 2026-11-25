@@ -162,15 +162,7 @@ const PORT_OCCUPIED = "engine.port_occupied";
  * engine for its health for a minute.
  */
 function portTaken(directory: string, port: number): Effect.Effect<never, EngineUnavailable> {
-	const logs = join(directory, ".rivetkit", "var", "logs", "rivet-engine");
-	const reported = Effect.sync(() => {
-		try {
-			return readdirSync(logs).some((name) => readFileSync(join(logs, name), "utf8").includes(IN_USE));
-		} catch {
-			// No log yet: the engine has not been started.
-			return false;
-		}
-	});
+	const reported = Effect.map(logged(directory), (texts) => texts.some((text) => IN_USE.test(text)));
 	return Effect.andThen(
 		Effect.repeat(reported, { until: (found) => found, schedule: Schedule.spaced("100 millis") }),
 		Effect.fail(
@@ -187,27 +179,49 @@ function portTaken(directory: string, port: number): Effect.Effect<never, Engine
  * Fails once the engine started on `directory` has run and its process is gone, and never succeeds. rivetkit does not
  * watch the engine it started: when something stops it during the start (a signal from another program, such as a
  * `pkill rivet-engine` elsewhere on the machine), rivetkit goes on asking the dead engine for its health for a
- * minute. The failure waits a moment after the process is gone, so that an engine that ended over a port is
- * reported by `portTaken`, which says more.
+ * minute.
+ *
+ * That it ran is known from the process list or from what it wrote: an engine that ended at once may never be seen
+ * running, and on Linux one that ended and was not waited for yet has no command line to know it by. That it is gone
+ * is two looks a moment apart, so that an engine that ended over a port is reported by `portTaken`, which says more.
  */
 function lost(directory: string): Effect.Effect<never, EngineUnavailable> {
-	const engines = Effect.map(EngineProcess.running(directory), (pids) => pids.length);
-	const until = (wanted: (count: number) => boolean) =>
-		Effect.repeat(engines, { until: wanted, schedule: Schedule.spaced("250 millis") });
-	return until((count) => count > 0).pipe(
-		Effect.andThen(until((count) => count === 0)),
-		Effect.andThen(Effect.sleep("300 millis")),
-		Effect.andThen(
-			Effect.fail(
-				new EngineUnavailable({
-					code: LOST,
-					message: "The local engine's process ended before it was ready: something stopped it",
-					retryable: true,
-				}),
-			),
-		),
-	);
+	const running = Effect.map(EngineProcess.running(directory), (pids) => pids.length > 0);
+	const wrote = Effect.map(logged(directory), (texts) => texts.some((text) => text !== ""));
+	return Effect.gen(function* () {
+		while (!((yield* running) || (yield* wrote))) yield* Effect.sleep("250 millis");
+		while (true) {
+			if (yield* running) {
+				yield* Effect.sleep("250 millis");
+				continue;
+			}
+			yield* Effect.sleep("300 millis");
+			if (!(yield* running)) break;
+		}
+		return yield* new EngineUnavailable({
+			code: LOST,
+			message: "The local engine's process ended before it was ready: something stopped it",
+			retryable: true,
+		});
+	});
 }
 
-// What the engine writes when it cannot bind a port, on macOS (os error 48) and on Linux (os error 98).
-const IN_USE = "Address already in use";
+/**
+ * What the engine started on `directory` has written so far: the text of each file rivetkit keeps its standard
+ * output and its standard error in. Empty before the engine was started.
+ */
+function logged(directory: string): Effect.Effect<ReadonlyArray<string>> {
+	const logs = join(directory, ".rivetkit", "var", "logs", "rivet-engine");
+	return Effect.sync(() => {
+		try {
+			return readdirSync(logs).map((name) => readFileSync(join(logs, name), "utf8"));
+		} catch {
+			// No log yet: the engine has not been started.
+			return [];
+		}
+	});
+}
+
+// What the engine writes when it cannot bind a port: the C library's words for the error, "Address already in use"
+// on macOS (os error 48) and "Address in use" in the engine's Linux binary (os error 98), or Rust's name of its kind.
+const IN_USE = /Address (?:already )?in use|AddrInUse/;

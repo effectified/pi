@@ -1,7 +1,7 @@
 # PatentOS v2 on pi-effect
 
 What PatentOS v2 gets from this repository, how the packages reach it, what was built for it and what is left.
-State of 2026-11-25, evening.
+State of 2026-11-26.
 
 The goal of the PRD (section 4): PatentOS deletes its hand-written agent loop
 (`packages/compute/src/agent/Thread.ts`) and its sequential swarm runner, and binds its ports `AgentWork`,
@@ -11,16 +11,16 @@ The goal of the PRD (section 4): PatentOS deletes its hand-written agent loop
 
 | | Where | State |
 |---|---|---|
-| The packages | This repository, branch `effect`, committed, not pushed | `npm run check` passes; the suites pass on Node and on Bun (versions and counts in `COMPAT.md`) |
-| The binding | PatentOS, branches `build/s0-foundations` and `main`, from commit `15c7a11` on | Merged. PatentOS's gate `bun run check:all` passed on `8ef540f` (4,598 tests) |
-| The worktree to change it in | `/Volumes/Banana/GitHub/gunta/patentos-build-run/pi-effect-wt2`, branch `pi-effect/agent-thread-on-56fd828` | Level with `8ef540f` |
+| The packages | This repository, branch `effect`, pushed to `origin` | Synced with upstream Pi 1.6.1. `npm run check` passes; the suites pass on Node and on Bun (versions and counts in `COMPAT.md`) |
+| The binding | PatentOS, branches `build/s0-foundations` and `main`, from commit `15c7a11` on | Merged and pushed. PatentOS's gate `bun run check:all` passed on `3bb32e9` (4,689 tests) |
+| The worktree to change it in | `/Volumes/Banana/GitHub/gunta/patentos-build-run/pi-effect-wt2`, branch `pi-effect/agent-thread-on-56fd828` | Level with `3bb32e9` |
 
 PatentOS's shared checkout (`/Volumes/Banana/GitHub/gunta/patentos`) is never edited for this work: other
 sessions keep uncommitted files there. Section 7 says how a commit lands on it.
 
 ## 2. What PatentOS uses
 
-Fifteen packages at 0.1.0, on Pi 1.6.0 and `effect` 4.1.5. `packages/compute` declares ten of them.
+Fifteen packages at 0.1.0, on Pi 1.6.1 and `effect` 4.1.5. `packages/compute` declares ten of them.
 
 | Package | In PatentOS |
 |---|---|
@@ -48,7 +48,8 @@ bun run pi-effect /Volumes/Banana/GitHub/gunta/pi-effect
 That runs `effect/scripts/vendor.ts` of this repository: it builds every package, replaces the directories in
 `vendor/pi-effect` (`dist` without source maps, the README, a manifest whose pi-effect dependencies are
 `workspace:*` and whose peers are exact), writes the commit into `SOURCE.json` and installs. Upstream's
-`npm run build` must have run here once.
+`npm run build` must have run here once. When the packages move to another Pi version, PatentOS's own Pi pins
+(`packages/compute/package.json`) move with them in the same commit.
 
 Why not a link or a git dependency: a link to this checkout gives PatentOS two copies of `effect`, Pi Durable and
 RivetKit and does not install in CI or in a worktree at another depth; a git dependency cannot name a package
@@ -98,6 +99,14 @@ In PatentOS (fake providers everywhere; engines, actors, forks and kills are rea
   the wake keeper of `pi-durable-rivet-effect` cancelled a wake whose time had come at the next call to the actor,
   and PatentOS asks a working thread's actor every 250 ms. Fixed here in `63ed08b30`; the case failed 4 of about
   26 runs before and 0 of 22 after, with the other engine tests alongside.
+- A killed edition no longer stalls a stream of the journal. The restart test found this too (its case at
+  ledger.sealed, about one run in seventeen): a drain of PatentOS's domain framework holds a lease in its object's
+  storage for a minute, a killed process leaves it in `objects.sqlite`, and after the boot every drain of that
+  object answered as done, so a thread whose last event came within that minute was never journaled further.
+  Fixed in PatentOS's local host (`741e94f`: leases found when the file is opened are removed and their drains
+  run), with a test that kills a process inside a projection's run and inside a reaction
+  (`apps/node-domain/test/local-objects.restart.test.ts`). The restart test then passed 11 runs of 11 beside the
+  other engine tests: few runs, so the proof is the host's own test, which was red before.
 
 Here (scripted models; real engine, real host processes):
 
@@ -111,8 +120,8 @@ Here (scripted models; real engine, real host processes):
 
 **For the owner to decide**
 
-1. Push this repository's branch `effect`. It is committed and local. The fork is of a public repository, and
-   `effect/` holds the PRD and these notes: decide what may be public first. CI (`effect-ci.yml`) has never run.
+1. What of `effect/` may stay public. The branch is pushed (the owner's word of 2026-11-25), the fork is of a
+   public repository, and `effect/` holds the PRD and these notes with paths of the owner's machine.
 2. The open domain decisions in PatentOS's `packages/compute/README.md` (17 of 18 rows; row 7 is closed). The ones
    that block a feature:
    - A swarm is accepted only while its thread's session is `working` (rows 4 and 12). Once the thread waits for
@@ -126,18 +135,20 @@ Here (scripted models; real engine, real host processes):
 
 - A real model provider: every test uses scripted or fake models.
 - An engine that dies while it is up (the edition lives; that org's thread calls are untested then), several
-  machines, a network partition, engine upgrades, the engine tests on Linux.
+  machines, a network partition, engine upgrades. PatentOS's own engine tests have not run on Linux (the
+  packages' have, in CI: `COMPAT.md`); its `LocalEngine.ts` knows an ended engine by the process list alone, which on
+  Linux misses one that ended at once, so a start on a taken port would wait a minute there before it is retried.
 - Swarms across a restart of the edition; two editions started at once on one directory.
 - A real Spend context that grants one lease per fork holder.
 
 **Found and not ours to fix**
 
-- After a hard kill of the edition, the journal stream of a thread can stop for good: an event the Agents context
-  took just before the kill is not copied into the journal after the boot, nor anything after it in that stream.
-  It makes `agent-thread.restart.test.ts` red about one run in seventeen beside the other engine tests (the case at
-  ledger.sealed), with compute's work done and every command accepted. It is PatentOS's host (the journal
-  projection); the evidence is in `patentos-build-run/build-run.md` and
-  `patentos-build-run/logs/pi-effect-restart-journal-stall.log`.
+- The framework PatentOS's domain runs on (`@alchemy.run/domain` 2.0.0-beta.87) deletes the callback of a drain
+  that found a lease held. PatentOS's local host now clears such leases at boot; the framework's other hosts
+  (several instances) would stall the same way. For a person to raise with its authors.
+- Upstream Pi's tests name models of the live catalogs its build fetches, so upstream's own CI, and the
+  `upstream tests` jobs of `effect-ci.yml`, go red on a day a catalog changes (2026-11-25: a Qwen model, on
+  upstream's `main` too). It is not a failure of these packages; the `check` job says how they stand.
 
 **Known limits**
 
@@ -174,6 +185,8 @@ PatentOS's `ExitGuard.ts` and most of its `LocalEngine.ts` can go.
   lane's unfinished work there. Judge a commit in the worktree.
 - `patentos-db-bench/run-all.sh` runs `pkill rivet-engine` machine-wide. The host retries a start whose engine
   was stopped; a test whose engine dies later fails that run and is run again.
+- A push to this fork's `main` (a sync) starts upstream's own workflows in the fork. The ones that publish or need
+  release tags fail there (`Preview packages`, `Environments`, `CI` at "Fetch the newest release tag"): expected.
 - Early Bun runs of this repository's Rivet tests wrote test actors into the shared `~/.rivetkit/var/engine`,
   because on Bun an assignment to `process.env` does not reach rivetkit's native core. Nothing was deleted there.
   The `/bun` entry of `pi-durable-rivet-effect` now sets the variable for real.
