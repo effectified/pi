@@ -30,7 +30,8 @@ export class ActorGone extends Schema.TaggedError<ActorGone>()("ActorGone", {
 /**
  * The engine could not be reached, or refused the request. `code` is Rivet's `group.code`, or `transport` when no
  * answer came, `start` when a registry did not start, `port`, `lost` and `environment` for a local engine (a port
- * taken, an engine process that ended before it was ready, an environment that could not be set). `retryable` is
+ * taken, an engine process that ended before it was ready, an environment that could not be set, a directory or file
+ * of the engine that could not be made or read, a process list that could not be read). `retryable` is
  * true for a transport failure, for a refusal the engine gave a retry hint for (`retryAfterMillis`), and for a
  * refused fork. A transport failure may come after the request reached the actor, so send again only what is safe
  * to repeat.

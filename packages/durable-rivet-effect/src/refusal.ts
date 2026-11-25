@@ -1,7 +1,7 @@
 // A refusal with a retry hint: Rivet did not do what it was asked and says when to ask again. How the hint is read,
-// and how this host asks again a bounded number of times.
+// and the one rule by which this host asks again, a bounded number of times.
 
-import { Predicate } from "effect";
+import { Effect, Predicate, Schedule } from "effect";
 
 /**
  * How often a refused request is sent again before its refusal goes to the caller. Rivet's storage refuses while a
@@ -33,18 +33,15 @@ export function waitMillis(hint: number): number {
 }
 
 /**
- * Runs `operation`, and runs it again after the hinted time while it rejects with a hinted refusal and `again` allows
- * it, at most `RETRIES` more times. The promise form, for the SQLite adapter, whose contract is promises; the caller
- * decides with `again` whether running the operation a second time is safe.
+ * The schedule of `Effect.retry` for a request Rivet may refuse with a hint: while the failure has a hint (`hintOf`
+ * reads it, and says undefined for every other failure), the request is sent again after the hinted time, at most
+ * `RETRIES` more times; then the last refusal goes to the caller. The wait is a sleep on `Clock`, so it is
+ * interrupted with the fiber that waits.
  */
-export function honouringHint<T>(operation: () => Promise<T>, again: () => boolean = always): Promise<T> {
-	const attempt = (left: number): Promise<T> =>
-		operation().catch((error: unknown) => {
-			const hint = retryAfterMillis(error);
-			if (hint === undefined || left === 0 || !again()) return Promise.reject(error);
-			return new Promise((resolve) => setTimeout(resolve, waitMillis(hint))).then(() => attempt(left - 1));
-		});
-	return attempt(RETRIES);
+export function honouringHint<E>(hintOf: (error: E) => number | undefined): Schedule.Schedule<number, E> {
+	return Schedule.recurs(RETRIES).pipe(
+		Schedule.while(({ input }: Schedule.Metadata<number, E>) => hintOf(input) !== undefined),
+		// The hint is there: the schedule ended above for a failure without one.
+		Schedule.modifyDelay(({ input }) => Effect.succeed(waitMillis(hintOf(input) ?? 0))),
+	);
 }
-
-const always = (): boolean => true;

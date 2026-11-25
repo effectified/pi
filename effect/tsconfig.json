@@ -30,8 +30,7 @@
 				},
 				// The unstable modules the packages' sources use (2026-11-26). Tests add theirs in the test override.
 				"allowedUnstableApis": [
-					// effect-survey finding 4: the local engine's platform services, being adopted now in
-					// durable-rivet-effect/src/node/ by its lane. Check the group when that lane lands.
+					// The local engine's platform services (durable-rivet-effect/src/node/): files, paths and processes.
 					"@effect/platform-node-shared/NodeChildProcessSpawner",
 					"@effect/platform-node-shared/NodeFileSystem",
 					"@effect/platform-node-shared/NodePath",
@@ -126,12 +125,6 @@
 							"../packages/thread-effect/test/remote.test.ts"
 						],
 						"options": { "diagnosticSeverity": { "floatingEffect": "off" } }
-					},
-					{
-						// Lane exception, effect-survey finding 2: the refusal retry waits on `setTimeout` at the last commit.
-						// Its lane moves it onto Effect's retry and `Clock`; delete this override when that lands.
-						"include": ["../packages/durable-rivet-effect/src/refusal.ts"],
-						"options": { "diagnosticSeverity": { "globalTimers": "off", "globalTimersInEffect": "off" } }
 					},
 					{
 						// Kept on purpose (effect-survey, "Checked, and recommended not to do"): the guard on rivetkit's

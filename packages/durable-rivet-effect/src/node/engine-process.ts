@@ -1,9 +1,10 @@
 // The engine process of one local engine, found by the data directory it was started on, and how it is stopped when
 // rivetkit did not stop it.
 
-import { execFile } from "node:child_process";
 import { join, resolve } from "node:path";
 import { Effect, Schedule } from "effect";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import { EngineUnavailable } from "../errors.ts";
 
 /**
  * The configuration file rivetkit starts the engine of `directory` with, which lies in the engine's data directory.
@@ -16,10 +17,12 @@ export function config(directory: string): string {
 /**
  * The process ids of the engines started on `directory`, by any process: rivetkit starts the engine with its
  * configuration file (`--config <directory>/.rivetkit/var/engine/config.json`), and a process that names that file
- * on its command line is an engine of the directory. Empty when the process list cannot be read. On Linux an engine
- * that ended and was not waited for yet has no command line, and is not listed.
+ * on its command line is an engine of the directory. On Linux an engine that ended and was not waited for yet has no
+ * command line, and is not listed. Fails with the code `environment` when the process list cannot be read.
  */
-export function running(directory: string): Effect.Effect<ReadonlyArray<number>> {
+export function running(
+	directory: string,
+): Effect.Effect<ReadonlyArray<number>, EngineUnavailable, ChildProcessSpawner.ChildProcessSpawner> {
 	const argument = `--config ${config(directory)}`;
 	return Effect.map(processes, (lines) =>
 		lines.flatMap((line) => {
@@ -33,9 +36,11 @@ export function running(directory: string): Effect.Effect<ReadonlyArray<number>>
  * Stops the engines started on `directory` and succeeds once none is left: the terminate signal first, and the kill
  * signal for one that is still there after a while. rivetkit stops its engine itself when a registry that became
  * ready shuts down; it leaves the engine of a start that failed or was interrupted, and the engine of a process that
- * was killed, which is what this is for.
+ * was killed, which is what this is for. Fails as `running` does.
  */
-export function stop(directory: string): Effect.Effect<void> {
+export function stop(
+	directory: string,
+): Effect.Effect<void, EngineUnavailable, ChildProcessSpawner.ChildProcessSpawner> {
 	return Effect.gen(function* () {
 		for (const signal of ["SIGTERM", "SIGKILL"] as const) {
 			const pids = yield* running(directory);
@@ -51,7 +56,7 @@ export function stop(directory: string): Effect.Effect<void> {
 const WAIT_MILLIS = 5_000;
 
 /** Succeeds once no engine of the directory is left. */
-function gone(directory: string): Effect.Effect<void> {
+function gone(directory: string): Effect.Effect<void, EngineUnavailable, ChildProcessSpawner.ChildProcessSpawner> {
 	return Effect.asVoid(
 		Effect.repeat(running(directory), {
 			until: (pids) => pids.length === 0,
@@ -61,11 +66,17 @@ function gone(directory: string): Effect.Effect<void> {
 }
 
 /** Every process as `<pid> <command line>`, from `ps`, which has the same options on macOS and Linux. */
-const processes: Effect.Effect<ReadonlyArray<string>> = Effect.callback<ReadonlyArray<string>>((resume) => {
-	execFile("ps", ["-axww", "-o", "pid=,command="], { maxBuffer: 16 * 1024 * 1024 }, (error, stdout) =>
-		resume(Effect.succeed(error === null ? stdout.split("\n") : [])),
-	);
-});
+const processes = ChildProcessSpawner.ChildProcessSpawner.use((spawner) =>
+	Effect.mapError(
+		spawner.lines(ChildProcess.make("ps", ["-axww", "-o", "pid=,command="])),
+		(error) =>
+			new EngineUnavailable({
+				code: "environment",
+				message: `The process list could not be read with ps, so no engine process can be found: ${error.message}`,
+				retryable: false,
+			}),
+	),
+);
 
 /**
  * Signals the engine and what it started: rivetkit makes the engine the leader of a process group of its own. A

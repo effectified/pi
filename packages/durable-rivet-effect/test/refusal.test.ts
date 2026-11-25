@@ -1,9 +1,12 @@
 // A refusal with a retry hint, with the refusal injected: every place that can meet one asks again a bounded number
 // of times, and no place repeats what may have run. The refusal is Rivet's own, as it was caught on a local engine:
-// `depot.overloaded` with the reason `volume_transition` and a hint of 100 milliseconds, answered to a fork.
+// `depot.overloaded` with the reason `volume_transition` and a hint of 100 milliseconds, answered to a fork. The
+// hints are waited out on the test clock, so no test waits for the machine.
 
 import type { SqliteExecutor } from "@earendil-works/chord/sqlite";
-import { Effect, Layer, Option } from "effect";
+import { runTest } from "@gunta/pi-ai-effect/testing";
+import { Clock, Effect, Exit, Fiber, FiberSet, Layer, Option, Result, Scope } from "effect";
+import { TestClock } from "effect/testing";
 import { type ClientRaw, RivetError } from "rivetkit/client";
 import { describe, expect, it } from "vitest";
 import { Client } from "../src/index.ts";
@@ -13,15 +16,18 @@ import * as Database from "../src/sqlite-database.ts";
 import { Agent } from "./agent.ts";
 import { standIn } from "./raw-stand-in.ts";
 
-/** Rivet's refusal, with a hint of one millisecond so the tests do not wait. */
-const refusal = (group = "depot"): RivetError =>
-	new RivetError(group, "overloaded", "The storage host refused the command (volume_transition); retry after 1 ms.", {
-		metadata: { reason: "volume_transition", retry_after_ms: 1 },
-	});
+/** Rivet's refusal, with the hint it gives while a volume changes hands. */
+const refusal = (group = "depot", hint = 100): RivetError =>
+	new RivetError(
+		group,
+		"overloaded",
+		`The storage host refused the command (volume_transition); retry after ${hint} ms.`,
+		{ metadata: { reason: "volume_transition", retry_after_ms: hint } },
+	);
 
 describe("Refusal", () => {
 	it("reads the hint of Rivet's error, and none off anything else", () => {
-		expect(Refusal.retryAfterMillis(refusal())).toBe(1);
+		expect(Refusal.retryAfterMillis(refusal())).toBe(100);
 		expect(Refusal.retryAfterMillis(new RivetError("actor", "not_found", "gone"))).toBeUndefined();
 		expect(Refusal.retryAfterMillis(new RivetError("depot", "overloaded", "x", { metadata: {} }))).toBeUndefined();
 		expect(
@@ -34,6 +40,48 @@ describe("Refusal", () => {
 	it("waits as long as the hint says, up to its limit", () => {
 		expect([0, 100, 60_000].map(Refusal.waitMillis)).toEqual([0, 100, Refusal.MAX_WAIT_MILLIS]);
 	});
+});
+
+/**
+ * When each attempt of an Effect that fails with `hints` in turn ran, retried by `Refusal.honouringHint`, and what
+ * it failed with in the end. A hint is the failure itself.
+ */
+const attemptTimes = (hints: (attempt: number) => number | undefined) =>
+	Effect.gen(function* () {
+		const times: number[] = [];
+		const attempt = Effect.flatMap(Clock.currentTimeMillis, (now) => {
+			times.push(now);
+			return Effect.fail(hints(times.length));
+		});
+		const failing = Effect.retry(
+			attempt,
+			Refusal.honouringHint((hint: number | undefined) => hint),
+		);
+		const fiber = yield* Effect.forkChild(Effect.flip(failing), { startImmediately: true });
+		yield* TestClock.adjust("1 minute");
+		return { times, last: yield* Fiber.join(fiber) };
+	});
+
+describe("Refusal.honouringHint", () => {
+	it("asks again after each hint, on the clock, the longest wait cut to its limit", () =>
+		runTest(
+			Effect.gen(function* () {
+				const { times, last } = yield* attemptTimes((attempt) => [100, 60_000, 0, undefined][attempt - 1]);
+				// The fourth failure has no hint: it goes to the caller at once.
+				expect(times).toEqual([0, 100, 100 + Refusal.MAX_WAIT_MILLIS, 100 + Refusal.MAX_WAIT_MILLIS]);
+				expect(last).toBeUndefined();
+			}),
+		));
+
+	it("asks again at most RETRIES more times, then gives the last refusal to the caller", () =>
+		runTest(
+			Effect.gen(function* () {
+				const { times, last } = yield* attemptTimes(() => 100);
+				expect(times).toEqual([0, 100, 200, 300, 400, 500]);
+				expect(times).toHaveLength(Refusal.RETRIES + 1);
+				expect(last).toBe(100);
+			}),
+		));
 });
 
 /** How often each request of the stub was sent. */
@@ -70,56 +118,78 @@ function refusing(refusals: number, refused: () => RivetError = refusal) {
 	return { sent, layer: Layer.succeed(Client.RivetClient, client) };
 }
 
+/** Runs `request` on the test clock moved a minute on, long enough for every hint of these tests. */
+const onTheClock = <A, E>(request: Effect.Effect<A, E>) =>
+	Effect.gen(function* () {
+		const fiber = yield* Effect.forkChild(Effect.result(request), { startImmediately: true });
+		yield* TestClock.adjust("1 minute");
+		return yield* Fiber.join(fiber);
+	});
+
 const source: Client.Handle<typeof Agent> = { definition: Agent, actorId: "actor-1", key: ["source"] };
 
 describe("a client request the engine refuses with a retry hint", () => {
-	it("is sent again until it is served: a lookup, a fork and an action call", async () => {
-		const engine = refusing(2);
-		const answered = await Effect.runPromise(
+	it("is sent again after each hint until it is served: a lookup, a fork and an action call", () =>
+		runTest(
 			Effect.gen(function* () {
-				const found = yield* Client.getOrCreate(Agent, ["source"]);
-				const fork = yield* Client.fork(source, { key: ["fork"] });
-				const transcript = yield* Client.call(source, "transcript", null);
-				return { found: found.actorId, fork: fork.actorId, transcript };
-			}).pipe(Effect.provide(engine.layer)),
-		);
-		expect(answered).toEqual({ found: "actor-1", fork: "fork-1", transcript: ["user: hello"] });
-		// Each was refused twice and served the third time.
-		expect(engine.sent).toMatchObject({ getOrCreate: 3, fork: 3, action: 3 });
-	});
+				const engine = refusing(2);
+				const answered = yield* onTheClock(
+					Effect.gen(function* () {
+						const found = yield* Client.getOrCreate(Agent, ["source"]);
+						const fork = yield* Client.fork(source, { key: ["fork"] });
+						const transcript = yield* Client.call(source, "transcript", null);
+						return { found: found.actorId, fork: fork.actorId, transcript, at: yield* Clock.currentTimeMillis };
+					}).pipe(Effect.provide(engine.layer)),
+				);
+				// Each was refused twice and served the third time, after two hints of 100 ms each.
+				expect(answered).toMatchObject({
+					success: { found: "actor-1", fork: "fork-1", transcript: ["user: hello"], at: 600 },
+				});
+				expect(engine.sent).toMatchObject({ getOrCreate: 3, fork: 3, action: 3 });
+			}),
+		));
 
-	it("gives the refusal to the caller once the attempts are used up", async () => {
-		const engine = refusing(Number.POSITIVE_INFINITY);
-		const failed = await Effect.runPromise(
-			Effect.flip(Client.fork(source, { key: ["fork"] })).pipe(Effect.provide(engine.layer)),
-		);
-		expect(failed).toMatchObject({
-			_tag: "EngineUnavailable",
-			code: "depot.overloaded",
-			retryable: true,
-			retryAfterMillis: 1,
-		});
-		expect(engine.sent.fork).toBe(Refusal.RETRIES + 1);
-	});
+	it("gives the refusal to the caller once the attempts are used up", () =>
+		runTest(
+			Effect.gen(function* () {
+				const engine = refusing(Number.POSITIVE_INFINITY);
+				const failed = yield* onTheClock(Client.fork(source, { key: ["fork"] }).pipe(Effect.provide(engine.layer)));
+				expect(failed).toMatchObject({
+					failure: { _tag: "EngineUnavailable", code: "depot.overloaded", retryable: true, retryAfterMillis: 100 },
+				});
+				expect(engine.sent.fork).toBe(Refusal.RETRIES + 1);
+			}),
+		));
 
-	it("does not send an action again that the actor itself refused: it may have begun", async () => {
-		const engine = refusing(1, () => refusal("actor"));
-		const failed = await Effect.runPromise(
-			Effect.flip(Client.call(source, "transcript", null)).pipe(Effect.provide(engine.layer)),
-		);
-		expect(failed).toMatchObject({ _tag: "EngineUnavailable", code: "actor.overloaded", retryAfterMillis: 1 });
-		expect(engine.sent.action).toBe(1);
-	});
+	it("does not send an action again that the actor itself refused: it may have begun", () =>
+		runTest(
+			Effect.gen(function* () {
+				const engine = refusing(1, () => refusal("actor"));
+				const failed = yield* Effect.flip(Client.call(source, "transcript", null)).pipe(
+					Effect.provide(engine.layer),
+				);
+				expect(failed).toMatchObject({
+					_tag: "EngineUnavailable",
+					code: "actor.overloaded",
+					retryAfterMillis: 100,
+				});
+				expect(engine.sent.action).toBe(1);
+			}),
+		));
 
-	it("does not send again what failed without a hint", async () => {
-		const engine = refusing(1, () => new RivetError("depot", "request_deadline_exceeded", "its outcome is unknown"));
-		const failed = await Effect.runPromise(
-			Effect.flip(Client.getOrCreate(Agent, ["source"])).pipe(Effect.provide(engine.layer)),
-		);
-		expect(failed).toMatchObject({ _tag: "EngineUnavailable", code: "depot.request_deadline_exceeded" });
-		expect(Option.fromUndefinedOr(failed.retryAfterMillis)).toEqual(Option.none());
-		expect(engine.sent.getOrCreate).toBe(1);
-	});
+	it("does not send again what failed without a hint", () =>
+		runTest(
+			Effect.gen(function* () {
+				const engine = refusing(
+					1,
+					() => new RivetError("depot", "request_deadline_exceeded", "its outcome is unknown"),
+				);
+				const failed = yield* Effect.flip(Client.getOrCreate(Agent, ["source"])).pipe(Effect.provide(engine.layer));
+				expect(failed).toMatchObject({ _tag: "EngineUnavailable", code: "depot.request_deadline_exceeded" });
+				expect(Option.fromUndefinedOr(failed.retryAfterMillis)).toEqual(Option.none());
+				expect(engine.sent.getOrCreate).toBe(1);
+			}),
+		));
 });
 
 /** What the refusing database did. */
@@ -133,112 +203,234 @@ interface Asked {
 /**
  * The stand-in database of raw-stand-in.ts behind a storage that refuses: the next `statements` statements on the
  * database, the next `begins` transactions before their callback is called, and the next `inside` statements inside
- * a transaction. A refused request does nothing, as Rivet's storage says of its own.
+ * a transaction. A refused request does nothing, as Rivet's storage says of its own. `database` runs its operations
+ * on the fibers of a set in the test's scope, so they wait on the test clock; `plain` has no refusals.
  */
-function refusingDatabase(refuse: { statements?: number; begins?: number; inside?: number }, refused = refusal) {
-	const { raw } = standIn();
-	const left = { statements: refuse.statements ?? 0, begins: refuse.begins ?? 0, inside: refuse.inside ?? 0 };
-	const asked: Asked = { statements: 0, transactions: 0 };
-	const take = (kind: keyof typeof left): boolean => {
-		if (left[kind] <= 0) return false;
-		left[kind] -= 1;
-		return true;
-	};
-	const refusingRaw: RawDatabase = {
-		execute: (query, ...args) => {
-			asked.statements += 1;
-			return take("statements") ? Promise.reject(refused()) : raw.execute(query, ...args);
-		},
-		transaction: (callback, options) => {
-			asked.transactions += 1;
-			if (take("begins")) return Promise.reject(refused());
-			return raw.transaction(
-				(transaction) =>
-					callback({
-						execute: (query, ...args) =>
-							take("inside") ? Promise.reject(refused()) : transaction.execute(query, ...args),
-						transaction: (nested, nestedOptions) => transaction.transaction(nested, nestedOptions),
-					}),
-				options,
-			);
-		},
-	};
-	return { asked, plain: Database.make(raw), database: Database.make(refusingRaw) };
-}
-
-const texts = async (executor: SqliteExecutor): Promise<Array<string>> =>
-	(await executor.all<{ text: string }>("SELECT text FROM notes ORDER BY id")).map((row) => row.text);
+const refusingDatabase = (
+	refuse: { statements?: number; begins?: number; inside?: number },
+	refused: () => unknown = refusal,
+) =>
+	Effect.gen(function* () {
+		const { raw } = standIn();
+		const left = { statements: refuse.statements ?? 0, begins: refuse.begins ?? 0, inside: refuse.inside ?? 0 };
+		const asked: Asked = { statements: 0, transactions: 0 };
+		const take = (kind: keyof typeof left): boolean => {
+			if (left[kind] <= 0) return false;
+			left[kind] -= 1;
+			return true;
+		};
+		const refusingRaw: RawDatabase = {
+			execute: (query, ...args) => {
+				asked.statements += 1;
+				return take("statements") ? Promise.reject(refused()) : raw.execute(query, ...args);
+			},
+			transaction: (callback, options) => {
+				asked.transactions += 1;
+				if (take("begins")) return Promise.reject(refused());
+				return raw.transaction(
+					(transaction) =>
+						callback({
+							execute: (query, ...args) =>
+								take("inside") ? Promise.reject(refused()) : transaction.execute(query, ...args),
+							transaction: (nested, nestedOptions) => transaction.transaction(nested, nestedOptions),
+						}),
+					options,
+				);
+			},
+		};
+		const fibers = yield* FiberSet.make();
+		const run = yield* FiberSet.runtimePromise(fibers)();
+		const plain = Database.make(raw);
+		yield* Effect.promise(() => plain.exec(CREATE));
+		return { asked, fibers, plain, database: Database.make(refusingRaw, run) };
+	});
 
 const CREATE = "CREATE TABLE notes (id INTEGER PRIMARY KEY, text TEXT)";
 
+const texts = (executor: SqliteExecutor) =>
+	Effect.promise(async () =>
+		(await executor.all<{ text: string }>("SELECT text FROM notes ORDER BY id")).map((row) => row.text),
+	);
+
+/** How a promise of the adapter settled, once the test clock has moved a minute on. */
+const settled = <A>(operation: () => Promise<A>) =>
+	onTheClock(Effect.tryPromise({ try: operation, catch: (error) => error }));
+
 describe("a statement the storage refuses with a retry hint, inside the actor", () => {
-	it("is run again on the database until it is served, once", async () => {
-		const { asked, plain, database } = refusingDatabase({ statements: 2 });
-		await plain.exec(CREATE);
-		await database.run("INSERT INTO notes (id, text) VALUES (?, ?)", 1, "kept");
-		expect(asked.statements).toBe(3);
-		expect(await texts(plain)).toEqual(["kept"]);
-	});
+	it("is run again on the database after each hint until it is served, once", () =>
+		runTest(
+			Effect.gen(function* () {
+				const { asked, plain, database } = yield* refusingDatabase({ statements: 2 });
+				const done: string[] = [];
+				const insert = database
+					.run("INSERT INTO notes (id, text) VALUES (?, ?)", 1, "kept")
+					.then(() => done.push("inserted"));
+				// One millisecond before each hint has passed, nothing was asked again.
+				yield* TestClock.adjust(99);
+				expect({ statements: asked.statements, done }).toEqual({ statements: 1, done: [] });
+				yield* TestClock.adjust(1);
+				expect(asked.statements).toBe(2);
+				yield* TestClock.adjust(99);
+				expect({ statements: asked.statements, done }).toEqual({ statements: 2, done: [] });
+				yield* TestClock.adjust(1);
+				yield* Effect.promise(() => insert);
+				expect({ statements: asked.statements, done }).toEqual({ statements: 3, done: ["inserted"] });
+				expect(yield* texts(plain)).toEqual(["kept"]);
+			}),
+		));
 
-	it("keeps its turn of the queue while it is asked again", async () => {
-		const { plain, database } = refusingDatabase({ statements: 2 });
-		await plain.exec(CREATE);
-		// Issued together: the second statement waits for the first, refusals included.
-		await Promise.all([
-			database.run("INSERT INTO notes (id, text) VALUES (1, 'first')"),
-			database.run("UPDATE notes SET text = text || '!'"),
-		]);
-		expect(await texts(plain)).toEqual(["first!"]);
-	});
+	it("keeps its turn of the queue while it is asked again", () =>
+		runTest(
+			Effect.gen(function* () {
+				const { plain, database } = yield* refusingDatabase({ statements: 2 });
+				// Issued together: the second statement waits for the first, refusals included.
+				const both = yield* settled(() =>
+					Promise.all([
+						database.run("INSERT INTO notes (id, text) VALUES (1, 'first')"),
+						database.run("UPDATE notes SET text = text || '!'"),
+					]),
+				);
+				expect(Result.isSuccess(both)).toBe(true);
+				expect(yield* texts(plain)).toEqual(["first!"]);
+			}),
+		));
 
-	it("runs a counted statement again as a whole, with the count of the run that was kept", async () => {
-		const { asked, plain, database } = refusingDatabase({ inside: 1 });
-		await plain.exec(CREATE);
-		await plain.run("INSERT INTO notes (id, text) VALUES (1, 'a'), (2, 'b')");
-		// The statement inside the counting transaction is refused once: Rivet rolls that transaction back.
-		expect(await database.runCounted("UPDATE notes SET text = text || '!'")).toBe(2);
-		expect(asked.transactions).toBe(2);
-		expect(await texts(plain)).toEqual(["a!", "b!"]);
-	});
+	it("runs a counted statement again as a whole, with the count of the run that was kept", () =>
+		runTest(
+			Effect.gen(function* () {
+				const { asked, plain, database } = yield* refusingDatabase({ inside: 1 });
+				yield* Effect.promise(() => plain.run("INSERT INTO notes (id, text) VALUES (1, 'a'), (2, 'b')"));
+				// The statement inside the counting transaction is refused once: Rivet rolls that transaction back.
+				const counted = yield* settled(() => database.runCounted("UPDATE notes SET text = text || '!'"));
+				expect(Result.getOrUndefined(counted)).toBe(2);
+				expect(asked.transactions).toBe(2);
+				expect(yield* texts(plain)).toEqual(["a!", "b!"]);
+			}),
+		));
 
-	it("starts a transaction again that was refused before its callback was called", async () => {
-		const { asked, plain, database } = refusingDatabase({ begins: 2 });
-		await plain.exec(CREATE);
-		let called = 0;
-		await database.transaction(async (transaction) => {
-			called += 1;
-			await transaction.run("INSERT INTO notes (id, text) VALUES (1, 'once')");
-		});
-		expect({ called, transactions: asked.transactions }).toEqual({ called: 1, transactions: 3 });
-		expect(await texts(plain)).toEqual(["once"]);
-	});
+	it("starts a transaction again that was refused before its callback was called", () =>
+		runTest(
+			Effect.gen(function* () {
+				const { asked, plain, database } = yield* refusingDatabase({ begins: 2 });
+				let called = 0;
+				yield* settled(() =>
+					database.transaction(async (transaction) => {
+						called += 1;
+						await transaction.run("INSERT INTO notes (id, text) VALUES (1, 'once')");
+					}),
+				);
+				expect({ called, transactions: asked.transactions }).toEqual({ called: 1, transactions: 3 });
+				expect(yield* texts(plain)).toEqual(["once"]);
+			}),
+		));
 
-	it("never asks again in the middle of a transaction: the refusal rolls it back and reaches the caller", async () => {
-		const { asked, plain, database } = refusingDatabase({ inside: 1 });
-		await plain.exec(CREATE);
-		let called = 0;
-		const rejected = await database
-			.transaction(async (transaction) => {
-				called += 1;
-				await transaction.run("INSERT INTO notes (id, text) VALUES (1, 'first')");
-				await transaction.run("INSERT INTO notes (id, text) VALUES (2, 'second')");
-			})
-			.catch((error: unknown) => error);
-		// The first statement of the transaction was the refused one; the callback ran once and is not run again.
-		expect(Refusal.retryAfterMillis(rejected)).toBe(1);
-		expect({ called, transactions: asked.transactions }).toEqual({ called: 1, transactions: 1 });
-		expect(await texts(plain)).toEqual([]);
-	});
+	it("never asks again in the middle of a transaction: the refusal rolls it back and reaches the caller", () =>
+		runTest(
+			Effect.gen(function* () {
+				const { asked, plain, database } = yield* refusingDatabase({ inside: 1 });
+				let called = 0;
+				const rejected = yield* settled(() =>
+					database.transaction(async (transaction) => {
+						called += 1;
+						await transaction.run("INSERT INTO notes (id, text) VALUES (1, 'first')");
+						await transaction.run("INSERT INTO notes (id, text) VALUES (2, 'second')");
+					}),
+				);
+				// The first statement of the transaction was the refused one; the callback ran once and is not run again.
+				expect(Refusal.retryAfterMillis(failureOf(rejected))).toBe(100);
+				expect({ called, transactions: asked.transactions }).toEqual({ called: 1, transactions: 1 });
+				expect(yield* texts(plain)).toEqual([]);
+			}),
+		));
 
-	it("gives up after its attempts, and does not ask again what failed without a hint", async () => {
-		const always = refusingDatabase({ statements: Number.POSITIVE_INFINITY });
-		const rejected = await always.database.exec(CREATE).catch((error: unknown) => error);
-		expect(Refusal.retryAfterMillis(rejected)).toBe(1);
-		expect(always.asked.statements).toBe(Refusal.RETRIES + 1);
+	it("gives up after its attempts, and does not ask again what failed without a hint", () =>
+		runTest(
+			Effect.gen(function* () {
+				const always = yield* refusingDatabase({ statements: Number.POSITIVE_INFINITY });
+				const rejected = yield* settled(() => always.database.run("INSERT INTO notes (id) VALUES (1)"));
+				expect(Refusal.retryAfterMillis(failureOf(rejected))).toBe(100);
+				expect(always.asked.statements).toBe(Refusal.RETRIES + 1);
 
-		const unknown = refusingDatabase({ statements: 1 }, () => new RivetError("sqlite", "indeterminate", "lost"));
-		const lost = await unknown.database.exec(CREATE).catch((error: unknown) => error);
-		expect(lost).toMatchObject({ group: "sqlite", code: "indeterminate" });
-		expect(unknown.asked.statements).toBe(1);
-	});
+				const unknown = yield* refusingDatabase(
+					{ statements: 1 },
+					() => new RivetError("sqlite", "indeterminate", "lost"),
+				);
+				const lost = yield* settled(() => unknown.database.run("INSERT INTO notes (id) VALUES (1)"));
+				expect(failureOf(lost)).toMatchObject({ group: "sqlite", code: "indeterminate" });
+				expect(unknown.asked.statements).toBe(1);
+			}),
+		));
 });
+
+describe("the adapter's fibers interrupted while a refused statement waits out its hint", () => {
+	it("ends the wait at once: the statement and those queued behind it reject, and none is asked again", () =>
+		runTest(
+			Effect.gen(function* () {
+				// A hint of five seconds, and the clock never moves: only the interruption can end the wait.
+				const { asked, fibers, plain, database } = yield* refusingDatabase({ statements: 1 }, () =>
+					refusal("depot", 5_000),
+				);
+				const outcomes: string[] = [];
+				const record = (name: string, operation: Promise<unknown>) =>
+					operation.then(
+						() => outcomes.push(`${name} ran`),
+						() => outcomes.push(`${name} rejected`),
+					);
+				const waiting = record("refused", database.run("INSERT INTO notes (id, text) VALUES (1, 'refused')"));
+				const queued = record("queued", database.run("INSERT INTO notes (id, text) VALUES (2, 'queued')"));
+				yield* Effect.yieldNow;
+				expect(asked.statements).toBe(1);
+				yield* FiberSet.clear(fibers);
+				yield* Effect.promise(() => Promise.all([waiting, queued]));
+				expect(outcomes.sort()).toEqual(["queued rejected", "refused rejected"]);
+				expect(asked.statements).toBe(1);
+				expect(yield* Clock.currentTimeMillis).toBe(0);
+				// What is asked for afterwards runs: the clear ended the fibers it found, not the adapter.
+				yield* Effect.promise(() => database.run("INSERT INTO notes (id, text) VALUES (3, 'after')"));
+				expect(yield* texts(plain)).toEqual(["after"]);
+			}),
+		));
+
+	it("waits for a statement Rivet is running before it ends, so the queue never has two at Rivet", () =>
+		runTest(
+			Effect.gen(function* () {
+				const scope = yield* Scope.make();
+				const run = yield* Scope.provide(scope)(FiberSet.makeRuntimePromise());
+				const { raw } = standIn();
+				const answer = Promise.withResolvers<void>();
+				const log: string[] = [];
+				const slow: RawDatabase = {
+					execute: async (query, ...args) => {
+						log.push("rivet runs");
+						await answer.promise;
+						log.push("rivet answers");
+						return raw.execute(query, ...args);
+					},
+					transaction: (callback, options) => raw.transaction(callback, options),
+				};
+				const running = Database.make(slow, run)
+					.exec(CREATE)
+					.catch(() => log.push("rejected"));
+				const closing = yield* Effect.forkChild(
+					Effect.andThen(
+						Scope.close(scope, Exit.void),
+						Effect.sync(() => log.push("closed")),
+					),
+					{ startImmediately: true },
+				);
+				yield* Effect.yieldNow;
+				expect(log).toEqual(["rivet runs"]);
+				answer.resolve();
+				yield* Fiber.join(closing);
+				yield* Effect.promise(() => running);
+				// The close ended after Rivet answered; the statement ran, and its caller was told it was interrupted.
+				expect(log.slice(0, 2)).toEqual(["rivet runs", "rivet answers"]);
+				expect(log.slice(2).sort()).toEqual(["closed", "rejected"]);
+			}),
+		));
+});
+
+/** What a settled promise of these tests rejected with; undefined when it resolved. */
+function failureOf<A>(outcome: Result.Result<A, unknown>): unknown {
+	return Option.getOrUndefined(Result.getFailure(outcome));
+}

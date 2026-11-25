@@ -14,7 +14,6 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Exit, Fiber, Schedule, Scope } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import * as EngineProcess from "../src/node/engine-process.ts";
 import * as ExitGuard from "../src/node/exit-guard.ts";
 import * as Ports from "../src/node/ports.ts";
 import type * as LocalEngine from "../src/node.ts";
@@ -115,7 +114,7 @@ function suite(engines: typeof LocalEngine): void {
 							const directory = process.env.RIVETKIT_STORAGE_PATH;
 							return directory === undefined
 								? Effect.succeed({ directory: "", pids: [] })
-								: Effect.map(EngineProcess.running(directory), (pids) => ({ directory, pids }));
+								: Effect.map(engines.running(directory), (pids) => ({ directory, pids }));
 						}),
 						{ until: ({ pids }) => pids.length > 0, schedule: Schedule.spaced("50 millis") },
 					);

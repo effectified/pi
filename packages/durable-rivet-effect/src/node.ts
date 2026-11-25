@@ -3,9 +3,10 @@
 import { Effect, type Scope } from "effect";
 import { EngineUnavailable } from "./errors.ts";
 import * as Local from "./node/local-engine.ts";
+import * as Platform from "./node/platform.ts";
 
-export { running, stop } from "./node/engine-process.ts";
 export { available, type LocalEngine, type ServeOptions } from "./node/local-engine.ts";
+export { running, stop } from "./node/platform.ts";
 
 /**
  * Starts an engine and a registry of `actors` for the scope: on a free port and a new temporary directory, or on the
@@ -24,7 +25,7 @@ export function serve(options: Local.ServeOptions): Effect.Effect<Local.LocalEng
 			}),
 		);
 	}
-	return Local.serve(nodeEnvironment, options);
+	return Effect.provide(Local.serve(nodeEnvironment, options), Platform.layer);
 }
 
 // On Node.js `process.env` is the process's environment itself.

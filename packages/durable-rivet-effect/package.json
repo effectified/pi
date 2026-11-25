@@ -60,6 +60,7 @@
 		"@earendil-works/chord": "1.6.1",
 		"@earendil-works/pi-ai": "1.6.1",
 		"@earendil-works/pi-durable": "1.6.1",
+		"@effect/platform-node-shared": "4.1.5",
 		"@gunta/pi-ai-effect": "0.1.0",
 		"@gunta/pi-durable-effect": "0.1.0"
 	},

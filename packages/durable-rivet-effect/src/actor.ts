@@ -2,8 +2,8 @@
 // and closes when the actor sleeps or is destroyed, its actions are Effects, and a fork starts clean.
 
 import type { Models } from "@gunta/pi-ai-effect";
-import { type DurableError, Harness, type Registry } from "@gunta/pi-durable-effect";
-import { Cause, Clock, Effect, Exit, Layer, Option, Predicate, Schema } from "effect";
+import { type DurableError, Harness, type Registry, UnexpectedError } from "@gunta/pi-durable-effect";
+import { Cause, Clock, Effect, Exit, FiberSet, Layer, Option, Predicate, Schema } from "effect";
 import {
 	type ActorCron,
 	type ActorFork,
@@ -128,8 +128,9 @@ export function make<
 	 * The harness of an actor on its own database, with the product's `layer`. `host` is what the host decides of the
 	 * harness options: the wake-ups are its own, and whether work resumes as the harness opens.
 	 */
-	const harness = (
+	const harness = <DR>(
 		c: Cell<R>,
+		database: Layer.Layer<ActorDatabase, never, DR>,
 		forkInput: Effect.Effect<Option.Option<Schema.Json>, DurableError, ActorDatabase>,
 		host: { readonly resume: boolean },
 	) =>
@@ -144,7 +145,7 @@ export function make<
 					Effect.map(forkInput, (input) => identity(c, input)),
 				),
 			),
-			Layer.provideMerge(Layer.sync(ActorDatabase, () => SqliteDatabase.make(c.db))),
+			Layer.provideMerge(database),
 			// Rivet's untyped boundary: the context gives rivetkit's client typed by a registry, which this host has not.
 			Layer.provideMerge(Layer.succeed(ActorEngine, { connect: Effect.sync(() => c.client() as ClientRaw) })),
 		);
@@ -162,13 +163,23 @@ export function make<
 				),
 		});
 
-	/** This wake's runtime, opened on first use. A failed open is tried again by the next call. */
+	/**
+	 * This wake's runtime, opened on first use. A failed open is tried again by the next call. The actor's database
+	 * runs its operations on the wake's `Work`: on the wake's clock, and what is left of them once the harness has
+	 * closed ends with the wake.
+	 */
 	const generation = (c: Cell<R>): Promise<Exit.Exit<Generation.Generation<R>, unknown>> => {
 		const wake = c.vars.wake;
+		const database = Layer.effect(
+			ActorDatabase,
+			Generation.Work.use((work) =>
+				Effect.map(FiberSet.runtimePromise(work)(), (run) => SqliteDatabase.make(c.db, run)),
+			),
+		);
 		wake.opening ??= Effect.runPromiseExit(
 			Generation.open(
 				Layer.mergeAll(config.services ?? Layer.empty, WakeKeeper.layer(alarm(c))).pipe(
-					Layer.provideMerge(harness(c, recordedForkInput(c), { resume: true })),
+					Layer.provideMerge(harness(c, database, recordedForkInput(c), { resume: true })),
 				),
 			),
 		).then((opened) => {
@@ -194,17 +205,21 @@ export function make<
 		if (opened !== undefined && Exit.isSuccess(opened)) await Effect.runPromise(opened.value.close);
 	};
 
-	/** What a fork does before its first call. A failure fails the actor's start, and Rivet runs the hook again. */
+	/**
+	 * What a fork does before its first call. A failure fails the actor's start, and Rivet runs the hook again. Its
+	 * database operations are fibers of its scope, so an abort of the actor ends them with it.
+	 */
 	const startFork = (c: Cell<R>, fork: ActorFork): Effect.Effect<void, unknown> =>
 		Effect.gen(function* () {
 			// Whatever the source had scheduled is the source's work: the copy starts with nothing scheduled.
-			for (const inherited of yield* Effect.promise(() => c.schedule.list())) {
-				yield* Effect.promise(() => c.schedule.cancel(inherited.id));
+			for (const inherited of yield* rivetRequest(() => c.schedule.list())) {
+				yield* rivetRequest(() => c.schedule.cancel(inherited.id));
 			}
-			for (const job of yield* Effect.promise(() => c.cron.list())) {
-				yield* Effect.promise(() => c.cron.delete(job.name));
+			for (const job of yield* rivetRequest(() => c.cron.list())) {
+				yield* rivetRequest(() => c.cron.delete(job.name));
 			}
-			const forks = yield* ForkRecord.record(SqliteDatabase.make(c.db), prefix);
+			const database = SqliteDatabase.make(c.db, yield* FiberSet.makeRuntimePromise());
+			const forks = yield* ForkRecord.record(database, prefix);
 			const link = { actorId: fork.actorId, key: fork.key, forkedAt: fork.forkedAt };
 			// Recorded already: a start that failed after the hygiene was stored. Running it again would be harmless too.
 			if (Option.isSome(yield* forks.find(link))) return;
@@ -214,13 +229,15 @@ export function make<
 			if (steps.length > 0) {
 				yield* Effect.scoped(
 					Effect.gen(function* () {
-						const context = yield* Layer.build(harness(c, Effect.succeed(input), { resume: false }));
+						const context = yield* Layer.build(
+							harness(c, Layer.succeed(ActorDatabase, database), Effect.succeed(input), { resume: false }),
+						);
 						for (const step of steps) yield* Effect.provideContext(step, context);
 					}),
 				);
 			}
 			yield* forks.mark(link, input, yield* Clock.currentTimeMillis);
-		});
+		}).pipe(Effect.scoped);
 
 	const actions = Object.fromEntries(
 		Object.entries(config.actions).map(([action, definition]) => [
@@ -242,7 +259,7 @@ export function make<
 	const rivet = actor({
 		db: db(),
 		createVars: (): Vars<R> => ({ wake: { opening: undefined, stopped: false } }),
-		onFork: (c: Cell<R>, fork) => Effect.runPromise(startFork(c, fork)),
+		onFork: (c: Cell<R>, fork) => Effect.runPromise(startFork(c, fork), { signal: c.abortSignal }),
 		onWake: async (c: Cell<R>) => {
 			const opened = await generation(c);
 			if (Exit.isSuccess(opened)) return;
@@ -256,7 +273,7 @@ export function make<
 		onDestroy: close,
 		actions: {
 			...actions,
-			[Protocol.DESTROY]: (c: Cell<R>) => Effect.runPromise(destroy(c)),
+			[Protocol.DESTROY]: (c: Cell<R>) => Effect.runPromise(destroy(c), { signal: c.abortSignal }),
 			pi: {
 				wake: (c: Cell<R>) =>
 					call(
@@ -335,12 +352,12 @@ function alarm<R>(c: Cell<R>): WakeKeeper.Alarm {
 	// Holding the actor awake blocks an idle sleep. Once a stop has begun it would only delay the stop.
 	c.abortSignal.addEventListener("abort", letSleep, { once: true });
 	return {
-		schedule: (at) => Effect.tryPromise(() => c.schedule.at(at, Protocol.WAKE)),
-		cancel: (id) => Effect.ignore(Effect.tryPromise(() => c.schedule.cancel(id))),
+		schedule: (at) => rivetRequest(() => c.schedule.at(at, Protocol.WAKE)),
+		cancel: (id) => Effect.ignore(rivetRequest(() => c.schedule.cancel(id))),
 		// A list Rivet refuses counts as empty: a wake left unadopted fires once more, and that is harmless.
 		scheduled: Effect.map(
 			Effect.orElseSucceed(
-				Effect.tryPromise(() => c.schedule.list()),
+				rivetRequest(() => c.schedule.list()),
 				() => [],
 			),
 			(events) =>
@@ -358,10 +375,15 @@ function alarm<R>(c: Cell<R>): WakeKeeper.Alarm {
 	};
 }
 
+/** A request to Rivet from inside the actor: its schedule, its database. A rejection is an `UnexpectedError`. */
+function rivetRequest<A>(request: () => Promise<A>): Effect.Effect<A, UnexpectedError> {
+	return Effect.tryPromise({ try: request, catch: (cause) => new UnexpectedError({ cause }) });
+}
+
 /** Reads the size of the database, destroys the actor, and answers with the size. */
 function destroy<R>(c: Cell<R>): Effect.Effect<Answer> {
 	return Effect.gen(function* () {
-		const databaseBytes = yield* Effect.option(Effect.tryPromise(() => databaseSize(c.db)));
+		const databaseBytes = yield* Effect.option(rivetRequest(() => databaseSize(c.db)));
 		yield* Effect.sync(() => c.destroy());
 		const value = yield* Effect.orDie(encodeDestroyed({ databaseBytes }));
 		return { _tag: "success" as const, value };

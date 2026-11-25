@@ -120,8 +120,9 @@ definition.
 
 At each wake of the actor, `layer`, Pi's storage, the harness and `services` are built in one scope, in that order,
 and pending work resumes. When the actor sleeps or is destroyed, running action handlers are interrupted, the scope
-is closed, harness included, and only then does Rivet's hook return. A harness that cannot open leaves the actor
-up: every call answers with that defect and tries to open again.
+is closed, harness included, then what is left of the database's operations is interrupted, and only then does
+Rivet's hook return. A harness that cannot open leaves the actor up: every call answers with that defect and tries to
+open again.
 
 Inside the actor, three services describe it:
 
@@ -321,7 +322,8 @@ Inside the new actor, Rivet runs `onFork` before `onWake` and before any call. T
 On native SQLite, Rivet commits everything `onFork` wrote with its own record that the fork ran, so a crash in the
 middle leaves nothing and the next start runs it all again. On remote SQLite (wasm runtimes) the writes land at once
 and a crash repeats the steps on top of them: each hygiene Effect must be idempotent. A hygiene Effect that fails
-fails the actor's start, and Rivet runs `onFork` again at the next one.
+fails the actor's start, and Rivet runs `onFork` again at the next one. So does an abort of the actor (Rivet's
+`abortSignal`), which interrupts the steps and the database operations they started.
 
 A fork's lineage is `Fork.lineage` inside the actor and `Client.lineage(handle)` outside: the chain of sources,
 oldest first, and the `input` of its own fork.
@@ -356,8 +358,13 @@ forks before it. What it does not inherit: schedules, and anything in the source
 
 ## Storage
 
-`SqliteDatabase.make(raw)` is Chord's `SqliteDatabase` over the raw database of `rivetkit/db`. `storage({ prefix })`
-is Pi's `SqliteStorage` on the `ActorDatabase` of the context, as a `HarnessStorage` Layer; `Actor.make` uses both.
+`SqliteDatabase.make(raw, run?)` is Chord's `SqliteDatabase` over the raw database of `rivetkit/db`.
+`storage({ prefix })` is Pi's `SqliteStorage` on the `ActorDatabase` of the context, as a `HarnessStorage` Layer;
+`Actor.make` uses both. Each operation of the adapter is an Effect, and `run` starts it: the run function of a
+`FiberSet` (`FiberSet.makeRuntimePromise`), so its waits are on the `Clock` of that set's context and closing the set
+interrupts it, or by default `Effect.runPromise`. Inside an actor the set is the wake's: what is left of its operations
+when the harness has closed is interrupted with the wake. An interrupted operation rejects; one that Rivet was running
+is waited for first, and may have been applied.
 
 What rivetkit 3.1.1 gives on native SQLite, checked on a real actor: a transaction is isolated (a statement outside
 neither joins it nor sees what it has not committed), commits when its callback resolves, rolls back and rejects
@@ -395,7 +402,8 @@ to a client's fork.
   engine runs on a directory: an engine another process left or still runs there is stopped first. The user's home
   is refused, since that is where rivetkit keeps the engine every project shares. `serve` answers
   `{ endpoint, directory }`; `LocalEngine.running(directory)` gives the engine's process ids and
-  `LocalEngine.stop(directory)` stops it from outside, for a test or a clean-up.
+  `LocalEngine.stop(directory)` stops it from outside, for a test or a clean-up. Both fail with `EngineUnavailable` of
+  the code `environment` when the process list cannot be read (`ps`, which they run, is missing).
 - **Several engines in one process.** Each `serve` has its own directory and ports. The directory reaches an engine
   through the process's environment, so one engine starts at a time; starts that are asked for together wait for
   one another.
@@ -416,6 +424,12 @@ to a client's fork.
 - **Another engine on the port.** rivetkit uses any engine that answers on the port in place of starting its own.
   `serve` checks, by the file the started engine writes in its directory, that the engine that answers is its own,
   and fails with the code `port` otherwise. A `port` that was given is checked before the start too.
+- **Files and processes the machine refuses.** The engine's directory, its files and its processes are reached
+  through Effect's `FileSystem`, `Path` and `ChildProcessSpawner`, in Node's implementations of
+  `@effect/platform-node-shared`, which the `/node` and `/bun` entries provide. A directory that cannot be made, a
+  file that is there and cannot be read (the engine's runtime file, its logs), or a process list that cannot be read
+  fails the start at once with the code `environment`, and the message says which and why: it is not taken for
+  another engine on the port.
 - **A start that fails leaves nothing.** A failed or interrupted start shuts its registry down, stops the engine
   process it started, removes its temporary directory, and holds back the exit of the process that rivetkit makes
   for it (below). A later `serve` in the same process works.

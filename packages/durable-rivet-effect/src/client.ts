@@ -326,14 +326,10 @@ function engine<A>(
  * a sleep). A hinted refusal of the actor's own (`actor.*`) is not sent again: it may come after an action began.
  */
 function askedAgain<A, E, R>(request: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> {
-	const attempt = (left: number): Effect.Effect<A, E, R> =>
-		Effect.catchIf(
-			request,
-			(error): error is E => left > 0 && hintOf(error) !== undefined,
-			(error) => Effect.andThen(Effect.sleep(Refusal.waitMillis(hintOf(error) ?? 0)), attempt(left - 1)),
-		);
-	return attempt(Refusal.RETRIES);
+	return Effect.retry(request, HINTED);
 }
+
+const HINTED = Refusal.honouringHint(hintOf);
 
 /** The retry hint of a refusal that says the request was not served; undefined for every other failure. */
 function hintOf(error: unknown): number | undefined {

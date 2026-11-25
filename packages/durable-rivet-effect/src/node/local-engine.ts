@@ -2,16 +2,16 @@
 // directory and a free set of ports for tests, a kept directory and a chosen port for a product that runs locally.
 // What the Node.js and the Bun entries share.
 
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { Effect, Exit, Schedule, Schema, Scope, Semaphore } from "effect";
+import { homedir } from "node:os";
+import { Effect, Exit, FileSystem, Path, type PlatformError, Schedule, Schema, Scope, Semaphore } from "effect";
 import { EngineUnavailable } from "../errors.ts";
 import * as Host from "../host.ts";
 import * as EngineProcess from "./engine-process.ts";
 import * as ExitGuard from "./exit-guard.ts";
 import * as Keeper from "./keeper.ts";
+import type * as Platform from "./platform.ts";
 import * as Ports from "./ports.ts";
 
 /** A local engine that `serve` started. */
@@ -80,11 +80,15 @@ export const available: Effect.Effect<boolean> = Effect.sync(() => {
  * of the last start, since rivetkit reads it at every step of a start, also of one that was given up and still
  * runs. Without it rivetkit keeps the data of every project in one directory under the user's home. Rivet's own
  * services are not started.
+ *
+ * The engine's directory and files are read with `FileSystem` and `Path`, its processes found with
+ * `ChildProcessSpawner`: a directory or file that cannot be made or read, or a process list that cannot be read, fails
+ * the start with the code `environment` and says which.
  */
 export function serve(
 	environment: Environment,
 	options: ServeOptions,
-): Effect.Effect<LocalEngine, EngineUnavailable, Scope.Scope> {
+): Effect.Effect<LocalEngine, EngineUnavailable, Scope.Scope | Platform.Services> {
 	return serveOn(options.port === undefined ? Ports.free : Ports.only(options.port), environment, options);
 }
 
@@ -93,7 +97,7 @@ export function serveOn(
 	ports: Effect.Effect<number, EngineUnavailable>,
 	environment: Environment,
 	options: ServeOptions,
-): Effect.Effect<LocalEngine, EngineUnavailable, Scope.Scope> {
+): Effect.Effect<LocalEngine, EngineUnavailable, Scope.Scope | Platform.Services> {
 	return Effect.retry(
 		Effect.flatMap(ports, (port) => start(environment, options, port)),
 		{ times: PORT_ATTEMPTS - 1, while: isWorthAnotherStart },
@@ -114,7 +118,7 @@ export function start(
 	environment: Environment,
 	options: ServeOptions,
 	port: number,
-): Effect.Effect<LocalEngine, EngineUnavailable, Scope.Scope> {
+): Effect.Effect<LocalEngine, EngineUnavailable, Scope.Scope | Platform.Services> {
 	return Effect.uninterruptibleMask((restore) =>
 		Effect.gen(function* () {
 			const outer = yield* Effect.scope;
@@ -142,14 +146,19 @@ function engine(
 	environment: Environment,
 	options: ServeOptions,
 	port: number,
-): Effect.Effect<LocalEngine, EngineUnavailable, Scope.Scope> {
+): Effect.Effect<LocalEngine, EngineUnavailable, Scope.Scope | Platform.Services> {
 	return Effect.gen(function* () {
 		const { directory: given, port: _chosen, ...host } = options;
 		const directory = yield* given === undefined ? temporary : kept(given);
 		yield* environment.set(STORAGE_PATH, directory);
 		const watch = yield* Keeper.keep(directory);
 		// Released after the registry and before the directory: an engine rivetkit left is stopped while its files exist.
-		yield* Effect.addFinalizer(() => EngineProcess.stop(directory));
+		yield* Effect.addFinalizer(() =>
+			Effect.ignore(EngineProcess.stop(directory), {
+				log: "Warn",
+				message: `The engine left on ${directory} could not be stopped`,
+			}),
+		);
 		const hold = yield* ExitGuard.hold;
 		const endpoint = `http://${LOOPBACK}:${port}`;
 		const registry = Host.serve({
@@ -169,35 +178,37 @@ function engine(
 	});
 }
 
-/** A new directory for one start, removed with its scope. */
-const temporary: Effect.Effect<string, never, Scope.Scope> = Effect.acquireRelease(
-	Effect.sync(() => mkdtempSync(join(tmpdir(), "pi-durable-rivet-"))),
-	(made) => Effect.sync(() => rmSync(made, { recursive: true, force: true })),
-);
+/** A new directory for one start, in the system's temporary directory, removed with its scope. */
+const temporary: Effect.Effect<string, EngineUnavailable, Scope.Scope | FileSystem.FileSystem> =
+	FileSystem.FileSystem.use((files) =>
+		Effect.mapError(files.makeTempDirectoryScoped({ prefix: "pi-durable-rivet-" }), (error) =>
+			refused("A temporary directory for the local engine could not be made", error),
+		),
+	);
 
 /**
  * The directory its caller keeps, ready for a start: made if it is not there, and with no engine left running on it.
  * Two engines on one directory would share the state of its actors.
  */
-function kept(given: string): Effect.Effect<string, EngineUnavailable> {
-	const directory = resolve(given);
-	if (directory === resolve(homedir())) {
-		return Effect.fail(
-			new EngineUnavailable({
+function kept(given: string): Effect.Effect<string, EngineUnavailable, Platform.Services> {
+	return Effect.gen(function* () {
+		const path = yield* Path.Path;
+		const directory = path.resolve(given);
+		if (directory === path.resolve(homedir())) {
+			return yield* new EngineUnavailable({
 				code: "environment",
 				message:
 					"A local engine's directory must not be the user's home, where rivetkit keeps the engine every project shares",
 				retryable: false,
-			}),
+			});
+		}
+		const files = yield* FileSystem.FileSystem;
+		yield* Effect.mapError(files.makeDirectory(directory, { recursive: true }), (error) =>
+			refused(`The local engine's directory ${directory} could not be made`, error),
 		);
-	}
-	return Effect.as(
-		Effect.andThen(
-			Effect.sync(() => mkdirSync(directory, { recursive: true })),
-			EngineProcess.stop(directory),
-		),
-		directory,
-	);
+		yield* EngineProcess.stop(directory);
+		return directory;
+	});
 }
 
 const STORAGE_PATH = "RIVETKIT_STORAGE_PATH";
@@ -221,7 +232,10 @@ const PORT_OCCUPIED = "engine.port_occupied";
  * output for its metrics port. rivetkit keeps both in files under the directory, and itself goes on asking the dead
  * engine for its health for a minute.
  */
-function portTaken(directory: string, port: number): Effect.Effect<never, EngineUnavailable> {
+function portTaken(
+	directory: string,
+	port: number,
+): Effect.Effect<never, EngineUnavailable, FileSystem.FileSystem | Path.Path> {
 	const reported = Effect.map(logged(directory), (texts) => texts.some((text) => IN_USE.test(text)));
 	return Effect.andThen(
 		Effect.repeat(reported, { until: (found) => found, schedule: Schedule.spaced("100 millis") }),
@@ -245,19 +259,20 @@ function portTaken(directory: string, port: number): Effect.Effect<never, Engine
  * running, and on Linux one that ended and was not waited for yet has no command line to know it by. That it is gone
  * is two looks a moment apart, so that an engine that ended over a port is reported by `portTaken`, which says more.
  */
-function lost(directory: string): Effect.Effect<never, EngineUnavailable> {
+function lost(directory: string): Effect.Effect<never, EngineUnavailable, Platform.Services> {
 	const running = Effect.map(EngineProcess.running(directory), (pids) => pids.length > 0);
-	const wrote = Effect.map(logged(directory), (texts) => texts.some((text) => text !== ""));
+	const ran = Effect.flatMap(running, (now) =>
+		now ? Effect.succeed(true) : Effect.map(logged(directory), (texts) => texts.some((text) => text !== "")),
+	);
+	const ended = Effect.gen(function* () {
+		if (yield* running) return false;
+		yield* Effect.sleep("300 millis");
+		return !(yield* running);
+	});
+	const untilSeen = { until: (seen: boolean) => seen, schedule: Schedule.spaced("250 millis") };
 	return Effect.gen(function* () {
-		while (!((yield* running) || (yield* wrote))) yield* Effect.sleep("250 millis");
-		while (true) {
-			if (yield* running) {
-				yield* Effect.sleep("250 millis");
-				continue;
-			}
-			yield* Effect.sleep("300 millis");
-			if (!(yield* running)) break;
-		}
+		yield* Effect.repeat(ran, untilSeen);
+		yield* Effect.repeat(ended, untilSeen);
 		return yield* new EngineUnavailable({
 			code: LOST,
 			message: "The local engine's process ended before it was ready: something stopped it",
@@ -269,22 +284,24 @@ function lost(directory: string): Effect.Effect<never, EngineUnavailable> {
 /**
  * The processes of the engine this start made on `directory`, and a failure unless that engine is the one that
  * answers on `endpoint`. rivetkit uses any engine that answers on the port in place of starting its own; the engine
- * it started says in a file of its directory which process it is and where it answers.
+ * it started says in a file of its directory which process it is and where it answers. A file that is there and
+ * cannot be read fails with the code `environment`, which says so.
  */
-function started(directory: string, endpoint: string): Effect.Effect<ReadonlyArray<number>, EngineUnavailable> {
+function started(
+	directory: string,
+	endpoint: string,
+): Effect.Effect<ReadonlyArray<number>, EngineUnavailable, Platform.Services> {
 	const another = new EngineUnavailable({
 		code: "port",
 		message: `The engine that answers on ${endpoint} was not started on ${directory}: another engine has the port`,
 		retryable: true,
 	});
 	return Effect.gen(function* () {
-		const stamp = yield* Effect.mapError(
-			Effect.flatMap(
-				Effect.try(() => readFileSync(join(directory, ".rivetkit", "var", "engine", "runtime.json"), "utf8")),
-				Schema.decodeUnknownEffect(Stamp),
-			),
-			() => another,
+		const file = (yield* Path.Path).join(directory, ".rivetkit", "var", "engine", "runtime.json");
+		const text = yield* Effect.mapError((yield* FileSystem.FileSystem).readFileString(file), (error) =>
+			isMissing(error) ? another : refused(`The local engine's runtime file ${file} could not be read`, error),
 		);
+		const stamp = yield* Effect.mapError(Schema.decodeUnknownEffect(Stamp)(text), () => another);
 		const running = yield* EngineProcess.running(directory);
 		if (stamp.endpoint !== endpoint || !running.includes(stamp.pid)) return yield* another;
 		return running;
@@ -296,18 +313,32 @@ const Stamp = Schema.fromJsonString(Schema.Struct({ pid: Schema.Number, endpoint
 
 /**
  * What the engine started on `directory` has written so far: the text of each file rivetkit keeps its standard
- * output and its standard error in. Empty before the engine was started.
+ * output and its standard error in. Empty before the engine was started. Fails with the code `environment` when a log
+ * that is there cannot be read.
  */
-function logged(directory: string): Effect.Effect<ReadonlyArray<string>> {
-	const logs = join(directory, ".rivetkit", "var", "logs", "rivet-engine");
-	return Effect.sync(() => {
-		try {
-			return readdirSync(logs).map((name) => readFileSync(join(logs, name), "utf8"));
-		} catch {
-			// No log yet: the engine has not been started.
-			return [];
-		}
-	});
+function logged(
+	directory: string,
+): Effect.Effect<ReadonlyArray<string>, EngineUnavailable, FileSystem.FileSystem | Path.Path> {
+	return Effect.gen(function* () {
+		const files = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		const logs = path.join(directory, ".rivetkit", "var", "logs", "rivet-engine");
+		// No directory yet: the engine has not been started. A file gone between the listing and its read wrote nothing.
+		const names = yield* Effect.catchIf(files.readDirectory(logs), isMissing, () => Effect.succeed([]));
+		return yield* Effect.forEach(names, (name) =>
+			Effect.catchIf(files.readFileString(path.join(logs, name)), isMissing, () => Effect.succeed("")),
+		);
+	}).pipe(Effect.mapError((error) => refused(`The local engine's logs in ${directory} could not be read`, error)));
+}
+
+/** Whether the platform failed because there is no such file or directory. */
+function isMissing(error: PlatformError.PlatformError): boolean {
+	return error.reason._tag === "NotFound";
+}
+
+/** What a start fails with when the platform refused it a directory or a file: what, and the platform's reason. */
+function refused(what: string, error: PlatformError.PlatformError): EngineUnavailable {
+	return new EngineUnavailable({ code: "environment", message: `${what}: ${error.message}`, retryable: false });
 }
 
 // What the engine writes when it cannot bind a port: the C library's words for the error, "Address already in use"

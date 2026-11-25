@@ -1,7 +1,8 @@
 // Chord's `SqliteDatabase` over a Rivet actor's raw database, so Pi's SQLite storage runs on the actor's SQLite.
 
 import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "@earendil-works/chord/sqlite";
-import { honouringHint } from "./refusal.ts";
+import { Effect, Semaphore } from "effect";
+import * as Refusal from "./refusal.ts";
 
 /**
  * What this adapter uses of the raw database of `rivetkit/db` (`c.db` of an actor defined with `db: db()`), typed
@@ -17,7 +18,14 @@ export interface RawDatabase {
 }
 
 /**
- * The `SqliteDatabase` Pi's `SqliteStorage` opens, over an actor's raw database.
+ * How the adapter runs each of its operations, and settles its promise: the run function of a `FiberSet`
+ * (`FiberSet.makeRuntimePromise`), so the operations are fibers of the set and see the services of the context the
+ * function was made in, such as its `Clock`; or `Effect.runPromise`, a fiber of its own that nothing interrupts.
+ */
+export type Run = <A, E>(effect: Effect.Effect<A, E>) => Promise<A>;
+
+/**
+ * The `SqliteDatabase` Pi's `SqliteStorage` opens, over an actor's raw database. Each operation runs with `run`.
  *
  * - **A queue of its own.** Every operation waits for the ones asked for before it, and a transaction holds the queue
  *   until it has ended, as Chord's contract says. rivetkit 3.1.1 isolates a transaction (a statement outside neither
@@ -30,18 +38,22 @@ export interface RawDatabase {
  *   comes between the statement and its count.
  * - `close` closes nothing: the actor owns the database and closes it when it stops.
  * - A BLOB column reads back as Rivet gives it, an array of numbers. Pi's storage stores none.
- * - **A refusal with a retry hint is asked again**, a bounded number of times (`refusal.ts`), where a second run is
- *   safe. Rivet's storage refuses a request before running it while a volume changes hands, and nothing of a refused
- *   request was applied. Asked again: a statement on the database, in its turn of the queue; `runCounted` on the
- *   database, as a whole, since Rivet rolled its transaction back; and a transaction that was refused before its
- *   callback was called. Never asked again: a statement inside a transaction, and a transaction whose callback has
- *   run, because the callback is the caller's code and nothing says it may run twice: that refusal rolls the
- *   transaction back and reaches the caller.
+ * - **A refusal with a retry hint is asked again** (`Refusal.honouringHint`) where a second run is safe. Rivet's
+ *   storage refuses a request before running it while a volume changes hands, and nothing of a refused request was
+ *   applied. Asked again: a statement on the database, in its turn of the queue; `runCounted` on the database, as a
+ *   whole, since Rivet rolled its transaction back; and a transaction that was refused before its callback was called.
+ *   Never asked again: a statement inside a transaction, and a transaction whose callback has run, because the
+ *   callback is the caller's code and nothing says it may run twice: that refusal rolls the transaction back and
+ *   reaches the caller.
+ * - **Interrupting its fibers** (`FiberSet.clear` on the set of `run`, or closing the set's scope) ends at once an
+ *   operation that waits for its turn or waits out a hint, and its promise rejects. An operation Rivet is running is
+ *   waited for, so the queue never has two at Rivet, and then rejects too: as after a crash, it may have been applied.
  */
-export function make(raw: RawDatabase): SqliteDatabase {
-	const inTurn = turns();
+export function make(raw: RawDatabase, run: Run = Effect.runPromise): SqliteDatabase {
+	const queue = Semaphore.makeUnsafe(1);
+	const inTurn = <T>(operation: Effect.Effect<T, unknown>): Promise<T> => run(queue.withPermits(1)(operation));
+	const asked = <T>(operation: () => Promise<T>) => inTurn(Effect.retry(attempt(operation), HINTED));
 	const direct = executor(raw);
-	const asked = <T>(operation: () => Promise<T>) => inTurn(() => honouringHint(operation));
 	return {
 		exec: (sql) => asked(() => direct.exec(sql)),
 		run: (sql, ...params) => asked(() => direct.run(sql, ...params)),
@@ -49,39 +61,35 @@ export function make(raw: RawDatabase): SqliteDatabase {
 			asked(() => raw.transaction((transaction) => counted(transaction, sql, params), COUNTED)),
 		get: <T extends object>(sql: string, ...params: SqliteValue[]) => asked(() => direct.get<T>(sql, ...params)),
 		all: <T extends object>(sql: string, ...params: SqliteValue[]) => asked(() => direct.all<T>(sql, ...params)),
-		transaction: (callback) =>
-			inTurn(() => {
-				let called = false;
-				const once = (transaction: RawDatabase) => {
-					called = true;
-					return callback(executor(transaction));
-				};
-				return honouringHint(
-					() => raw.transaction(once, TRANSACTION),
-					() => !called,
-				);
-			}),
+		transaction: (callback) => {
+			let called = false;
+			const once = (transaction: RawDatabase) => {
+				called = true;
+				return callback(executor(transaction));
+			};
+			return inTurn(
+				Effect.retry(
+					attempt(() => raw.transaction(once, TRANSACTION)),
+					{ schedule: HINTED, while: () => !called },
+				),
+			);
+		},
 		close: () => Promise.resolve(),
 	};
 }
+
+/** One request to Rivet. Uninterruptible: an interrupted operation waits for Rivet's answer before it ends. */
+function attempt<T>(operation: () => Promise<T>): Effect.Effect<T, unknown> {
+	// The caller sees what Rivet rejected with, as Chord's contract has it: the callback's own error, for one.
+	return Effect.uninterruptible(Effect.tryPromise({ try: operation, catch: (error) => error }));
+}
+
+const HINTED = Refusal.honouringHint(Refusal.retryAfterMillis);
 
 // Rivet groups a transaction's profile by a static name, and warns about one without.
 const COUNTED = { name: "pi-durable-counted" };
 
 const TRANSACTION = { name: "pi-durable" };
-
-/** A queue of one: each operation starts when every operation asked for before it has settled. */
-function turns(): <T>(operation: () => Promise<T>) => Promise<T> {
-	let last: Promise<unknown> = Promise.resolve();
-	return (operation) => {
-		const settled = last.then(operation);
-		// The next operation waits for this one whether it resolved or rejected.
-		last = settled.then(ignore, ignore);
-		return settled;
-	};
-}
-
-const ignore = (): void => {};
 
 function executor(raw: RawDatabase): SqliteExecutor {
 	// A decode boundary: SQLite gives plain rows, and each caller names the shape of the rows its statement selects.
