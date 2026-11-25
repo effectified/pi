@@ -1,0 +1,75 @@
+{
+	"name": "@gunta/pi-swarm-effect",
+	"version": "0.1.0",
+	"description": "Swarms for Pi Durable agents in Effect: prime once, fork per job under a cap with keyed forks, typed fan-in, and cleanup",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"source": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./driver": {
+			"source": "./src/driver.ts",
+			"types": "./dist/driver.d.ts",
+			"import": "./dist/driver.js"
+		},
+		"./rivet": {
+			"source": "./src/rivet.ts",
+			"types": "./dist/rivet.d.ts",
+			"import": "./dist/rivet.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"sideEffects": false,
+	"piEffect": {
+		"kind": "plugin"
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "node ../../scripts/package-files.mjs clean dist",
+		"build": "tsc -p tsconfig.build.json",
+		"test": "vitest --run",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"keywords": [
+		"effect",
+		"pi"
+	],
+	"author": "Gunther Brunner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/gunta/pi-effect.git",
+		"directory": "packages/swarm-effect"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"dependencies": {
+		"@earendil-works/pi-durable": "1.6.0",
+		"@gunta/pi-durable-effect": "0.1.0"
+	},
+	"peerDependencies": {
+		"effect": "~4.1.5",
+		"@gunta/pi-durable-rivet-effect": "0.1.0"
+	},
+	"peerDependenciesMeta": {
+		"@gunta/pi-durable-rivet-effect": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@effect/sql-sqlite-bun": "4.1.5",
+		"@effect/sql-sqlite-node": "4.1.5",
+		"@gunta/pi-ai-effect": "0.1.0",
+		"@gunta/pi-durable-rivet-effect": "0.1.0",
+		"effect": "4.1.5",
+		"vitest": "4.1.12"
+	}
+}

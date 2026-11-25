@@ -1,0 +1,68 @@
+{
+	"name": "@gunta/pi-durable-effect",
+	"version": "0.1.0",
+	"description": "Pi Durable in Effect: the durable agent harness as Layers, Effects and Streams",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"source": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./testing": {
+			"source": "./src/testing/index.ts",
+			"types": "./dist/testing/index.d.ts",
+			"import": "./dist/testing/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"sideEffects": false,
+	"piEffect": {
+		"kind": "facade"
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "node ../../scripts/package-files.mjs clean dist",
+		"build": "tsc -p tsconfig.build.json",
+		"test": "vitest --run",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"keywords": [
+		"effect",
+		"pi",
+		"durable",
+		"agents"
+	],
+	"author": "Gunther Brunner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/gunta/pi-effect.git",
+		"directory": "packages/durable-effect"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"dependencies": {
+		"@earendil-works/chord": "1.6.0",
+		"@earendil-works/pi-ai": "1.6.0",
+		"@earendil-works/pi-durable": "1.6.0",
+		"@gunta/pi-ai-effect": "0.1.0",
+		"@gunta/pi-schema-effect": "0.1.0"
+	},
+	"peerDependencies": {
+		"effect": "~4.1.5"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-schema": "1.6.0",
+		"@effect/sql-sqlite-bun": "4.1.5",
+		"@effect/sql-sqlite-node": "4.1.5",
+		"effect": "4.1.5",
+		"vitest": "4.1.12"
+	}
+}

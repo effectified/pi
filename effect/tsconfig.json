@@ -1,0 +1,11 @@
+{
+	// The fast lane: type checks only the pi-effect packages and this directory, with the root's options and paths.
+	"extends": "../tsconfig.json",
+	"compilerOptions": {
+		// Upstream sources reached through `paths` use DOM globals (MessageChannel ports). The root program gets them
+		// from files with `/// <reference lib="dom" />` that this smaller program does not include.
+		"lib": ["ES2024", "DOM"]
+	},
+	"include": ["../packages/*-effect/src/**/*", "../packages/*-effect/test/**/*", "./scripts/**/*", "./spikes/**/*"],
+	"exclude": ["../**/dist/**"]
+}

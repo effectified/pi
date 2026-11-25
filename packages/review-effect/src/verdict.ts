@@ -1,0 +1,140 @@
+// The verdict: what one review of one answer came to, stored as an entry of the reviewed conversation.
+
+import type { EntryId, TaskId } from "@earendil-works/pi-durable";
+import { Entry } from "@gunta/pi-durable-effect";
+import { Schema } from "effect";
+import { Finding } from "./finding.ts";
+
+/**
+ * The schema of an entry id, for what this package stores about an answer. Pi brands ids in the type system only,
+ * which a schema cannot express: at run time an entry id is the number stored.
+ */
+export const AnswerId = Schema.Number as unknown as Schema.Codec<EntryId, number>;
+
+/** The schema of a task id, with the same brand and the same reason. */
+export const HoldId = Schema.Number as unknown as Schema.Codec<TaskId, number>;
+
+/** A model in a review, with the family the policy gave it; no `family` when the policy gave none. */
+export const Party = Schema.Struct({
+	provider: Schema.String,
+	modelId: Schema.String,
+	family: Schema.optionalKey(Schema.String),
+});
+
+/** A model in a review. */
+export type Party = typeof Party.Type;
+
+/** A finding with the name of the check that made it. */
+export const Found = Schema.Struct({ check: Schema.String, ...Finding.fields });
+
+/** A finding with the name of the check that made it. */
+export type Found = typeof Found.Type;
+
+/** A check that failed instead of answering, and what it failed with. */
+export const CheckFailure = Schema.Struct({ check: Schema.String, error: Schema.String });
+
+/** A check that failed instead of answering. */
+export type CheckFailure = typeof CheckFailure.Type;
+
+/** The tokens of the reviewer's response, and pi-ai's cost of them (`usage.cost.total`, in its catalog's currency). */
+export const Usage = Schema.Struct({
+	input: Schema.Number,
+	output: Schema.Number,
+	cacheRead: Schema.Number,
+	cacheWrite: Schema.Number,
+	totalTokens: Schema.Number,
+	cost: Schema.Number,
+});
+
+/** The tokens of the reviewer's response, and pi-ai's cost of them. */
+export type Usage = typeof Usage.Type;
+
+/**
+ * The reviewer's model request of one review, as a product records a model call:
+ *
+ * - `provider`, `model`: what the response names. Behind a router alias that is the route that served, not the alias.
+ *   The policy's reviewer when the request ended without a response.
+ * - `stopReason`: pi-ai's. `error` and `aborted` are a request that failed.
+ * - `usage`: the response's own; absent when the request ended without a response.
+ * - `error`: the provider's error text of a failed request, as pi-ai gave it.
+ */
+export const Call = Schema.Struct({
+	provider: Schema.String,
+	model: Schema.String,
+	stopReason: Schema.Literals(["stop", "length", "toolUse", "error", "aborted", "pending", "deferred"]),
+	usage: Schema.optionalKey(Usage),
+	error: Schema.optionalKey(Schema.String),
+});
+
+/** The reviewer's model request of one review. */
+export type Call = typeof Call.Type;
+
+/**
+ * Why an answer got no review: the family rule or a missing model stopped it, a check failed, or the review task was
+ * aborted (`review_aborted`: the conversation was aborted while the review ran or waited to run again).
+ */
+export const Unreviewed = Schema.Literals([
+	"author_family_unknown",
+	"reviewer_family_unknown",
+	"same_family",
+	"no_reviewer_model",
+	"check_failed",
+	"review_aborted",
+]);
+
+/** Why an answer got no review. */
+export type Unreviewed = typeof Unreviewed.Type;
+
+/**
+ * What a review decided:
+ *
+ * - `Passed`: no blocking finding and no failed check. The answer stands.
+ * - `Corrected`: a blocking finding, and the run was sent back with a correction message.
+ * - `Held`: a blocking finding and no correction left. The review task `task` waits for a person's release.
+ * - `Deferred`: the reviewer's request failed, so the answer was not judged. The review task `task` waits to be asked
+ *   again (`retry`); `attempt` is the number of this request for the answer, from 1.
+ * - `NotReviewed`: no review was made, or it was not complete; `reason` says why. The run ends with the answer.
+ */
+export const Outcome = Schema.Union([
+	Schema.TaggedStruct("Passed", {}),
+	Schema.TaggedStruct("Corrected", {}),
+	Schema.TaggedStruct("Held", { task: HoldId }),
+	Schema.TaggedStruct("Deferred", { task: HoldId, attempt: Schema.Number }),
+	Schema.TaggedStruct("NotReviewed", { reason: Unreviewed }),
+]);
+
+/** What a review decided. */
+export type Outcome = typeof Outcome.Type;
+
+/**
+ * One review of one answer:
+ *
+ * - `answer`: the entry of the answer it is about.
+ * - `pass`: the number of this review within its run, from 1. A review that was deferred and asked again keeps it.
+ * - `corrections`: the corrective runs this run was sent on so far, this verdict's included.
+ * - `author`: the model that wrote the answer, as the answer's own message names it, with its family.
+ * - `reviewer`: the model that reviewed, as the reviewer's response names it, with its family; the policy's reviewer
+ *   when no response came.
+ * - `call`: the reviewer's request; absent when none was sent.
+ * - `findings`: every finding of every check, blocking or not, in check order.
+ * - `failures`: the checks that failed instead of answering.
+ * - `time`: the harness clock when the verdict was decided, in epoch milliseconds.
+ */
+export const Verdict = Schema.Struct({
+	answer: AnswerId,
+	pass: Schema.Number,
+	corrections: Schema.Number,
+	author: Party,
+	reviewer: Party,
+	call: Schema.optionalKey(Call),
+	findings: Schema.Array(Found),
+	failures: Schema.Array(CheckFailure),
+	outcome: Outcome,
+	time: Schema.Number,
+});
+
+/** One review of one answer. */
+export type Verdict = typeof Verdict.Type;
+
+/** The entry kind a verdict is stored as, in the review task's own commit. */
+export const VerdictEntry = Entry.make("review.verdict", Verdict);

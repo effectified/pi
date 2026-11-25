@@ -1,0 +1,80 @@
+{
+	"name": "@gunta/pi-thread-effect",
+	"version": "0.1.0",
+	"description": "An agent thread for Pi Durable in Effect, composed of the pi-effect plugins: guarded, budgeted, recorded and reviewed, with subagents and swarms, in one process or as a Rivet actor per thread",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"source": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./rivet": {
+			"source": "./src/rivet.ts",
+			"types": "./dist/rivet.d.ts",
+			"import": "./dist/rivet.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"sideEffects": false,
+	"piEffect": {
+		"kind": "composition"
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "node ../../scripts/package-files.mjs clean dist",
+		"build": "tsc -p tsconfig.build.json",
+		"test": "vitest --run",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"keywords": [
+		"effect",
+		"pi",
+		"agents",
+		"rivet"
+	],
+	"author": "Gunther Brunner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/gunta/pi-effect.git",
+		"directory": "packages/thread-effect"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"dependencies": {
+		"@earendil-works/pi-ai": "1.6.0",
+		"@earendil-works/pi-durable": "1.6.0",
+		"@gunta/pi-ai-effect": "0.1.0",
+		"@gunta/pi-approvals-effect": "0.1.0",
+		"@gunta/pi-budget-effect": "0.1.0",
+		"@gunta/pi-durable-effect": "0.1.0",
+		"@gunta/pi-durable-rivet-effect": "0.1.0",
+		"@gunta/pi-guard-effect": "0.1.0",
+		"@gunta/pi-recorder-effect": "0.1.0",
+		"@gunta/pi-review-effect": "0.1.0",
+		"@gunta/pi-router-effect": "0.1.0",
+		"@gunta/pi-schema-effect": "0.1.0",
+		"@gunta/pi-search-effect": "0.1.0",
+		"@gunta/pi-subagent-effect": "0.1.0",
+		"@gunta/pi-swarm-effect": "0.1.0",
+		"@gunta/pi-telemetry-effect": "0.1.0"
+	},
+	"peerDependencies": {
+		"effect": "~4.1.5",
+		"rivetkit": "~3.1.1"
+	},
+	"devDependencies": {
+		"@effect/sql-sqlite-bun": "4.1.5",
+		"@effect/sql-sqlite-node": "4.1.5",
+		"effect": "4.1.5",
+		"rivetkit": "3.1.1",
+		"vitest": "4.1.12"
+	}
+}

@@ -1,0 +1,54 @@
+{
+	"name": "@gunta/pi-telemetry-effect",
+	"version": "0.1.0",
+	"description": "Pi telemetry in Effect: Pi spans, metrics and events as Effect spans, metrics and logs, with trace context carried into Pi calls",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"source": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"sideEffects": false,
+	"piEffect": {
+		"kind": "facade"
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "node ../../scripts/package-files.mjs clean dist",
+		"build": "tsc -p tsconfig.build.json",
+		"test": "vitest --run",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"keywords": [
+		"effect",
+		"pi"
+	],
+	"author": "Gunther Brunner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/gunta/pi-effect.git",
+		"directory": "packages/telemetry-effect"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"dependencies": {
+		"@earendil-works/pi-telemetry": "1.6.0"
+	},
+	"peerDependencies": {
+		"effect": "~4.1.5"
+	},
+	"devDependencies": {
+		"effect": "4.1.5",
+		"vitest": "4.1.12"
+	}
+}
