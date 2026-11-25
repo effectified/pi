@@ -180,9 +180,28 @@ end; a conversation cannot be deleted or measured; a provider request has no key
 2026-11-26: the reviewer's model call is kept whole, every hold and deferral a thread left at once is told, and a
 swarm plan's `cwd` and `compaction` cross to an actor.
 
-**Next** (the owner's word of 2026-11-26): use Effect as fully as it goes, and follow upstream Pi by derived types
-and generated checks instead of by hand. The two surveys that plan it are outside the repository, in the run's
-store.
+**Done on 2026-11-26, on the owner's word** ("use Effect as fully as it goes, and follow upstream Pi by derived
+types and generated checks instead of by hand"; the two surveys that planned it are in the run's store, outside
+the repository):
+
+- Fibers belong to a scope (Pi's timers, report lines, an actor's handlers and its database work); retries and
+  paging are `Schedule` and `Stream`; the local engine reads files and the process list through Effect's platform
+  services; no test waits on the real clock (`runTest`).
+- `pi-durable-rivet-effect` adds `ActorSql`, an Effect `SqlClient` over the actor's database whose interrupted
+  transaction rolls back. `ActorDatabase` is deprecated and works on the same queue: PatentOS's
+  `ThreadActor.ts` and `ForkHygiene.ts` use it and need no change.
+- A type comes from Pi's, a choice over a Pi union is exhaustive, and what stays hand-written is asserted in each
+  package's `test/pi-conformance.ts`. `effect/pi-surface/` records the Pi declarations the packages use,
+  `node effect/scripts/sync.ts check` proves the pins are the Pi sources in the tree, and
+  `node effect/scripts/gate.ts` is the whole gate in one command (`effect/AGENTS.md`).
+- Bugs found on the way and fixed: prices follow pi-ai's own cost (the 1-hour cache write, price tiers), a router
+  alias offers its routes' thinking levels, the router no longer passes a request's `env` on, a failed attempt is
+  no turn, `maxTurns: 0` is refused before anything is created, the guard's backstop decides every member of a
+  tool. PatentOS's route prices are zero and its seam charges what its own `ModelRouter` computed, so its ledger
+  does not move.
+
+**Next**: the behaviour tests for what no type shows in the plugins, the thread and the Rivet host (a compaction
+in a forked actor, the provider session of a fork, the bounds of `configure`); Pi's ids on the swarm's port types.
 
 **Not built**: `mcp-effect`, `codemode-effect`, `agent-effect`, `env-effect`, `workflow-effect`, `sandbox-effect`
 (PRD priorities P2 and P3). PatentOS's loop used none of them.

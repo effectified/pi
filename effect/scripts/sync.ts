@@ -3,10 +3,12 @@
 // Usage: node effect/scripts/sync.ts check [main] [--warn-unreleased]
 //   One Pi version across all pins, equal to the workspace's; the wrapped Pi sources equal to what that version
 //   released (its tag); the first row of COMPAT.md naming the pi-effect version, that Pi version and the upstream
-//   commit (the merge base with `main`, default `main`, CI passes `origin/main`); `pi-surface.ts --check`.
+//   commit (the merge base with `main`, default `main`, CI passes `origin/main`); the Pi version each package's
+//   README opens with; `pi-surface.ts --check`.
 //   `--warn-unreleased` reports Pi sources beyond the release, or a missing tag, without failing (CI).
 // Usage: node effect/scripts/sync.ts bump [main]
-//   After `git merge --no-commit --no-ff main`: pins every pi-effect manifest to the workspace's Pi version, takes the
+//   After `git merge --no-commit --no-ff main`: pins every pi-effect manifest to the workspace's Pi version (and the
+//   version each README opens with), takes the
 //   lockfile from `main` and runs `npm install --ignore-scripts`, regenerates the surface record and prints what
 //   changed, runs the gate one command at a time and stops at the first failure, then prints the new COMPAT.md row.
 //   Upstream's whole `npm run check` only shows, as in effect-ci.yml; the parts of it that read the packages stop.
@@ -34,6 +36,15 @@ interface GateStep {
 	readonly command: readonly [string, ...string[]];
 }
 
+/**
+ * A Pi version named where a package's README says what it is built for: in its opening lines, after the name of a
+ * Pi package. Further down a README states findings about a version ("Pi Durable 1.6.0 cannot delete …"), which stay.
+ */
+const BUILT_FOR = /\b(pi-ai|Pi Durable) (\d+\.\d+\.\d+)\b/g;
+
+/** How many lines of a README are its opening. */
+const OPENING_LINES = 30;
+
 const [command, ...rest] = process.argv.slice(2);
 const main = rest.find((arg) => !arg.startsWith("--")) ?? "main";
 const started = performance.now();
@@ -58,6 +69,7 @@ function check(warnUnreleased: boolean): void {
 		else if (warnUnreleased) warn(describeRelease(release));
 		else failures.push(...describeRelease(release));
 		failures.push(...compatFailures(pins.version, packages));
+		failures.push(...readmeFailures(pins.version));
 	}
 	console.log("surface: node effect/scripts/pi-surface.ts --check");
 	const surface = spawnSync(process.execPath, [join(ROOT, "effect/scripts/pi-surface.ts"), "--check"], {
@@ -126,6 +138,7 @@ function bump(): void {
 	const version = workspaceVersion();
 	console.log(`Pi ${version} at ${upstream.slice(0, 9)}.`);
 	rewritePins(version);
+	rewriteReadmes(version);
 	console.log(`lockfile: package-lock.json from ${main}, then npm install --ignore-scripts`);
 	writeFileSync(join(ROOT, "package-lock.json"), git(["show", `${main}:package-lock.json`]));
 	const stops = (...command: [string, ...string[]]): GateStep => ({ kind: "stops", command });
@@ -214,6 +227,39 @@ function rewritePins(version: string): void {
 		if (after !== before) writeFileSync(path, after);
 	}
 	console.log(`pins: ${moved === 0 ? "every pin is already" : `${moved} pins moved to`} Pi ${version}.`);
+}
+
+/** Each README whose opening names a Pi version other than `version`. */
+function readmeFailures(version: string): string[] {
+	const failures: string[] = [];
+	for (const pkg of effectPackages()) {
+		const opening = readFileSync(join(ROOT, pkg.directory, "README.md"), "utf8")
+			.split("\n")
+			.slice(0, OPENING_LINES);
+		for (const [, name, found] of opening.join("\n").matchAll(BUILT_FOR)) {
+			if (found !== version) {
+				failures.push(`${pkg.directory}/README.md opens with ${name} ${found}, the pins are ${version}`);
+			}
+		}
+	}
+	if (failures.length === 0) console.log(`READMEs: none opens with another Pi version than ${version}.`);
+	return failures;
+}
+
+/** Sets the Pi version each package's README opens with to `version`. */
+function rewriteReadmes(version: string): void {
+	let moved = 0;
+	for (const pkg of effectPackages()) {
+		const path = join(ROOT, pkg.directory, "README.md");
+		const lines = readFileSync(path, "utf8").split("\n");
+		const opening = lines.slice(0, OPENING_LINES).join("\n");
+		const after = opening.replaceAll(BUILT_FOR, (_, name: string) => `${name} ${version}`);
+		if (after !== opening) {
+			writeFileSync(path, [after, ...lines.slice(OPENING_LINES)].join("\n"));
+			moved++;
+		}
+	}
+	console.log(`READMEs: ${moved === 0 ? "every opening already names" : `${moved} openings moved to`} Pi ${version}.`);
 }
 
 /** The new first row of COMPAT.md's version table, from the manifests, the lockfile and the installed runtimes. */

@@ -3,7 +3,7 @@
 An agent thread for [Pi Durable](../durable) in Effect 4.1: a conversation that is guarded, budgeted, routed,
 recorded and reviewed, with approvals, subagents and swarms, worked to its end from one call and told to the product
 when it gets there. It is the pi-effect plugins composed in the order their READMEs require, in one process or as
-one Rivet actor per thread. For `effect` 4.1 and Pi Durable 1.6.0.
+one Rivet actor per thread. For `effect` 4.1 and Pi Durable 1.6.1.
 
 - **A thread is the product's key.** `Threads.work({ thread, task, model, grant, cap })` creates the conversation
   with its grant, its cap and its routing limits in one commit, admits the task once, and gives the `Outcome`:

@@ -18,7 +18,7 @@ uses it by naming `{ provider: "router", modelId: "author" }`.
 - Prices in integer micro units; every attempt is priced, also a failed one. The same prices as rows for a budget.
 
 It knows no product rule: classifications, regions, labels, aliases and currencies are whatever the table says. Built
-for pi-ai 1.6.0. It needs no harness: it depends on `@gunta/pi-ai-effect` only.
+for pi-ai 1.6.1. It needs no harness: it depends on `@gunta/pi-ai-effect` only.
 
 ## Install
 

@@ -10,8 +10,8 @@ only after the whole suite ran on those versions (`npm run check`, each package'
 Also installed and run outside this repository beside the published `@earendil-works/*` 1.6.0 (the quick start of
 `durable-effect`, from packed tarballs, on Node and on Bun with its isolated linker). `rivetkit` 3.1.1 is the peer of
 `durable-rivet-effect`; its engine tests run on macOS and, since 2026-11-26, on Linux in CI (x64) on Node and on Bun. Node 22.19.0 is the lowest version the packages declare:
-all fifteen suites passed on it on Pi 1.6.0 (1,747 tests, 2026-11-25). On Pi 1.6.1 they pass on Node 26.13.1 (1,800
-tests, 2026-11-26, after the tests left the real clock) and on Bun (2026-11-26); between the two versions Pi Durable changed only its Node environment (shell lookup,
+all fifteen suites passed on it on Pi 1.6.0 (1,747 tests, 2026-11-25). On Pi 1.6.1 they pass on Node 26.13.1 (1,898
+tests, 2026-11-26, by `node effect/scripts/gate.ts`) and on Bun (2026-11-26); between the two versions Pi Durable changed only its Node environment (shell lookup,
 line reader). Not yet run against a real model provider.
 
 CI (`effect-ci.yml`, Node 22, Linux) first ran on 2026-11-25 and was red in upstream's own check and tests, not in
@@ -44,21 +44,21 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 
 | Package | Kind | Wraps or does | Tests | Not covered |
 |---|---|---|---|---|
-| `@gunta/pi-schema-effect` | facade | `@earendil-works/pi-schema` | 17 | |
-| `@gunta/pi-ai-effect` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges, the key of a request, `runTest` | 51 | Images, classifiers, OAuth login, deferred responses |
+| `@gunta/pi-schema-effect` | facade | `@earendil-works/pi-schema` | 28 | |
+| `@gunta/pi-ai-effect` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges, the key of a request, `runTest`, the forms the plugins share | 62 | Images, classifiers, OAuth login, deferred responses |
 | `@gunta/pi-telemetry-effect` | facade | `@earendil-works/pi-telemetry` | 59 | `TelemetryStore`; histogram exemplars |
-| `@gunta/pi-durable-effect` | facade | `@earendil-works/pi-durable` | 429 | A task's own hooks, `setTimer`, prompt sections and wrappers, synchronous observers |
-| `@gunta/pi-durable-rivet-effect` | host | A harness in a Rivet actor: storage, wake-ups, forks; a local engine in a kept directory | 191 | Several machines; an engine that dies |
-| `@gunta/pi-router-effect` | plugin | Routes, fallback, limiter, prices, constraints | 170 | A real provider; image and classifier routing |
-| `@gunta/pi-budget-effect` | plugin | Lease at the model boundary, shares | 88 | |
-| `@gunta/pi-guard-effect` | plugin | Denied verbs, grants, argument rules, ceilings | 111 | |
-| `@gunta/pi-approvals-effect` | plugin | Approval as a parking gate | 66 | |
+| `@gunta/pi-durable-effect` | facade | `@earendil-works/pi-durable` | 442 | A task's own hooks, `setTimer`, prompt sections and wrappers, synchronous observers |
+| `@gunta/pi-durable-rivet-effect` | host | A harness in a Rivet actor: storage, wake-ups, forks; a local engine in a kept directory; `ActorSql` | 235 | Several machines; an engine that dies |
+| `@gunta/pi-router-effect` | plugin | Routes, fallback, limiter, prices, constraints | 178 | A real provider; image and classifier routing |
+| `@gunta/pi-budget-effect` | plugin | Lease at the model boundary, shares | 91 | |
+| `@gunta/pi-guard-effect` | plugin | Denied verbs, grants, argument rules, ceilings | 112 | |
+| `@gunta/pi-approvals-effect` | plugin | Approval as a parking gate | 65 | |
 | `@gunta/pi-recorder-effect` | plugin | Records from committed entries to a sink | 57 | A real crash (closes were tested) |
-| `@gunta/pi-review-effect` | plugin | Second-family review, checks, corrections, holds | 153 | |
-| `@gunta/pi-subagent-effect` | plugin | Foreground and background children | 66 | |
-| `@gunta/pi-swarm-effect` | plugin | Keyed forks under a cap, in storage and as actor forks | 145 | |
+| `@gunta/pi-review-effect` | plugin | Second-family review, checks, corrections, holds | 152 | |
+| `@gunta/pi-subagent-effect` | plugin | Foreground and background children | 67 | |
+| `@gunta/pi-swarm-effect` | plugin | Keyed forks under a cap, in storage and as actor forks | 151 | |
 | `@gunta/pi-search-effect` | plugin | Search and fetch tools, Exa adapter | 60 | A real Exa call |
-| `@gunta/pi-thread-effect` | composition | An agent thread made of all of them, in process and as a Rivet actor | 137 | See its README, "Gaps" |
+| `@gunta/pi-thread-effect` | composition | An agent thread made of all of them, in process and as a Rivet actor | 139 | See its README, "Gaps" |
 
 Not built: `mcp-effect`, `codemode-effect`, `agent-effect`, `env-effect`, `workflow-effect`, `sandbox-effect`
 (PRD priorities P2 and P3).

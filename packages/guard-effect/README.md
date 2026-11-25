@@ -20,7 +20,7 @@ Nothing here knows your tools, verbs or labels: all of it is data and rules you 
 npm install @gunta/pi-guard-effect @gunta/pi-durable-effect @earendil-works/pi-durable effect
 ```
 
-`effect` is a peer dependency (`~4.1.5`). Built for Pi Durable 1.6.0.
+`effect` is a peer dependency (`~4.1.5`). Built for Pi Durable 1.6.1.
 
 ## Quick start
 

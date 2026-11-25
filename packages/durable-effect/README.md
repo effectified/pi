@@ -18,7 +18,7 @@ Pi's durable agent harness ([`@earendil-works/pi-durable`](../durable)) in Effec
 - A testing kit: a harness on scripted models, with no provider and no key, also on a registry and models of your own.
 
 It adds no behaviour of its own: what Pi Durable does is what happens, and its
-[README](../durable/README.md) and [specification](../durable/docs/spec.md) describe it. Built for Pi Durable 1.6.0,
+[README](../durable/README.md) and [specification](../durable/docs/spec.md) describe it. Built for Pi Durable 1.6.1,
 which says of itself: "Experimental. The API changes without notice."
 
 ## Install

@@ -18,7 +18,7 @@ harness whose lease is gone stops cleanly and can be continued.
 - **Events** for every reservation, settlement and refusal: amounts, model and outcome, never content.
 
 It knows no product rule: the lease, the size of a reservation, the prices and the currency are the product's.
-Built for pi-ai 1.6.0 and Pi Durable 1.6.0, on [`@gunta/pi-ai-effect`](../ai-effect) and
+Built for pi-ai 1.6.1 and Pi Durable 1.6.1, on [`@gunta/pi-ai-effect`](../ai-effect) and
 [`@gunta/pi-durable-effect`](../durable-effect).
 
 ## Install

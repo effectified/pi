@@ -8,7 +8,7 @@ Pi's model library ([`@earendil-works/pi-ai`](../ai)) in Effect terms, for `effe
 - Two bridges to `effect/ai`: a pi-ai model as a `LanguageModel`, and a `LanguageModel` as a pi-ai provider.
 - Scripted models for tests.
 
-It adds no behaviour of its own: what pi-ai does is what happens. Built for pi-ai 1.6.0.
+It adds no behaviour of its own: what pi-ai does is what happens. Built for pi-ai 1.6.1.
 
 ## Install
 

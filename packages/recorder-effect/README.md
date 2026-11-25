@@ -3,7 +3,7 @@
 Every message, model call and tool call of a [Pi Durable](../durable) harness, and every entry a plugin stores
 beside the transcript, goes to a sink your product provides, with a deterministic id, at least once, so the
 product's own record can be written exactly once. Written on
-[`@gunta/pi-durable-effect`](../durable-effect), for `effect` 4.1 and Pi Durable 1.6.0.
+[`@gunta/pi-durable-effect`](../durable-effect), for `effect` 4.1 and Pi Durable 1.6.1.
 
 - The entries are the outbox. A record is derived from an entry Pi committed with its step, so a record exists
   exactly when its step does. No hook writes a pending row: a Pi hook cannot commit.

@@ -22,7 +22,7 @@ Nothing here knows your tools, models or budgets: all of it is data and one port
 npm install @gunta/pi-subagent-effect @gunta/pi-durable-effect @earendil-works/pi-durable effect
 ```
 
-`effect` is a peer dependency (`~4.1.5`). Built for Pi Durable 1.6.0.
+`effect` is a peer dependency (`~4.1.5`). Built for Pi Durable 1.6.1.
 
 ## Quick start
 
