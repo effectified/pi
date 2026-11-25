@@ -19,12 +19,16 @@ export function task<I, A>(kind: Task.Kind<I, A>, input: NoInfer<I>): Effect.Eff
 	return Effect.map(kind.encodeInput(input), (json) => hookTask(kind.token, json));
 }
 
-/** What a hook task may send a run back to work with: text, or text and images. The JSON of Pi's `UserInput`. */
+/**
+ * What a hook task may send a run back to work with: text, or text and images. The JSON of Pi's `UserInput`, with one
+ * narrowing: a list of items is never empty, because Pi ignores an empty continuation and the answer would stand
+ * without a word. A result that holds one anyway fails to encode, which ends its task `faulted`.
+ */
 export const UserInput = Schema.Union([
 	Schema.String,
 	// Mutable, as Pi types a message's content: a decision made here is one Pi's own types take.
 	Schema.mutable(
-		Schema.Array(
+		Schema.NonEmptyArray(
 			Schema.Union([
 				Schema.Struct({
 					type: Schema.Literal("text"),

@@ -40,6 +40,7 @@ function fakeWatch(initial: number) {
 		handle,
 		started: started.await,
 		emit: (value: number) => listener?.({ kind: "value", value, ops: [["r", value]], retired: false }, {} as Context),
+		fail: (error: unknown) => listener?.({ kind: "failed", error }, {} as Context),
 		end: (end: WatchEnd) => closed.resolve(end),
 		stops: () => stops,
 	};
@@ -159,6 +160,25 @@ describe("stream", () => {
 		expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ _tag: "UnexpectedError", cause });
 	});
 
+	it("fails with the tagged error of a failed call, and stops Pi's watch, instead of dropping it", async () => {
+		const watch = fakeWatch(1);
+		const cause = new Error("source unavailable");
+		const exit = await runTest(
+			Effect.gen(function* () {
+				const collecting = yield* Effect.forkChild(Stream.runCollect(Watch.stream(async () => watch.handle)));
+				yield* watch.started;
+				yield* Effect.promise(async () => {
+					await watch.fail(cause);
+					// A value after the failure: the stream has failed, so it is no element.
+					await watch.emit(2);
+				});
+				return yield* Fiber.await(collecting);
+			}),
+		);
+		expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ _tag: "UnexpectedError", cause });
+		expect(watch.stops()).toBe(1);
+	});
+
 	it("fails when Pi rejects the acquisition", async () => {
 		const failure = await Effect.runPromise(
 			Effect.flip(Stream.runCollect(Watch.stream<number>(() => Promise.reject(new Error("closed"))))),
@@ -192,6 +212,7 @@ function fakeObservation(initial: number) {
 			}),
 		advance: (value: number) =>
 			observer?.advance({ kind: "value", value, ops: [["r", value]], retired: false }, {} as Context),
+		fail: (error: unknown) => observer?.advance({ kind: "failed", error }, {} as Context),
 		end: (end: WatchEnd) => observer?.end(end),
 		detached: () => detached,
 	};
@@ -244,6 +265,26 @@ describe("observed", () => {
 			_tag: "UnexpectedError",
 			message: "session closed",
 		});
+	});
+
+	it("fails with the tagged error of a failed call, and detaches the observer, instead of dropping it", async () => {
+		const observation = fakeObservation(1);
+		const cause = new Error("source unavailable");
+		const exit = await runTest(
+			Effect.gen(function* () {
+				const first = yield* Latch.make();
+				const collecting = yield* Effect.forkChild(
+					Stream.runCollect(Stream.tap(Watch.observed(observation.attach), () => first.open)),
+				);
+				observation.resolve();
+				yield* first.await;
+				observation.fail(cause);
+				observation.advance(2);
+				return yield* Fiber.await(collecting);
+			}),
+		);
+		expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ _tag: "UnexpectedError", cause });
+		expect(observation.detached()).toBe(1);
 	});
 
 	it("has no element when the observed address is absent", async () => {

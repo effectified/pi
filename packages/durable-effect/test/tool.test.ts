@@ -6,6 +6,7 @@ import {
 	type JsonObject,
 	type ToolRegistration,
 } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { type SchemaConversionError, toJsonSchema } from "@gunta/pi-schema-effect";
 import { Context, Effect, Layer, Schema, Stream } from "effect";
 import { Tool as AiTool, Toolkit } from "effect/ai";
@@ -202,6 +203,54 @@ describe("a call from the model", () => {
 			isError: true,
 			diagnostics: [{ severity: "error", code: "tool_error", message: "boom" }],
 		});
+	});
+
+	it("gives its error results the diagnostic codes Pi gives its own", async () => {
+		// Pi writes no exported union of its codes: each error result of ours is held to the one Pi wrote for the same
+		// kind of failure in the same run, so a code Pi renames fails here.
+		const Strict = Tool.make("strict", {
+			description: "Look a record up by its prefixed id.",
+			parameters: Schema.Struct({
+				id: Schema.String.check(Schema.makeFilter((id: string) => id.startsWith("rec-") || "must start with rec-")),
+			}),
+			success: Schema.String,
+			handler: ({ id }) => Effect.succeed(id),
+		});
+		const Broken = Tool.make("broken", {
+			description: "Always breaks.",
+			parameters: Schema.Struct({}),
+			success: Schema.String,
+			handler: () => Effect.die(new Error("boom")),
+		});
+		const results = await runTest(
+			ask.pipe(
+				Effect.map(({ results }) =>
+					results.map((entry) => (entry.data as { readonly diagnostics: unknown }).diagnostics),
+				),
+				Effect.provide(
+					harnessLayer({
+						responses: [
+							toolCall("lookup", { id: "404" }),
+							toolCall("broken", {}),
+							toolCall("strict", { id: "42" }),
+							toolCall("strict", {}),
+							answer("Nothing worked."),
+						],
+						registry: Registry.layer([Extension.make({ name: "app", tools: [Lookup, Broken, Strict] })]),
+					}),
+				),
+				Effect.provide(records),
+			),
+		);
+		const [handlerFailure, piThrown, schemaRejected, piInvalid] = results.map((diagnostics) =>
+			(diagnostics as ReadonlyArray<{ readonly severity: string; readonly code: string }>).map(
+				({ severity, code }) => ({ severity, code }),
+			),
+		);
+		expect(handlerFailure).toEqual(piThrown);
+		expect(schemaRejected).toEqual(piInvalid);
+		// The two kinds are told apart, as a gate or a plugin reads them.
+		expect(handlerFailure).not.toEqual(schemaRejected);
 	});
 
 	it("interrupts the handler's fiber when Pi aborts the call", async () => {

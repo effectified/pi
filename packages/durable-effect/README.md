@@ -519,7 +519,9 @@ where Pi's hook may answer or not, the Effect succeeds with an `Option`.
 The generation creates the tasks as its children in one commit and waits for them, so a stop aborts them and a crash
 resumes them; once they exist, the hook is not asked again. A task asked for from `onYield` decides whether the
 answer stands, while the run's inputs are still open: its result schema is `Hook.YieldDecision`, and it completes
-with `Hook.stand` or `Hook.continueWith(input)`. One asked for from `afterTools` has the result schema
+with `Hook.stand` or `Hook.continueWith(input)`. `input` is text, or a list of at least one text or image item: Pi
+ignores an empty list, so `continueWith([])` does not compile, and a result that holds one anyway fails to encode
+and ends its task `faulted`. One asked for from `afterTools` has the result schema
 `Hook.AfterToolsDecision` and completes with `Hook.proceed` or `Hook.terminate`. `afterRun` tasks act on an answer
 that stands; their result is their own.
 
@@ -890,7 +892,9 @@ const counts = Stream.map(Harness.watchDoc(Todos, root.id), (change) => change.v
 
 Pi delivers one change at a time and folds the commits that land meanwhile into the next, so a slow consumer gets
 fewer, larger changes and always the newest value. A watch is not a log of every commit. A stream ends when the
-harness closes, and fails when the harness failed.
+harness closes, and fails when the harness failed. It also fails when Pi delivers a `failed` call (its value cannot
+be computed now), which Pi Durable 1.6 never does: an element carries no failure, so the stream does not go on
+silently. Retry the stream to watch again from the value then.
 
 ### Stored commits
 

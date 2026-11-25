@@ -29,8 +29,9 @@ export type Change<T> = StrictOmit<Extract<WatchCall<T>, { readonly kind: "value
  * A Pi watch as a Stream. Pi delivers one change at a time and folds the commits that land meanwhile into the next
  * one, so a slow consumer gets fewer, larger changes and always the newest value: it converges, it is not a log of
  * every commit. The stream ends when what it watches ends (the harness closed, a task document's task ended) or when
- * `acquire` found nothing to watch, in which case it has no element; it fails when the harness failed. Closing the
- * stream's scope stops the watch. `parent` as for `call`.
+ * `acquire` found nothing to watch, in which case it has no element; it fails when the harness failed, and when Pi
+ * delivers a `failed` call (the value cannot be computed now), which Pi Durable 1.6 never does. Closing the stream's
+ * scope stops the watch. `parent` as for `call`.
  */
 export function stream<T>(
 	acquire: (context: ChordContext) => Promise<WatchHandle<T> | undefined>,
@@ -47,10 +48,18 @@ export function stream<T>(
 				if (watch === undefined) return yield* Queue.end(queue);
 				yield* Queue.offer(queue, { value: watch.value, ops: [], retired: false });
 				// The listener returns when the consumer took the change before: Pi folds what lands until then. It never
-				// rejects: an offer cut off because the stream's scope closed is dropped. Durable sends no `failed` call,
-				// its failures end the watch.
+				// rejects: an offer cut off because the stream's scope closed is dropped.
 				watch.start(async (delivered) => {
-					if (delivered.kind === "value") await Effect.runPromiseExit(Queue.offer(queue, change(delivered)));
+					switch (delivered.kind) {
+						case "value":
+							await Effect.runPromiseExit(Queue.offer(queue, change(delivered)));
+							return;
+						case "failed":
+							fail(queue, delivered.error);
+							return;
+						default:
+							absurd(delivered);
+					}
 				});
 				void watch.closed.then((end) => finish(queue, end));
 			}),
@@ -60,7 +69,8 @@ export function stream<T>(
 
 /**
  * A Pi observer as a Stream: every commit that changes the observed state is one element, unfolded, in commit order,
- * however slow the consumer is (they wait in memory). Otherwise as `stream`; a closed scope detaches the observer.
+ * however slow the consumer is (they wait in memory). Otherwise as `stream`, a `failed` call included; a closed scope
+ * detaches the observer.
  */
 export function observed<T>(
 	attach: (observer: Observer<T>, context: ChordContext) => Promise<Observation<T> | undefined>,
@@ -72,11 +82,19 @@ export function observed<T>(
 			const early: Array<Change<T>> = [];
 			let attached = false;
 			const observer: Observer<T> = {
-				// Called inside Pi's commit: it only records. Durable's observers get `value` calls only.
+				// Called inside Pi's commit: it only records.
 				advance: (delivered) => {
-					if (delivered.kind !== "value") return;
-					if (attached) Queue.offerUnsafe(queue, change(delivered));
-					else early.push(change(delivered));
+					switch (delivered.kind) {
+						case "value":
+							if (attached) Queue.offerUnsafe(queue, change(delivered));
+							else early.push(change(delivered));
+							return;
+						case "failed":
+							fail(queue, delivered.error);
+							return;
+						default:
+							absurd(delivered);
+					}
 				},
 				end: (end) => finish(queue, end),
 			};
@@ -134,6 +152,15 @@ function change<T>(delivered: Extract<WatchCall<T>, { readonly kind: "value" }>)
 	return element;
 }
 
+/**
+ * Fails the stream of a watch with what Pi gave as the error. A `failed` call fails it too: Chord would keep the watch
+ * open and send the value again later, but a stream element has no failure to carry, and dropping it would leave the
+ * consumer on a value Pi said it cannot compute.
+ */
+function fail<A>(queue: Queue.Queue<A, DurableError | Cause.Done>, error: unknown): void {
+	Queue.failCauseUnsafe(queue, Cause.fail(fromRejection(error)));
+}
+
 /** Ends the stream of a watch as the watch ended. */
 function finish<A>(queue: Queue.Queue<A, DurableError | Cause.Done>, end: WatchEnd): void {
 	switch (end.kind) {
@@ -144,7 +171,7 @@ function finish<A>(queue: Queue.Queue<A, DurableError | Cause.Done>, end: WatchE
 			return;
 		case "listener_error":
 		case "failed":
-			Queue.failCauseUnsafe(queue, Cause.fail(fromRejection(end.error)));
+			fail(queue, end.error);
 			return;
 		default:
 			// A kind of end Chord adds fails to compile here, so no watch stream can be left open by one.

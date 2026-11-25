@@ -1,3 +1,5 @@
+// The whole module, walked at run time for its error classes: allowed in a test, refused in `src/`.
+import * as PiDurable from "@earendil-works/pi-durable";
 import {
 	type ConversationId,
 	ConversationBusy as PiConversationBusy,
@@ -37,6 +39,19 @@ describe("fromRejection", () => {
 			const error = fromRejection(rejection);
 			expect(error).toBeInstanceOf(errorClass);
 			expect(error).toMatchObject({ ...fields, message: rejection.message });
+		}
+	});
+
+	it("gives every error class Pi Durable exports a tag of its own, named as the class", () => {
+		// The run-time half of `ErrorClassesTagged` in pi-conformance.ts: what Pi exports now, not what it was typed as.
+		const classes = Object.entries(PiDurable).flatMap(([name, value]) =>
+			typeof value === "function" && value.prototype instanceof Error ? [[name, value] as const] : [],
+		);
+		expect(classes.length).toBeGreaterThan(0);
+		for (const [name, piClass] of classes) {
+			// Every Pi error class takes one argument today; a class that refuses this one fails here, loudly too.
+			const rejection: unknown = Reflect.construct(piClass, [1]);
+			expect(fromRejection(rejection)._tag, name).toBe(name);
 		}
 	});
 

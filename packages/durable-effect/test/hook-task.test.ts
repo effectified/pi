@@ -6,6 +6,7 @@ import {
 	hookTask,
 	type YieldDecision,
 } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Effect, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { Extension, Harness, Hook, Registry, Task, Tool } from "../src/index.ts";
@@ -79,6 +80,52 @@ describe("the decisions", () => {
 		expect(
 			await Effect.runPromise(Schema.encodeEffect(Schema.toCodecJson(Hook.AfterToolsDecision))(Hook.terminate)),
 		).toEqual({ terminate: true });
+	});
+});
+
+describe("an empty continuation", () => {
+	it("cannot be written, and neither encodes nor decodes, because Pi would ignore it", async () => {
+		// @ts-expect-error A continuation holds at least one item: Pi ignores an empty one.
+		Hook.continueWith([]);
+		// What a cast lets through: a result like this one is refused at the boundary.
+		const empty = { continue: [] } as unknown as Hook.YieldDecision;
+		const codec = Schema.toCodecJson(Hook.YieldDecision);
+		const encoded = await Effect.runPromise(Effect.result(Schema.encodeEffect(codec)(empty)));
+		const decoded = await Effect.runPromise(Effect.result(Schema.decodeUnknownEffect(codec)({ continue: [] })));
+		expect([encoded._tag, decoded._tag]).toEqual(["Failure", "Failure"]);
+	});
+
+	it("ends the task that completes with one faulted, and the answer stands", async () => {
+		const Empty = Task.make({
+			name: "test.empty",
+			version: 1,
+			input: Schema.Struct({}),
+			state: Schema.Struct({ phase: Schema.Literal("decide") }),
+			result: Hook.YieldDecision,
+			initial: () => ({ phase: "decide" as const }),
+			phases: { decide: () => Effect.succeed(Task.complete({ continue: [] } as unknown as Hook.YieldDecision)) },
+			abort: () => Effect.succeed(Task.aborted()),
+		});
+		const Asker = Extension.make({
+			name: "asker",
+			tasks: [Empty],
+			hooks: [
+				Hook.onYield(() =>
+					Effect.map(Hook.task(Empty, {}), (request) => Option.some({ kind: "tasks" as const, tasks: [request] })),
+				),
+			],
+		});
+		const seen = await runTest(
+			Effect.gen(function* () {
+				const root = yield* TestHarness.root;
+				const settled = yield* root.prompt("What is six times seven?");
+				yield* root.waitForIdle;
+				const tasks = yield* Stream.runCollect(Harness.scanTasks());
+				return { settled, empty: tasks.filter((task) => task.kind === "test.empty").map((task) => task.state) };
+			}).pipe(Effect.provide(TestHarness.layer({ extensions: [Asker], responses: [answer("It is 42.")] }))),
+		);
+		expect(seen.settled.status).toBe("done");
+		expect(seen.empty).toMatchObject([{ status: "terminal", outcome: { status: "faulted" } }]);
 	});
 });
 

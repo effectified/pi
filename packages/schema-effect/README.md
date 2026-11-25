@@ -43,6 +43,10 @@ const error = await Effect.runPromise(Effect.flip(decodeUnknown(Lookup)({ id: 1,
 error.issues; // [{ path: "/extra", message: "Expected no excess property" }, { path: "/id", message: "Expected string" }]
 ```
 
+For the same value, the paths are the ones pi-schema's validator reports for `toJsonSchema(schema)`, with one
+difference: for a union with no discriminator, `decodeUnknown` reports the issues of every member, pi-schema only
+those of the member the value comes closest to.
+
 ## Tool parameters to Effect Schema
 
 ```typescript

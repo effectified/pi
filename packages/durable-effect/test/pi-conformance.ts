@@ -191,11 +191,21 @@ type DocTokens = {
 
 // Schemas and unions written by hand: equal to Pi's types both ways, or covering every member.
 
-/** The input a hook task sends a run back with is exactly Pi's. */
-export type UserInputSame = Assert<Conform<Hook.UserInput, PiUserInput>>;
+/** The input a hook task sends a run back with is exactly Pi's, with its list of items never empty. */
+export type UserInputSame = Assert<Conform<Hook.UserInput, Continuation>>;
 
-/** What an `onYield` task completes with is exactly Pi's. */
-export type YieldDecisionSame = Assert<Conform<Hook.YieldDecision, PiYieldDecision>>;
+/** What an `onYield` task completes with is exactly Pi's, with a continuation that is never empty. */
+export type YieldDecisionSame = Assert<
+	Conform<
+		Hook.YieldDecision,
+		{ [K in keyof PiYieldDecision]: K extends "continue" ? Continuation : PiYieldDecision[K] }
+	>
+>;
+
+/** Pi's `UserInput` without the empty list, which Pi ignores as a continuation (`yieldContinuation`). */
+type Continuation =
+	| Exclude<PiUserInput, readonly unknown[]>
+	| [Extract<PiUserInput, readonly unknown[]>[number], ...Extract<PiUserInput, readonly unknown[]>[number][]];
 
 /** What an `afterTools` task completes with is exactly Pi's. */
 export type AfterToolsDecisionSame = Assert<Conform<Hook.AfterToolsDecision, PiAfterToolsDecision>>;
