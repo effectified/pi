@@ -3,7 +3,7 @@
 
 import { Extension, Gate, Harness, Hook, Tool } from "@gunta/pi-durable-effect";
 import { answer, type FauxResponseStep, held, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
-import { Clock, Effect, Layer, Option, Schema } from "effect";
+import { Clock, Effect, Layer, Option, Schedule, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as WakeKeeper from "../src/wake-keeper.ts";
 
@@ -175,6 +175,43 @@ describe("WakeKeeper.layer", () => {
 			}),
 		);
 		expect(settled).toBe("done");
+		expect([...fake.scheduled]).toEqual([]);
+		expect(fake.state.awake).toBe(false);
+	});
+
+	it("resumes work whose wake is past at the next call, without waiting for the wake's action", async () => {
+		const fake = fakeAlarm();
+		const first = held(toolCall("slow", {}, { id: "call-1" }));
+		const settled = await withKeeper(
+			fake.alarm,
+			[first.response, answer("Done.")],
+			Effect.gen(function* () {
+				const keeper = yield* WakeKeeper.WakeKeeper;
+				const root = yield* TestHarness.root;
+				const submission = yield* root.submit({ type: "input", content: "Go slowly.", requestId: "run" });
+				yield* first.requested;
+				yield* first.release;
+				yield* Effect.repeat(Harness.wake, { until: (wake) => !wake.active && wake.at !== undefined });
+				yield* keeper.settle;
+				const [parked] = [...fake.scheduled.keys()];
+				// The park's time passes and Rivet has not run the wake's action yet. A caller asks the actor meanwhile, as
+				// one that polls does: the call's guard and settle. The fake never runs an action, so only they can resume.
+				yield* Effect.sleep(PARK_MILLIS + 100);
+				yield* keeper.guard;
+				yield* keeper.settle;
+				// Asked, never waited for: waiting for a submission would itself carry it on.
+				const ended = yield* submission.status.pipe(
+					Effect.repeat({ until: (record) => record.status === "done", schedule: Schedule.spaced("20 millis") }),
+					Effect.timeoutOption("3 seconds"),
+				);
+				// The wake that was due is gone, not pushed back by the recovery time.
+				expect(fake.scheduled.has(parked ?? "")).toBe(false);
+				yield* quiet;
+				yield* keeper.settle;
+				return Option.map(ended, (record) => record.status);
+			}),
+		);
+		expect(settled).toEqual(Option.some("done"));
 		expect([...fake.scheduled]).toEqual([]);
 		expect(fake.state.awake).toBe(false);
 	});

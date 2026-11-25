@@ -270,6 +270,13 @@ moment there are two and work is never without one. Before each action runs, a r
 crash right after a call that started work cannot strand it. A wake that fires early, late, twice, or in a fork is
 harmless: it resumes, which is idempotent, and the keeper schedules again from what Pi says.
 
+A wake whose time has come is acted on by whoever sees it first: Rivet running its action, or the next call to the
+actor, which resumes the due work before it does anything else. Rivet runs an action some time after its time: on
+a local engine beside other engines, a call 19 to 234 milliseconds after a wake's time came before its action,
+seven times in a row. Until 2026-11-25 such a call found the wake past, replaced it by the recovery wake and
+cancelled it before it ran, so a thread taken up after its host was killed, and asked every 250 milliseconds where
+it stood, never resumed. `test/wake-keeper.test.ts`, "resumes work whose wake is past at the next call", holds it.
+
 Wake times come from Pi's clock, which is Effect's `Clock` inside the actor (see `@gunta/pi-durable-effect`).
 
 ## Forks

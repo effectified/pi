@@ -32,9 +32,12 @@ export interface Armed {
 export class WakeKeeper extends Context.Service<
 	WakeKeeper,
 	{
-		/** Before a call that can start work: makes sure a recovery wake is scheduled, so a crash cannot strand it. */
+		/**
+		 * Before a call that can start work: makes sure a recovery wake is scheduled, so a crash cannot strand it. Work
+		 * whose wake is past is resumed first.
+		 */
 		readonly guard: Effect.Effect<void>;
-		/** After a call: reads when Pi next needs the actor, and schedules for it. */
+		/** After a call: resumes work whose wake is past, reads when Pi next needs the actor, and schedules for it. */
 		readonly settle: Effect.Effect<void>;
 		/** A scheduled wake action fired, `id` when Rivet says which: resumes Pi's due work and schedules the next. */
 		readonly fired: (id: Option.Option<string>) => Effect.Effect<void, DurableError>;
@@ -58,6 +61,11 @@ export const RECOVERY_WAKE_MILLIS = 15_000;
  *
  * A replacement is written before the one it replaces is cancelled, so work is never without a wake: two exist for
  * that moment, one otherwise.
+ *
+ * A wake whose time has come is acted on by whoever sees it first: Rivet running its action (`fired`), or the next
+ * call to the actor (`guard`, `settle`). Rivet runs an action some time after its time, and a caller that asks the
+ * actor more often than that would otherwise find the wake past each time, replace it by the recovery wake and
+ * cancel it before it ran: the work would never resume.
  */
 export function layer(alarm: Alarm): Layer.Layer<WakeKeeper, never, Harness.Harness> {
 	return Layer.effect(
@@ -106,7 +114,22 @@ export function layer(alarm: Alarm): Layer.Layer<WakeKeeper, never, Harness.Harn
 				});
 
 			const read = Effect.provideService(Harness.wake, Harness.Harness, harness);
-			const settle = Semaphore.withPermit(lock, Effect.flatMap(read, apply));
+			const resume = Effect.provideService(Harness.resume, Harness.Harness, harness);
+
+			/**
+			 * Resumes Pi's due work when the kept wake's time has come and its action has not run. The wake is cancelled
+			 * after: an action that runs all the same resumes once more, which changes nothing. A resume that fails leaves
+			 * the wake to its action and to the next call.
+			 */
+			const overdue = Effect.gen(function* () {
+				const late = armed;
+				if (late === undefined || late.at > (yield* Clock.currentTimeMillis)) return;
+				if (Option.isNone(yield* Effect.option(resume))) return;
+				armed = undefined;
+				yield* alarm.cancel(late.id);
+			});
+
+			const settle = Semaphore.withPermit(lock, Effect.andThen(overdue, Effect.flatMap(read, apply)));
 
 			// A schedule Rivet refused is tried again while the actor, held awake, still runs.
 			const retryLater = Effect.suspend(() => {
@@ -130,6 +153,7 @@ export function layer(alarm: Alarm): Layer.Layer<WakeKeeper, never, Harness.Harn
 				guard: Semaphore.withPermit(
 					lock,
 					Effect.gen(function* () {
+						yield* overdue;
 						const until = (yield* Clock.currentTimeMillis) + RECOVERY_WAKE_MILLIS;
 						if (armed === undefined || armed.at > until) yield* rearm(until);
 					}),
@@ -141,7 +165,7 @@ export function layer(alarm: Alarm): Layer.Layer<WakeKeeper, never, Harness.Harn
 						Effect.gen(function* () {
 							// Rivet removes a schedule before it runs its action, so the one that fired is gone.
 							if (armed !== undefined && Option.contains(id, armed.id)) armed = undefined;
-							yield* Effect.provideService(Harness.resume, Harness.Harness, harness);
+							yield* resume;
 							yield* apply(yield* read);
 						}),
 					),

@@ -27,7 +27,7 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@gunta/pi-ai-effect` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges | 44 | Images, classifiers, OAuth login, deferred responses |
 | `@gunta/pi-telemetry-effect` | facade | `@earendil-works/pi-telemetry` | 59 | `TelemetryStore`; histogram exemplars |
 | `@gunta/pi-durable-effect` | facade | `@earendil-works/pi-durable` | 426 | A task's own hooks, `setTimer`, prompt sections and wrappers, synchronous observers |
-| `@gunta/pi-durable-rivet-effect` | host | A harness in a Rivet actor: storage, wake-ups, forks | 165 | Linux engine runs; several machines; an engine that dies |
+| `@gunta/pi-durable-rivet-effect` | host | A harness in a Rivet actor: storage, wake-ups, forks | 166 | Linux engine runs; several machines; an engine that dies |
 | `@gunta/pi-router-effect` | plugin | Routes, fallback, limiter, prices, constraints | 169 | A real provider; image and classifier routing |
 | `@gunta/pi-budget-effect` | plugin | Lease at the model boundary, shares | 86 | |
 | `@gunta/pi-guard-effect` | plugin | Denied verbs, grants, argument rules, ceilings | 111 | |
