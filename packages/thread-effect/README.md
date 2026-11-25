@@ -213,7 +213,7 @@ thread for an event an earlier process did not deliver).
 
 | Operation | |
 |---|---|
-| `Threads.admit(input, key?)` | Admits a thread's task under a request key and returns `{ created, key }`. Idempotent by `thread`: a later call applies only `cap`. Fails with `ReviewerSharesFamily` before anything is created |
+| `Threads.admit(input, key?)` | Admits a thread's task under a request key and returns `{ created, key }`. Idempotent by `thread`: a later call applies only `cap`. Fails with `ReviewerSharesFamily` before anything is created, and with `SchemaDecodeError`, creating nothing, for a `maxTurns` below 1, which Pi's `configure` refuses |
 | `Threads.work(input)` | `admit`, then `ended`: works a thread to its end and gives its `Outcome`. Also the way to reattach after a restart. It never waits for a person or for a lease: a held answer and a deferred review end it |
 | `Threads.takeOn(thread, key?)` | Takes a stopped thread on and returns `continued`, `retried` or `unchanged`: a run that ended without an answer (`BudgetStopped`, `Errored`) is continued under the key, a deferred review (`BudgetStopped` with `review`, `ReviewDeferred`) is asked for again |
 | `Threads.resume(thread)` | `takeOn`, then `ended` |
@@ -244,9 +244,10 @@ that cannot hold a call open calls, such as a Rivet action. The others wait.
 | `Errored` (`reason`, `detail`) | The submission is `unanswered` for any other reason of Pi's |
 | `Cancelled` | The submission is `unanswered` with `aborted`; or `done` with the review's `review_aborted` or `hold_ended` |
 
-Each carries `counts`: `turns` and `toolCalls` (from the conversation's entries), `refusedToolCalls` (the tool
-results that carry the guard's own record, `Refused.of`) and `settledMicros`. Everything is read from the harness
-storage, so an outcome is the same in a process that just opened it.
+Each carries `counts`: `turns` and `toolCalls` (from the conversation's entries; a turn is a model response that
+answered, `stop`, `length` or `toolUse`, by Pi Durable's rule, so an attempt Pi stored as failed is none),
+`refusedToolCalls` (the tool results that carry the guard's own record, `Refused.of`) and `settledMicros`. Everything
+is read from the harness storage, so an outcome is the same in a process that just opened it.
 
 ## Outcomes are delivered
 

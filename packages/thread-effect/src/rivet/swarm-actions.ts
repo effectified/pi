@@ -1,8 +1,7 @@
 // The actions of a thread actor for the swarms that run on its thread: run, cancel, probe, result, the money per job,
 // and the destruction of a fork. The coordinator of a swarm lives in the actor of its thread.
 
-import type { EntryId } from "@earendil-works/pi-durable";
-import type { Registry } from "@gunta/pi-durable-effect";
+import { Entry, type Registry } from "@gunta/pi-durable-effect";
 import { Action } from "@gunta/pi-durable-rivet-effect";
 import * as Swarm from "@gunta/pi-swarm-effect";
 import { Effect, Schema } from "effect";
@@ -29,7 +28,7 @@ const Run = Schema.Struct({
 	cap: Schema.Number,
 	onFailure: Schema.Literals(["fail", "collect"]),
 	pins: Schema.Array(Schema.String),
-	at: Schema.optionalKey(Schema.Number),
+	at: Schema.optionalKey(Entry.Id),
 	agent: Schema.optionalKey(ForkAgent.Wire),
 	fork: ForkSetup.Allowance,
 });
@@ -82,8 +81,7 @@ export function actions(swarms: ReadonlyArray<Swarm.Swarm<never, unknown>>) {
 					const started = yield* crossing(
 						"runSwarm",
 						Swarms.Swarms.use((service) =>
-							// Pi brands ids in the type system only: an entry id is the number it crossed as.
-							service.run(asStored(swarm), { ...plan, ...(at === undefined ? {} : { at: at as EntryId }) }),
+							service.run(asStored(swarm), { ...plan, ...(at === undefined ? {} : { at }) }),
 						),
 					);
 					return { created: started.created };

@@ -1,11 +1,11 @@
 // The requests that await a decision, read from the harness's durable state.
 
-import { type DurableError, Harness } from "@gunta/pi-durable-effect";
-import { Effect } from "effect";
+import { type DurableError, Harness, Signal } from "@gunta/pi-durable-effect";
+import { Effect, Option } from "effect";
 import * as Asks from "./asks.ts";
 import type { MalformedState } from "./errors.ts";
 import type { Request } from "./request.ts";
-import { settled } from "./signal.ts";
+import { Decided } from "./signal.ts";
 
 /**
  * Every request a decision can still reach, in task order: for each live tool call that asked and is not aborted, its
@@ -22,7 +22,15 @@ export const pending: Effect.Effect<
 	for (const { record } of (yield* Harness.inspect).tasks) {
 		if (record.abortRequested) continue;
 		const last = (yield* Asks.ofRecord(record.memos)).at(-1);
-		if (last !== undefined && !settled(record.memos, last.id)) requests.push(last);
+		if (last === undefined) continue;
+		// A decision, or the expiry of the request, stored under its key: either way none can reach it any more. One this
+		// version cannot read (another version of the signal) is stored all the same: `stateIn` fails only for a memo
+		// that is there.
+		const settled = yield* Effect.match(Signal.stateIn(record, Decided, last.id), {
+			onFailure: () => true,
+			onSuccess: Option.isSome,
+		});
+		if (!settled) requests.push(last);
 	}
 	return requests;
 });

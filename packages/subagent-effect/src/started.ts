@@ -1,9 +1,8 @@
 // The `subagent.started` document: the child a task of this package started, so that it is found again by its task.
 
 import type { ConversationId, TaskId } from "@earendil-works/pi-durable";
-import { Doc, Task } from "@gunta/pi-durable-effect";
+import { Conversation, Doc, Task } from "@gunta/pi-durable-effect";
 import { Schema } from "effect";
-import { ConversationIdSchema } from "./pi.ts";
 
 /** A child that exists: its conversation, and the task that drives it. */
 export interface Started {
@@ -22,7 +21,7 @@ export const Document = Doc.make({
 	version: 1,
 	scope: "task",
 	schema: Schema.Struct({
-		started: Schema.NullOr(Schema.Struct({ conversationId: ConversationIdSchema, task: Task.Id })),
+		started: Schema.NullOr(Schema.Struct({ conversationId: Conversation.Id, task: Task.Id })),
 	}),
 	initial: () => ({ started: null }),
 	checkpointWhen: () => true,

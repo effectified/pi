@@ -12,6 +12,7 @@ import {
 	type DurableError,
 	type SchemaConversionError,
 	type SchemaDecodeError,
+	Signal,
 	Task,
 	type Tool,
 	type Tx,
@@ -22,7 +23,6 @@ import * as ChildSetup from "./child-setup.ts";
 import * as Copy from "./copy.ts";
 import * as Declared from "./declared.ts";
 import * as Outcome from "./outcome.ts";
-import * as Pi from "./pi.ts";
 import * as Result from "./result.ts";
 import * as Started from "./started.ts";
 
@@ -108,7 +108,7 @@ export function make(declared: Effect.Effect<Declared.Declared, SchemaConversion
 					api,
 					Effect.gen(function* () {
 						const { attempt } = task.state;
-						const settled = yield* Pi.settled(api.pi, waitKey(attempt));
+						const settled = yield* settledAt(api, attempt);
 						// A phase that runs before its time sleeps again with the same state, as Pi's own tasks do (spec 5.6).
 						if (Option.isNone(settled)) return sleepFor(attempt);
 						const entry = yield* Declared.find(yield* declared, task.input.subagent);
@@ -225,7 +225,21 @@ function waitKey(attempt: number): string {
 
 /** The sleep until the submission numbered `attempt` settles. */
 function sleepFor(attempt: number): Task.Sleep<typeof State.Type> {
-	return Task.sleep({ state: { phase: "settle", attempt }, signals: [Pi.settlement(waitKey(attempt))] });
+	return Task.sleep({
+		state: { phase: "settle", attempt },
+		signals: [Signal.SubmissionSettled.key(waitKey(attempt))],
+	});
+}
+
+/** The settled record of the submission numbered `attempt`; none while it is open. */
+function settledAt(
+	api: Api,
+	attempt: number,
+): Effect.Effect<Option.Option<SettledSubmissionRecord>, Failure | SchemaConversionError> {
+	return Effect.map(api.readSignal(Signal.SubmissionSettled, waitKey(attempt)), (state) =>
+		// A sleep without a deadline never expires, so a state that is no value is as good as none.
+		Option.flatMap(state, (read) => (read.kind === "value" ? Option.some(read.value) : Option.none())),
+	);
 }
 
 /** The input numbered `attempt` of the run `taskId` for its child: the task, or a correction. */

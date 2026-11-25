@@ -245,7 +245,10 @@ wider than the declaration offers the child more.
 
 Limits. Pi asks only the hooks of the extensions a conversation selects, so every tool built through the guard's
 registry also carries a backstop: it refuses to run unless the guard's own extension is the first one the
-conversation selects (`guard-not-first`). An extension installed later under the name `guard` replaces the guard's
+conversation selects (`guard-not-first`). Of a tool's members only `execute` runs tool code behind that check; the
+others are data or code Pi requires pure (`prepareArguments`) or calls only after a guarded `execute` parked
+(`cancel`). A member the tool's registration sets that Pi's `ToolRegistration` does not declare is left out, so it
+never runs unguarded. An extension installed later under the name `guard` replaces the guard's
 hooks, and the backstop then refuses every such tool. A tool installed later straight into Pi's registry has no
 backstop: in a conversation that deselects the guard, or after such a replacement, it runs unguarded. Host code is
 trusted: whatever holds the `Guard` and a commit can grant. The offer is narrowed further, never widened, by Pi's

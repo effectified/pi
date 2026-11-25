@@ -137,8 +137,10 @@ yield* Swarm.start(Covers, {
 });
 ```
 
-Tools and extensions of `agent` are stored and handed to the driver by name, as Pi stores them. `named(change)` gives
-that form, plain JSON, for a host that sends a plan to another process before it starts the swarm there.
+Tools and extensions of `agent` are stored and handed to the driver by name, as Pi stores them: the facade's
+`Agent.ByName`, which `named(change)` (`Agent.byName`) gives, for a host that sends a plan to another process before
+it starts the swarm there. `start` checks it as Pi's `configure` would in every fork: a change it would refuse, such
+as `maxTurns: 0`, is `InvalidPlan`, and nothing is stored.
 
 ## Host operations
 
@@ -632,7 +634,7 @@ The same actor definition is the source of a swarm and each of its forks, so all
 
 | Where | What | Why |
 |---|---|---|
-| `layer` | `Rivet.layer(options)`, under `Registry.layer([Swarm.extension([...])])` and over the host's `Self.client` | The registry's coordinators need the `ForkDriver`. The driver needs the host's `RivetClient`, `ActorInfo` and `ActorDatabase`. `Self.client` is Rivet's client of the engine the actor runs on, so no endpoint is passed in; `Client.layer({ endpoint })` works too |
+| `layer` | `Rivet.layer(options)`, under `Registry.layer([Swarm.extension([...])])` and over the host's `Self.client` | The registry's coordinators need the `ForkDriver`. The driver needs the host's `RivetClient`, `ActorInfo` and `ActorSql`. `Self.client` is Rivet's client of the engine the actor runs on, so no endpoint is passed in; `Client.layer({ endpoint })` works too |
 | `layer` | The product's `ForkSetup` (or `Swarm.ForkSetup.none`), provided so that the actions see it (`Layer.provideMerge`) | The registry requires it, and a fork actor runs it for its own job conversation, in `swarmRun` |
 | `actions` | `...Rivet.actions` | What the driver calls in a fork: `swarmRun`, `swarmJob`, `swarmCancel`. The product's own actions have other names |
 | `forkHygiene` | `Rivet.forkHygiene`, anywhere in the list | Makes a copied storage harmless before the fork's first call (below) |
@@ -643,9 +645,9 @@ after the actor's `actionTimeout`: ask `status` until `running` is false, then r
 
 | Export | |
 |---|---|
-| `layer(options?: { pollMillis?: number })` | `Layer<ForkDriver, never, Client.RivetClient \| ActorInfo \| ActorDatabase>` |
+| `layer(options?: { pollMillis?: number })` | `Layer<ForkDriver, never, Client.RivetClient \| ActorInfo \| ActorSql>` |
 | `actions` | `{ swarmRun, swarmJob, swarmCancel }`, each an `Action` of the host; `Actions` is their type. `swarmRun` needs `ForkSetup` and answers `{ conversationId }`, the job conversation |
-| `forkHygiene` | `Fork.Hygiene<ActorDatabase>` |
+| `forkHygiene` | `Fork.Hygiene<never>`: it uses the actor's `ActorInfo` and `ActorSql`, which every hygiene step has |
 | `jobConversation` | `Effect<Option<Conversation>, Doc.Failure, Harness>`: in a fork, the conversation its job ran in |
 | `forkKey(sourceKey, swarmId, jobKey)` | `Array<string>`: the key of the actor that is a job's fork |
 | `Assignment` | The `Schema` of a fork's input (`Fork.lineage`): `swarmId`, `jobKey`, `sourceConversationId`, `at`, `agent` |
@@ -654,8 +656,12 @@ after the actor's `actionTimeout`: ask `status` until `running` is false, then r
 ### How the driver keeps the port's contract
 
 - **`fork`.** The fork of a job is the actor under `forkKey(the source's key, swarm id, job key)`. Before the engine
-  is asked, the intent is recorded in the source actor's own SQLite (`ActorDatabase`): the driver is built before
-  the harness is open and needs none of its commits, and a row per job stays small however many jobs a swarm has. Then
+  is asked, the intent is recorded in the source actor's own SQLite (`ActorSql`): the driver is built before
+  the harness is open and needs none of its commits, and a row per job stays small however many jobs a swarm has.
+  The record's tables are made by Effect's `Migrator`, with a table of its own (`swarm_rivet_migrations`), when the
+  driver is built at each wake and before the fork hygiene claims the record; its rows are decoded with `SqlSchema`,
+  so a row of another shape fails as a `SwarmRecordFailure` whose `cause` is the decode's error, and the hygiene's
+  claim is one `withTransaction`, rolled back when it fails or is interrupted. Then
   `Client.fork`, which is idempotent by key: a key the source's fork holds is that fork. A recorded fork is answered
   from the record, without a request. `ForkRetryLater` with `sourceBusy` while the source has an input, a model
   request or a tool call in flight (the host's `NotIdle`), which the coordinator waits out for as long as it lasts;

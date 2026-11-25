@@ -1,9 +1,10 @@
 // Test helper: a swarm definition, a scripted model that answers by what it is asked, and the harness both run in.
 
 import type { TaskId } from "@earendil-works/pi-durable";
+import { conditions } from "@gunta/pi-ai-effect/testing";
 import { type Conversation, Doc, type DurableError, Harness, type Storage } from "@gunta/pi-durable-effect";
 import { answer, type FauxResponseFactory, TestHarness } from "@gunta/pi-durable-effect/testing";
-import { Effect, Latch, Layer, Schema, Stream } from "effect";
+import { Effect, Layer, Schema, Stream } from "effect";
 import * as Swarm from "../src/index.ts";
 
 /** The swarm of the tests: each job measures one word. */
@@ -60,24 +61,7 @@ export interface Asked {
 
 /** A fresh count. */
 export function asked(): Asked {
-	const waits: Array<{ readonly holds: () => boolean; readonly latch: Latch.Latch }> = [];
-	return {
-		requests: new Map(),
-		primed: new Map(),
-		maxLive: 0,
-		live: 0,
-		all: [],
-		when: (holds) =>
-			Effect.suspend(() => {
-				if (holds()) return Effect.void;
-				const latch = Latch.makeUnsafe();
-				waits.push({ holds, latch });
-				return latch.await;
-			}),
-		changed: () => {
-			for (const wait of waits) if (wait.holds()) wait.latch.openUnsafe();
-		},
-	};
+	return { requests: new Map(), primed: new Map(), maxLive: 0, live: 0, all: [], ...conditions() };
 }
 
 /** How a scripted model answers one measure request: with this text, after this many milliseconds; `Infinity` never. */

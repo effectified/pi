@@ -265,6 +265,19 @@ describe("a thread that does not reach an answer", () => {
 		]);
 	});
 
+	it("counts no turn for a response Pi stored as a failed attempt: a deferred one without a handle", async () => {
+		const state = outside();
+		const labs = providers({ author: [fauxAssistantMessage("", { stopReason: "deferred" })] });
+		const outcome = await run(
+			state,
+			labs,
+			Threads.Threads.use((threads) => threads.work(work("t1", "Say hi."))),
+		);
+		expect(outcome).toMatchObject({ counts: { turns: 0, toolCalls: 0 } });
+		// Pi stored the response: it is an attempt, and no turn.
+		expect(committed(state).map(shape)).toContainEqual(expect.objectContaining({ stopReason: "deferred" }));
+	});
+
 	it("is continued by a resume after an error, on the transcript as it is", async () => {
 		const state = outside();
 		const labs = providers({
@@ -285,6 +298,22 @@ describe("a thread that does not reach an answer", () => {
 		// A thread that ended with an answer is not continued: the second resume sends nothing.
 		expect(result.again).toEqual(result.resumed);
 		expect([labs.author.state.callCount, labs.reviewer.state.callCount]).toEqual([2, 1]);
+	});
+
+	it("refuses a thread of fewer than 1 turn before anything of it is created", async () => {
+		const state = outside();
+		const labs = providers();
+		const result = await run(
+			state,
+			labs,
+			Effect.gen(function* () {
+				const threads = yield* Threads.Threads;
+				const refused = yield* Effect.flip(threads.admit({ ...work("t1", "Say hi."), maxTurns: 0 }));
+				return { refused: refused._tag, probe: yield* threads.probe("t1") };
+			}),
+		);
+		expect(result).toEqual({ refused: "SchemaDecodeError", probe: { alive: false } });
+		expect(labs.author.state.callCount).toBe(0);
 	});
 
 	it("is not found by a key nothing was started under", async () => {

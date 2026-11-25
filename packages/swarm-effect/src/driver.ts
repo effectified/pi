@@ -136,9 +136,9 @@ export interface ForkRequest {
 	readonly at: number;
 	/**
 	 * What the fork runs with, over what the source had at `at`: a cheaper model, fewer tools. Tools and extensions are
-	 * given by name, so the change is plain JSON and can cross a process boundary.
+	 * given by name (`Agent.ByName`), so the change is plain JSON and can cross a process boundary.
 	 */
-	readonly agent: Option.Option<Agent.Change>;
+	readonly agent: Option.Option<Agent.ByName>;
 	/**
 	 * The product's fork setup, as the coordinator's harness has it. A driver whose fork is a conversation of that
 	 * harness calls `created` inside the commit that creates the conversation and `beforeStart` once it is stored. A

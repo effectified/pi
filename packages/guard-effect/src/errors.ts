@@ -1,6 +1,7 @@
 // The typed failures of this package: a registry or a policy the guard refuses, a grant it cannot give, and a record of
 // a refusal it cannot read.
 
+import { Conversation } from "@gunta/pi-durable-effect";
 import { Schema } from "effect";
 import * as Matcher from "./matcher.ts";
 
@@ -70,7 +71,7 @@ export class ModelNotCleared extends Schema.TaggedError<ModelNotCleared>()("Mode
  * - `not-first`: the guard's extension is not the first one asked.
  */
 export class Unguarded extends Schema.TaggedError<Unguarded>()("Unguarded", {
-	conversationId: Schema.Number,
+	conversationId: Conversation.Id,
 	reason: Schema.Literals(["no-registry", "not-selected", "not-first"]),
 }) {
 	override get message(): string {

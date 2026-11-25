@@ -1,5 +1,6 @@
 // The typed failures of this package's own services: a thread the product did not set up, and one it may not start.
 
+import { Agent } from "@gunta/pi-durable-effect";
 import { Schema } from "effect";
 
 /** No thread was started under this key in this harness storage. */
@@ -11,8 +12,8 @@ export class ThreadNotFound extends Schema.TaggedError<ThreadNotFound>()("Thread
 	}
 }
 
-/** A model as a provider names it: one route of an alias, or a model that is asked for directly. */
-const Route = Schema.Struct({ provider: Schema.String, modelId: Schema.String });
+/** A model as a provider names it, Pi's `ModelRef`: one route of an alias, or a model that is asked for directly. */
+const Route = Agent.ModelRef;
 
 /**
  * The thread was not started: it asks for a review, and a model that may review it is of the family of a model that

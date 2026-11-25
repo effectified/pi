@@ -1,8 +1,7 @@
 // A swarm: the definition a product installs in its registry, and the plan of one swarm as data.
 
 import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
-import type { Agent, Extension, Task } from "@gunta/pi-durable-effect";
-import type { Schema } from "effect";
+import { Agent, type Extension, type Task } from "@gunta/pi-durable-effect";
 import { type Coordinator, coordinator } from "./coordinator.ts";
 import { compile, type Definition, type Work } from "./work.ts";
 
@@ -69,34 +68,6 @@ export function extension(swarms: ReadonlyArray<Swarm<never, unknown>>): SwarmEx
 
 /**
  * `change` with every tool and extension as its name, which is all Pi stores of one: plain JSON, so it can be kept
- * in the coordinator's input and handed to a driver in another process.
+ * in the coordinator's input and handed to a driver in another process. The facade's `Agent.byName`.
  */
-export function named(change: Agent.Change): Schema.Json {
-	const { extensions, tools, modelTools, ...rest } = change;
-	const stored: Agent.Change = {
-		...rest,
-		...(extensions === undefined ? {} : { extensions: names(extensions) }),
-		...(tools === undefined ? {} : { tools: names(tools) }),
-		...(modelTools === undefined ? {} : { modelTools: names(modelTools) }),
-	};
-	// The rest of a change is Pi's own JSON (a model reference, texts, numbers), which its type does not say.
-	return stored as Schema.Json;
-}
-
-/** A list, or an edit of lists, of tools or extensions. */
-type Choice = Agent.Exactly | { readonly add?: Agent.Exactly; readonly remove?: Agent.Exactly } | null;
-
-function names(choice: Agent.Exactly): Array<string>;
-function names<C extends Choice>(choice: C): C;
-function names(choice: Choice): Choice {
-	if (choice === null) return null;
-	if (isList(choice)) return choice.map((item) => (typeof item === "string" ? item : item.name));
-	return {
-		...(choice.add === undefined ? {} : { add: names(choice.add) }),
-		...(choice.remove === undefined ? {} : { remove: names(choice.remove) }),
-	};
-}
-
-function isList(choice: Agent.Exactly | object): choice is Agent.Exactly {
-	return Array.isArray(choice);
-}
+export const named: (change: Agent.Change) => Agent.ByName = Agent.byName;

@@ -1,8 +1,10 @@
-import { defineExtension } from "@earendil-works/pi-durable";
-import { Extension, Harness, Registry } from "@gunta/pi-durable-effect";
+import { defineExtension, type ToolRegistration } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
+import { Extension, Harness, Registry, type Tool } from "@gunta/pi-durable-effect";
 import { answer, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
+import { backstopped } from "../src/backstop.ts";
 import { Conversations, Guard, Policy } from "../src/index.ts";
 import { BLOCKED, brief, guardedHarness, recorded, toolResults, tools, watching } from "./guarded.ts";
 
@@ -130,4 +132,37 @@ describe("backstopped", () => {
 			},
 		});
 	});
+
+	it("keeps every member Pi declares, guards execute, and leaves out a member Pi does not declare", () =>
+		runTest(
+			Effect.gen(function* () {
+				const guard = yield* Guard.Guard;
+				const registration: ToolRegistration = {
+					name: "search",
+					description: "The search tool.",
+					parameters: { type: "object" },
+					replay: "safe",
+					prepareArguments: (args) => args,
+					cancel: () => Promise.resolve(),
+					execute: () => Promise.resolve({ output: [], isError: false }),
+				};
+				// A member a later Pi might call: set on the registration, unknown to the backstop.
+				const undeclared = { ...registration, resume: () => Promise.resolve() };
+				const tool: Tool.Any = { name: "search", registration: Effect.succeed(undeclared) };
+				// `Tool.Any` types a registration's services as unknown: this one needs none and cannot fail.
+				const backed = yield* backstopped(tool, guard).registration as Effect.Effect<ToolRegistration>;
+				return {
+					members: Object.keys(backed).sort(),
+					passed:
+						backed.prepareArguments === registration.prepareArguments && backed.cancel === registration.cancel,
+					guarded: backed.execute !== registration.execute,
+				};
+			}).pipe(Effect.provide(Guard.fromPolicy(Policy.empty))),
+		).then((seen) =>
+			expect(seen).toEqual({
+				members: ["cancel", "description", "execute", "name", "parameters", "prepareArguments", "replay"],
+				passed: true,
+				guarded: true,
+			}),
+		));
 });

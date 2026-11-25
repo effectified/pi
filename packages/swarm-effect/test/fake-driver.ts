@@ -1,8 +1,9 @@
 // Test helper: a second driver, in memory, that behaves like a remote one: calls that fail and are retried, a
 // creation that answers "duplicate key", jobs that settle later, and a destroy that knows the bytes written.
 
+import { conditions } from "@gunta/pi-ai-effect/testing";
 import { Signal } from "@gunta/pi-durable-effect";
-import { Clock, Effect, Latch, Layer, Option, Schema } from "effect";
+import { Clock, Effect, Layer, Option, Schema } from "effect";
 import * as Swarm from "../src/index.ts";
 import { measured } from "./support.ts";
 
@@ -98,10 +99,7 @@ export interface Fake {
 
 /** A fresh fake driver. */
 export function fake(options: FakeOptions = {}): Fake {
-	const waits: Array<{ readonly holds: () => boolean; readonly latch: Latch.Latch }> = [];
-	const changed = () => {
-		for (const wait of waits) if (wait.holds()) wait.latch.openUnsafe();
-	};
+	const { when, changed } = conditions();
 	/** A call of the driver, after which every wait is asked again. */
 	const told = <A, E>(call: Effect.Effect<A, E>): Effect.Effect<A, E> => Effect.ensuring(call, Effect.sync(changed));
 	const count = (calls: Map<string, number>, key: string): number => {
@@ -292,13 +290,7 @@ export function fake(options: FakeOptions = {}): Fake {
 			changed();
 			return Option.some(open.notify);
 		},
-		when: (holds) =>
-			Effect.suspend(() => {
-				if (holds()) return Effect.void;
-				const latch = Latch.makeUnsafe();
-				waits.push({ holds, latch });
-				return latch.await;
-			}),
+		when,
 	};
 	return state;
 }

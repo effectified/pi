@@ -20,7 +20,7 @@ export interface Typed {
  * Makes the result schema of `subagent` ready. Fails when it has no JSON Schema, since a child cannot be told what to
  * answer then.
  *
- * How a typed result is produced: the child answers in text with one JSON value. Pi Durable 1.6.0 has no structured
+ * How a typed result is produced: the child answers in text with one JSON value. Pi Durable 1.6.1 has no structured
  * output per request, and a `finish` tool would add a tool the declaration did not name. The answer is therefore
  * checked here, and a mismatch is sent back to the child (see `correction`) a bounded number of times.
  */

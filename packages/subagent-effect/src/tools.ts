@@ -1,7 +1,13 @@
 // The tools a parent's model delegates with: one that waits for the child, one that does not, and a status.
 
 import type { ConversationId, ToolRegistration } from "@earendil-works/pi-durable";
-import { type DurableError, type SchemaConversionError, type SchemaDecodeError, Tool } from "@gunta/pi-durable-effect";
+import {
+	type DurableError,
+	type SchemaConversionError,
+	type SchemaDecodeError,
+	Task,
+	Tool,
+} from "@gunta/pi-durable-effect";
 import { Effect, Option, Schema } from "effect";
 import * as Child from "./child.ts";
 import type * as Declared from "./declared.ts";
@@ -158,7 +164,7 @@ function read(api: Tool.Api, handle: string): Effect.Effect<Tool.Reply<string>, 
 		if (state._tag === "Running") {
 			const ended = Option.match(yield* api.getTask(task), {
 				onNone: () => true,
-				onSome: (record) => record.state.status === "terminal",
+				onSome: (record) => Task.ended(record.state.status),
 			});
 			// A run that ended and left `Running` never got to write: Pi faulted or orphaned it.
 			return ended

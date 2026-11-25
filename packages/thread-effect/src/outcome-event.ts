@@ -1,5 +1,6 @@
 // The events of a thread's outcome: its work started, and each state it reached, each with a deterministic id.
 
+import { Submission } from "@gunta/pi-durable-effect";
 import { Schema } from "effect";
 import { Outcome } from "./outcome.ts";
 
@@ -66,10 +67,11 @@ export type OutcomeEvent = typeof OutcomeEvent.Type;
 
 /**
  * What identifies a delivered event beside its thread: the submission, the entry the state rests on (0 for
- * `Started`), and the state. It is what an event's id is made of, and what the delivery cursor keeps.
+ * `Started`, so a number and no entry id), and the state. It is what an event's id is made of, and what the delivery
+ * cursor keeps.
  */
 export const Mark = Schema.Struct({
-	submission: Schema.Number,
+	submission: Submission.Id,
 	entry: Schema.Number,
 	state: Schema.Literals(STATES),
 });

@@ -1,14 +1,12 @@
 // Classification ceilings: whether a conversation's classification stays within what a tool or a model may see.
 
+import type { Agent } from "@gunta/pi-durable-effect";
 import { Effect } from "effect";
 import { ModelNotCleared } from "./errors.ts";
 import type { Policy } from "./policy.ts";
 
 /** A model as Pi names it: Pi's `ModelRef`. */
-export interface ModelRef {
-	readonly provider: string;
-	readonly modelId: string;
-}
+export type ModelRef = Agent.ModelRef;
 
 /**
  * Whether `classification` is at most `ceiling` in `labels`, which run lowest to highest. An absent classification,

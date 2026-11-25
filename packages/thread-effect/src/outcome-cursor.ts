@@ -98,7 +98,7 @@ function startIn(tx: Tx.Tx, thread: string, conversation: ConversationId): Effec
 function liveIn(tx: Tx.Tx, id: TaskId): Effect.Effect<Option.Option<TaskId>, Doc.Failure> {
 	return Effect.map(tx.task(id), (found) =>
 		Option.map(
-			Option.filter(found, (record) => record.state.status !== "terminal" && record.state.status !== "completing"),
+			Option.filter(found, (record) => !Task.ended(record.state.status)),
 			(record) => record.id,
 		),
 	);

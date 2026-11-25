@@ -2,9 +2,10 @@
 // the waits and reads the tests share.
 
 import type { EntryRecord, TaskGraph, TaskId } from "@earendil-works/pi-durable";
+import { conditions } from "@gunta/pi-ai-effect/testing";
 import { type DurableError, Harness, type Hook, Tool } from "@gunta/pi-durable-effect";
 import { answer, type FauxResponseStep, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
-import { Effect, Latch, Layer, Option, Schema, Stream } from "effect";
+import { Effect, Layer, Option, Schema, Stream } from "effect";
 import { extension, Inbox, type Policy, type Request } from "../src/index.ts";
 
 // The testing kit's own types, read from its values: the type check resolves the kit to the facade's built
@@ -61,10 +62,7 @@ export const ONE_WRITE = [toolCall("write", { text: "hi" }, { id: "call-1" }), a
 export function scene<R = never>(options: SceneOptions<R> = {}): Scene<R> {
 	const written: string[] = [];
 	const published: Request[] = [];
-	const waits: Array<{ readonly holds: () => boolean; readonly latch: Latch.Latch }> = [];
-	const changed = () => {
-		for (const wait of waits) if (wait.holds()) wait.latch.openUnsafe();
-	};
+	const { when, changed } = conditions();
 	let held: PromiseWithResolvers<void> | undefined;
 	const Write = Tool.make("write", {
 		description: "Write a text.",
@@ -121,13 +119,7 @@ export function scene<R = never>(options: SceneOptions<R> = {}): Scene<R> {
 			held = Promise.withResolvers<void>();
 		},
 		release: () => held?.resolve(),
-		when: (holds) =>
-			Effect.suspend(() => {
-				if (holds()) return Effect.void;
-				const latch = Latch.makeUnsafe();
-				waits.push({ holds, latch });
-				return latch.await;
-			}),
+		when,
 	};
 }
 

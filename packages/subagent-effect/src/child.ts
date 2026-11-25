@@ -1,9 +1,8 @@
 // The `subagent.child` document: one per child conversation, linking it to its parent and holding how it ended.
 
 import type { ConversationId, TaskId } from "@earendil-works/pi-durable";
-import { Doc, Task } from "@gunta/pi-durable-effect";
+import { Conversation, Doc, Entry, Task } from "@gunta/pi-durable-effect";
 import { Schema } from "effect";
-import { ConversationIdSchema, EntryIdSchema } from "./pi.ts";
 
 /** Whether the parent's tool call waits for the child, or goes on without it. */
 export const Mode = Schema.Literals(["foreground", "background"]);
@@ -19,13 +18,13 @@ export type Mode = typeof Mode.Type;
  */
 export const State = Schema.Union([
 	Schema.Struct({ _tag: Schema.Literal("Running") }),
-	Schema.Struct({ _tag: Schema.Literal("Answered"), answer: EntryIdSchema }),
-	Schema.Struct({ _tag: Schema.Literal("Typed"), answer: EntryIdSchema, result: Schema.Json }),
+	Schema.Struct({ _tag: Schema.Literal("Answered"), answer: Entry.Id }),
+	Schema.Struct({ _tag: Schema.Literal("Typed"), answer: Entry.Id, result: Schema.Json }),
 	Schema.Struct({
 		_tag: Schema.Literal("Failed"),
 		reason: Schema.String,
 		message: Schema.String,
-		answer: Schema.NullOr(EntryIdSchema),
+		answer: Schema.NullOr(Entry.Id),
 	}),
 ]);
 
@@ -58,9 +57,9 @@ export type Link = {
 
 /** The stored value: the link, and the state. */
 export const Record = Schema.Struct({
-	conversation: ConversationIdSchema,
+	conversation: Conversation.Id,
 	subagent: Schema.String,
-	parent: ConversationIdSchema,
+	parent: Conversation.Id,
 	depth: Schema.Number,
 	mode: Mode,
 	task: Task.Id,

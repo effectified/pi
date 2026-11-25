@@ -1,6 +1,6 @@
 // Where a thread stands: at work, or ended with an outcome, read from what the harness stored and nothing else.
 
-import type { SubmissionRecord } from "@earendil-works/pi-durable";
+import type { RunFailureReason, SubmissionRecord } from "@earendil-works/pi-durable";
 import { refusalOf } from "@gunta/pi-budget-effect";
 import type { Conversation, Doc, Harness } from "@gunta/pi-durable-effect";
 import * as Review from "@gunta/pi-review-effect";
@@ -106,8 +106,8 @@ export function waited(wait: Review.Wait): Effect.Effect<Ending> {
 	}
 }
 
-/** Pi's reason of a submission whose run `Conversation.abort` ended before it answered. */
-const ABORTED = "aborted";
+/** Pi's reason of a submission whose run `Conversation.abort` ended before it answered: one of its run failures. */
+const ABORTED = "aborted" satisfies RunFailureReason;
 
 /** How a run that ended without an answer ended the thread: cancelled, stopped by the budget, or failed. */
 function unanswered(reason: string, detail: unknown): Effect.Effect<Ending> {

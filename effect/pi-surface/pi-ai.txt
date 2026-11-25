@@ -676,6 +676,10 @@ export interface CreateProviderOptions<TApi extends Api = Api> {
 	classifiers?: Partial<Record<ClassifierApi, ProviderClassifier>>;
 }
 
+## getSupportedThinkingLevels  ai/src/models.ts
+used by: router-effect
+export function getSupportedThinkingLevels<TApi extends Api>(model: Model<TApi>): ModelThinkingLevel[]
+
 ## Models  ai/src/models.ts
 used by: review-effect; ai-effect via MutableModels, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, router-effect via MutableModels, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
 /**
@@ -1185,16 +1189,28 @@ why: P019, P077, P088: an interrupted request ends with Pi's abort text, which c
 errorMessage: "Request was aborted",
 
 ## CacheRetention  ai/src/providers/model-schema.ts
-used by: ai-effect via SimpleStreamOptions, approvals-effect via ToolTask, budget-effect via StreamOptions, durable-effect via HarnessSettings, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via SimpleStreamOptions, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: ai-effect via StreamOptions, approvals-effect via ToolTask, budget-effect via StreamOptions, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via SimpleStreamOptions, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
 export type CacheRetention = Static<typeof CacheRetentionSchema>;
 
 ## CacheRetentionSchema  ai/src/providers/model-schema.ts
-used by: ai-effect via SimpleStreamOptions, approvals-effect via ToolTask, budget-effect via StreamOptions, durable-effect via HarnessSettings, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via SimpleStreamOptions, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: ai-effect via StreamOptions, approvals-effect via ToolTask, budget-effect via StreamOptions, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via SimpleStreamOptions, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
 export const CacheRetentionSchema: Schema<"long" | "none" | "short">
+
+## MODEL_THINKING_LEVELS  ai/src/providers/model-schema.ts
+used by: durable-effect, router-effect
+export const MODEL_THINKING_LEVELS = ["off", ...THINKING_LEVELS] as const
 
 ## ModelCost  ai/src/providers/model-schema.ts
 used by: ai-effect via Model, approvals-effect via ToolTask, budget-effect via Model, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Model, router-effect via Model, subagent-effect via ToolRegistration, thread-effect via Provider
 export type ModelCost = Static<typeof ModelCostSchema>;
+
+## ModelCostRates  ai/src/providers/model-schema.ts
+used by: ai-effect
+export type ModelCostRates = Static<typeof ModelCostRatesSchema>;
+
+## ModelCostRatesSchema  ai/src/providers/model-schema.ts
+used by: ai-effect via ModelCostRates
+export const ModelCostRatesSchema: Schema<{ input: number; output: number; cacheRead: number; cacheWrite: number; }>
 
 ## ModelCostSchema  ai/src/providers/model-schema.ts
 used by: ai-effect via Model, approvals-effect via ToolTask, budget-effect via Model, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Model, router-effect via Model, subagent-effect via ToolRegistration, thread-effect via Provider
@@ -1225,11 +1241,11 @@ used by: ai-effect via Model, approvals-effect via ToolTask, budget-effect via M
 export const ModelPromptCacheSchema: Schema<{ short?: number | undefined; long?: number | undefined; }>
 
 ## ModelThinkingLevel  ai/src/providers/model-schema.ts
-used by: ai-effect via AssistantMessage, approvals-effect via EntryRecord, budget-effect via AssistantMessage, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, recorder-effect via AssistantMessage, review-effect via AssistantMessage, router-effect via AssistantMessage, subagent-effect via ToolRegistration, swarm-effect via EntryRecord, thread-effect via Provider
+used by: ai-effect via AssistantMessage, approvals-effect via EntryRecord, budget-effect via AssistantMessage, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, recorder-effect via AssistantMessage, review-effect via AssistantMessage, router-effect via getSupportedThinkingLevels, subagent-effect via ToolRegistration, swarm-effect via EntryRecord, thread-effect via Provider
 export type ModelThinkingLevel = Static<typeof ModelThinkingLevelSchema>;
 
 ## ModelThinkingLevelSchema  ai/src/providers/model-schema.ts
-used by: ai-effect via AssistantMessage, approvals-effect via EntryRecord, budget-effect via AssistantMessage, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, recorder-effect via AssistantMessage, review-effect via AssistantMessage, router-effect via AssistantMessage, subagent-effect via ToolRegistration, swarm-effect via EntryRecord, thread-effect via Provider
+used by: ai-effect via AssistantMessage, approvals-effect via EntryRecord, budget-effect via AssistantMessage, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, recorder-effect via AssistantMessage, review-effect via AssistantMessage, router-effect via getSupportedThinkingLevels, subagent-effect via ToolRegistration, swarm-effect via EntryRecord, thread-effect via Provider
 export const ModelThinkingLevelSchema: Schema<"high" | "low" | "max" | "medium" | "minimal" | "off" | "xhigh">
 
 ## ThinkingLevel  ai/src/providers/model-schema.ts
@@ -1237,11 +1253,11 @@ used by: ai-effect via SimpleStreamOptions, approvals-effect via ToolTask, budge
 export type ThinkingLevel = Static<typeof ThinkingLevelSchema>;
 
 ## ThinkingLevelMap  ai/src/providers/model-schema.ts
-used by: ai-effect via Model, approvals-effect via ToolTask, budget-effect via Model, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Model, router-effect via Model, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: router-effect; ai-effect via Model, approvals-effect via ToolTask, budget-effect via Model, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Model, subagent-effect via ToolRegistration, thread-effect via Provider
 export type ThinkingLevelMap = Static<typeof ThinkingLevelMapSchema>;
 
 ## ThinkingLevelMapSchema  ai/src/providers/model-schema.ts
-used by: ai-effect via Model, approvals-effect via ToolTask, budget-effect via Model, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Model, router-effect via Model, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via Model, approvals-effect via ToolTask, budget-effect via Model, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Model, router-effect via ThinkingLevelMap, subagent-effect via ToolRegistration, thread-effect via Provider
 export const ThinkingLevelMapSchema: Schema<{ off?: string | null | undefined; minimal?: string | null | undefined; low?: string | null | undefined; medium?: string | null | undefined; high?: string | null | undefined; xhigh?: string | null | undefined; max?: string | null | undefined; }>
 
 ## ThinkingLevelSchema  ai/src/providers/model-schema.ts
@@ -1288,7 +1304,7 @@ export type ApiStreamOptions<TApi extends Api> = TApi extends keyof ApiOptionsMa
 	: StreamOptions & Record<string, unknown>;
 
 ## AssistantImages  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: budget-effect; ai-effect via Provider, approvals-effect via ToolTask, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 export interface AssistantImages {
 	api: ImageApi;
 	provider: ProviderId;
@@ -1389,15 +1405,15 @@ export interface BaseModel<TApi extends string> {
 }
 
 ## ClassifierAnswer  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via ClassifierResult, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 export type ClassifierAnswer = ClassifierChoiceAnswer | ClassifierScoreAnswer | ClassifierBoolAnswer;
 
 ## ClassifierApi  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via ClassifierResult, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 export type ClassifierApi = KnownClassifierApi | (string & {});
 
 ## ClassifierBoolAnswer  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via ClassifierResult, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 export interface ClassifierBoolAnswer {
 	type: "bool";
 	probability: number;
@@ -1412,7 +1428,7 @@ export interface ClassifierBoolQuestion {
 }
 
 ## ClassifierChoiceAnswer  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via ClassifierResult, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 export interface ClassifierChoiceAnswer {
 	type: "choice";
 	choice: string;
@@ -1466,7 +1482,7 @@ used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect vi
 export type ClassifierQuestion = ClassifierChoiceQuestion | ClassifierScoreQuestion | ClassifierBoolQuestion;
 
 ## ClassifierResult  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: budget-effect; ai-effect via Provider, approvals-effect via ToolTask, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 export interface ClassifierResult {
 	api: ClassifierApi;
 	provider: ProviderId;
@@ -1485,7 +1501,7 @@ export interface ClassifierResult {
 }
 
 ## ClassifierScoreAnswer  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via ClassifierResult, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 export interface ClassifierScoreAnswer {
 	type: "score";
 	score: number;
@@ -1501,7 +1517,7 @@ export interface ClassifierScoreQuestion {
 }
 
 ## ClassifierStopReason  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via ClassifierResult, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 export type ClassifierStopReason = "stop" | "error" | "aborted";
 
 ## ConstrainedSamplingConfig  ai/src/types.ts
@@ -1567,7 +1583,7 @@ export interface DeferredHandle {
 }
 
 ## FetchFunction  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via StreamOptions, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via StreamOptions, approvals-effect via ToolTask, budget-effect via StreamOptions, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 export type FetchFunction = typeof globalThis.fetch;
 
 ## GrammarFormat  ai/src/types.ts
@@ -1580,11 +1596,11 @@ used by: ai-effect via Tool, approvals-effect via EntryRecord, budget-effect via
 export type GrammarVariants = Partial<Record<GrammarFormat, string>>;
 
 ## ImageApi  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via AssistantImages, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 export type ImageApi = KnownImageApi | (string & {});
 
 ## ImageContent  ai/src/types.ts
-used by: ai-effect, recorder-effect; approvals-effect via ToolExecutionResult, budget-effect via MutableModels, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage, guard-effect via ToolExecutionResult, review-effect via Models, router-effect via Provider, subagent-effect via SubmissionDraft, swarm-effect via EntryRecord, thread-effect via Provider
+used by: ai-effect, recorder-effect; approvals-effect via ToolExecutionResult, budget-effect via AssistantImages, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage, guard-effect via ToolExecutionResult, review-effect via Models, router-effect via Provider, subagent-effect via SubmissionDraft, swarm-effect via EntryRecord, thread-effect via Provider
 export interface ImageContent {
 	type: "image";
 	data: string; // base64 encoded image data
@@ -1621,11 +1637,11 @@ export interface ImagesOptions extends ProviderRequestOptions<ImageModel<ImageAp
 }
 
 ## ImagesOutputContent  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via AssistantImages, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 export type ImagesOutputContent = TextContent | ImageContent;
 
 ## ImagesStopReason  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via AssistantImages, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 export type ImagesStopReason = "stop" | "error" | "aborted";
 
 ## InvalidJsonKeys  ai/src/types.ts
@@ -1675,7 +1691,7 @@ type IsJsonProperty<T> = IsAny<T> extends true
 			: IsJsonCompatible<Exclude<T, undefined>>;
 
 ## JsonObject  ai/src/types.ts
-used by: ai-effect, router-effect; approvals-effect via ToolExecutionResult, budget-effect via AssistantMessage, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage, guard-effect via ToolExecutionResult, recorder-effect via AssistantMessage, review-effect via Models, subagent-effect via ToolRegistration, swarm-effect via EntryRecord, thread-effect via Provider
+used by: ai-effect, router-effect; approvals-effect via ToolExecutionResult, budget-effect via AssistantMessage, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage, guard-effect via ToolExecutionResult, recorder-effect via ToolCall, review-effect via Models, subagent-effect via ToolRegistration, swarm-effect via EntryRecord, thread-effect via Provider
 export type JsonObject = { [key: string]: JsonValue };
 
 ## JsonRepresentation  ai/src/types.ts
@@ -1712,7 +1728,7 @@ export type KnownApi =
 	| "pi-messages";
 
 ## KnownClassifierApi  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via ClassifierResult, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 export type KnownClassifierApi =
 	| "typesafe-system-one"
 	| "cloudflare-workers-ai-system-one"
@@ -1721,11 +1737,11 @@ export type KnownClassifierApi =
 	| "pi-decision";
 
 ## KnownImageApi  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via AssistantImages, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 export type KnownImageApi = "openrouter-images";
 
 ## KnownProvider  ai/src/types.ts
-used by: ai-effect via AssistantMessage, approvals-effect via EntryRecord, budget-effect via AssistantMessage, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage, guard-effect via EntryRecord, recorder-effect via AssistantMessage, review-effect via AssistantMessage, router-effect via AssistantMessage, subagent-effect via EntryRecord, swarm-effect via EntryRecord, thread-effect via Provider
+used by: ai-effect via AssistantMessage, approvals-effect via EntryRecord, budget-effect via AssistantImages, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage, guard-effect via EntryRecord, recorder-effect via AssistantMessage, review-effect via AssistantMessage, router-effect via AssistantMessage, subagent-effect via EntryRecord, swarm-effect via EntryRecord, thread-effect via Provider
 export type KnownProvider =
 	| "amazon-bedrock"
 	| "ant-ling"
@@ -1867,7 +1883,7 @@ export interface ProviderClassifier {
 }
 
 ## ProviderEnv  ai/src/types.ts
-used by: ai-effect via ProviderAuth, approvals-effect via ToolTask, budget-effect via StreamOptions, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via ProviderAuth, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via StreamOptions, approvals-effect via ToolTask, budget-effect via StreamOptions, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via ProviderAuth, subagent-effect via ToolRegistration, thread-effect via Provider
 /** Provider-scoped environment overrides. Values take precedence over process.env. */
 export type ProviderEnv = Record<string, string>;
 
@@ -1876,7 +1892,7 @@ used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect vi
 export type ProviderHeaders = Record<string, string | null>;
 
 ## ProviderId  ai/src/types.ts
-used by: ai-effect via AssistantMessage, approvals-effect via EntryRecord, budget-effect via AssistantMessage, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage, guard-effect via EntryRecord, recorder-effect via AssistantMessage, review-effect via AssistantMessage, router-effect via AssistantMessage, subagent-effect via EntryRecord, swarm-effect via EntryRecord, thread-effect via Provider
+used by: ai-effect via AssistantMessage, approvals-effect via EntryRecord, budget-effect via AssistantImages, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage, guard-effect via EntryRecord, recorder-effect via AssistantMessage, review-effect via AssistantMessage, router-effect via AssistantMessage, subagent-effect via EntryRecord, swarm-effect via EntryRecord, thread-effect via Provider
 export type ProviderId = KnownProvider | string;
 
 ## ProviderImages  ai/src/types.ts
@@ -1896,7 +1912,7 @@ export interface ProviderImages {
 }
 
 ## ProviderRequestOptions  ai/src/types.ts
-used by: ai-effect via Provider, approvals-effect via ToolTask, budget-effect via StreamOptions, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via StreamOptions, approvals-effect via ToolTask, budget-effect via StreamOptions, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via Provider, subagent-effect via ToolRegistration, thread-effect via Provider
 /** Authentication, HTTP transport, and lifecycle callbacks shared by provider requests. */
 export interface ProviderRequestOptions<TModel = Model<Api>> {
 	signal?: AbortSignal;
@@ -1961,7 +1977,7 @@ export interface ProviderRequestOptions<TModel = Model<Api>> {
 }
 
 ## ProviderResponse  ai/src/types.ts
-used by: router-effect; ai-effect via SimpleStreamOptions, approvals-effect via ToolTask, budget-effect via StreamOptions, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: router-effect; ai-effect via StreamOptions, approvals-effect via ToolTask, budget-effect via StreamOptions, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, subagent-effect via ToolRegistration, thread-effect via Provider
 export interface ProviderResponse {
 	status: number;
 	headers: Record<string, string>;
@@ -2017,7 +2033,7 @@ used by: ai-effect; approvals-effect via EntryRecord, budget-effect via Assistan
 export type StopReason = "pending" | "stop" | "length" | "toolUse" | "error" | "aborted" | "deferred";
 
 ## StreamOptions  ai/src/types.ts
-used by: budget-effect; ai-effect via SimpleStreamOptions, approvals-effect via ToolTask, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via SimpleStreamOptions, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect, budget-effect; approvals-effect via ToolTask, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via SimpleStreamOptions, subagent-effect via ToolRegistration, thread-effect via Provider
 export interface StreamOptions extends ProviderRequestOptions<Model<Api>> {
 	/**
 	 * Optional callback invoked after each HTTP response is received, including error responses and
@@ -2117,7 +2133,7 @@ export interface TextContent {
 }
 
 ## ThinkingBudgets  ai/src/types.ts
-used by: ai-effect via SimpleStreamOptions, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessSettings, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via SimpleStreamOptions, subagent-effect via ToolRegistration, thread-effect via Provider
+used by: ai-effect via SimpleStreamOptions, approvals-effect via ToolTask, budget-effect via MutableModels, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via SimpleStreamOptions, subagent-effect via ToolRegistration, thread-effect via Provider
 /** Token budgets for each thinking level (token-based providers only) */
 export interface ThinkingBudgets {
 	minimal?: number;
@@ -2152,7 +2168,7 @@ export interface Tool<TParameters extends object = object> {
 }
 
 ## ToolCall  ai/src/types.ts
-used by: ai-effect; approvals-effect via EntryRecord, budget-effect via AssistantMessage, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage, guard-effect via EntryRecord, recorder-effect via AssistantMessage, review-effect via AssistantMessage, router-effect via AssistantMessage, subagent-effect via EntryRecord, swarm-effect via EntryRecord, thread-effect via Provider
+used by: ai-effect, recorder-effect; approvals-effect via EntryRecord, budget-effect via AssistantMessage, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage, guard-effect via EntryRecord, review-effect via AssistantMessage, router-effect via AssistantMessage, subagent-effect via EntryRecord, swarm-effect via EntryRecord, thread-effect via Provider
 export interface ToolCall {
 	type: "toolCall";
 	id: string;
@@ -2213,7 +2229,7 @@ export type TranscriptContext = {
 };
 
 ## Transport  ai/src/types.ts
-used by: ai-effect via SimpleStreamOptions, approvals-effect via ToolTask, budget-effect via StreamOptions, durable-effect via HarnessSettings, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via SimpleStreamOptions, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: ai-effect via StreamOptions, approvals-effect via ToolTask, budget-effect via StreamOptions, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, review-effect via Models, router-effect via SimpleStreamOptions, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
 export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 
 ## Usage  ai/src/types.ts
@@ -2586,11 +2602,11 @@ export class ToolCallArgumentsStream {
 }
 
 ## Content  ai/src/utils/text.ts
-used by: ai-effect via contentText
+used by: ai-effect via contentText, recorder-effect via contentText
 type Content = TextContent | ImageContent | ThinkingContent | ToolCall;
 
 ## contentText  ai/src/utils/text.ts
-used by: ai-effect
+used by: ai-effect, recorder-effect
 /** Extract and join text from message content. */
 export function contentText(content: string | readonly Content[], separator = "\n"): string
 

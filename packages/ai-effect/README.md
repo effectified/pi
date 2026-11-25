@@ -178,7 +178,9 @@ const program = Effect.gen(function* () {
 ```
 
 `ScriptedModels` wraps pi-ai's `fauxProvider`. `ScriptedLanguageModel.layer(responses)` is the same idea for
-`effect/ai`: a `LanguageModel` that answers with queued parts and records what it was asked.
+`effect/ai`: a `LanguageModel` that answers with queued parts and records what it was asked. `conditions()` is how a
+test waits for a fake of its own without the clock: the fake calls `changed()` after each change of its state, and
+the test waits with `when(() => fake.calls.length === 2)`.
 
 ## Not wrapped yet
 

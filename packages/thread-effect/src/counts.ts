@@ -2,6 +2,7 @@
 // and from the accounts of its swarms' forks.
 
 import { AssistantEntry, type ConversationId, type EntryRecord, ToolResultEntry } from "@earendil-works/pi-durable";
+import { ANSWERED } from "@gunta/pi-ai-effect";
 import { Shares, type SharesService } from "@gunta/pi-budget-effect";
 import { type Conversation, type Doc, Harness } from "@gunta/pi-durable-effect";
 import { type MalformedRefusal, Refused } from "@gunta/pi-guard-effect";
@@ -57,10 +58,14 @@ export function counted(
 	);
 }
 
-/** Whether the entry is a model response that returned: Pi also stores a failed and an aborted attempt as one. */
+/**
+ * Whether the entry is a model response that answered, by Pi's rule (`ANSWERED`): Pi also stores a failed attempt as
+ * one, an error, an abort, a `pending` partial or a `deferred` response without a handle. A deferred response with a
+ * handle is not stored until it is fetched.
+ */
 function returned(entry: EntryRecord): boolean {
 	const message = AssistantEntry.is(entry) ? entry.model?.[0] : undefined;
-	return message?.role === "assistant" && message.stopReason !== "error" && message.stopReason !== "aborted";
+	return message?.role === "assistant" && ANSWERED[message.stopReason];
 }
 
 /**

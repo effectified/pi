@@ -20,7 +20,7 @@ export interface Site {
 	readonly coordinatorTaskId: number;
 	readonly sourceConversationId: number;
 	readonly at: number;
-	readonly agent: Option.Option<Agent.Change>;
+	readonly agent: Option.Option<Agent.ByName>;
 	readonly now: number;
 }
 

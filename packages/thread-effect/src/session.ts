@@ -17,9 +17,8 @@ export const Document = Doc.family({
 	version: 1,
 	scope: "session",
 	schema: Schema.Struct({ conversation: Conversation.Id }),
-	// The seed is the conversation: a document exists only as the index entry of one. Pi brands ids in the type
-	// system only, and a seed is plain JSON: the number is the id.
-	initial: (conversation: number) => ({ conversation: conversation as ConversationId }),
+	// The seed is the conversation: a document exists only as the index entry of one.
+	initial: (conversation: ConversationId) => ({ conversation }),
 	// One small field, written once.
 	checkpointWhen: () => true,
 });

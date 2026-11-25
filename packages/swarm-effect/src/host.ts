@@ -1,7 +1,7 @@
 // The host operations of a swarm: start it, read its status, cancel it, read its result, and release a kept fork.
 
 import type { TaskId } from "@earendil-works/pi-durable";
-import { type Doc, type DurableError, Harness, type SchemaDecodeError } from "@gunta/pi-durable-effect";
+import { Agent, type Doc, type DurableError, Harness, type SchemaDecodeError } from "@gunta/pi-durable-effect";
 import { Effect, Option, Schema } from "effect";
 import { Input, State } from "./coordinator.ts";
 import { type Destroyed, ForkDriver, type ForkRetryLater, type Place } from "./driver.ts";
@@ -9,7 +9,7 @@ import { InvalidPlan, type InvalidValue, SwarmFaulted, SwarmIdTaken, SwarmNotFou
 import { type Status as JobStatus, planned, type Reason } from "./job.ts";
 import { Jobs, type Progress, progressOf, Swarms } from "./ledger.ts";
 import { type Outcome, typed } from "./outcome.ts";
-import { named, type Plan, type Swarm } from "./swarm.ts";
+import type { Plan, Swarm } from "./swarm.ts";
 
 /** What `start` answers: the swarm's coordinator task, and whether this call created it. */
 export interface Started {
@@ -40,6 +40,7 @@ export function start<I>(
 		const jobs = yield* Effect.forEach(plan.jobs, (job) =>
 			Effect.map(swarm.work.encodeInput(job.input), (input) => ({ key: job.key, input })),
 		);
+		const agent = plan.agent === undefined ? null : yield* forkAgent(plan.id, plan.agent);
 		const input: typeof Input.Type = {
 			swarmId: plan.id,
 			jobs,
@@ -47,7 +48,7 @@ export function start<I>(
 			cap: plan.cap,
 			onFailure: plan.onFailure,
 			pins: plan.pins ?? [],
-			agent: plan.agent === undefined ? null : named(plan.agent),
+			agent,
 		};
 		return yield* Harness.commit((tx) =>
 			Effect.gen(function* () {
@@ -57,8 +58,7 @@ export function start<I>(
 				const claim = yield* held.get;
 				if (claim.taskId !== null) {
 					if (claim.name !== swarm.name) return yield* new SwarmIdTaken({ swarmId: plan.id, heldBy: claim.name });
-					// Pi brands ids in the type system only: a stored task id is the number.
-					return { swarmId: plan.id, taskId: claim.taskId as TaskId, created: false };
+					return { swarmId: plan.id, taskId: claim.taskId, created: false };
 				}
 				if (Option.isNone(source)) {
 					return yield* new InvalidPlan({ swarmId: plan.id, reason: `No conversation ${plan.source}` });
@@ -77,6 +77,19 @@ export function start<I>(
 		);
 	});
 }
+
+/**
+ * The agent change of the forks as it is stored, every tool and extension by its name. Fails with `InvalidPlan` for a
+ * change Pi's `configure` would refuse in every fork, such as `maxTurns: 0`.
+ */
+function forkAgent(swarmId: string, change: Agent.Change): Effect.Effect<Agent.ByName, InvalidPlan> {
+	return Effect.mapError(
+		decodeByName(Agent.byName(change)),
+		(error) => new InvalidPlan({ swarmId, reason: `The agent change of the forks: ${error.message}` }),
+	);
+}
+
+const decodeByName = Schema.decodeUnknownEffect(Agent.ByName);
 
 /** What is wrong with a plan, if anything. Checked here because the types cannot say it. */
 function flawOf(plan: Plan<unknown>): Option.Option<string> {
@@ -240,8 +253,7 @@ function claimOf(swarmId: string) {
 			onSome: (claim) =>
 				claim.taskId === null
 					? Effect.fail(new SwarmNotFound({ swarmId }))
-					: // Pi brands ids in the type system only: a stored task id is the number.
-						Effect.succeed({ ...claim, taskId: claim.taskId as TaskId }),
+					: Effect.succeed({ ...claim, taskId: claim.taskId }),
 		}),
 	);
 }

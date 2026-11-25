@@ -5,6 +5,7 @@ import type { TaskId } from "@earendil-works/pi-durable";
 import { type Doc, Harness, type Tx } from "@gunta/pi-durable-effect";
 import { Effect, Stream } from "effect";
 import * as Copy from "./copy.ts";
+import { LIVE } from "./live.ts";
 import * as Run from "./run.ts";
 
 /**
@@ -39,9 +40,6 @@ export const onStorageFork: Effect.Effect<void, Doc.Failure, Harness.Harness> = 
 	// The abort ends a run that sleeps until its child's submission settles, and with it the child's own work.
 	yield* Effect.forEach(inherited, (taskId) => Harness.abortTask(taskId), { discard: true });
 });
-
-/** The statuses of a task that has not ended: Pi's scan filters by one status. */
-const LIVE = ["pending", "running", "waiting", "sleeping", "completing"] as const;
 
 /** The runs with `status`, which are as many as there are subagents at work, whatever else the storage holds. */
 function runsIn(tx: Tx.Tx, status: (typeof LIVE)[number]): Effect.Effect<ReadonlyArray<TaskId>, Doc.Failure> {

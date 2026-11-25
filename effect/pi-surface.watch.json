@@ -48,21 +48,21 @@
 			"file": "durable/src/signals.ts",
 			"name": "signalMemoName",
 			"why": "P040, P109, P133: a signal's state is read from the task's memo of this name.",
-			"sites": ["durable-effect/src/signal.ts", "approvals-effect/src/signal.ts", "review-effect/src/signalled.ts"]
+			"sites": ["durable-effect/src/signal.ts", "approvals-effect/src/signal.ts"]
 		},
 		{
 			"kind": "declaration",
 			"file": "durable/src/signals.ts",
 			"name": "SignalMemo",
 			"why": "P040, P133: the shape of that memo ({ version, value } or { expired: true }).",
-			"sites": ["durable-effect/src/signal.ts", "review-effect/src/signalled.ts"]
+			"sites": ["durable-effect/src/signal.ts"]
 		},
 		{
 			"kind": "declaration",
 			"file": "durable/src/signals.ts",
 			"name": "ValueMemo",
 			"why": "P040, P133: the value form of that memo.",
-			"sites": ["durable-effect/src/signal.ts", "review-effect/src/signalled.ts"]
+			"sites": ["durable-effect/src/signal.ts"]
 		},
 		{
 			"kind": "declaration",
@@ -153,14 +153,14 @@
 			"file": "durable/src/harness/scheduler.ts",
 			"name": "LIVE_STATUSES",
 			"why": "P143: the task statuses that count as live.",
-			"sites": ["subagent-effect/src/pi.ts", "subagent-effect/src/storage-fork.ts"]
+			"sites": ["subagent-effect/src/live.ts", "subagent-effect/src/storage-fork.ts"]
 		},
 		{
 			"kind": "declaration",
 			"file": "durable/src/harness/task-graph.ts",
 			"name": "LIVE_STATUSES",
 			"why": "P143: Pi's second copy of the live statuses.",
-			"sites": ["subagent-effect/src/pi.ts", "subagent-effect/src/storage-fork.ts"]
+			"sites": ["subagent-effect/src/live.ts", "subagent-effect/src/storage-fork.ts"]
 		},
 		{
 			"kind": "declaration",

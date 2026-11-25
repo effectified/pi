@@ -1,19 +1,7 @@
 // Granting: a conversation's grant written in the commit that creates or configures it, with Pi's offer made to match.
 
-import {
-	AgentDoc,
-	type ConversationId,
-	type ConversationOwnership,
-	type ConversationRecord,
-} from "@earendil-works/pi-durable";
-import {
-	type Conversation,
-	type Doc,
-	type DurableError,
-	Harness,
-	type Tx,
-	UnexpectedError,
-} from "@gunta/pi-durable-effect";
+import type { ConversationId, ConversationOwnership, ConversationRecord } from "@earendil-works/pi-durable";
+import { BuiltinDoc, type Conversation, type Doc, type DurableError, Harness, type Tx } from "@gunta/pi-durable-effect";
 import { Effect, Option } from "effect";
 import * as Classification from "./classification.ts";
 import * as Enforced from "./enforced.ts";
@@ -193,13 +181,12 @@ function underOwner(
 	tx: Tx.Tx,
 	policy: Policy,
 	grant: Grant.Grant,
-	owner: number | undefined,
+	owner: ConversationId | undefined,
 ): Effect.Effect<Grant.Grant, Doc.Failure> {
 	const labels = policy.classifications;
 	if (owner === undefined || labels.length === 0) return Effect.succeed(grant);
 	return Effect.gen(function* () {
-		// The document stores the id as the number it is; Pi's ids are branded numbers.
-		const document = yield* tx.doc(Grant.Document, owner as ConversationId);
+		const document = yield* tx.doc(Grant.Document, owner);
 		const held = Grant.effective(yield* document.get, policy.ungranted).classification;
 		const asked = grant.classification === undefined ? -1 : labels.indexOf(grant.classification);
 		const bound = held === undefined ? -1 : labels.indexOf(held);
@@ -211,27 +198,22 @@ function underOwner(
 /**
  * Those of `tools` the conversation may keep under `mode: "narrow"`: the ones Pi's stored agent enables now and, when
  * the conversation has a grant, that grant lists. A stored agent without a list enables every tool, less those it
- * removes. The facade has no read of the stored agent inside a commit, so this opens Pi's own document.
+ * removes.
  */
 function narrowed(
 	tx: Tx.Tx,
 	conversationId: ConversationId,
 	tools: ReadonlyArray<string>,
 	had: Grant.Grant | null,
-): Effect.Effect<ReadonlyArray<string>, DurableError> {
-	return Effect.map(
-		Effect.tryPromise({
-			try: () => tx.pi.doc(AgentDoc, conversationId),
-			catch: (cause) => new UnexpectedError({ cause }),
-		}),
-		(agent) => {
-			const enabled = agent.tools;
-			return tools.filter(
-				(name) =>
-					(enabled === undefined ||
-						(Array.isArray(enabled) ? enabled.includes(name) : !enabled.remove.includes(name))) &&
-					(had === null || had.tools.includes(name)),
-			);
-		},
-	);
+): Effect.Effect<ReadonlyArray<string>, Doc.Failure> {
+	return Effect.gen(function* () {
+		const agent = yield* tx.doc(BuiltinDoc.agent, conversationId);
+		const enabled = (yield* agent.get).tools;
+		return tools.filter(
+			(name) =>
+				(enabled === undefined ||
+					(Array.isArray(enabled) ? enabled.includes(name) : !enabled.remove.includes(name))) &&
+				(had === null || had.tools.includes(name)),
+		);
+	});
 }

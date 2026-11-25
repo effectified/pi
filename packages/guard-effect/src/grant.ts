@@ -1,6 +1,6 @@
 // A grant: the tools one conversation may call and its classification, and the document that stores it.
 
-import { Doc } from "@gunta/pi-durable-effect";
+import { Conversation, Doc } from "@gunta/pi-durable-effect";
 import { Schema } from "effect";
 
 /**
@@ -21,7 +21,7 @@ export type Grant = typeof Grant.Type;
  */
 export const Stored = Schema.Struct({
 	grant: Schema.NullOr(Grant),
-	owner: Schema.optionalKey(Schema.Number),
+	owner: Schema.optionalKey(Conversation.Id),
 });
 
 /**

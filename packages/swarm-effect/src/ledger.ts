@@ -1,6 +1,6 @@
 // What a swarm keeps in the harness storage beside its coordinator task: its task by swarm id, and its jobs' statuses.
 
-import { Doc, type DurableError, type SchemaDecodeError, type Tx } from "@gunta/pi-durable-effect";
+import { Doc, type DurableError, type SchemaDecodeError, Task, type Tx } from "@gunta/pi-durable-effect";
 import { Effect, Schema } from "effect";
 import { Place } from "./driver.ts";
 import { type Job, Reason, ranOf, Status } from "./job.ts";
@@ -19,7 +19,7 @@ export const Swarms = Doc.family({
 	schema: Schema.Struct({
 		/** The definition's name; empty until `start` stored the swarm. */
 		name: Schema.String,
-		taskId: Schema.NullOr(Schema.Number),
+		taskId: Schema.NullOr(Task.Id),
 		/** Per job key whose fork `destroyFork` destroyed: the bytes it wrote, when the driver knew them. */
 		released: Schema.Record(Schema.String, Schema.NullOr(Schema.Number)),
 	}),

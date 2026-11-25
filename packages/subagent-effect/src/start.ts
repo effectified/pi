@@ -7,7 +7,7 @@ import * as Child from "./child.ts";
 import * as ChildSetup from "./child-setup.ts";
 import * as Declared from "./declared.ts";
 import { type ChildSetupFailed, DepthExceeded, TooManyChildren, type UnknownSubagent } from "./errors.ts";
-import * as Pi from "./pi.ts";
+import * as Live from "./live.ts";
 import * as Run from "./run.ts";
 import * as Started from "./started.ts";
 import * as Subagent from "./subagent.ts";
@@ -33,8 +33,9 @@ export type Refusal = UnknownSubagent | DepthExceeded | TooManyChildren | ChildS
  *
  * - **Depth** from the asking conversation's own `subagent.child` document: one more than its depth, 1 when it has
  *   none.
- * - **Live children** from Pi's task table: the tasks of kind `subagent.run` in the asking conversation that have
- *   not ended, read in the creating commit. Commits run one at a time, so two calls of one round cannot both pass.
+ * - **Live children** from Pi's task table: the tasks of kind `subagent.run` in the asking conversation that Pi has
+ *   not settled, `completing` ones included (`Live.LIVE`), read in the creating commit. Commits run one at a time, so
+ *   two calls of one round cannot both pass.
  */
 export function start(
 	api: Tool.Api,
@@ -56,7 +57,7 @@ export function start(
 		const setup = yield* ChildSetup.ChildSetup;
 		return yield* api.commit((tx) =>
 			Effect.gen(function* () {
-				const live = yield* Pi.countLive(tx, api.conversationId, Run.NAME, maxLive);
+				const live = yield* Live.countLive(tx, api.conversationId, Run.NAME, maxLive);
 				if (live >= maxLive) return yield* new TooManyChildren({ live, maxLive });
 				const input = { subagent: subagent.name, task: request.task, mode: request.mode, depth };
 				const task = yield* tx.createTask(run, input, ownership(api, request.mode));

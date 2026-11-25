@@ -3,7 +3,15 @@
 
 import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
 import type { Shares } from "@gunta/pi-budget-effect";
-import { type Conversation, type Doc, type DurableError, Harness, Task, type Tx } from "@gunta/pi-durable-effect";
+import {
+	type Conversation,
+	type Doc,
+	type DurableError,
+	Harness,
+	Submission,
+	Task,
+	type Tx,
+} from "@gunta/pi-durable-effect";
 import { Recorder } from "@gunta/pi-recorder-effect";
 import * as Review from "@gunta/pi-review-effect";
 import { Clock, Deferred, Duration, Effect, Layer, Option, Pull, Queue, Schedule, Schema, Stream } from "effect";
@@ -434,7 +442,7 @@ function dueOf(
 		}
 		const next = all[at + 1];
 		const after: Due = next === undefined ? { _tag: "Nothing", over: true } : { _tag: "Started", submission: next };
-		const settled = current.record.status === "done" || current.record.status === "unanswered";
+		const settled = Submission.settled(current.record.status);
 		const ending = settled ? yield* Standing.endingOf(current.record, conversation) : Option.none<Standing.Ending>();
 		if (Option.isSome(ending) && (yield* told(conversation, delivered, ending.value))) return after;
 		const wait = yield* waitAfter(conversation, current, boundOf(all, at), delivered.entry);
@@ -509,8 +517,8 @@ function boundOf(all: ReadonlyArray<Thread.Newest>, at: number): number {
 }
 
 /**
- * Pi brands an entry id in the type system only, and the cursor keeps one as the number it is: at run time the two
- * are the same.
+ * The bound of a read of entries from `entry`: a mark's entry, 0 for none, or one after it. Pi brands an entry id in
+ * the type system only, and a bound is a number of the same kind: at run time the two are the same.
  */
 function entryId(entry: number): EntryId {
 	return entry as EntryId;

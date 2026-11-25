@@ -1,5 +1,6 @@
 // Refusals: what a guard publishes for every tool call it kept from running. Never the arguments.
 
+import { Conversation, Task } from "@gunta/pi-durable-effect";
 import { Schema } from "effect";
 
 /**
@@ -30,9 +31,9 @@ export type Reason = typeof Reason.Type;
 
 /** One tool call a guard kept from running: which conversation, which tool, which rule. */
 export const Refusal = Schema.Struct({
-	conversationId: Schema.Number,
+	conversationId: Conversation.Id,
 	/** The call's task. With `callId` it identifies the call: Pi may ask a hook twice across a restart. */
-	taskId: Schema.Number,
+	taskId: Task.Id,
 	/** The id the model gave the call; a nested call's is `<caller's id>/<key>`. */
 	callId: Schema.String,
 	tool: Schema.String,

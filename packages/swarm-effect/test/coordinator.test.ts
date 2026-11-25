@@ -8,7 +8,7 @@ import { TestHarness } from "@gunta/pi-durable-effect/testing";
 import { Effect, Fiber, Layer, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-import { destroyInARow } from "../src/coordinator.ts";
+import { destroyInARow, Input } from "../src/coordinator.ts";
 import { MAX_ATTEMPTS } from "../src/fan-out.ts";
 import * as Swarm from "../src/index.ts";
 import { type Fake, fake, Settled } from "./fake-driver.ts";
@@ -577,6 +577,36 @@ describe("the fork's agent", () => {
 		await swarm(driver, ["a"]);
 		expect(driver.agents.get("job-a")).toEqual(Option.none());
 	});
+
+	it("decodes as stored by a coordinator of the earlier version, which kept it as any JSON", () =>
+		runTest(
+			Effect.gen(function* () {
+				const stored = {
+					swarmId: "s",
+					jobs: [{ key: "a", input: { word: "a" } }],
+					at: 12,
+					cap: 1,
+					onFailure: "collect",
+					pins: [],
+					agent: {
+						model: { provider: "cheap", modelId: "small" },
+						thinkingLevel: null,
+						extensions: { add: ["search"], remove: ["write"] },
+						tools: { remove: ["bash"] },
+						modelTools: ["read"],
+						instructions: "Be brief.",
+						maxTurns: 3,
+						compaction: { enabled: false, modelOverrides: { "cheap/small": { reserveTokens: 0 } } },
+					},
+				};
+				expect(yield* Schema.decodeUnknownEffect(Input)(stored)).toEqual(stored);
+				// A change no fork could take, as Pi's `configure` would refuse it, is refused when it is read.
+				const refused = yield* Effect.flip(
+					Schema.decodeUnknownEffect(Input)({ ...stored, agent: { maxTurns: 0 } }),
+				);
+				expect(refused._tag).toBe("SchemaError");
+			}),
+		));
 });
 
 describe("the destroys of a cancel", () => {

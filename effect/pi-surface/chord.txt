@@ -46,11 +46,11 @@ export type Draft<T, Depth extends readonly unknown[] = []> = Depth["length"] ex
 				: T;
 
 ## NonEmptyPath  chord/src/delta/index.ts
-used by: approvals-effect via ToolTask, budget-effect via LiveDoc, durable-effect via Op, durable-rivet-effect via SqliteStorage, guard-effect via AgentDoc, review-effect via LiveDoc, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: approvals-effect via ToolTask, durable-effect via WatchCall, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
 export type NonEmptyPath = readonly [Seg, ...Seg[]];
 
 ## Op  chord/src/delta/index.ts
-used by: durable-effect; approvals-effect via ToolTask, budget-effect via LiveDoc, durable-rivet-effect via SqliteStorage, guard-effect via AgentDoc, review-effect via LiveDoc, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: approvals-effect via ToolTask, durable-effect via WatchCall, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
 /**
  * Tuples are the form — in memory, on the wire, on disk.
  *
@@ -73,19 +73,19 @@ export type Op =
 	| readonly ["m", Path, number[]];
 
 ## Path  chord/src/delta/index.ts
-used by: approvals-effect via ToolTask, budget-effect via LiveDoc, durable-effect via Op, durable-rivet-effect via SqliteStorage, guard-effect via AgentDoc, review-effect via LiveDoc, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: approvals-effect via ToolTask, durable-effect via WatchCall, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
 export type Path = readonly Seg[];
 
 ## Seg  chord/src/delta/index.ts
-used by: approvals-effect via ToolTask, budget-effect via LiveDoc, durable-effect via Op, durable-rivet-effect via SqliteStorage, guard-effect via AgentDoc, review-effect via LiveDoc, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: approvals-effect via ToolTask, durable-effect via WatchCall, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
 export type Seg = string | number;
 
 ## IsAny  chord/src/json.ts
-used by: budget-effect via LiveState, durable-effect via LiveState, review-effect via LiveState
+used by: durable-effect via UsageState, review-effect via LiveState
 type IsAny<T> = 0 extends 1 & T ? true : false;
 
 ## JsonRepresentation  chord/src/json.ts
-used by: budget-effect via LiveState, durable-effect via LiveState, review-effect via LiveState
+used by: durable-effect via UsageState, review-effect via LiveState
 /** Strict-JSON representation of an application data type. Unknown payloads become JsonValue. */
 export type JsonRepresentation<T> = IsAny<T> extends true
 	? JsonValue
@@ -100,7 +100,7 @@ export type JsonRepresentation<T> = IsAny<T> extends true
 					: never;
 
 ## JsonValue  chord/src/json.ts
-used by: durable-effect; approvals-effect via ToolExecutionResult, budget-effect via LiveState, durable-rivet-effect via SqliteStorage, guard-effect via ToolExecutionResult, recorder-effect via Cursor, review-effect via JsonObject, subagent-effect via ToolRegistration, swarm-effect via EntryRecord, thread-effect via EntryRecord
+used by: durable-effect; approvals-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage, guard-effect via ToolExecutionResult, recorder-effect via Cursor, review-effect via JsonObject, subagent-effect via SettledTask, swarm-effect via EntryRecord, thread-effect via EntryRecord
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 ## SqliteDatabase  chord/src/sqlite/database.ts
@@ -157,7 +157,7 @@ used by: durable-rivet-effect
 export function validateSqliteSchemaPrefix(prefix: string): void
 
 ## WatchCall  chord/src/watch.ts
-used by: approvals-effect via ToolTask, durable-effect via WatchHandle, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: durable-effect; approvals-effect via ToolTask, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
 /**
  * One call of a JSON watch's listener, and one frame a source hands its watch, tagged by `kind`:
  *

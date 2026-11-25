@@ -4,16 +4,18 @@
 import type { ConversationId, SubmissionId } from "@earendil-works/pi-durable";
 import { continueStopped, Shares } from "@gunta/pi-budget-effect";
 import {
+	Agent,
 	type Conversation,
 	type DurableError,
 	Harness,
 	type SchemaDecodeError,
 	type Signal,
-	type Submission,
+	Submission,
 } from "@gunta/pi-durable-effect";
 import { Conversations, Grant, type Guard, type MalformedRefusal } from "@gunta/pi-guard-effect";
 import { Recorder } from "@gunta/pi-recorder-effect";
 import * as Review from "@gunta/pi-review-effect";
+import { decodeUnknown } from "@gunta/pi-schema-effect";
 import type { SwarmFaulted } from "@gunta/pi-swarm-effect";
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect";
 import * as Counts from "./counts.ts";
@@ -35,7 +37,7 @@ export const Work = Schema.Struct({
 	thread: Schema.String,
 	/** The thread's first message. */
 	task: Schema.String,
-	model: Schema.Struct({ provider: Schema.String, modelId: Schema.String }),
+	model: Agent.ModelRef,
 	/** Exactly the tools the thread may call, and the classification of what it holds, which its routes must allow. */
 	grant: Grant.Grant,
 	/** The thread's share of the harness's lease, in micro units. Its subagents and its swarms' forks have their own. */
@@ -48,7 +50,7 @@ export const Work = Schema.Struct({
 	/** The regions that may serve the thread and the labels its routes must carry. Default: any region, no label. */
 	routing: Schema.optionalKey(Routing.Routing),
 	instructions: Schema.optionalKey(Schema.String),
-	/** The tool rounds one run takes at most. */
+	/** The tool rounds one run takes at most: 1 or more, as Pi's `configure` takes it (`admit` refuses fewer). */
 	maxTurns: Schema.optionalKey(Schema.Int),
 });
 
@@ -206,7 +208,8 @@ export const layer: Layer.Layer<Threads, never, Composed> = Layer.effect(
  * `Service.admit`: one commit finds the thread's conversation by its key or creates it with its grant, its cap, its
  * routing limits, its choice of review, its first request key and the courier of its outcome events, so no thread
  * exists without any of them; then its task is admitted under that key. Each step finds what an earlier call left, so
- * a call that was cut off is completed by the next one.
+ * a call that was cut off is completed by the next one. A thread whose agent Pi's `configure` would refuse, such as
+ * `maxTurns: 0`, fails with `SchemaDecodeError` and is not created.
  */
 function admitted(
 	input: Work,
@@ -233,14 +236,18 @@ function admitted(
 					// Written with the conversation: a thread that has one has its first request key.
 					return { conversation: held.conversation, key: held.requests[0] ?? request, created: false };
 				}
-				const created = yield* tx.createConversation({ ownership: { kind: "ownerless" } });
-				yield* Conversations.grantIn(tx, created.id, input.grant, { model: input.model });
-				yield* tx.configure(created.id, {
+				// A change Pi's `configure` would refuse in this commit is refused before the conversation is created, typed,
+				// and the commit stores nothing.
+				const change: Agent.ByName = {
 					...(input.instructions === undefined ? {} : { instructions: input.instructions }),
 					...(input.maxTurns === undefined ? {} : { maxTurns: input.maxTurns }),
 					// Pi asks only the hooks of the extensions a conversation selects: without it nothing is reviewed.
 					...(input.review === false ? { extensions: { remove: [Review.NAME] } } : {}),
-				});
+				};
+				const agent = yield* decodeAgent(change);
+				const created = yield* tx.createConversation({ ownership: { kind: "ownerless" } });
+				yield* Conversations.grantIn(tx, created.id, input.grant, { model: input.model });
+				yield* tx.configure(created.id, agent);
 				yield* shares.setCapIn(tx, created.id, input.cap);
 				yield* Routing.setIn(tx, created.id, input.routing ?? {});
 				yield* document.set({ ...held, conversation: created.id, requests: [request] });
@@ -254,6 +261,9 @@ function admitted(
 		return { created: stored.created, key: stored.key, conversation };
 	});
 }
+
+/** The agent change of a new thread, checked by the facade's `Agent.ByName`: the numbers Pi's `configure` takes. */
+const decodeAgent = decodeUnknown(Agent.ByName);
 
 /** Where a thread stands: at work on a submission that has not settled, or ended with an outcome. */
 type Position =
@@ -426,6 +436,6 @@ function probed(thread: string): Effect.Effect<{ readonly alive: boolean }, Fail
 function open(thread: string, conversation: ConversationId): Effect.Effect<boolean, Failure, Harness.Harness> {
 	return Effect.map(Thread.newest(conversation, thread), (newest) => {
 		const status = Option.getOrUndefined(newest)?.record.status;
-		return status === "queued" || status === "placed";
+		return status !== undefined && !Submission.settled(status);
 	});
 }

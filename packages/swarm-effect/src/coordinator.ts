@@ -1,7 +1,7 @@
 // The coordinator: the durable task that runs one swarm, from the idle source through fan-out and fan-in to clean-up.
 
-import type { EntryId, WakeReason } from "@earendil-works/pi-durable";
-import { type Agent, type Signal, Task } from "@gunta/pi-durable-effect";
+import type { WakeReason } from "@earendil-works/pi-durable";
+import { Agent, Entry, type Signal, Task } from "@gunta/pi-durable-effect";
 import { Array as Arr, Effect, Option, Ref, Schedule, Schema, Stream } from "effect";
 import * as Cleanup from "./cleanup.ts";
 import { type Fork, ForkDriver, type ForkDriverService, type ForkRetryLater } from "./driver.ts";
@@ -18,12 +18,12 @@ export const Input = Schema.Struct({
 	/** The jobs in the order of the plan, each input as its schema encodes it. */
 	jobs: Schema.Array(Schema.Struct({ key: Schema.String, input: Schema.Json })),
 	/** The entry to fork at; null for the source's newest entry once it is idle. */
-	at: Schema.NullOr(Schema.Number),
+	at: Schema.NullOr(Entry.Id),
 	cap: Schema.Number,
 	onFailure: Schema.Literals(["fail", "collect"]),
 	pins: Schema.Array(Schema.String),
 	/** The agent change of every fork, with tools and extensions by name; null for none. */
-	agent: Schema.NullOr(Schema.Json),
+	agent: Schema.NullOr(Agent.ByName),
 });
 
 /** Where a coordinator stands: one member per phase, each with everything the phase needs to go on. */
@@ -31,7 +31,7 @@ export const State = Schema.Union([
 	/** Waiting for the source to be idle: no fork exists. */
 	Schema.Struct({ phase: Schema.Literal("idle"), polls: Schema.Number }),
 	/** Fan-out and fan-in: every job with its status, and the entry all forks are made at. */
-	Schema.Struct({ phase: Schema.Literal("run"), at: Schema.Number, jobs: Schema.Array(Job) }),
+	Schema.Struct({ phase: Schema.Literal("run"), at: Entry.Id, jobs: Schema.Array(Job) }),
 	/** Every job settled: the forks are destroyed. `forks` is null until the driver listed them. */
 	Schema.Struct({
 		phase: Schema.Literal("cleanup"),
@@ -120,9 +120,8 @@ function awaitIdle(task: At<"idle">, api: Api) {
 		}
 		const at =
 			input.at === null
-				? yield* Stream.runHead(api.entries({ pageSize: 1 }))
-				: // Pi brands ids in the type system only: a stored entry id is the number.
-					yield* api.entry(input.at as EntryId);
+				? yield* Stream.runHead(api.entries({ order: "descending", pageSize: 1 }))
+				: yield* api.entry(input.at);
 		if (Option.isSome(at)) {
 			return Task.next({ phase: "run" as const, at: at.value.id, jobs: input.jobs.map(() => planned) });
 		}
@@ -153,7 +152,7 @@ function fanOut(work: Work<never, unknown>, task: At<"run">, api: Api) {
 			coordinatorTaskId: task.id,
 			sourceConversationId: task.conversationId,
 			at: state.at,
-			agent: agentOf(input.agent),
+			agent: Option.fromNullOr(input.agent),
 			now: yield* api.now,
 		};
 		const woken = wokenBy(task.wake);
@@ -191,13 +190,24 @@ interface Woken {
 }
 
 function wokenBy(wake: Option.Option<WakeReason>): Woken {
-	return Option.match(wake, {
-		onNone: () => ({ key: Option.none(), expired: false }),
-		onSome: (reason) => ({
-			key: reason.reason === "signal" ? Option.some(reason.key) : Option.none(),
-			expired: reason.reason === "expired",
-		}),
-	});
+	return Option.match(wake, { onNone: () => NOT_WOKEN, onSome: wokenFor });
+}
+
+const NOT_WOKEN: Woken = { key: Option.none(), expired: false };
+
+/** What one of Pi's wake reasons says to the jobs. A reason Pi adds fails to compile here until it is decided. */
+function wokenFor(reason: WakeReason): Woken {
+	switch (reason.reason) {
+		case "signal":
+			return { key: Option.some(reason.key), expired: false };
+		case "expired":
+			return { key: Option.none(), expired: true };
+		// The time of a sleep names no job: a polled job and a retry compare their own time with now. The coordinator
+		// waits on no task.
+		case "time":
+		case "tasks":
+			return NOT_WOKEN;
+	}
 }
 
 /** Whether a running job is to be read now: its signal came or can come no more, or its time to ask is up. */
@@ -383,9 +393,4 @@ function patiently<A>(call: Effect.Effect<A, ForkRetryLater>): Effect.Effect<A, 
 
 function keysOf(input: In): Array<string> {
 	return input.jobs.map((job) => job.key);
-}
-
-/** The agent change of the forks. A decode boundary: it was stored as the JSON `named` made of an `Agent.Change`. */
-function agentOf(stored: Schema.Json | null): Option.Option<Agent.Change> {
-	return Option.map(Option.fromNullOr(stored), (json) => json as Agent.Change);
 }

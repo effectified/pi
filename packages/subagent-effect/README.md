@@ -267,8 +267,10 @@ limit is an error result, and nothing is stored.
   children start their own. Counted from the asking conversation's own `subagent.child` document: one more than its
   depth, 1 when it has none.
 - **`maxLive`**: how many subagents of one conversation may be at work at once, foreground and background together.
-  Counted from Pi's task table: the tasks of kind `subagent.run` in the asking conversation that have not ended,
-  read in the creating commit. Pi runs commits one after another, so two calls of one round cannot both pass.
+  Counted from Pi's task table: the tasks of kind `subagent.run` in the asking conversation that Pi has not settled,
+  read in the creating commit. A run whose outcome is decided still counts while its child's work runs on (Pi's
+  `completing`, such as an `afterRun` hook of the child's answer). Pi runs commits one after another, so two calls of
+  one round cannot both pass.
 
 Both counts are read from storage each time, so a restart resets neither.
 

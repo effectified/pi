@@ -70,8 +70,22 @@ export function modelCall(record: Records.Record): Option.Option<Records.ModelCa
 	});
 }
 
-/** The parts of a cost that only pi-ai's whole `usage.cost` gives, with whether a provider billed it. */
-const COST_PARTS = ["cost.input", "cost.output", "cost.cacheRead", "cost.cacheWrite", "cost.fromProvider"];
+/**
+ * Per field of a model call record's cost, whether only the parts of pi-ai's cost give it (`usage.costs`), which a
+ * call stored before the review kept them lacks; `total` is pi-ai's whole cost (`usage.cost`). Typed by the record:
+ * a field the recorder adds fails to compile here until it is decided.
+ */
+const FROM_PARTS = {
+	input: true,
+	output: true,
+	cacheRead: true,
+	cacheWrite: true,
+	fromProvider: true,
+	total: false,
+} as const satisfies Record<keyof Records.ModelCall["cost"], boolean>;
+
+/** The cost fields only the parts give, as `derived.unknown` names them. */
+const COST_PARTS = Object.entries(FROM_PARTS).flatMap(([field, fromParts]) => (fromParts ? [`cost.${field}`] : []));
 
 /**
  * The fields of the model call record `call` does not hold, by name: none for a call the review stored whole. A

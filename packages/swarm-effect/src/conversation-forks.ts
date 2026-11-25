@@ -1,7 +1,7 @@
 // The in-storage driver: a swarm's forks are conversation forks of the source, in the harness its coordinator runs in.
 
 import { type ConversationId, type EntryId, SubmissionSettled, type TaskId } from "@earendil-works/pi-durable";
-import { type Conversation, Doc, Harness, type Tx } from "@gunta/pi-durable-effect";
+import { Conversation, Doc, Entry, Harness, type Tx } from "@gunta/pi-durable-effect";
 import { Deferred, Effect, Layer, Option, Schema, Stream } from "effect";
 import {
 	type Destroyed,
@@ -61,7 +61,7 @@ const Forks = Doc.family({
 	schema: Schema.Record(
 		Schema.String,
 		Schema.Struct({
-			conversationId: Schema.Number,
+			conversationId: Conversation.Id,
 			destroyed: Schema.Boolean,
 			bytesWritten: Schema.optionalKey(Schema.Number),
 		}),
@@ -72,7 +72,7 @@ const Forks = Doc.family({
 
 /** The fork a job key holds, as stored. */
 interface Held {
-	readonly conversationId: number;
+	readonly conversationId: ConversationId;
 	readonly destroyed: boolean;
 	/** What the fork had written when it was destroyed; absent before that, and for one whose conversation is lost. */
 	readonly bytesWritten?: number;
@@ -80,7 +80,7 @@ interface Held {
 
 /** The job key has its fork already: what fails the creating commit of a second one. */
 class Claimed extends Schema.TaggedError<Claimed>()("SwarmForkClaimed", {
-	conversationId: Schema.Number,
+	conversationId: Conversation.Id,
 	destroyed: Schema.Boolean,
 }) {}
 
@@ -163,7 +163,7 @@ function fork(request: ForkRequest): Effect.Effect<Fork, ForkGone | Doc.Failure,
 		held.destroyed
 			? Effect.fail(gone(request, "fork", "It was destroyed"))
 			: Effect.as(
-					Effect.mapError(request.setup.beforeStart(forked(held.conversationId as ConversationId)), refused),
+					Effect.mapError(request.setup.beforeStart(forked(held.conversationId)), refused),
 					toFork(request.swarmId, request.jobKey, held),
 				);
 	return Effect.gen(function* () {
@@ -204,7 +204,7 @@ function claim(tx: Tx.Tx, request: ForkRequest, conversationId: ConversationId) 
 }
 
 /**
- * Pi 1.6.0 cannot delete or retire a conversation, so destroying a fork is: abort its work, background work too,
+ * Pi 1.6.1 cannot delete or retire a conversation, so destroying a fork is: abort its work, background work too,
  * measure what it wrote (`written`), and mark it destroyed with that number, after which this driver never finds,
  * runs or lists it again. Its entries stay in the storage: nothing is freed. A second call answers the number the
  * first one stored; a fork the swarm never had, and one whose conversation is lost, answer none.
@@ -214,7 +214,7 @@ function destroy(target: Fork): Effect.Effect<Destroyed, Doc.Failure, Harness.Ha
 		const held = yield* heldBy(target.swarmId, target.jobKey);
 		if (Option.isNone(held)) return { bytesWritten: Option.none() };
 		if (held.value.destroyed) return { bytesWritten: Option.fromUndefinedOr(held.value.bytesWritten) };
-		const conversation = yield* Harness.conversation(held.value.conversationId as ConversationId);
+		const conversation = yield* Harness.conversation(held.value.conversationId);
 		// After the abort, so the number is final: nothing of the fork appends an entry any more.
 		const bytesWritten = yield* Option.match(conversation, {
 			onNone: () => Effect.succeedNone,
@@ -245,9 +245,10 @@ function destroy(target: Fork): Effect.Effect<Destroyed, Doc.Failure, Harness.Ha
 function written(fork: Conversation.Conversation): Effect.Effect<number, Doc.Failure, Harness.Harness> {
 	return Effect.gen(function* () {
 		const parent = yield* fork.parent;
-		const after = Option.match(parent, { onNone: () => 0, onSome: (origin) => origin.at });
-		// Entry ids are integers, and Pi's brand on them is compile-time only: the id after the fork point.
-		const own = fork.entries({ order: "ascending", minEntryId: (after + 1) as EntryId });
+		const own = fork.entries({
+			order: "ascending",
+			...Option.match(parent, { onNone: () => ({}), onSome: (origin) => ({ minEntryId: Entry.after(origin.at) }) }),
+		});
 		return yield* Stream.runFold(
 			own,
 			() => 0,
@@ -266,7 +267,7 @@ function conversationOf(
 		const held = yield* heldBy(target.swarmId, target.jobKey);
 		if (Option.isNone(held)) return yield* gone(target, "fork", "The swarm has no fork for the job");
 		if (held.value.destroyed) return yield* gone(target, "fork", "It was destroyed");
-		const conversation = yield* Harness.conversation(held.value.conversationId as ConversationId);
+		const conversation = yield* Harness.conversation(held.value.conversationId);
 		if (Option.isNone(conversation)) return yield* gone(target, "fork", "Its conversation does not exist");
 		return conversation.value;
 	});

@@ -1,13 +1,8 @@
 // The request a person decides: one ask of one tool call, with the arguments the call would run with.
 
-import type { ConversationId, TaskId } from "@earendil-works/pi-durable";
+import type { TaskId } from "@earendil-works/pi-durable";
+import { Conversation, Task } from "@gunta/pi-durable-effect";
 import { Schema } from "effect";
-
-// Pi's ids are integers whose brand exists only in types, which no schema can name: the casts apply it where a stored
-// number is decoded.
-const integer: Schema.Codec<number> = Schema.Int;
-const ConversationIdSchema = integer as Schema.Codec<ConversationId, number>;
-const TaskIdSchema = integer as Schema.Codec<TaskId, number>;
 
 /**
  * One ask: what a person is shown and decides. Plain JSON, the same when it is stored. Times are epoch milliseconds
@@ -16,9 +11,10 @@ const TaskIdSchema = integer as Schema.Codec<TaskId, number>;
 export const Request = Schema.Struct({
 	/** `<task>:<n>:<digest>`, the same every time Pi asks again: what a product deduplicates by. */
 	id: Schema.String,
-	conversation: ConversationIdSchema,
+	// Pi's ids are integers: a stored request with another number was not written by this package.
+	conversation: Conversation.Id.check(Schema.isInt()),
 	/** The tool call's task: where `decide` delivers the decision. */
-	task: TaskIdSchema,
+	task: Task.Id.check(Schema.isInt()),
 	/** The id the model gave the call. */
 	callId: Schema.String,
 	tool: Schema.String,

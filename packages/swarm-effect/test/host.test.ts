@@ -113,7 +113,7 @@ describe("start", () => {
 					cap: 2,
 					onFailure: "collect" as const,
 				};
-				const refusal = (change: Partial<typeof plan> & { readonly pins?: ReadonlyArray<string> }) =>
+				const refusal = (change: Partial<typeof plan> & Pick<Swarm.Plan<unknown>, "pins" | "agent">) =>
 					Effect.map(Effect.flip(Swarm.start(Measure, { ...plan, ...change })), (error) =>
 						error._tag === "InvalidPlan" ? error.reason : error._tag,
 					);
@@ -125,6 +125,8 @@ describe("start", () => {
 					noKey: yield* refusal({ jobs: [{ key: "", input: { word: "a" } }] }),
 					strayPin: yield* refusal({ pins: ["job-z"] }),
 					noSource: yield* refusal({ source: 999 as never }),
+					// Pi's `configure` would refuse it in every fork's creating commit.
+					noTurns: yield* refusal({ agent: { maxTurns: 0 } }),
 					status: yield* Effect.flip(Swarm.status("bad")),
 					tasks: yield* coordinators,
 				};
@@ -138,6 +140,7 @@ describe("start", () => {
 			noKey: "A job key is empty",
 			strayPin: "The pin job-z names no job",
 			noSource: "No conversation 999",
+			noTurns: expect.stringMatching(/^The agent change of the forks: /),
 			status: new Swarm.SwarmNotFound({ swarmId: "bad" }),
 			tasks: [],
 		});
