@@ -3,14 +3,7 @@
 
 import { Shares } from "@gunta/pi-budget-effect";
 import { Doc, Harness } from "@gunta/pi-durable-effect";
-import {
-	Action,
-	type ActorDatabase,
-	type ActorEngine,
-	type ActorInfo,
-	Client,
-	Self,
-} from "@gunta/pi-durable-rivet-effect";
+import { Action, type ActorEngine, type ActorInfo, type ActorSql, Client, Self } from "@gunta/pi-durable-rivet-effect";
 import { Recorder } from "@gunta/pi-recorder-effect";
 import * as Swarm from "@gunta/pi-swarm-effect";
 import * as Rivet from "@gunta/pi-swarm-effect/rivet";
@@ -56,7 +49,7 @@ const Ledger = Doc.family({
 });
 
 /** What the accounts need of the actor they run in: the swarm's Rivet driver, and the way to its forks. */
-type Needs = Client.RivetClient | ActorInfo | ActorDatabase;
+type Needs = Client.RivetClient | ActorInfo | ActorSql;
 
 /**
  * Forks that are Rivet actors: the swarm's Rivet driver (`@gunta/pi-swarm-effect/rivet`), for a composition hosted in
@@ -71,7 +64,7 @@ type Needs = Client.RivetClient | ActorInfo | ActorDatabase;
  *   which the coordinator's clean-up, a cancel and `Swarm.destroyFork` all go through. A fork that cannot be asked
  *   is not destroyed now: the driver says "retry later", as for an engine it cannot reach.
  */
-export function forks(options?: Rivet.Options): Forks.Forks<ActorInfo | ActorDatabase | ActorEngine> {
+export function forks(options?: Rivet.Options): Forks.Forks<ActorInfo | ActorSql | ActorEngine> {
 	const accounted = Layer.effect(
 		Swarm.ForkDriver,
 		Effect.gen(function* () {

@@ -7,6 +7,7 @@ export {
 	ActorDatabase,
 	ActorEngine,
 	ActorInfo,
+	ActorSql,
 	type ForkLink,
 	type Identity,
 	type StorageOptions,

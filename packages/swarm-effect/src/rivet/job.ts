@@ -3,7 +3,7 @@
 
 import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
 import { type Agent, type Conversation, Doc, Harness, type Tx } from "@gunta/pi-durable-effect";
-import type { ActorDatabase, ActorInfo } from "@gunta/pi-durable-rivet-effect";
+import type { ActorInfo, ActorSql } from "@gunta/pi-durable-rivet-effect";
 import { Effect, Option, Schema } from "effect";
 import type { JobStatus } from "../driver.ts";
 import type { ForkSetupFailed } from "../errors.ts";
@@ -44,7 +44,7 @@ export function accept(
 ): Effect.Effect<
 	ConversationId,
 	JobRefused | RecordFailure | Doc.Failure,
-	Harness.Harness | ActorInfo | ActorDatabase | ForkSetup
+	Harness.Harness | ActorInfo | ActorSql | ForkSetup
 > {
 	return Effect.gen(function* () {
 		yield* Effect.catchTag(requireClean, "SwarmForkUnclean", (unclean) =>

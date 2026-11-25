@@ -27,10 +27,11 @@ export type Run = <A, E>(effect: Effect.Effect<A, E>) => Promise<A>;
 /**
  * The `SqliteDatabase` Pi's `SqliteStorage` opens, over an actor's raw database. Each operation runs with `run`.
  *
- * - **A queue of its own.** Every operation waits for the ones asked for before it, and a transaction holds the queue
- *   until it has ended, as Chord's contract says. rivetkit 3.1.1 isolates a transaction (a statement outside neither
- *   joins it nor sees what it has not committed) but does not queue: a statement issued after `transaction()` was
- *   called often runs before the transaction ends. Share one adapter per database: two would not wait for each other.
+ * - **A queue.** Every operation waits for the ones asked for before it, and a transaction holds the queue until it
+ *   has ended, as Chord's contract says. rivetkit 3.1.1 isolates a transaction (a statement outside neither joins it
+ *   nor sees what it has not committed) but does not queue a statement issued before the transaction began. `queue`
+ *   (one permit) is the queue: give everything else that uses the database the same one, as the host gives its
+ *   `ActorSql`. By default the adapter has a queue of its own.
  * - A transaction is Rivet's own: it commits when the callback resolves, rolls back and rejects with the callback's
  *   own error when it rejects, and fails a handle used afterwards. One gap: Rivet hides a failed rollback, so the
  *   callback's error is all a caller sees then.
@@ -49,8 +50,11 @@ export type Run = <A, E>(effect: Effect.Effect<A, E>) => Promise<A>;
  *   operation that waits for its turn or waits out a hint, and its promise rejects. An operation Rivet is running is
  *   waited for, so the queue never has two at Rivet, and then rejects too: as after a crash, it may have been applied.
  */
-export function make(raw: RawDatabase, run: Run = Effect.runPromise): SqliteDatabase {
-	const queue = Semaphore.makeUnsafe(1);
+export function make(
+	raw: RawDatabase,
+	run: Run = Effect.runPromise,
+	queue: Semaphore.Semaphore = Semaphore.makeUnsafe(1),
+): SqliteDatabase {
 	const inTurn = <T>(operation: Effect.Effect<T, unknown>): Promise<T> => run(queue.withPermits(1)(operation));
 	const asked = <T>(operation: () => Promise<T>) => inTurn(Effect.retry(attempt(operation), HINTED));
 	const direct = executor(raw);

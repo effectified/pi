@@ -2,10 +2,10 @@
 // copy-on-write copy of its storage with a harness of its own.
 
 import {
-	type ActorDatabase,
 	type ActorDefect,
 	type ActorGone,
 	type ActorInfo,
+	type ActorSql,
 	Client,
 	type EngineUnavailable,
 	type ForkKeyHeld,
@@ -39,7 +39,7 @@ export interface Options {
 }
 
 /** What the driver needs of the actor it runs in: the engine's client, the actor's identity and its database. */
-export type Needs = Client.RivetClient | ActorInfo | ActorDatabase;
+export type Needs = Client.RivetClient | ActorInfo | ActorSql;
 
 /**
  * The `ForkDriver` for the actor that holds the primed harness: build it in that actor's `layer`, over the host's
@@ -68,6 +68,8 @@ export function layer(options: Options = {}): Layer.Layer<ForkDriver, never, Nee
 	return Layer.effect(
 		ForkDriver,
 		Effect.gen(function* () {
+			// The record's tables, at each wake: a database that cannot be written now is a harness that did not open.
+			yield* Effect.orDie(Records.migrate);
 			const self = yield* Self.handle(actions);
 			return make(self, yield* Effect.context<Needs>(), options.pollMillis ?? DEFAULT_POLL_MILLIS);
 		}),

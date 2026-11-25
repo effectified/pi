@@ -1,11 +1,12 @@
 // Test helper: the actors the engine suite hosts. `Agent` is an actor of this package on a scripted model, with
 // harness options made from a service of its `layer` and an action that works with actors from inside one; `Raw` is
-// a bare Rivet actor that runs Pi's storage conformance suite and the adapter's checks on a real actor database.
+// a bare Rivet actor that runs Pi's storage conformance suite, the adapter's checks and those of `ActorSql` on a real
+// actor database.
 
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { createExpectAssertions, createStorageConformance, type ExpectLike } from "@earendil-works/pi-durable/testing";
-import { Doc, Extension, Gate, Harness, Hook, Registry, Task, Tool } from "@gunta/pi-durable-effect";
+import { Doc, Extension, Gate, Harness, Hook, Registry, Storage, Task, Tool } from "@gunta/pi-durable-effect";
 import {
 	answer,
 	type FauxResponseFactory,
@@ -13,9 +14,11 @@ import {
 	TestHarness,
 	toolCall,
 } from "@gunta/pi-durable-effect/testing";
-import { Context, Effect, Layer, Option, Schema } from "effect";
+import { Context, Deferred, Effect, Fiber, FiberSet, Layer, Option, Schema, Semaphore } from "effect";
+import * as SqlClient from "effect/sql/SqlClient";
 import { type ActorContext, type AnyActorDefinition, actor } from "rivetkit";
 import { type DatabaseProvider, db, type RawAccess } from "rivetkit/db";
+import * as Sql from "../src/actor-sql.ts";
 import { Action, Actor, ActorInfo, Client, Fork, Self, SqliteDatabase } from "../src/index.ts";
 
 /** How far ahead the gate of the `slow` tool parks its call: the real time the wake test waits. */
@@ -306,6 +309,74 @@ export function raw(expect: ExpectLike): AnyActorDefinition {
 				}
 				return { cases: cases.length, failures };
 			},
+			/** The same suite on `Storage.sql` over `ActorSql`, each case on a client and a prefix of its own. */
+			conformanceSql: async (c: Cell) => {
+				let opened = 0;
+				const cases = createStorageConformance({
+					assertions: createExpectAssertions(expect),
+					withStorage: (use) =>
+						Effect.runPromise(
+							Effect.scoped(
+								Effect.gen(function* () {
+									const sql = yield* Sql.make(c.db, yield* Semaphore.make(1), yield* FiberSet.make());
+									yield* Storage.HarnessStorage.use((storage) => Effect.promise(() => use(storage))).pipe(
+										Effect.provide(Storage.sql({ prefix: `sql${opened++}_` })),
+										Effect.provideService(SqlClient.SqlClient, sql),
+									);
+								}),
+							),
+						),
+				});
+				const failures: string[] = [];
+				for (const testCase of cases) {
+					await testCase.run().catch((error: unknown) => failures.push(`${testCase.name}: ${String(error)}`));
+				}
+				return { cases: cases.length, failures };
+			},
+			/**
+			 * `ActorSql`'s transactions on the actor's database: one committed, one rolled back by its failure, a nested
+			 * one rolled back alone, one whose fiber is interrupted, and the adapter's statement waiting on the same queue.
+			 */
+			sqlTransactions: (c: Cell) =>
+				Effect.runPromise(
+					Effect.scoped(
+						Effect.gen(function* () {
+							const queue = yield* Semaphore.make(1);
+							const work = yield* FiberSet.make();
+							const sql = yield* Sql.make(c.db, queue, work);
+							const database = SqliteDatabase.make(c.db, yield* FiberSet.runtimePromise(work)(), queue);
+							const insert = (id: number, text: string) =>
+								sql`INSERT INTO sql_notes ${sql.insert({ id, text })}`;
+							yield* sql`CREATE TABLE IF NOT EXISTS sql_notes (id INTEGER PRIMARY KEY, text TEXT)`;
+							yield* sql.withTransaction(insert(1, "committed"));
+							const failed = yield* Effect.flip(
+								sql.withTransaction(Effect.andThen(insert(2, "failed"), Effect.fail("the body failed"))),
+							);
+							yield* sql.withTransaction(
+								Effect.andThen(
+									insert(3, "outer"),
+									Effect.exit(sql.withTransaction(Effect.andThen(insert(4, "inner"), Effect.fail("inner")))),
+								),
+							);
+							const inside = yield* Deferred.make<void>();
+							const interrupted = yield* Effect.forkChild(
+								sql.withTransaction(
+									Effect.andThen(
+										Effect.andThen(insert(5, "interrupted"), Deferred.succeed(inside, undefined)),
+										Effect.never,
+									),
+								),
+							);
+							yield* Deferred.await(inside);
+							// While the interrupted transaction holds the queue, the adapter's statement waits for it.
+							const adapter = database.run("INSERT INTO sql_notes (id, text) VALUES (6, 'adapter')");
+							yield* Fiber.interrupt(interrupted);
+							yield* Effect.promise(() => adapter);
+							const rows = yield* sql<{ readonly text: string }>`SELECT text FROM sql_notes ORDER BY id`;
+							return { failed, rows: rows.map((row) => row.text) };
+						}),
+					),
+				),
 			/**
 			 * What Chord's contract asks of a transaction, through the adapter, on the actor's database. Without the
 			 * adapter's queue the statement issued second usually ends while the first transaction is still open.

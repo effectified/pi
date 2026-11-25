@@ -369,6 +369,26 @@ function suite(engines: typeof LocalEngine): void {
 		expect(suite.length).toBeGreaterThan(0);
 	}, 120_000);
 
+	it("passes Pi's storage conformance suite through Storage.sql over ActorSql, on a real actor database", async () => {
+		const handle = await run(Client.getOrCreate(Raw, ["conformance-sql"]));
+		const result = await run(
+			rawAction<{ readonly cases: number; readonly failures: ReadonlyArray<string> }>(handle, "conformanceSql"),
+		);
+		const suite = createStorageConformance({
+			assertions: createExpectAssertions(expect),
+			withStorage: () => Promise.resolve(),
+		});
+		expect(result).toEqual({ cases: suite.length, failures: [] });
+	}, 120_000);
+
+	it("commits, rolls back, nests and rolls back an interrupted transaction of ActorSql, on a real actor database", async () => {
+		const handle = await run(Client.getOrCreate(Raw, ["sql-transactions"]));
+		expect(await run(rawAction(handle, "sqlTransactions"))).toEqual({
+			failed: "the body failed",
+			rows: ["committed", "outer", "adapter"],
+		});
+	}, 30_000);
+
 	it("holds other statements while a transaction runs, counts rows and rolls back, on a real actor database", async () => {
 		const handle = await run(Client.getOrCreate(Raw, ["transactions"]));
 		expect(await run(rawAction(handle, "transactions"))).toEqual({

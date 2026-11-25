@@ -3,8 +3,11 @@
 
 import { Harness } from "@gunta/pi-durable-effect";
 import { TestHarness } from "@gunta/pi-durable-effect/testing";
-import { ActorDatabase, ActorInfo, type Identity, SqliteDatabase } from "@gunta/pi-durable-rivet-effect";
+import { ActorInfo, ActorSql, type Identity } from "@gunta/pi-durable-rivet-effect";
 import { Effect, Layer, Option, type Schema, Stream } from "effect";
+import * as Reactivity from "effect/reactivity/Reactivity";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as Statement from "effect/sql/Statement";
 import { describe, expect, it } from "vitest";
 import type * as ForkSetup from "../src/fork-setup.ts";
 import type { Assignment } from "../src/rivet/assignment.ts";
@@ -23,9 +26,16 @@ function actor(forkInput: Option.Option<Schema.Json>): Identity {
 	};
 }
 
-const unread = (): Promise<never> => Promise.reject(new Error("the database is not read in this test"));
-
-const noDatabase = Layer.succeed(ActorDatabase, SqliteDatabase.make({ execute: unread, transaction: unread }));
+/** An `ActorSql` that dies when it is used: the actor is no fork, so the job never reads its record. */
+const noDatabase = Layer.effect(
+	ActorSql,
+	SqlClient.make({
+		driver: "unread",
+		acquirer: Effect.die(new Error("the database is not read in this test")),
+		compiler: Statement.makeCompilerSqlite(),
+		spanAttributes: [],
+	}),
+).pipe(Layer.provide(Reactivity.layer));
 
 /**
  * Runs `program` on a harness whose model answers a measure after `afterMillis`, with `setup` as the product's fork
@@ -34,7 +44,7 @@ const noDatabase = Layer.succeed(ActorDatabase, SqliteDatabase.make({ execute: u
 const run = <A, E>(
 	counts: Asked,
 	afterMillis: number,
-	program: Effect.Effect<A, E, TestHarness.Provided | ActorDatabase | ForkSetup.ForkSetup>,
+	program: Effect.Effect<A, E, TestHarness.Provided | ActorSql | ForkSetup.ForkSetup>,
 	setup: ReturnType<typeof recordingSetup> = recordingSetup(),
 ): Promise<A> => {
 	const respond = model(counts, (word) => ({ text: JSON.stringify(measured(word)), afterMillis }));

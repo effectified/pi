@@ -110,7 +110,7 @@ definition.
 
 | Option | |
 |---|---|
-| `layer` | What the harness runs on beside its storage: `Registry` (tools, hooks, tasks, plugin extensions), `Models`, and whatever their handlers and the actions need. It may require `ActorInfo`, `ActorDatabase` and `ActorEngine` |
+| `layer` | What the harness runs on beside its storage: `Registry` (tools, hooks, tasks, plugin extensions), `Models`, and whatever their handlers and the actions need. It may require `ActorInfo`, `ActorSql`, `ActorDatabase` and `ActorEngine` |
 | `services` | Optional. Services built on the open harness, such as a recorder's pump. It may require `Harness` and everything `layer` provides. Not built while fork hygiene runs |
 | `harness` | Options of `Harness.layer`: `settings`, `telemetry`, `identity`, `env`, `conversationCreated`. Given as they are, or as an Effect that gives them (below). The host sets `hostWakes` and resumes at each wake |
 | `prefix` | Namespaces Pi's tables, and this host's one table, in the actor database. Default `pi_` |
@@ -124,20 +124,23 @@ is closed, harness included, then what is left of the database's operations is i
 Rivet's hook return. A harness that cannot open leaves the actor up: every call answers with that defect and tries to
 open again.
 
-Inside the actor, three services describe it:
+Inside the actor, four services describe it:
 
 - `ActorInfo`: `actorId`, `name`, `key`, `namespace`, `forkChain` and `forkInput`.
-- `ActorDatabase`: the actor's SQLite as Chord's `SqliteDatabase`, the same adapter Pi's storage uses. A product
-  that keeps tables of its own uses this one, so its transactions queue with Pi's, and names them outside `prefix`.
+- `ActorSql`: the actor's SQLite as an Effect `SqlClient`, on the queue Pi's storage uses. A product that keeps
+  tables of its own uses this one, so its transactions queue with Pi's, and names them outside `prefix` (see
+  [Storage](#storage)).
+- `ActorDatabase`: the same database on the same queue as Chord's `SqliteDatabase`, whose methods return promises:
+  the adapter Pi's storage runs on. Kept for Pi and for code written against it; new code uses `ActorSql`.
 - `ActorEngine`: the actor's way to the engine it runs on, which `Self.client` builds a `RivetClient` from (see
   [Inside an actor](#inside-an-actor)).
 
 ### Harness options that need a service
 
 A product's harness options can need a service that its `layer` provides: Pi's telemetry adapter is one. So
-`harness` is also taken as an Effect on what `layer` provides (and on `ActorInfo`, `ActorDatabase`, `ActorEngine`,
-`Registry` and `Models`). It runs at each wake, once `layer` is built, and its failure is a harness that did not
-open, like a failing Layer. An Effect that needs a service nothing provides does not type check.
+`harness` is also taken as an Effect on what `layer` provides (and on `ActorInfo`, `ActorSql`, `ActorDatabase`,
+`ActorEngine`, `Registry` and `Models`). It runs at each wake, once `layer` is built, and its failure is a harness
+that did not open, like a failing Layer. An Effect that needs a service nothing provides does not type check.
 
 ```ts
 const Agent = Actor.make("agent", {
@@ -162,7 +165,8 @@ const approve = Action.make({
 
 `input`, `output` and `error` cross the boundary as JSON, so they need no service to encode or decode. Without
 `error` the handler cannot fail. A handler runs with the harness, the registry, the models, `ActorInfo`,
-`ActorDatabase` and what `layer` and `services` provide; an action that needs anything else does not type check.
+`ActorSql`, `ActorDatabase` and what `layer` and `services` provide; an action that needs anything else does not
+type check.
 
 An action answers data, whatever happens: its value, its own failure, or a defect with its message. The message of a
 defect crosses to the caller and is never logged by this package.
@@ -358,37 +362,86 @@ forks before it. What it does not inherit: schedules, and anything in the source
 
 ## Storage
 
-`SqliteDatabase.make(raw, run?)` is Chord's `SqliteDatabase` over the raw database of `rivetkit/db`.
-`storage({ prefix })` is Pi's `SqliteStorage` on the `ActorDatabase` of the context, as a `HarnessStorage` Layer;
-`Actor.make` uses both. Each operation of the adapter is an Effect, and `run` starts it: the run function of a
-`FiberSet` (`FiberSet.makeRuntimePromise`), so its waits are on the `Clock` of that set's context and closing the set
-interrupts it, or by default `Effect.runPromise`. Inside an actor the set is the wake's: what is left of its operations
-when the harness has closed is interrupted with the wake. An interrupted operation rejects; one that Rivet was running
-is waited for first, and may have been applied.
+Inside an actor its SQLite is `ActorSql`, an Effect `SqlClient` of the SQLite dialect. A product or a plugin keeps
+its own tables there, outside `prefix`:
 
-What rivetkit 3.1.1 gives on native SQLite, checked on a real actor: a transaction is isolated (a statement outside
-neither joins it nor sees what it has not committed), commits when its callback resolves, rolls back and rejects
-with the callback's own error, and fails a handle used afterwards. It does not queue: a statement issued right after
-`transaction()` was called ended while that transaction was still open in 221 of 300 tries. Chord's contract asks
-for the queue, so the adapter has one of its own: every operation waits for those asked for before it. Share one
-adapter per database, which `ActorDatabase` is. Two gaps: Rivet hides a failed rollback, so a caller sees only the
-callback's error then; and a BLOB column reads back as an array of numbers (Pi's storage stores none).
+```ts
+import { ActorSql } from "@gunta/pi-durable-rivet-effect";
+import { Effect, Schema } from "effect";
+import * as SqlSchema from "effect/sql/SqlSchema";
+
+const Note = Schema.Struct({ id: Schema.Number, text: Schema.String });
+
+const notes = Effect.gen(function* () {
+	const sql = yield* ActorSql;
+	yield* sql`CREATE TABLE IF NOT EXISTS product_notes (id INTEGER PRIMARY KEY, text TEXT NOT NULL)`;
+	yield* sql.withTransaction(sql`INSERT INTO product_notes ${sql.insert({ id: 1, text: "kept" })}`);
+	return yield* SqlSchema.findAll({ Request: Schema.Void, Result: Note, execute: () => sql`SELECT * FROM product_notes` })(
+		undefined,
+	);
+});
+```
+
+Effect's `Migrator` runs on it with the client provided as `SqlClient` (`Effect.provideService(SqlClient.SqlClient,
+sql)`), with a migration table named for the product: `@gunta/pi-swarm-effect/rivet` keeps its record that way.
+
+Pi's storage (`storage({ prefix })`, a `HarnessStorage` Layer) runs on `ActorDatabase`, the adapter below, on the
+same queue. It also passes Pi's storage conformance suite through `Storage.sql` of `@gunta/pi-durable-effect` over
+`ActorSql`, on a real actor database; but the 50-fork swarm of `packages/thread-effect` took 12% longer that way
+(7.2 s against 6.4 s for the swarm, the means of four interleaved runs each, slower in three of the four), so the
+host keeps Pi on the adapter.
+
+What rivetkit 3.1.1 gives on native SQLite, checked on a real actor (`effect/spikes/02-actor-sql.ts` of the
+repository, on Node and on Bun, and this package's engine suite):
+
+- **Rivet's transaction** (`transaction(callback)`) is isolated: a statement outside it neither joins it nor sees what
+  it has not committed, and one issued after it began waits until it has ended. It commits when its callback
+  resolves, rolls back and rejects with the callback's own error, and fails a handle used afterwards. It expires
+  after 60 seconds and is rolled back, a backstop against a deadlock. A `SAVEPOINT` inside it works; a `BEGIN` does
+  not.
+- **`BEGIN` through a statement** works too, with `SAVEPOINT`, `RELEASE`, `ROLLBACK` and `COMMIT`, and such a
+  transaction holds across awaits and across the actor's actions: every statement of every action joins it. While it
+  is open rivetkit holds back `transaction()` and its own state writes (up to 60 seconds, then fails them), and a stop
+  waits out its grace period before it rolls the transaction back.
+- **A transaction run as a promise is not interrupted with its fiber**: its callback runs to its end and commits.
+
+So `ActorSql`'s transactions are Rivet's own, driven by Effect's transaction rules, as `@effect/sql-sqlite-do` drives
+the storage transaction of Durable Objects: `withTransaction` holds Rivet's callback open until its Effect has ended,
+commits when the Effect succeeds, and rolls back when it fails or is interrupted. A nested `withTransaction` is a
+savepoint. A transaction interrupted before Rivet called its callback rolls back as soon as Rivet calls it, and
+keeps its turn of the queue until then. `SqlClient.BeginTransaction` is ignored: no statement begins Rivet's
+transaction.
+
+**One queue.** `ActorDatabase`, Chord's `SqliteDatabase` whose methods return promises, is the same database on the
+same queue: the host builds both with one `Semaphore` at each wake, so a statement or a transaction of either waits
+for those asked for before it, and nothing comes between the statements of a transaction. It is kept for Pi's
+storage and for code written against Chord's interface; new code uses `ActorSql`.
+`SqliteDatabase.make(raw, run?, queue?)` builds the adapter over the raw database of `rivetkit/db`: its operations
+are started by `run`, the run function of a `FiberSet` (`FiberSet.makeRuntimePromise`), or by default
+`Effect.runPromise`, and they wait on `queue`, by default a queue of its own.
+
+**The wake's fibers.** Every request of either to Rivet is a fiber of the wake's `Work`: on the wake's clock, and
+what is left of them once the harness has closed is interrupted with the wake. An interrupted request ends at once
+while it waits for its turn or for a hint; one that Rivet is running is waited for first, and may have been applied.
+Two gaps: Rivet hides a failed rollback; and a BLOB column reads back as an array of numbers (Pi's storage stores
+none). Rows are objects with the columns in order, so `values` gives one value for two columns of one name.
 
 **A statement the storage refuses with a retry hint.** rivetkit turns a refusal of its storage into an error with
 `retry_after_ms` in its metadata ("SQLite storage refused the request before running it"). Nothing of a refused
-request was applied, so the adapter asks again after the hinted time, at most five more times, where a second run is
-safe, and holds the operation's turn of the queue meanwhile:
+request was applied, so it is asked again after the hinted time, at most five more times, where a second run is
+safe, and holds its turn of the queue meanwhile:
 
 | Refused | Asked again |
 |---|---|
-| A statement on the database (`exec`, `run`, `get`, `all`) | Yes |
-| `runCounted` on the database | Yes, as a whole: its transaction is the adapter's own, and Rivet rolled it back |
-| `transaction`, before its callback was called | Yes: nothing of it ran |
-| A statement inside a transaction, or a commit | No. The callback is the caller's code, and nothing says it may run twice: Rivet rolls the transaction back, and the refusal reaches the caller |
+| A statement outside a transaction (`ActorSql`; `exec`, `run`, `get`, `all` of `ActorDatabase`) | Yes |
+| `runCounted` of `ActorDatabase` on the database | Yes, as a whole: its transaction is the adapter's own, and Rivet rolled it back |
+| A transaction, before Rivet called its callback | Yes: nothing of it ran |
+| A statement inside a transaction, or a commit | No. The transaction's body is the caller's code, and nothing says it may run twice: the transaction is rolled back, and the refusal reaches the caller. With `ActorSql` every later statement of that transaction fails with the same refusal, and it is rolled back even if its Effect goes on and succeeds: SQLite does not say whether an error of its storage rolled the transaction back already |
 
 So a refusal in the middle of one of Pi's commits still fails that commit, and with it the harness until the actor
 sleeps and wakes (`SessionFailed`, below). None was observed inside an actor: the one refusal that was caught came
-to a client's fork.
+to a client's fork, and the spike met none in about 2,000 rounds of writes of every kind (a statement, a `BEGIN`
+transaction, a Rivet transaction) while the actor was forked 24 times.
 
 ## What runs locally, and what needs a deployment
 

@@ -1,12 +1,20 @@
 // The driver's durable record of the forks it asked for, in the source actor's own SQLite: the intent written before
 // each fork call, the actor the call gave, and what destroying it answered.
 
-import { ActorDatabase, ActorInfo } from "@gunta/pi-durable-rivet-effect";
-import { Effect, Option, Predicate, Schema } from "effect";
+import { ActorInfo, ActorSql } from "@gunta/pi-durable-rivet-effect";
+import { type Cause, Effect, Option, Predicate, Schema } from "effect";
+import * as Migrator from "effect/sql/Migrator";
+import * as SqlClient from "effect/sql/SqlClient";
+import type { SqlError } from "effect/sql/SqlError";
+import * as SqlSchema from "effect/sql/SqlSchema";
 
-/** The actor's database could not be read or written: the same call may work later. */
+/**
+ * The actor's database could not be read or written, or held a row of another shape: the same call may work later.
+ * `cause` is what failed: Effect's `SqlError`, a `SchemaError` or a `MigrationError`.
+ */
 export class RecordFailure extends Schema.TaggedError<RecordFailure>()("SwarmRecordFailure", {
 	reason: Schema.String,
+	cause: Schema.Defect(),
 }) {}
 
 /**
@@ -29,16 +37,31 @@ export interface Live {
 	readonly held: Exclude<Held, { readonly _tag: "Destroyed" }>;
 }
 
+/**
+ * Makes the record's tables, or brings them up to this version, through Effect's `Migrator` with a table of its own.
+ * The driver's Layer runs it at each wake, and the fork hygiene before it claims the record; the record's other
+ * operations expect the tables.
+ */
+export const migrate: Effect.Effect<void, RecordFailure, ActorSql> = Effect.flatMap(ActorSql, (sql) =>
+	Migrator.make({})({ loader: MIGRATIONS, table: "swarm_rivet_migrations" }).pipe(
+		Effect.provideService(SqlClient.SqlClient, sql),
+		Effect.asVoid,
+		Effect.mapError(failed),
+	),
+);
+
 /** What the record holds for the job, if a fork was ever asked for. */
-export function find(
-	swarmId: string,
-	jobKey: string,
-): Effect.Effect<Option.Option<Held>, RecordFailure, ActorDatabase> {
-	return Effect.map(
-		table((database) =>
-			database.get<Row>(`SELECT ${COLUMNS} FROM ${TABLE} WHERE swarm_id = ? AND job_key = ?`, swarmId, jobKey),
+export function find(swarmId: string, jobKey: string): Effect.Effect<Option.Option<Held>, RecordFailure, ActorSql> {
+	return recorded((sql) =>
+		Effect.map(
+			SqlSchema.findOneOption({
+				Request: Job,
+				Result: Row,
+				execute: (job) =>
+					sql`SELECT ${sql.literal(COLUMNS)} FROM ${sql(TABLE)} WHERE swarm_id = ${job.swarmId} AND job_key = ${job.jobKey}`,
+			})({ swarmId, jobKey }),
+			Option.map(heldOf),
 		),
-		(row) => Option.map(Option.fromUndefinedOr(row), heldOf),
 	);
 }
 
@@ -46,32 +69,24 @@ export function find(
  * Records that a fork is about to be asked for, with the size of this actor's database now: written before the fork
  * call, so a fork whose call never returns is still found. A job that has a record keeps it.
  */
-export function intend(swarmId: string, jobKey: string): Effect.Effect<void, RecordFailure, ActorDatabase> {
-	return table(async (database) => {
-		const size = await database.get<{ readonly bytes: number | null }>(SIZE);
-		await database.run(
-			`INSERT INTO ${TABLE} (swarm_id, job_key, base_bytes) VALUES (?, ?, ?)
-			 ON CONFLICT (swarm_id, job_key) DO NOTHING`,
-			swarmId,
-			jobKey,
-			size?.bytes ?? null,
-		);
-	});
+export function intend(swarmId: string, jobKey: string): Effect.Effect<void, RecordFailure, ActorSql> {
+	return recorded((sql) =>
+		Effect.gen(function* () {
+			const size = yield* SqlSchema.findOne({ Request: Schema.Void, Result: Size, execute: () => sql.unsafe(SIZE) })(
+				undefined,
+			);
+			yield* sql`INSERT INTO ${sql(TABLE)} ${sql.insert({ swarm_id: swarmId, job_key: jobKey, base_bytes: size.bytes })}
+				ON CONFLICT (swarm_id, job_key) DO NOTHING`;
+		}),
+	);
 }
 
 /** Records the actor a fork call gave. A destroyed fork stays destroyed. */
-export function made(
-	swarmId: string,
-	jobKey: string,
-	actorId: string,
-): Effect.Effect<void, RecordFailure, ActorDatabase> {
-	return table((database) =>
-		database.run(
-			`UPDATE ${TABLE} SET actor_id = ? WHERE swarm_id = ? AND job_key = ? AND destroyed = 0`,
-			actorId,
-			swarmId,
-			jobKey,
-		),
+export function made(swarmId: string, jobKey: string, actorId: string): Effect.Effect<void, RecordFailure, ActorSql> {
+	return recorded(
+		(sql) =>
+			sql`UPDATE ${sql(TABLE)} SET actor_id = ${actorId}
+				WHERE swarm_id = ${swarmId} AND job_key = ${jobKey} AND destroyed = 0`,
 	);
 }
 
@@ -80,42 +95,47 @@ export function destroyed(
 	swarmId: string,
 	jobKey: string,
 	bytesWritten: Option.Option<number>,
-): Effect.Effect<void, RecordFailure, ActorDatabase> {
-	return table((database) =>
-		database.run(
-			`INSERT INTO ${TABLE} (swarm_id, job_key, destroyed, bytes_written) VALUES (?, ?, 1, ?)
-			 ON CONFLICT (swarm_id, job_key) DO UPDATE SET destroyed = 1, bytes_written = excluded.bytes_written`,
-			swarmId,
-			jobKey,
-			Option.getOrNull(bytesWritten),
-		),
+): Effect.Effect<void, RecordFailure, ActorSql> {
+	const row = { swarm_id: swarmId, job_key: jobKey, destroyed: 1, bytes_written: Option.getOrNull(bytesWritten) };
+	return recorded(
+		(sql) =>
+			sql`INSERT INTO ${sql(TABLE)} ${sql.insert(row)}
+				ON CONFLICT (swarm_id, job_key) DO UPDATE SET destroyed = 1, bytes_written = excluded.bytes_written`,
 	);
 }
 
 /** Every fork of the swarm that was asked for and not destroyed, in the order the forks were asked for. */
-export function live(swarmId: string): Effect.Effect<Array<Live>, RecordFailure, ActorDatabase> {
-	return Effect.map(
-		table((database) =>
-			database.all<Row>(
-				`SELECT ${COLUMNS} FROM ${TABLE} WHERE swarm_id = ? AND destroyed = 0 ORDER BY rowid`,
-				swarmId,
-			),
+export function live(swarmId: string): Effect.Effect<Array<Live>, RecordFailure, ActorSql> {
+	return recorded((sql) =>
+		Effect.map(
+			SqlSchema.findAll({
+				Request: Schema.String,
+				Result: Row,
+				execute: (swarm) =>
+					sql`SELECT ${sql.literal(COLUMNS)} FROM ${sql(TABLE)} WHERE swarm_id = ${swarm} AND destroyed = 0 ORDER BY rowid`,
+			})(swarmId),
+			(rows) => rows.map((row) => ({ jobKey: row.job_key, held: liveOf(row) })),
 		),
-		(rows) => rows.map((row) => ({ jobKey: row.job_key, held: liveOf(row) })),
 	);
 }
 
 /**
- * Makes the record this actor's own: forgets every fork, and names the actor as the owner. What a copy of an actor's
- * database does first, in the fork hygiene, because the forks it lists belong to the actor it was copied from.
+ * Makes the record this actor's own: forgets every fork, and names the actor as the owner, in one transaction. What a
+ * copy of an actor's database does first, in the fork hygiene, because the forks it lists belong to the actor it was
+ * copied from. An interrupted claim is rolled back.
  */
-export const claim: Effect.Effect<void, RecordFailure, ActorDatabase | ActorInfo> = ActorInfo.use((info) =>
-	table((database) =>
-		database.transaction(async (transaction) => {
-			await transaction.run(`DELETE FROM ${TABLE}`);
-			await transaction.run(`DELETE FROM ${OWNER}`);
-			await transaction.run(`INSERT INTO ${OWNER} (actor_id) VALUES (?)`, info.actorId);
-		}),
+export const claim: Effect.Effect<void, RecordFailure, ActorSql | ActorInfo> = Effect.andThen(
+	migrate,
+	ActorInfo.use((info) =>
+		recorded((sql) =>
+			sql.withTransaction(
+				Effect.gen(function* () {
+					yield* sql`DELETE FROM ${sql(TABLE)}`;
+					yield* sql`DELETE FROM ${sql(OWNER)}`;
+					yield* sql`INSERT INTO ${sql(OWNER)} ${sql.insert({ actor_id: info.actorId })}`;
+				}),
+			),
+		),
 	),
 );
 
@@ -133,14 +153,20 @@ export class Unclean extends Schema.TaggedError<Unclean>()("SwarmForkUnclean", {
  * Fails with `Unclean` in an actor fork whose record is not its own. An actor that is no fork has nothing copied, and
  * passes without a read.
  */
-export const requireClean: Effect.Effect<void, Unclean | RecordFailure, ActorDatabase | ActorInfo> = ActorInfo.use(
-	(info) =>
-		info.forkChain.length === 0
-			? Effect.void
-			: Effect.flatMap(
-					table((database) => database.get<{ readonly actor_id: string }>(`SELECT actor_id FROM ${OWNER}`)),
-					(owner) => (owner?.actor_id === info.actorId ? Effect.void : Effect.fail(new Unclean())),
+export const requireClean: Effect.Effect<void, Unclean | RecordFailure, ActorSql | ActorInfo> = ActorInfo.use((info) =>
+	info.forkChain.length === 0
+		? Effect.void
+		: Effect.flatMap(
+				recorded((sql) =>
+					SqlSchema.findOneOption({
+						Request: Schema.Void,
+						Result: Owner,
+						execute: () => sql`SELECT actor_id FROM ${sql(OWNER)}`,
+					})(undefined),
 				),
+				(owner) =>
+					Option.exists(owner, (row) => row.actor_id === info.actorId) ? Effect.void : Effect.fail(new Unclean()),
+			),
 );
 
 // Outside Pi's table prefix, and prefixed for this plugin: the actor's database is shared with Pi and the product.
@@ -154,54 +180,67 @@ const COLUMNS = "job_key, actor_id, base_bytes, destroyed, bytes_written";
 // What the Rivet host answers when it destroys an actor: the page count times the page size.
 const SIZE = "SELECT page_count * page_size AS bytes FROM pragma_page_count(), pragma_page_size()";
 
-const CREATE = `CREATE TABLE IF NOT EXISTS ${TABLE} (
-	swarm_id TEXT NOT NULL,
-	job_key TEXT NOT NULL,
-	actor_id TEXT,
-	base_bytes INTEGER,
-	destroyed INTEGER NOT NULL DEFAULT 0,
-	bytes_written INTEGER,
-	PRIMARY KEY (swarm_id, job_key)
-) STRICT;
-CREATE TABLE IF NOT EXISTS ${OWNER} (actor_id TEXT NOT NULL) STRICT`;
+/**
+ * The record's versions. The first is the tables as the record made them before it had versions, so a database that
+ * holds them keeps them.
+ */
+const MIGRATIONS = Migrator.fromRecord({
+	"1_fork_record": Effect.flatMap(SqlClient.SqlClient, (sql) =>
+		Effect.andThen(
+			sql`CREATE TABLE IF NOT EXISTS ${sql(TABLE)} (
+				swarm_id TEXT NOT NULL,
+				job_key TEXT NOT NULL,
+				actor_id TEXT,
+				base_bytes INTEGER,
+				destroyed INTEGER NOT NULL DEFAULT 0,
+				bytes_written INTEGER,
+				PRIMARY KEY (swarm_id, job_key)
+			) STRICT`,
+			sql`CREATE TABLE IF NOT EXISTS ${sql(OWNER)} (actor_id TEXT NOT NULL) STRICT`,
+		),
+	),
+});
 
-/** One row, as SQLite gives it. */
-interface Row {
-	readonly job_key: string;
-	readonly actor_id: string | null;
-	readonly base_bytes: number | null;
-	readonly destroyed: number;
-	readonly bytes_written: number | null;
-}
+/** One job of one swarm, as the record is asked about it. */
+const Job = Schema.Struct({ swarmId: Schema.String, jobKey: Schema.String });
 
-function heldOf(row: Row): Held {
+/** One row of the record, decoded: SQLite gives `destroyed` as 0 or 1. */
+const Row = Schema.Struct({
+	job_key: Schema.String,
+	actor_id: Schema.NullOr(Schema.String),
+	base_bytes: Schema.NullOr(Schema.Number),
+	destroyed: Schema.Literals([0, 1]),
+	bytes_written: Schema.NullOr(Schema.Number),
+});
+
+/** The size of the database; NULL where a pragma gives nothing. */
+const Size = Schema.Struct({ bytes: Schema.NullOr(Schema.Number) });
+
+const Owner = Schema.Struct({ actor_id: Schema.String });
+
+function heldOf(row: typeof Row.Type): Held {
 	return row.destroyed === 1 ? { _tag: "Destroyed", bytesWritten: Option.fromNullOr(row.bytes_written) } : liveOf(row);
 }
 
-function liveOf(row: Row): Live["held"] {
+function liveOf(row: typeof Row.Type): Live["held"] {
 	const baseBytes = Option.fromNullOr(row.base_bytes);
 	return row.actor_id === null ? { _tag: "Intended", baseBytes } : { _tag: "Made", actorId: row.actor_id, baseBytes };
 }
 
-/** The actor's database, as the Rivet host provides it. */
-type Database = (typeof ActorDatabase)["Service"];
+/** What a use of the record can fail with, before it is a `RecordFailure`. */
+type Failure = SqlError | Schema.SchemaError | Cause.NoSuchElementError | Migrator.MigrationError;
 
-/** One use of the tables, which are made on the first use of a database. */
-function table<A>(use: (database: Database) => Promise<A>): Effect.Effect<A, RecordFailure, ActorDatabase> {
-	return ActorDatabase.use((database) =>
-		Effect.tryPromise({
-			try: async () => {
-				if (!tables.has(database)) {
-					await database.exec(CREATE);
-					tables.add(database);
-				}
-				return use(database);
-			},
-			catch: (cause) => new RecordFailure({ reason: Predicate.isError(cause) ? cause.message : String(cause) }),
-		}),
-	);
+/** One use of the record, on the actor's database; every failure is a `RecordFailure` with its cause. */
+function recorded<A>(
+	use: (sql: SqlClient.SqlClient) => Effect.Effect<A, Failure>,
+): Effect.Effect<A, RecordFailure, ActorSql> {
+	return Effect.flatMap(ActorSql, (sql) => Effect.mapError(use(sql), failed));
 }
 
-// Keyed by the database and held weakly: the tables are made once per wake of an actor, and none is kept for a
-// closed one.
-const tables = new WeakSet<Database>();
+/** The failure, with a reason in words: for a statement, what the database said, which Effect's message leaves out. */
+function failed(cause: Failure): RecordFailure {
+	// A trust boundary: what the driver threw is unknown to Effect's error, and kept as it is.
+	const said = cause._tag === "SqlError" ? cause.reason.cause : undefined;
+	const reason = Predicate.isError(said) ? `${cause.message}: ${said.message}` : cause.message;
+	return new RecordFailure({ reason, cause });
+}

@@ -2,7 +2,7 @@
 // stop the job's work.
 
 import type { Harness } from "@gunta/pi-durable-effect";
-import { Action, type ActorDatabase, type ActorInfo } from "@gunta/pi-durable-rivet-effect";
+import { Action, type ActorInfo, type ActorSql } from "@gunta/pi-durable-rivet-effect";
 import { Effect, Schema } from "effect";
 import { JobStatus } from "../driver.ts";
 import type { ForkSetup } from "../fork-setup.ts";
@@ -35,7 +35,7 @@ export type Actions = {
 		typeof RunInput,
 		typeof RunOutput,
 		typeof Job.JobRefused,
-		Harness.Harness | ActorInfo | ActorDatabase | ForkSetup
+		Harness.Harness | ActorInfo | ActorSql | ForkSetup
 	>;
 	/** Where a request stands, and its answer's text once it settled. */
 	readonly swarmJob: Action.Action<typeof JobInput, typeof JobStatus, typeof Schema.Never, Harness.Harness>;

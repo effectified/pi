@@ -5,6 +5,7 @@ import type { SqliteDatabase } from "@earendil-works/chord/sqlite";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { type DurableError, Storage, UnexpectedError } from "@gunta/pi-durable-effect";
 import { Context, Effect, type Layer, type Option, type Schema } from "effect";
+import type * as SqlClient from "effect/sql/SqlClient";
 import type { ClientRaw } from "rivetkit/client";
 
 /** One individual actor fork behind an actor: the source it was copied from, and when. */
@@ -32,9 +33,22 @@ export interface Identity {
 export class ActorInfo extends Context.Service<ActorInfo, Identity>()("@gunta/pi-durable-rivet-effect/ActorInfo") {}
 
 /**
- * The actor's SQLite database as Chord's `SqliteDatabase`: the one adapter Pi's storage uses too, so a product that
- * keeps tables of its own in the actor shares its transactions' queue with Pi. Name those tables outside the storage
- * prefix. `close` does nothing.
+ * The actor's SQLite database as an Effect `SqlClient` of the SQLite dialect, on the one queue of the database, which
+ * Pi's storage uses too: a product's or a plugin's own tables, with rows decoded by `SqlSchema`, migrations by
+ * `Migrator` (with this client provided as `SqlClient`), and transactions that roll back when their Effect fails or
+ * is interrupted. Name those tables outside the storage prefix. Rivet's transactions are its own, driven by Effect, and
+ * a statement Rivet refuses with a retry hint is asked again only outside a transaction (README, "Storage").
+ */
+export class ActorSql extends Context.Service<ActorSql, SqlClient.SqlClient>()(
+	"@gunta/pi-durable-rivet-effect/ActorSql",
+) {}
+
+/**
+ * The actor's SQLite database as Chord's `SqliteDatabase`, whose methods return promises: the adapter Pi's storage
+ * runs on, on the queue `ActorSql` shares, so no transaction of either comes between the statements of another. For
+ * code written against Chord's interface; new code uses `ActorSql`. `close` does nothing.
+ *
+ * @deprecated The promise form of `ActorSql`, kept for Pi's storage and for code written against it. Use `ActorSql`.
  */
 export class ActorDatabase extends Context.Service<ActorDatabase, SqliteDatabase>()(
 	"@gunta/pi-durable-rivet-effect/ActorDatabase",
@@ -55,7 +69,11 @@ export interface StorageOptions {
 	readonly prefix: string;
 }
 
-/** Pi's SQLite storage on the actor's database, under `prefix`. Building it applies Pi's migrations. */
+/**
+ * Pi's SQLite storage on the actor's database, under `prefix`, on the `ActorDatabase` adapter, whose queue `ActorSql`
+ * shares. Building it applies Pi's migrations. Pi's storage also passes its conformance suite on `Storage.sql` of
+ * `@gunta/pi-durable-effect` over `ActorSql`, which a product may use; that path measured slower (README, "Storage").
+ */
 export function storage(options: StorageOptions): Layer.Layer<Storage.HarnessStorage, DurableError, ActorDatabase> {
 	return Storage.custom(
 		ActorDatabase.use((database) =>

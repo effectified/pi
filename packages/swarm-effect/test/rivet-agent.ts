@@ -4,7 +4,7 @@
 
 import { Harness, Registry } from "@gunta/pi-durable-effect";
 import { type FauxResponseFactory, ScriptedModels, TestHarness } from "@gunta/pi-durable-effect/testing";
-import { Action, Actor, type ActorDatabase, ActorInfo, type Fork, Self } from "@gunta/pi-durable-rivet-effect";
+import { Action, Actor, ActorInfo, type Fork, Self } from "@gunta/pi-durable-rivet-effect";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 import * as Swarm from "../src/index.ts";
 import * as Records from "../src/rivet/records.ts";
@@ -320,7 +320,7 @@ export const Swarmer = swarmer("swarmer", [Rivet.forkHygiene, recordFork]);
 /** The same actor without the driver's fork hygiene: what a product that forgot it has. */
 export const Careless = swarmer("careless", [recordFork]);
 
-function swarmer(name: string, forkHygiene: ReadonlyArray<Fork.Hygiene<ActorDatabase>>) {
+function swarmer(name: string, forkHygiene: ReadonlyArray<Fork.Hygiene<never>>) {
 	return Actor.make(name, {
 		layer,
 		forkHygiene,

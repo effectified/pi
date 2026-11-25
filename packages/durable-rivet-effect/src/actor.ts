@@ -3,7 +3,7 @@
 
 import type { Models } from "@gunta/pi-ai-effect";
 import { type DurableError, Harness, type Registry, UnexpectedError } from "@gunta/pi-durable-effect";
-import { Cause, Clock, Effect, Exit, FiberSet, Layer, Option, Predicate, Schema } from "effect";
+import { Cause, Clock, Context, Effect, Exit, FiberSet, Layer, Option, Predicate, Schema, Semaphore } from "effect";
 import {
 	type ActorCron,
 	type ActorFork,
@@ -17,7 +17,8 @@ import {
 import type { ClientRaw } from "rivetkit/client";
 import { db } from "rivetkit/db";
 import type * as Action from "./action.ts";
-import { ActorDatabase, ActorEngine, ActorInfo, storage } from "./actor-context.ts";
+import { ActorDatabase, ActorEngine, ActorInfo, ActorSql, storage } from "./actor-context.ts";
+import * as Sql from "./actor-sql.ts";
 import { type Answer, defect } from "./answer.ts";
 import type * as Fork from "./fork.ts";
 import * as ForkRecord from "./fork-record.ts";
@@ -27,7 +28,7 @@ import * as SqliteDatabase from "./sqlite-database.ts";
 import * as WakeKeeper from "./wake-keeper.ts";
 
 /** What the product's Layers, actions and fork hygiene find in their context beside what `layer` provides. */
-export type Provided = ActorInfo | ActorDatabase | ActorEngine;
+export type Provided = ActorInfo | ActorSql | ActorDatabase | ActorEngine;
 
 /** What an action of the actor may need: the harness, what it was built from, and what `layer` and `services` give. */
 export type InActor<P, S> = Harness.Harness | Registry.Registry | Models | Provided | P | S;
@@ -130,8 +131,8 @@ export function make<
 	 */
 	const harness = <DR>(
 		c: Cell<R>,
-		database: Layer.Layer<ActorDatabase, never, DR>,
-		forkInput: Effect.Effect<Option.Option<Schema.Json>, DurableError, ActorDatabase>,
+		database: Layer.Layer<ActorSql | ActorDatabase, never, DR>,
+		forkInput: Effect.Effect<Option.Option<Schema.Json>, DurableError, ActorSql>,
 		host: { readonly resume: boolean },
 	) =>
 		Layer.unwrap(
@@ -155,9 +156,9 @@ export function make<
 		Option.match(Option.fromUndefinedOr(c.forkChain.at(-1)), {
 			onNone: () => Effect.succeed(Option.none<Schema.Json>()),
 			onSome: (link) =>
-				ActorDatabase.use((database) =>
+				ActorSql.use((sql) =>
 					Effect.map(
-						Effect.flatMap(ForkRecord.record(database, prefix), (forks) => forks.find(link)),
+						Effect.flatMap(ForkRecord.record(sql, prefix), (forks) => forks.find(link)),
 						Option.flatten,
 					),
 				),
@@ -170,12 +171,7 @@ export function make<
 	 */
 	const generation = (c: Cell<R>): Promise<Exit.Exit<Generation.Generation<R>, unknown>> => {
 		const wake = c.vars.wake;
-		const database = Layer.effect(
-			ActorDatabase,
-			Generation.Work.use((work) =>
-				Effect.map(FiberSet.runtimePromise(work)(), (run) => SqliteDatabase.make(c.db, run)),
-			),
-		);
+		const database = Layer.effectContext(Generation.Work.use((work) => databaseOf(c.db, work)));
 		wake.opening ??= Effect.runPromiseExit(
 			Generation.open(
 				Layer.mergeAll(config.services ?? Layer.empty, WakeKeeper.layer(alarm(c))).pipe(
@@ -218,8 +214,8 @@ export function make<
 			for (const job of yield* rivetRequest(() => c.cron.list())) {
 				yield* rivetRequest(() => c.cron.delete(job.name));
 			}
-			const database = SqliteDatabase.make(c.db, yield* FiberSet.makeRuntimePromise());
-			const forks = yield* ForkRecord.record(database, prefix);
+			const database = yield* databaseOf(c.db, yield* FiberSet.make());
+			const forks = yield* ForkRecord.record(Context.get(database, ActorSql), prefix);
 			const link = { actorId: fork.actorId, key: fork.key, forkedAt: fork.forkedAt };
 			// Recorded already: a start that failed after the hygiene was stored. Running it again would be harmless too.
 			if (Option.isSome(yield* forks.find(link))) return;
@@ -230,7 +226,7 @@ export function make<
 				yield* Effect.scoped(
 					Effect.gen(function* () {
 						const context = yield* Layer.build(
-							harness(c, Layer.succeed(ActorDatabase, database), Effect.succeed(input), { resume: false }),
+							harness(c, Layer.succeedContext(database), Effect.succeed(input), { resume: false }),
 						);
 						for (const step of steps) yield* Effect.provideContext(step, context);
 					}),
@@ -378,6 +374,22 @@ function alarm<R>(c: Cell<R>): WakeKeeper.Alarm {
 /** A request to Rivet from inside the actor: its schedule, its database. A rejection is an `UnexpectedError`. */
 function rivetRequest<A>(request: () => Promise<A>): Effect.Effect<A, UnexpectedError> {
 	return Effect.tryPromise({ try: request, catch: (cause) => new UnexpectedError({ cause }) });
+}
+
+/**
+ * The actor's database as both services, on one queue: `ActorSql`, and the `ActorDatabase` adapter Pi's storage and
+ * older code use. Their requests to Rivet are fibers of `work`.
+ */
+function databaseOf(
+	raw: SqliteDatabase.RawDatabase,
+	work: FiberSet.FiberSet,
+): Effect.Effect<Context.Context<ActorSql | ActorDatabase>> {
+	return Effect.gen(function* () {
+		const queue = yield* Semaphore.make(1);
+		const sql = yield* Sql.make(raw, queue, work);
+		const database = SqliteDatabase.make(raw, yield* FiberSet.runtimePromise(work)(), queue);
+		return Context.make(ActorSql, sql).pipe(Context.add(ActorDatabase, database));
+	});
 }
 
 /** Reads the size of the database, destroys the actor, and answers with the size. */

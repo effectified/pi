@@ -18,6 +18,7 @@ describe("the package's exports", () => {
 			"ActorEngine",
 			"ActorGone",
 			"ActorInfo",
+			"ActorSql",
 			"Client",
 			"EngineUnavailable",
 			"Fork",

@@ -1,7 +1,7 @@
 // Fork hygiene for an actor whose definition runs swarms on Rivet: a copied storage holds no swarm, no fork and no
 // job of its own.
 
-import type { ActorDatabase, Fork } from "@gunta/pi-durable-rivet-effect";
+import type { Fork } from "@gunta/pi-durable-rivet-effect";
 import { Effect } from "effect";
 import { onStorageFork } from "../storage-fork.ts";
 import * as Job from "./job.ts";
@@ -21,7 +21,7 @@ import * as Records from "./records.ts";
  * Idempotent, as the host asks: running it again before the fork's first call changes nothing. A fork in which it
  * did not run takes no job and drives no swarm: its driver and its `swarmRun` action refuse, and say why.
  */
-export const forkHygiene: Fork.Hygiene<ActorDatabase> = Effect.gen(function* () {
+export const forkHygiene: Fork.Hygiene<never> = Effect.gen(function* () {
 	yield* onStorageFork;
 	yield* Records.claim;
 	yield* Job.forget;

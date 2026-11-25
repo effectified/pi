@@ -14,16 +14,7 @@ import * as Refusal from "../src/refusal.ts";
 import type { RawDatabase } from "../src/sqlite-database.ts";
 import * as Database from "../src/sqlite-database.ts";
 import { Agent } from "./agent.ts";
-import { standIn } from "./raw-stand-in.ts";
-
-/** Rivet's refusal, with the hint it gives while a volume changes hands. */
-const refusal = (group = "depot", hint = 100): RivetError =>
-	new RivetError(
-		group,
-		"overloaded",
-		`The storage host refused the command (volume_transition); retry after ${hint} ms.`,
-		{ metadata: { reason: "volume_transition", retry_after_ms: hint } },
-	);
+import { type Refusals, refusal, refusingStorage, standIn } from "./raw-stand-in.ts";
 
 describe("Refusal", () => {
 	it("reads the hint of Rivet's error, and none off anything else", () => {
@@ -192,52 +183,14 @@ describe("a client request the engine refuses with a retry hint", () => {
 		));
 });
 
-/** What the refusing database did. */
-interface Asked {
-	/** Statements asked for on the database itself, refused ones included. */
-	statements: number;
-	/** Transactions asked for, refused ones included. */
-	transactions: number;
-}
-
 /**
- * The stand-in database of raw-stand-in.ts behind a storage that refuses: the next `statements` statements on the
- * database, the next `begins` transactions before their callback is called, and the next `inside` statements inside
- * a transaction. A refused request does nothing, as Rivet's storage says of its own. `database` runs its operations
+ * The stand-in database of raw-stand-in.ts behind a storage that refuses (`refusingStorage`). `database` runs its operations
  * on the fibers of a set in the test's scope, so they wait on the test clock; `plain` has no refusals.
  */
-const refusingDatabase = (
-	refuse: { statements?: number; begins?: number; inside?: number },
-	refused: () => unknown = refusal,
-) =>
+const refusingDatabase = (refuse: Refusals, refused: () => unknown = refusal) =>
 	Effect.gen(function* () {
 		const { raw } = standIn();
-		const left = { statements: refuse.statements ?? 0, begins: refuse.begins ?? 0, inside: refuse.inside ?? 0 };
-		const asked: Asked = { statements: 0, transactions: 0 };
-		const take = (kind: keyof typeof left): boolean => {
-			if (left[kind] <= 0) return false;
-			left[kind] -= 1;
-			return true;
-		};
-		const refusingRaw: RawDatabase = {
-			execute: (query, ...args) => {
-				asked.statements += 1;
-				return take("statements") ? Promise.reject(refused()) : raw.execute(query, ...args);
-			},
-			transaction: (callback, options) => {
-				asked.transactions += 1;
-				if (take("begins")) return Promise.reject(refused());
-				return raw.transaction(
-					(transaction) =>
-						callback({
-							execute: (query, ...args) =>
-								take("inside") ? Promise.reject(refused()) : transaction.execute(query, ...args),
-							transaction: (nested, nestedOptions) => transaction.transaction(nested, nestedOptions),
-						}),
-					options,
-				);
-			},
-		};
+		const { raw: refusingRaw, asked } = refusingStorage(raw, refuse, refused);
 		const fibers = yield* FiberSet.make();
 		const run = yield* FiberSet.runtimePromise(fibers)();
 		const plain = Database.make(raw);
