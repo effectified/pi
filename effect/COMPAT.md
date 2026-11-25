@@ -65,8 +65,18 @@ Not built: `mcp-effect`, `codemode-effect`, `agent-effect`, `env-effect`, `workf
 
 ## Bumping upstream
 
-1. Fast-forward `main`, merge it into `effect`, regenerate the lockfile.
-2. Change the pinned Pi version in every `packages/*-effect/package.json` together
-   (`node effect/scripts/check-deps.ts` rejects mixed versions).
-3. Run everything. The parity tests of `durable-effect` show what moved in Pi Durable.
-4. Add a row here.
+1. Fast-forward `main` to upstream, with upstream's tags, and push it with the release tag
+   (`git push origin main v<version>`): the sync check compares the wrapped Pi sources with that tag.
+2. On `effect`: `git merge --no-commit --no-ff main`, then `node effect/scripts/sync.ts bump`. It pins every
+   `packages/*-effect/package.json` to the workspace's Pi version, takes the lockfile from `main` and installs,
+   rewrites `effect/pi-surface/` and prints which Pi declarations the packages use changed (old and new text, and
+   which packages use each), then runs the gate one command at a time and stops at the first failure. Upstream's own
+   `npm run check` only shows, as in CI. It ends with the new row for the table above, from measured values.
+3. Read the surface changes; the parity tests of `durable-effect` show what moved in Pi Durable. Add the row, run
+   `node effect/scripts/sync.ts check`, and commit with `PI_ALLOW_LOCKFILE_CHANGE=1`. PatentOS's own Pi pins move
+   with its vendored packages (`effect/PATENTOS.md`).
+
+`sync.ts check` runs in CI too: one Pi version across all pins, the workspace's; the wrapped Pi sources equal to what
+that version released (a warning in CI, since upstream's `main` changes them between releases); this row; and
+`pi-surface.ts --check`. `pack.ts` and `vendor.ts` refuse to build when the tree is not the pinned release, unless
+given `--unreleased-pi`, which `SOURCE.json` beside their output then records.

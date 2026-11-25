@@ -43,6 +43,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The sync check compares the wrapped Pi sources with their release tag, lists the commits after it and
+          # reads the merge base with main: it needs the tags and the history.
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -80,6 +84,14 @@ jobs:
           npm run check:runtime-deps
           npm run check:ts-imports
 
+      # The packages' Pi pins against the tree: one version, the workspace's, named in COMPAT.md's first row, and
+      # the record of the Pi declarations the packages use (effect/pi-surface/). Pi sources beyond the pinned release
+      # (or a release tag this clone lacks) only warn here: upstream's main changes a wrapped package between
+      # releases, and no commit here can fix that. pack.ts and vendor.ts, which make what a product installs, refuse.
+      - name: Sync check
+        if: ${{ !cancelled() && steps.upstream.outcome == 'success' }}
+        run: node effect/scripts/sync.ts check origin/main --warn-unreleased
+
       - name: Build the pi-effect packages
         id: packages
         if: ${{ !cancelled() && steps.upstream.outcome == 'success' }}
@@ -88,6 +100,12 @@ jobs:
       - name: Fast type check
         if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
         run: node_modules/.bin/tsc --noEmit -p effect/tsconfig.json
+
+      # The rules of effect/AGENTS.md as errors of the Effect language service (the plugin block of
+      # effect/tsconfig.json). @effect/tsgo is fetched by npm exec at an exact version, not installed by npm ci.
+      - name: Effect diagnostics
+        if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
+        run: node effect/scripts/effect-diagnostics.ts
 
       # Storage conformance runs in both lanes: on node:sqlite here, on bun:sqlite in the Bun lane.
       - name: Tests on Node

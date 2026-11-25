@@ -4,7 +4,158 @@
 	"compilerOptions": {
 		// Upstream sources reached through `paths` use DOM globals (MessageChannel ports). The root program gets them
 		// from files with `/// <reference lib="dom" />` that this smaller program does not include.
-		"lib": ["ES2024", "DOM"]
+		"lib": ["ES2024", "DOM"],
+		// The Effect language service's rules, read by `node effect/scripts/effect-diagnostics.ts` (@effect/tsgo).
+		// `tsc` ignores plugins, so the fast type check above is unchanged. `include` globs are relative to this
+		// directory; a later override adds to the earlier ones rule by rule.
+		"plugins": [
+			{
+				"name": "@effect/language-service",
+				"diagnosticSeverity": {
+					// effect/AGENTS.md: an Effect is returned, yielded or run, never dropped.
+					"floatingEffect": "error",
+					// effect/AGENTS.md: time and ids come from services (`Clock`, `Random`), so `TestClock` drives a test.
+					"globalDate": "error",
+					"globalDateInEffect": "error",
+					"globalTimers": "error",
+					"globalTimersInEffect": "error",
+					"globalRandom": "error",
+					"globalRandomInEffect": "error",
+					"cryptoRandomUUID": "error",
+					"cryptoRandomUUIDInEffect": "error",
+					// effect/AGENTS.md: no `node:` import in a package core (platform files: the first override).
+					"nodeBuiltinImport": "error",
+					// An unstable Effect module is a decision: each one the packages use is listed below.
+					"unstableApiUsage": "error"
+				},
+				// The unstable modules the packages' sources use (2026-11-26). Tests add theirs in the test override.
+				"allowedUnstableApis": [
+					// effect-survey finding 4: the local engine's platform services, being adopted now in
+					// durable-rivet-effect/src/node/ by its lane. Check the group when that lane lands.
+					"@effect/platform-node-shared/NodeChildProcessSpawner",
+					"@effect/platform-node-shared/NodeFileSystem",
+					"@effect/platform-node-shared/NodePath",
+					"effect/FileSystem",
+					"effect/Path",
+					"effect/PlatformError",
+					"effect/process/ChildProcess",
+					"effect/process/ChildProcessSpawner",
+					// Used since the packages began: Effect's AI bridges, HTTP client, SQL client and test console.
+					"effect/ai/AiError",
+					"effect/ai/LanguageModel",
+					"effect/ai/Prompt",
+					"effect/ai/Response",
+					"effect/ai/Tool",
+					"effect/ai/Toolkit",
+					"effect/http/Headers",
+					"effect/http/HttpClient",
+					"effect/http/HttpClientError",
+					"effect/http/HttpClientRequest",
+					"effect/http/HttpClientResponse",
+					"effect/sql/SqlClient",
+					"effect/sql/SqlError",
+					"effect/testing/TestConsole"
+				],
+				"overrides": [
+					{
+						// Platform code: a file named node.ts or bun.ts, or under a node/ or bun/ directory (check-deps.ts).
+						"include": [
+							"../packages/*-effect/src/**/node.ts",
+							"../packages/*-effect/src/**/bun.ts",
+							"../packages/*-effect/src/**/node/**/*.ts",
+							"../packages/*-effect/src/**/bun/**/*.ts"
+						],
+						"options": { "diagnosticSeverity": { "nodeBuiltinImport": "off" } }
+					},
+					{
+						// Tests may import Node and build fixtures with real dates; the rule for their clock is `runTest`'s.
+						// The four type-test rules repeat TypeScript errors that `@ts-expect-error` type tests assert, and
+						// that the fast type check still reports elsewhere; a test helper may `yield* Effect.never`.
+						"include": ["../packages/*-effect/test/**/*.ts"],
+						"options": {
+							"diagnosticSeverity": {
+								"nodeBuiltinImport": "off",
+								"globalDate": "off",
+								"globalDateInEffect": "off",
+								"globalTimers": "off",
+								"globalTimersInEffect": "off",
+								"globalRandom": "off",
+								"globalRandomInEffect": "off",
+								"cryptoRandomUUID": "off",
+								"cryptoRandomUUIDInEffect": "off",
+								"missingEffectContext": "off",
+								"missingEffectError": "off",
+								"missingLayerContext": "off",
+								"missingReturnYieldStar": "off"
+							},
+							// The list above, with the SQLite clients and the fetch client that only tests use.
+							"allowedUnstableApis": [
+								"@effect/platform-node-shared/NodeChildProcessSpawner",
+								"@effect/platform-node-shared/NodeFileSystem",
+								"@effect/platform-node-shared/NodePath",
+								"effect/FileSystem",
+								"effect/Path",
+								"effect/PlatformError",
+								"effect/process/ChildProcess",
+								"effect/process/ChildProcessSpawner",
+								"@effect/sql-sqlite-bun/SqliteClient",
+								"@effect/sql-sqlite-node/SqliteClient",
+								"effect/ai/AiError",
+								"effect/ai/LanguageModel",
+								"effect/ai/Prompt",
+								"effect/ai/Response",
+								"effect/ai/Tool",
+								"effect/ai/Toolkit",
+								"effect/http/FetchHttpClient",
+								"effect/http/Headers",
+								"effect/http/HttpClient",
+								"effect/http/HttpClientError",
+								"effect/http/HttpClientRequest",
+								"effect/http/HttpClientResponse",
+								"effect/sql/SqlClient",
+								"effect/sql/SqlError",
+								"effect/testing/TestConsole"
+							]
+						}
+					},
+					{
+						// Type tests of a call's signature: `@ts-expect-error` lines build an Effect for its type alone.
+						"include": [
+							"../packages/durable-rivet-effect/test/client.test.ts",
+							"../packages/durable-rivet-effect/test/self.test.ts",
+							"../packages/thread-effect/test/remote.test.ts"
+						],
+						"options": { "diagnosticSeverity": { "floatingEffect": "off" } }
+					},
+					{
+						// Lane exception, effect-survey finding 2: the refusal retry waits on `setTimeout` at the last commit.
+						// Its lane moves it onto Effect's retry and `Clock`; delete this override when that lands.
+						"include": ["../packages/durable-rivet-effect/src/refusal.ts"],
+						"options": { "diagnosticSeverity": { "globalTimers": "off", "globalTimersInEffect": "off" } }
+					},
+					{
+						// Kept on purpose (effect-survey, "Checked, and recommended not to do"): the guard on rivetkit's
+						// `process.exit` ends a hold after a `setTimeout` it unrefs, which must outlive the failed start's
+						// fiber and must not keep the process alive.
+						"include": ["../packages/durable-rivet-effect/src/node/exit-guard.ts"],
+						"options": { "diagnosticSeverity": { "globalTimers": "off", "globalTimersInEffect": "off" } }
+					},
+					{
+						// The scripts and spikes of this directory are Node tools, not package code.
+						"include": ["./scripts/**/*.ts", "./spikes/**/*.ts"],
+						"options": {
+							"diagnosticSeverity": {
+								"nodeBuiltinImport": "off",
+								"globalDate": "off",
+								"globalDateInEffect": "off",
+								"globalTimers": "off",
+								"globalTimersInEffect": "off"
+							}
+						}
+					}
+				]
+			}
+		]
 	},
 	"include": ["../packages/*-effect/src/**/*", "../packages/*-effect/test/**/*", "./scripts/**/*", "./spikes/**/*"],
 	"exclude": ["../**/dist/**"]

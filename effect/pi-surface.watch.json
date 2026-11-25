@@ -1,0 +1,187 @@
+{
+	"$comment": "Private Pi code the pi-effect packages restate on purpose, recorded with its body by effect/scripts/pi-surface.ts. kind: declaration (a top-level name, or Class.member), calls (every call of the named function in the file), lines (every line containing the text). file is from packages/; sites are the files of ours that restate it. The P numbers are the rows of the coupling research of 2026-11-26.",
+	"entries": [
+		{
+			"kind": "declaration",
+			"file": "schema/src/explain.ts",
+			"name": "pointer",
+			"why": "P004: the codec writes an issue's path as the same JSON Pointer pi-schema reports (~ as ~0, / as ~1).",
+			"sites": ["schema-effect/src/codec.ts"]
+		},
+		{
+			"kind": "calls",
+			"file": "ai/src/api/openai-completions.ts",
+			"name": "resolveTranscript",
+			"why": "P012: the Effect provider does what every pi-ai adapter does before a request; this adapter is the reference.",
+			"sites": ["ai-effect/src/effect-provider.ts"]
+		},
+		{
+			"kind": "calls",
+			"file": "ai/src/api/openai-completions.ts",
+			"name": "transformMessages",
+			"why": "P012: the adapter preamble the Effect provider restates.",
+			"sites": ["ai-effect/src/effect-provider.ts"]
+		},
+		{
+			"kind": "calls",
+			"file": "ai/src/api/openai-completions.ts",
+			"name": "resolveTranscriptTools",
+			"why": "P012: the adapter preamble the Effect provider restates.",
+			"sites": ["ai-effect/src/effect-provider.ts"]
+		},
+		{
+			"kind": "lines",
+			"file": "ai/src/providers/faux.ts",
+			"text": "Request was aborted",
+			"why": "P019, P077, P088: an interrupted request ends with Pi's abort text, which callers compare.",
+			"sites": ["ai-effect/src/effect-provider.ts", "router-effect/src/provider.ts", "budget-effect/src/budgeted-models.ts"]
+		},
+		{
+			"kind": "lines",
+			"file": "ai/src/api/anthropic-messages.ts",
+			"text": "Request was aborted",
+			"why": "P019, P077, P088: the same abort text in a real adapter.",
+			"sites": ["ai-effect/src/effect-provider.ts", "router-effect/src/provider.ts", "budget-effect/src/budgeted-models.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "durable/src/signals.ts",
+			"name": "signalMemoName",
+			"why": "P040, P109, P133: a signal's state is read from the task's memo of this name.",
+			"sites": ["durable-effect/src/signal.ts", "approvals-effect/src/signal.ts", "review-effect/src/signalled.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "durable/src/signals.ts",
+			"name": "SignalMemo",
+			"why": "P040, P133: the shape of that memo ({ version, value } or { expired: true }).",
+			"sites": ["durable-effect/src/signal.ts", "review-effect/src/signalled.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "durable/src/signals.ts",
+			"name": "ValueMemo",
+			"why": "P040, P133: the value form of that memo.",
+			"sites": ["durable-effect/src/signal.ts", "review-effect/src/signalled.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "durable/src/signals.ts",
+			"name": "readSignal",
+			"why": "P040: how Pi reads that memo; the facade reads it the same way.",
+			"sites": ["durable-effect/src/signal.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "durable/src/harness/scheduler.ts",
+			"name": "TaskScheduler.#inScope",
+			"why": "P041: Pi's idle rule (walk owners up, a background task stops the walk), restated without waiting.",
+			"sites": ["durable-effect/src/idle.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "durable/src/harness/tool.ts",
+			"name": "harnessError",
+			"why": "P056, P098: the shape of the error result Pi writes for a tool call it refuses.",
+			"sites": ["durable-effect/src/tool.ts", "guard-effect/src/backstop.ts"]
+		},
+		{
+			"kind": "calls",
+			"file": "durable/src/harness/tool.ts",
+			"name": "harnessError",
+			"why": "P097, P098, P099: the diagnostic codes and words Pi writes (tool_unavailable, blocked, invalid_arguments), matched as strings.",
+			"sites": ["durable-effect/src/tool.ts", "guard-effect/src/extension.ts", "guard-effect/src/backstop.ts", "guard-effect/src/refusal.ts"]
+		},
+		{
+			"kind": "calls",
+			"file": "durable/src/harness/tool.ts",
+			"name": "toolDiagnostic",
+			"why": "P056: the tool_error code Pi writes for a failing tool.",
+			"sites": ["durable-effect/src/tool.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "durable/src/harness/compaction.ts",
+			"name": "createCompaction",
+			"why": "P068: an automatic compaction is a background task; the fork protocol assumes it is Pi's only one.",
+			"sites": ["durable-rivet-effect/src/protocol.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "ai/src/utils/retry.ts",
+			"name": "RETRYABLE_PROVIDER_ERROR_PATTERN",
+			"why": "P083: the router's rate-limit test is taken from these patterns.",
+			"sites": ["router-effect/src/classify.ts"]
+		},
+		{
+			"kind": "lines",
+			"file": "ai/src/utils/provider-retry.ts",
+			"text": "Server requested",
+			"why": "P083: the router reads the delay hint from this text.",
+			"sites": ["router-effect/src/classify.ts"]
+		},
+		{
+			"kind": "lines",
+			"file": "ai/src/api/openai-codex-responses.ts",
+			"text": "Server requested",
+			"why": "P083: the same delay hint, written by another adapter.",
+			"sites": ["router-effect/src/classify.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "durable/src/harness/submissions.ts",
+			"name": "checkInputEntry",
+			"why": "P120: the pi. prefix of the kinds Pi reserves for its own entries.",
+			"sites": ["recorder-effect/src/from-entry.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "durable/src/harness/context.ts",
+			"name": "EXCLUDED_STOP_REASONS",
+			"why": "P132, P161: the stop reasons Pi leaves out of a context, which decide what counts as an answer or a turn.",
+			"sites": ["review-effect/src/model-review.ts", "thread-effect/src/counts.ts"]
+		},
+		{
+			"kind": "lines",
+			"file": "durable/src/harness/generation.ts",
+			"text": "message.stopReason === \"stop\"",
+			"why": "P161: Pi's own rule for a response that answers (stop, length, toolUse).",
+			"sites": ["thread-effect/src/counts.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "durable/src/harness/scheduler.ts",
+			"name": "LIVE_STATUSES",
+			"why": "P143: the task statuses that count as live.",
+			"sites": ["subagent-effect/src/pi.ts", "subagent-effect/src/storage-fork.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "durable/src/harness/task-graph.ts",
+			"name": "LIVE_STATUSES",
+			"why": "P143: Pi's second copy of the live statuses.",
+			"sites": ["subagent-effect/src/pi.ts", "subagent-effect/src/storage-fork.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "durable/src/harness/agent.ts",
+			"name": "TOKEN_FIELDS",
+			"why": "P177: the compaction token counts whose bounds the fork wire repeats.",
+			"sites": ["thread-effect/src/rivet/fork-agent.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "durable/src/harness/agent.ts",
+			"name": "compactionFields",
+			"why": "P177: the bounds of a token count (an integer 0 or more).",
+			"sites": ["thread-effect/src/rivet/fork-agent.ts"]
+		},
+		{
+			"kind": "declaration",
+			"file": "durable/src/harness/agent.ts",
+			"name": "applyChange",
+			"why": "P177: the bound of maxTurns (an integer 1 or more), and which fields of an agent change Pi applies.",
+			"sites": ["thread-effect/src/rivet/fork-agent.ts"]
+		}
+	]
+}

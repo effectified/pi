@@ -47,9 +47,12 @@ bun run pi-effect /Volumes/Banana/GitHub/gunta/pi-effect
 
 That runs `effect/scripts/vendor.ts` of this repository: it builds every package, replaces the directories in
 `vendor/pi-effect` (`dist` without source maps, the README, a manifest whose pi-effect dependencies are
-`workspace:*` and whose peers are exact), writes the commit into `SOURCE.json` and installs. Upstream's
-`npm run build` must have run here once. When the packages move to another Pi version, PatentOS's own Pi pins
-(`packages/compute/package.json`) move with them in the same commit.
+`workspace:*` and whose peers are exact), writes the commit into `SOURCE.json` and installs. Upstream's `npm run
+build` must have run here once. When the packages move to another Pi version, PatentOS's own Pi pins
+(`packages/compute/package.json`) move with them in the same commit. `vendor.ts` refuses to run when the packages'
+Pi pins are not what this tree has (`--unreleased-pi` overrides it on purpose) and writes `SOURCE.json` itself, with
+the commit and the Pi the packages were built against; PatentOS's `scripts/pi-effect.ts` still overwrites that file
+with the commit alone, and should keep it instead.
 
 Why not a link or a git dependency: a link to this checkout gives PatentOS two copies of `effect`, Pi Durable and
 RivetKit and does not install in CI or in a worktree at another depth; a git dependency cannot name a package

@@ -27,7 +27,8 @@ the packages and their state are in `effect/COMPAT.md`; the first consumer's bin
 - A facade adds no behaviour: it gives Pi's capability in Effect terms. Behaviour of ours goes into a plugin.
 - Every package stands alone: it depends on the Pi package it wraps, on `effect` as a peer (`~4.1.5`, one range for
   all), and on the pi-effect packages PRD section 5.4 names. A plugin never depends on another plugin.
-- Every package pins the same upstream Pi version. Bump them together and record it in `effect/COMPAT.md`.
+- Every package pins the same upstream Pi version. Bump them together with `node effect/scripts/sync.ts bump` and
+  record it in `effect/COMPAT.md` ("Bumping upstream").
 - No `node:` or `bun:` import in a package core. Platform code lives in a file named `node.ts` or `bun.ts`, or
   under a `node/` or `bun/` directory, behind its own subpath export.
 - `node effect/scripts/check-deps.ts` enforces these rules.
@@ -70,9 +71,17 @@ every core.
 | One package's tests on Node | `cd packages/<name> && node ../../node_modules/vitest/dist/cli.js --run` |
 | Every package's tests on Bun | `node effect/scripts/test-bun.ts` |
 | Boundary and dependency rules | `node effect/scripts/check-boundary.ts && node effect/scripts/check-deps.ts` |
+| The rules of this file as Effect diagnostics (`@effect/tsgo` through `npm exec`) | `node effect/scripts/effect-diagnostics.ts` |
+| Record of the Pi declarations the packages use (`effect/pi-surface/`): write, or check | `node effect/scripts/pi-surface.ts [--check]` |
+| Pins, release, `COMPAT.md` row and surface record against the tree | `node effect/scripts/sync.ts check` |
+| A sync, after `git merge --no-commit --no-ff main` | `node effect/scripts/sync.ts bump` |
 | Every upstream and pi-effect test, offline | `./test.sh` |
 
-- After code changes: `npm run check`, the changed package's tests on Node, the Bun lane, and both rule checks.
+- After code changes: `npm run check`, the changed package's tests on Node, the Bun lane, both rule checks and the
+  Effect diagnostics. A change to the names a package imports from Pi changes the surface record: run
+  `node effect/scripts/pi-surface.ts` and commit `effect/pi-surface/` with it (CI runs `--check`).
+- An Effect diagnostic that must stay is an entry of the plugin block of `effect/tsconfig.json`, with its reason; a
+  new unstable Effect module is a line of its `allowedUnstableApis`.
 - A new package: `node effect/scripts/new-package.ts <name>-effect <facade|plugin|host> "<description>" [name@version
   ...]`, then `npm install --ignore-scripts`. A subpath another package imports needs its own `paths` line in the root
   `tsconfig.json`, listed in `effect/boundary.json`.

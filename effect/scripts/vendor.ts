@@ -2,21 +2,27 @@
 // own repository as workspace packages and never installs a published one (`effect/PATENTOS.md`). Each package is
 // built first, in dependency order. A package's directory holds its `dist` without source maps (the sources are not
 // copied), its README and a manifest whose pi-effect dependencies are `workspace:*` and whose peers are exact.
-// Usage: node effect/scripts/vendor.ts <directory>
+// It refuses to run when the packages' Pi pins are not what the tree has (`pins.ts`): the product installs those
+// pins. `--unreleased-pi` builds against Pi sources their version did not release, on purpose. `SOURCE.json` in the
+// directory names the commit and the Pi the packages were built against.
+// Usage: node effect/scripts/vendor.ts <directory> [--unreleased-pi]
 
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { buildOrder, effectPackages, ROOT } from "./packages.ts";
+import { productPins, sourceRecord } from "./pins.ts";
 
 const SCOPE = "@gunta/pi-";
 const SOURCE_MAP_COMMENT = /\n\/\/# sourceMappingURL=\S+\s*$/;
 
-const [destination] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const [destination] = args.filter((arg) => !arg.startsWith("--"));
 if (destination === undefined) {
-	console.error("Usage: node effect/scripts/vendor.ts <directory>");
+	console.error("Usage: node effect/scripts/vendor.ts <directory> [--unreleased-pi]");
 	process.exit(1);
 }
+const { version, release } = productPins("vendor.ts", args);
 const target = resolve(destination);
 mkdirSync(target, { recursive: true });
 
@@ -48,6 +54,7 @@ for (const pkg of order.packages) {
 	writeFileSync(join(out, "package.json"), `${JSON.stringify(workspaceManifest(manifest), null, "\t")}\n`);
 	console.log(`Vendored ${pkg.name}@${pkg.version}`);
 }
+writeFileSync(join(target, "SOURCE.json"), `${JSON.stringify(sourceRecord(version, release), null, 2)}\n`);
 
 /** Removes the packages an earlier run wrote into `directory`, so a package deleted here does not stay there. */
 function removeVendored(directory: string): void {
