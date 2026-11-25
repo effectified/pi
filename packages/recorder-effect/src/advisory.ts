@@ -12,7 +12,7 @@ import { RecordSink } from "./sink.ts";
  */
 export const hook: Hook.Hook<RecordSink> = Hook.beforeRequest((_request, api) =>
 	Effect.gen(function* () {
-		const newest = yield* Stream.runHead(api.entries({ pageSize: 1 }).pipe(Stream.take(1)));
+		const newest = yield* Stream.runHead(api.entries({ pageSize: 1, order: "descending" }).pipe(Stream.take(1)));
 		const after = Option.match(newest, { onNone: () => 0, onSome: (entry) => entry.id });
 		// First writer wins: every later ask about the same request reads the time of the first one.
 		const time = yield* api.memo(`recorder.requested.${after}`, yield* api.now);

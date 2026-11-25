@@ -200,8 +200,8 @@ the repository):
   tool. PatentOS's route prices are zero and its seam charges what its own `ModelRouter` computed, so its ledger
   does not move.
 
-**Next**: the behaviour tests for what no type shows in the plugins, the thread and the Rivet host (a compaction
-in a forked actor, the provider session of a fork, the bounds of `configure`); Pi's ids on the swarm's port types.
+Also pinned by tests, since no type shows them: a compaction of Pi as live work of a forked actor, the provider
+session of a fork, the bounds of `configure`, Pi's classification of provider errors, the names of Pi's tables.
 
 **Not built**: `mcp-effect`, `codemode-effect`, `agent-effect`, `env-effect`, `workflow-effect`, `sandbox-effect`
 (PRD priorities P2 and P3). PatentOS's loop used none of them.
