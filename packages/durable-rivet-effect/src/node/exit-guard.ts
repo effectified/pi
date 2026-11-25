@@ -41,6 +41,17 @@ export const hold: Effect.Effect<Hold> = Effect.sync(() => {
 });
 
 /**
+ * From now on, for as long as the process lives, drops every exit rivetkit's own code asks for; every other call of
+ * `process.exit` exits as before. For a process whose owner decides when it ends: rivetkit also exits the process
+ * when a registry loses an engine that was ready, and a process that hosts several engines, or other work beside
+ * one, must not end with the first engine that dies. Calls of that engine's actors fail from then on.
+ */
+export const keep: Effect.Effect<void> = Effect.sync(() => {
+	kept = true;
+	install();
+});
+
+/**
  * How long a failed start waits for rivetkit's exit: rivetkit asks an engine for its health 64 times, which took 61
  * seconds, and gives up on a registry that does not register after 60.
  */
@@ -65,6 +76,9 @@ interface Start {
 
 const starts = new Set<Start>();
 
+/** `keep` was run: the guard is never taken off again, and drops rivetkit's exit also when no start waits for one. */
+let kept = false;
+
 /** The `process.exit` that was there when the guard was installed; undefined while it is not installed. */
 let original: typeof process.exit | undefined;
 
@@ -78,17 +92,21 @@ function end(start: Start): void {
 	clearTimeout(start.timer);
 	starts.delete(start);
 	// Someone replaced the function meanwhile: theirs stays, and the guard stays behind it, passing every call on.
-	if (starts.size > 0 || original === undefined || process.exit !== guarded) return;
+	if (kept || starts.size > 0 || original === undefined || process.exit !== guarded) return;
 	process.exit = original;
 	original = undefined;
 }
 
-/** Drops rivetkit's exit for a start that failed or is still starting; every other call exits as it would. */
+/**
+ * Drops rivetkit's exit for a start that failed or is still starting, and every exit of rivetkit's once `keep` was
+ * run; every other call exits as it would.
+ */
 const guarded = ((code?: number | string | null): void => {
-	const start = fromRivetkit(new Error().stack ?? "") ? oldest() : undefined;
-	if (start === undefined) (original ?? process.exit)(code);
-	else if (start.state === "doomed") end(start);
-	else start.exited = true;
+	const rivetkits = fromRivetkit(new Error().stack ?? "");
+	const start = rivetkits ? oldest() : undefined;
+	if (start?.state === "doomed") end(start);
+	else if (start !== undefined) start.exited = true;
+	else if (!(rivetkits && kept)) (original ?? process.exit)(code);
 	// A cast: `process.exit` never returns by its type. rivetkit's caller does nothing after it but end its handler.
 }) as typeof process.exit;
 

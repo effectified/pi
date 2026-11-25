@@ -31,6 +31,24 @@ export const free: Effect.Effect<number, EngineUnavailable> = Effect.gen(functio
 	});
 });
 
+/**
+ * `port`, when nothing listens on any port of its set now: a port its caller chose. Something that listens there may
+ * be another engine, and rivetkit would use an engine that answers on the port in place of starting its own.
+ */
+export function only(port: number): Effect.Effect<number, EngineUnavailable> {
+	return Effect.flatMap(isFree(port), (free) =>
+		free
+			? Effect.succeed(port)
+			: Effect.fail(
+					new EngineUnavailable({
+						code: "port",
+						message: `A port of the set of ${port} is in use: ${OFFSETS.map((offset) => port + offset).join(", ")}`,
+						retryable: true,
+					}),
+				),
+	);
+}
+
 const FIRST_PORT = 20_000;
 
 const LAST_PORT = 32_000;

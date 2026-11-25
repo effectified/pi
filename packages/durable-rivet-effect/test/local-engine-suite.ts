@@ -4,18 +4,22 @@
 // probe and then never listens. Skipped when the engine binary is not installed.
 //
 // The last test waits for the exit of the process that rivetkit makes about a minute after a start that got no
-// healthy engine: without the exit guard the run ends there.
+// healthy engine: without the exit guard the run ends there. Before it: an engine in a directory that is kept, two
+// engines in one process, and what becomes of the engine of a host process of its own (local-engine-process.ts).
 
-import { execFileSync } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, Fiber, Schedule } from "effect";
+import { Effect, Exit, Fiber, Schedule, Scope } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as EngineProcess from "../src/node/engine-process.ts";
 import * as ExitGuard from "../src/node/exit-guard.ts";
+import * as Ports from "../src/node/ports.ts";
 import type * as LocalEngine from "../src/node.ts";
+
+const hostScript = new URL("./local-engine-process.ts", import.meta.url).pathname;
 
 /** Registers the suite on the local engine of one runtime: `src/node.ts` or `src/bun.ts`. */
 export function registerLocalEngineSuite(runtime: string, engines: typeof LocalEngine): void {
@@ -90,7 +94,6 @@ function suite(engines: typeof LocalEngine): void {
 		// the guard is gone again.
 		expect(await Effect.runPromise(ExitGuard.waiting)).toBe(0);
 		expect(process.exit).toBe(exit);
-		expect(process.env.RIVETKIT_STORAGE_PATH).toBeUndefined();
 		expect(directories()).toEqual([]);
 	}, 30_000);
 
@@ -130,7 +133,6 @@ function suite(engines: typeof LocalEngine): void {
 		} finally {
 			restore();
 		}
-		expect(process.env.RIVETKIT_STORAGE_PATH).toBeUndefined();
 		expect(directories()).toEqual([]);
 		// rivetkit goes on asking the engine it lost for its health, and exits the process when it gives up.
 		expect(await Effect.runPromise(ExitGuard.waiting)).toBe(1);
@@ -154,7 +156,6 @@ function suite(engines: typeof LocalEngine): void {
 		}
 		// Every start of `serve` failed long before rivetkit's minute was over.
 		expect(Date.now() - began).toBeLessThan(40_000);
-		expect(process.env.RIVETKIT_STORAGE_PATH).toBeUndefined();
 		expect(directories()).toEqual([]);
 	}, 60_000);
 
@@ -163,9 +164,8 @@ function suite(engines: typeof LocalEngine): void {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const engine = yield* engines.serve({ actors: [], logging: { level: "error" } });
-					const directory = process.env.RIVETKIT_STORAGE_PATH ?? "";
 					const health = yield* Effect.promise(() => fetch(`${engine.endpoint}/health`));
-					return { directory, status: health.status, pids: yield* EngineProcess.running(directory) };
+					return { ...engine, status: health.status, pids: yield* engines.running(engine.directory) };
 				}),
 			),
 		);
@@ -175,6 +175,165 @@ function suite(engines: typeof LocalEngine): void {
 		expect(existsSync(served.directory)).toBe(false);
 		expect(directories()).toEqual([]);
 	}, 60_000);
+
+	/** One run of an engine in `directory`: what it answered while it ran. */
+	const servedIn = (directory: string, port?: number) =>
+		Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const engine = yield* engines.serve({
+						actors: [],
+						logging: { level: "error" },
+						directory,
+						...(port === undefined ? {} : { port }),
+					});
+					const health = yield* Effect.promise(() => fetch(`${engine.endpoint}/health`));
+					return { engine, status: health.status, pids: yield* engines.running(directory) };
+				}),
+			),
+		);
+
+	it("keeps an engine's data in the directory it is given, on the port it is given, and starts there again", async () => {
+		const directory = join(own, "kept", "engine");
+		const port = await Effect.runPromise(Ports.free);
+		const first = await servedIn(directory, port);
+		expect(first.engine).toEqual({ endpoint: `http://127.0.0.1:${port}`, directory });
+		expect(first.status).toBe(200);
+		expect(first.pids).toHaveLength(1);
+		// The scope closed: the engine is stopped, and what it wrote is where it was.
+		expect(first.pids.map(alive)).toEqual([false]);
+		expect(existsSync(join(directory, ".rivetkit", "var", "engine"))).toBe(true);
+		const second = await servedIn(directory, port);
+		expect(second.status).toBe(200);
+		expect(second.pids).toHaveLength(1);
+		expect(second.pids).not.toEqual(first.pids);
+		expect(directories()).toEqual([]);
+	}, 90_000);
+
+	it("fails with the code port, and starts nothing, on a given port whose set something listens on", async () => {
+		const directory = join(own, "port-taken");
+		const blocker = await servedInBackground(join(own, "port-holder"));
+		try {
+			const port = Number(new URL(blocker.endpoint).port);
+			const failed = await Effect.runPromise(
+				Effect.flip(Effect.scoped(engines.serve({ actors: [], directory, port }))),
+			);
+			expect(failed).toMatchObject({ _tag: "EngineUnavailable", code: "port" });
+			expect(await Effect.runPromise(engines.running(directory))).toEqual([]);
+		} finally {
+			await blocker.close();
+		}
+	}, 90_000);
+
+	it("refuses the user's home as an engine's directory", async () => {
+		const failed = await Effect.runPromise(
+			Effect.flip(Effect.scoped(engines.serve({ actors: [], directory: join(homedir(), "x", "..") }))),
+		);
+		expect(failed).toMatchObject({ _tag: "EngineUnavailable", code: "environment", retryable: false });
+	});
+
+	it("runs two engines in one process, started at the same time, each in its own directory", async () => {
+		const both = await Effect.runPromise(
+			Effect.scoped(
+				Effect.forEach(
+					["two-a", "two-b"],
+					(name) =>
+						Effect.gen(function* () {
+							const engine = yield* engines.serve({
+								actors: [],
+								logging: { level: "error" },
+								directory: join(own, name),
+							});
+							const health = yield* Effect.promise(() => fetch(`${engine.endpoint}/health`));
+							return { ...engine, status: health.status, pids: yield* engines.running(engine.directory) };
+						}),
+					{ concurrency: 2 },
+				),
+			),
+		);
+		expect(both.map((engine) => engine.status)).toEqual([200, 200]);
+		expect(both.map((engine) => engine.directory)).toEqual([join(own, "two-a"), join(own, "two-b")]);
+		expect(new Set(both.map((engine) => engine.endpoint)).size).toBe(2);
+		expect(new Set(both.flatMap((engine) => engine.pids)).size).toBe(2);
+		expect(both.flatMap((engine) => engine.pids).map(alive)).toEqual([false, false]);
+	}, 90_000);
+
+	/** A host process of its own that serves an engine in `directory`, once it has said which processes that is. */
+	const hostOf = async (
+		directory: string,
+	): Promise<{ readonly host: ChildProcess; readonly pids: Array<number>; readonly ended: Promise<void> }> => {
+		const host = spawn(process.execPath, ["--conditions=source", hostScript, directory], {
+			stdio: ["ignore", "pipe", "inherit"],
+		});
+		const ended = new Promise<void>((resolve) => host.once("exit", () => resolve()));
+		const pids = await new Promise<Array<number>>((resolve, reject) => {
+			let said = "";
+			host.stdout?.on("data", (chunk: Buffer) => {
+				said += chunk.toString();
+				const ready = /^ready (.*)$/m.exec(said);
+				if (ready !== null) resolve((ready[1] ?? "").split(" ").map(Number));
+			});
+			host.once("exit", () => reject(new Error(`the host process ended before its engine was ready: ${said}`)));
+		});
+		return { host, pids, ended };
+	};
+
+	/** Waits until none of the processes runs, for at most `millis`. */
+	const gone = async (pids: ReadonlyArray<number>, millis: number): Promise<boolean> => {
+		const deadline = Date.now() + millis;
+		while (pids.some(alive) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+		return !pids.some(alive);
+	};
+
+	it("leaves no engine when its host process is killed", async () => {
+		const { host, pids } = await hostOf(join(own, "killed"));
+		expect(pids).toHaveLength(1);
+		expect(pids.map(alive)).toEqual([true]);
+		host.kill("SIGKILL");
+		expect(await gone(pids, 20_000)).toBe(true);
+	}, 90_000);
+
+	it("takes a directory over from a process that runs an engine on it, and keeps its own engine when that process ends", async () => {
+		const directory = join(own, "taken");
+		const before = await hostOf(directory);
+		const mine = await servedInBackground(directory);
+		try {
+			// One engine per directory: the other process's was stopped before this one's was started.
+			expect(before.pids.map(alive)).toEqual([false]);
+			expect(mine.pids).toHaveLength(1);
+			expect(mine.pids).not.toEqual(before.pids);
+			// The other process ends, by rivetkit's exit for the engine it lost or by this kill, and its watcher acts.
+			before.host.kill("SIGKILL");
+			await before.ended;
+			await new Promise((resolve) => setTimeout(resolve, 3_000));
+			expect(mine.pids.map(alive)).toEqual([true]);
+			expect((await fetch(`${mine.endpoint}/health`)).status).toBe(200);
+		} finally {
+			await mine.close();
+		}
+	}, 120_000);
+
+	/** An engine in `directory` that runs until `close` is called. */
+	const servedInBackground = async (
+		directory: string,
+	): Promise<{
+		readonly endpoint: string;
+		readonly pids: ReadonlyArray<number>;
+		readonly close: () => Promise<void>;
+	}> => {
+		const scope = await Effect.runPromise(Scope.make());
+		const engine = await Effect.runPromise(
+			Effect.provideService(
+				Effect.gen(function* () {
+					const served = yield* engines.serve({ actors: [], logging: { level: "error" }, directory });
+					return { endpoint: served.endpoint, pids: yield* engines.running(directory) };
+				}),
+				Scope.Scope,
+				scope,
+			),
+		);
+		return { ...engine, close: () => Effect.runPromise(Scope.close(scope, Exit.void)) };
+	};
 
 	it("holds back the exit rivetkit makes a minute after the interrupted start", async () => {
 		// The exit is dropped when it comes, and the hold ends with it. Were it not dropped, this run would end here.

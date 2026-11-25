@@ -389,6 +389,19 @@ to a client's fork.
   engine binary of rivetkit's platform package (`@rivetkit/engine-cli-<platform>-<arch>`) beside the process, on a
   free set of loopback ports, with its data in a temporary directory, and removes all of it with the scope.
   `LocalEngine.available` says whether the binary is installed. Sleep, schedules, forks and destroy all work there.
+- **An engine a product keeps.** `LocalEngine.serve({ actors, directory, port })` keeps the engine's data in
+  `directory` (it makes `.rivetkit` there) and leaves it when the scope closes, so the next run of the product
+  starts the same engine with its actors' state. `port` is optional; without it each run draws a free set. One
+  engine runs on a directory: an engine another process left or still runs there is stopped first. The user's home
+  is refused, since that is where rivetkit keeps the engine every project shares. `serve` answers
+  `{ endpoint, directory }`; `LocalEngine.running(directory)` gives the engine's process ids and
+  `LocalEngine.stop(directory)` stops it from outside, for a test or a clean-up.
+- **Several engines in one process.** Each `serve` has its own directory and ports. The directory reaches an engine
+  through the process's environment, so one engine starts at a time; starts that are asked for together wait for
+  one another.
+- **A host that is killed leaves no engine.** A small shell process beside the host waits for the host's end,
+  however it comes, and stops the engine then. rivetkit does that itself on Linux only. A host that takes a
+  directory over from another process is not stopped when that process ends.
 - **Three ports.** The engine of rivetkit 3.1.1 listens on the port it is given (its guard, where clients and the
   registry connect), on the next one (its API peer) and on the tenth after it (its metrics). `serve` draws a port
   between 20000 and 32000, below the ranges systems hand out to outgoing connections, and checks that all three are
@@ -398,13 +411,23 @@ to a client's fork.
   the machine stops it during the start (a `pkill rivet-engine` of another project's script does), rivetkit asks the
   dead engine for its health for a minute. `serve` sees that the engine's process ended, fails that start within
   seconds with the code `lost`, and starts again, three times in all. An engine stopped after it was ready is not
-  recovered: calls fail with a retryable `EngineUnavailable`, and rivetkit ends the process.
+  recovered: calls fail with a retryable `EngineUnavailable`, and rivetkit ends the process, unless
+  `Host.holdBackExit` was run (below).
+- **Another engine on the port.** rivetkit uses any engine that answers on the port in place of starting its own.
+  `serve` checks, by the file the started engine writes in its directory, that the engine that answers is its own,
+  and fails with the code `port` otherwise. A `port` that was given is checked before the start too.
 - **A start that fails leaves nothing.** A failed or interrupted start shuts its registry down, stops the engine
-  process it started, removes its directory, and holds back the exit of the process that rivetkit makes for it
-  (below). A later `serve` in the same process works.
+  process it started, removes its temporary directory, and holds back the exit of the process that rivetkit makes
+  for it (below). A later `serve` in the same process works.
 - **On Bun, use the `/bun` entry.** rivetkit's native core reads `RIVETKIT_STORAGE_PATH` from the process
   environment, which an assignment to `process.env` does not change on Bun. Without the variable the engine keeps
   the data of every project in `~/.rivetkit`. The `/node` entry refuses to start an engine on Bun for that reason.
+  The variable keeps the directory of the last start: rivetkit reads it at every step of a start, also of one that
+  was given up and still runs.
+- **A process that decides its own end.** `yield* Host.holdBackExit` before the first `serve` makes every exit
+  rivetkit asks for do nothing, for the life of the process; every other `process.exit` works as before. It is for
+  a process that hosts several engines, or other work beside its actors, which must not end because one engine
+  died. `Host.serve` also takes `use`, rivetkit actor definitions of the product's own, registered beside `actors`.
 - **A deployment.** `Host.serve({ actors, endpoint })` registers the actors with an engine that runs already.
   Needing one: hosts on several machines, actors that survive the machine, and engine upgrades (the only source of
   `actor.fork_unavailable`). Several host processes on one machine serve a local engine as well: a child process that
@@ -475,10 +498,14 @@ What does not:
   at once for a binary that is no engine, and after 64 health checks, about a minute, for an engine that died or
   never listened, also when the start failed as an Effect long before and its registry was shut down. And its
   shutdown leaves the engine process of such a start running until those checks run out. The local engine entries
-  deal with both for their own starts: they stop the process themselves, found by the temporary directory on its
-  command line, and replace `process.exit` while a start is under way or its exit is still due (up to two minutes
-  after a failure) by a function that drops a call made from rivetkit's own files and passes every other call on.
-  `Host.serve` with `startEngine` alone does neither.
+  deal with both for their own starts: they stop the process themselves, found by the configuration file of its
+  directory on its command line, and replace `process.exit` while a start is under way or its exit is still due
+  (up to two minutes after a failure) by a function that drops a call made from rivetkit's own files and passes
+  every other call on. `Host.serve` with `startEngine` alone does neither. `Host.holdBackExit` drops every exit of
+  rivetkit's for good, the one for an engine lost after it was ready too.
+- The watcher that stops the engine of a killed host needs `/bin/sh`, `ps`, `grep` and `awk`. Without them the engine
+  of a killed host runs on until the next start on its directory stops it. A host killed in the moment its engine
+  became ready is stopped with every engine of its directory, one another process started there since too.
 - A local engine process that was stopped stays in the process table, as a zombie, until rivetkit's native core
   waits for it, which is when its health checks run out, or the process ends.
 

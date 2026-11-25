@@ -37,4 +37,17 @@ describe("Ports", () => {
 		}
 		expect(await Effect.runPromise(Ports.isFree(port))).toBe(true);
 	});
+
+	it("gives a port its caller chose when its set is free, and fails with the code port when it is not", async () => {
+		const port = await Effect.runPromise(Ports.free);
+		expect(await Effect.runPromise(Ports.only(port))).toBe(port);
+		const taken = await listen(port + 10);
+		try {
+			const failed = await Effect.runPromise(Effect.flip(Ports.only(port)));
+			expect(failed).toMatchObject({ _tag: "EngineUnavailable", code: "port", retryable: true });
+			expect(failed.message).toContain(String(port + 10));
+		} finally {
+			await close(taken);
+		}
+	});
 });

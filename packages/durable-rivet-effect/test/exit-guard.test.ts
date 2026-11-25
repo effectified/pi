@@ -1,6 +1,7 @@
 // The exit guard without an engine: whose calls of `process.exit` it drops, which it passes on, and that it puts the
-// function back.
+// function back. The guard that is kept for good is asked of a process of its own (exit-guard-process.ts).
 
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -79,5 +80,14 @@ describe("ExitGuard", () => {
 		await Effect.runPromise(hold.failed);
 		expect(await Effect.runPromise(ExitGuard.waiting)).toBe(0);
 		expect(process.exit).toBe(stub);
+	});
+
+	it("once kept, drops every exit of rivetkit's for the life of the process, and lets every other through", () => {
+		const script = new URL("./exit-guard-process.ts", import.meta.url).pathname;
+		const ran = spawnSync(process.execPath, [script, join(directory, "rivetkit", "dist", "caller.cjs")], {
+			encoding: "utf8",
+		});
+		// Both of rivetkit's exits were dropped, the second after a start had become ready; the process's own was not.
+		expect({ said: ran.stdout, code: ran.status }).toEqual({ said: "went on\nwent on\n", code: 7 });
 	});
 });

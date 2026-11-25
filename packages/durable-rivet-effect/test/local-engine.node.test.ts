@@ -22,10 +22,6 @@ const environment: Local.Environment = {
 		Effect.sync(() => {
 			process.env[name] = value;
 		}),
-	unset: (name) =>
-		Effect.sync(() => {
-			delete process.env[name];
-		}),
 };
 
 const listen = (port: number): Promise<Server> =>
@@ -73,7 +69,6 @@ describe.skipIf(!available)("a local engine start on a set with a taken port (No
 		expect(Date.now() - begun).toBeLessThan(20_000);
 		expect(await Effect.runPromise(EngineProcess.running(directory))).toEqual([]);
 		expect(existsSync(directory)).toBe(false);
-		expect(process.env.RIVETKIT_STORAGE_PATH).toBeUndefined();
 	}, 60_000);
 
 	it("starts on another set when the first one has a taken port", async () => {
@@ -105,6 +100,5 @@ describe.skipIf(!available)("a local engine start on a set with a taken port (No
 		} finally {
 			await close(taken);
 		}
-		expect(process.env.RIVETKIT_STORAGE_PATH).toBeUndefined();
 	}, 90_000);
 });

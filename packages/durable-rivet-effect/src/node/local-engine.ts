@@ -1,25 +1,43 @@
-// A Rivet engine of this process's own, on a free set of ports and a temporary directory, for tests and local runs:
-// what the Node.js and the Bun entries share.
+// A Rivet engine of this process's own, on ports and in a directory that are no other project's: a temporary
+// directory and a free set of ports for tests, a kept directory and a chosen port for a product that runs locally.
+// What the Node.js and the Bun entries share.
 
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { Effect, Exit, Schedule, Scope } from "effect";
+import { homedir, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { Effect, Exit, Schedule, Schema, Scope, Semaphore } from "effect";
 import { EngineUnavailable } from "../errors.ts";
 import * as Host from "../host.ts";
 import * as EngineProcess from "./engine-process.ts";
 import * as ExitGuard from "./exit-guard.ts";
+import * as Keeper from "./keeper.ts";
 import * as Ports from "./ports.ts";
 
 /** A local engine that `serve` started. */
 export interface LocalEngine {
 	/** Where its clients connect: `Client.layer({ endpoint })`. */
 	readonly endpoint: string;
+	/** Where it keeps its data: the directory `serve` was given, or the temporary one it made. */
+	readonly directory: string;
 }
 
-/** Options of `serve`: those of `Host.serve`, without the ones that say which engine. */
-export type ServeOptions = Omit<Host.ServeOptions, "endpoint" | "startEngine" | "enginePort" | "engineHost">;
+/** Options of `serve`: those of `Host.serve` without the ones that say which engine, and where this engine lives. */
+export interface ServeOptions
+	extends Omit<Host.ServeOptions, "endpoint" | "startEngine" | "enginePort" | "engineHost"> {
+	/**
+	 * The engine's own directory, which holds its actors' state and is kept: `serve` makes `.rivetkit` in it, stops an
+	 * engine that a process which ended left running on it, and leaves it in place when the scope closes. Never the
+	 * user's home, where rivetkit keeps the engine every project shares. Default: a new temporary directory, removed
+	 * with the scope.
+	 */
+	readonly directory?: string;
+	/**
+	 * The engine's port, with the ports that go with it (`Ports.OFFSETS`). A start that finds one of them in use
+	 * fails. Default: a free set, drawn again for each start.
+	 */
+	readonly port?: number;
+}
 
 /**
  * How a variable gets into the environment rivetkit's native core reads, which is the process's own (`getenv`), not
@@ -27,7 +45,6 @@ export type ServeOptions = Omit<Host.ServeOptions, "endpoint" | "startEngine" | 
  */
 export interface Environment {
 	readonly set: (name: string, value: string) => Effect.Effect<void, EngineUnavailable>;
-	readonly unset: (name: string) => Effect.Effect<void>;
 }
 
 /**
@@ -49,22 +66,26 @@ export const available: Effect.Effect<boolean> = Effect.sync(() => {
  * Starts an engine and a registry of `actors` for the scope: the engine listens on a free set of ports of the
  * loopback interface (`Ports.free`), so it never meets another project's engine on Rivet's default port, and keeps
  * its data in a new temporary directory. Closing the scope stops the registry and the engine and removes the
- * directory.
+ * directory. With `directory` the engine's data is kept there, and with `port` the engine has that port: a product
+ * that runs locally starts the same engine again at its next run.
  *
  * A start that finds one of its ports taken after all, or whose engine process ends before it is ready (something
- * on the machine stopped it), is made again on another set of ports, `PORT_ATTEMPTS` times in all.
- * A start that fails or is interrupted leaves nothing: its registry is shut down, its engine process is stopped,
- * its directory is removed, and the exit of the process rivetkit makes for it is held back (`ExitGuard`).
+ * on the machine stopped it), is made again, on another set of ports unless `port` names one, `PORT_ATTEMPTS` times
+ * in all. A start that fails or is interrupted leaves nothing but a directory that was given: its registry is shut
+ * down, its engine process is stopped, and the exit of the process rivetkit makes for it is held back (`ExitGuard`).
+ * A process that ends without closing the scope, a killed one too, leaves no engine either (`Keeper`).
  *
- * The directory reaches the engine through the environment variable `RIVETKIT_STORAGE_PATH`, set for the scope and
- * removed afterwards: one local engine per process at a time. Without it rivetkit keeps the data of every project
- * in one directory under the user's home. Rivet's own services are not started.
+ * A process may run several local engines. The directory reaches an engine through the environment variable
+ * `RIVETKIT_STORAGE_PATH`, which is the process's: one engine starts at a time, and the variable keeps the directory
+ * of the last start, since rivetkit reads it at every step of a start, also of one that was given up and still
+ * runs. Without it rivetkit keeps the data of every project in one directory under the user's home. Rivet's own
+ * services are not started.
  */
 export function serve(
 	environment: Environment,
 	options: ServeOptions,
 ): Effect.Effect<LocalEngine, EngineUnavailable, Scope.Scope> {
-	return serveOn(Ports.free, environment, options);
+	return serveOn(options.port === undefined ? Ports.free : Ports.only(options.port), environment, options);
 }
 
 /** `serve` with the ports to try given: each run of `ports` gives the port of the next start. */
@@ -83,10 +104,11 @@ export function serveOn(
 export const PORT_ATTEMPTS = 3;
 
 /**
- * One start, on `port` and the ports that go with it (`Ports.OFFSETS`). It fails with the code `port` as soon as the
- * engine reports a port in use, and with the code `lost` as soon as the engine process has ended for another reason,
- * both long before rivetkit gives up on the engine. What it started lives in a scope of
- * its own, closed here when the start fails or is interrupted, and with the caller's scope otherwise.
+ * One start, on `port` and the ports that go with it (`Ports.OFFSETS`), after the start before it in this process
+ * ended. It fails with the code `port` as soon as the engine reports a port in use, or when another engine answers
+ * on the port, and with the code `lost` as soon as the engine process has ended for another reason, all long before
+ * rivetkit gives up on the engine. What it started lives in a scope of its own, closed here when the start fails or
+ * is interrupted, and with the caller's scope otherwise.
  */
 export function start(
 	environment: Environment,
@@ -98,7 +120,9 @@ export function start(
 			const outer = yield* Effect.scope;
 			const inner = yield* Scope.make();
 			const started = yield* Effect.exit(
-				restore(Effect.provideService(engine(environment, options, port), Scope.Scope, inner)),
+				restore(
+					Effect.provideService(STARTING.withPermits(1)(engine(environment, options, port)), Scope.Scope, inner),
+				),
 			);
 			if (Exit.isFailure(started)) {
 				yield* Scope.close(inner, started);
@@ -110,6 +134,9 @@ export function start(
 	);
 }
 
+// The environment is the process's, and each start reads its directory from it: one start at a time.
+const STARTING = Semaphore.makeUnsafe(1);
+
 /** The engine and the registry of one start, in the scope that owns them. */
 function engine(
 	environment: Environment,
@@ -117,27 +144,60 @@ function engine(
 	port: number,
 ): Effect.Effect<LocalEngine, EngineUnavailable, Scope.Scope> {
 	return Effect.gen(function* () {
-		const directory = yield* Effect.acquireRelease(
-			Effect.sync(() => mkdtempSync(join(tmpdir(), "pi-durable-rivet-"))),
-			(made) => Effect.sync(() => rmSync(made, { recursive: true, force: true })),
-		);
-		yield* Effect.acquireRelease(environment.set(STORAGE_PATH, directory), () => environment.unset(STORAGE_PATH));
+		const { directory: given, port: _chosen, ...host } = options;
+		const directory = yield* given === undefined ? temporary : kept(given);
+		yield* environment.set(STORAGE_PATH, directory);
+		const watch = yield* Keeper.keep(directory);
 		// Released after the registry and before the directory: an engine rivetkit left is stopped while its files exist.
 		yield* Effect.addFinalizer(() => EngineProcess.stop(directory));
 		const hold = yield* ExitGuard.hold;
+		const endpoint = `http://${LOOPBACK}:${port}`;
 		const registry = Host.serve({
 			noWelcome: true,
 			startServices: false,
-			...options,
+			...host,
 			startEngine: true,
 			engineHost: LOOPBACK,
 			enginePort: port,
 		});
 		yield* Effect.raceFirst(registry, Effect.raceFirst(portTaken(directory, port), lost(directory))).pipe(
+			Effect.andThen(started(directory, endpoint)),
+			Effect.tap(watch.engines),
 			Effect.onExit((exit) => (Exit.isSuccess(exit) ? hold.ready : hold.failed)),
 		);
-		return { endpoint: `http://${LOOPBACK}:${port}` };
+		return { endpoint, directory };
 	});
+}
+
+/** A new directory for one start, removed with its scope. */
+const temporary: Effect.Effect<string, never, Scope.Scope> = Effect.acquireRelease(
+	Effect.sync(() => mkdtempSync(join(tmpdir(), "pi-durable-rivet-"))),
+	(made) => Effect.sync(() => rmSync(made, { recursive: true, force: true })),
+);
+
+/**
+ * The directory its caller keeps, ready for a start: made if it is not there, and with no engine left running on it.
+ * Two engines on one directory would share the state of its actors.
+ */
+function kept(given: string): Effect.Effect<string, EngineUnavailable> {
+	const directory = resolve(given);
+	if (directory === resolve(homedir())) {
+		return Effect.fail(
+			new EngineUnavailable({
+				code: "environment",
+				message:
+					"A local engine's directory must not be the user's home, where rivetkit keeps the engine every project shares",
+				retryable: false,
+			}),
+		);
+	}
+	return Effect.as(
+		Effect.andThen(
+			Effect.sync(() => mkdirSync(directory, { recursive: true })),
+			EngineProcess.stop(directory),
+		),
+		directory,
+	);
 }
 
 const STORAGE_PATH = "RIVETKIT_STORAGE_PATH";
@@ -205,6 +265,34 @@ function lost(directory: string): Effect.Effect<never, EngineUnavailable> {
 		});
 	});
 }
+
+/**
+ * The processes of the engine this start made on `directory`, and a failure unless that engine is the one that
+ * answers on `endpoint`. rivetkit uses any engine that answers on the port in place of starting its own; the engine
+ * it started says in a file of its directory which process it is and where it answers.
+ */
+function started(directory: string, endpoint: string): Effect.Effect<ReadonlyArray<number>, EngineUnavailable> {
+	const another = new EngineUnavailable({
+		code: "port",
+		message: `The engine that answers on ${endpoint} was not started on ${directory}: another engine has the port`,
+		retryable: true,
+	});
+	return Effect.gen(function* () {
+		const stamp = yield* Effect.mapError(
+			Effect.flatMap(
+				Effect.try(() => readFileSync(join(directory, ".rivetkit", "var", "engine", "runtime.json"), "utf8")),
+				Schema.decodeUnknownEffect(Stamp),
+			),
+			() => another,
+		);
+		const running = yield* EngineProcess.running(directory);
+		if (stamp.endpoint !== endpoint || !running.includes(stamp.pid)) return yield* another;
+		return running;
+	});
+}
+
+/** What rivetkit writes of the engine it started: a file on disk, so it is decoded. */
+const Stamp = Schema.fromJsonString(Schema.Struct({ pid: Schema.Number, endpoint: Schema.String }));
 
 /**
  * What the engine started on `directory` has written so far: the text of each file rivetkit keeps its standard

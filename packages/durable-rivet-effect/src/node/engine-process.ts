@@ -2,19 +2,29 @@
 // rivetkit did not stop it.
 
 import { execFile } from "node:child_process";
+import { join, resolve } from "node:path";
 import { Effect, Schedule } from "effect";
 
 /**
- * The process ids of the engines started on `directory`. rivetkit starts the engine with its configuration file,
- * which lies in the data directory (`--config <directory>/.rivetkit/var/engine/config.json`), and the directory is a
- * temporary one of this process's own making: a process that names it on its command line is an engine this
- * process started. Empty when the process list cannot be read.
+ * The configuration file rivetkit starts the engine of `directory` with, which lies in the engine's data directory.
+ * It is the argument an engine's process is found by, whole: `engines/org-1` is no engine of `engines/org-10`.
+ */
+export function config(directory: string): string {
+	return join(resolve(directory), ".rivetkit", "var", "engine", "config.json");
+}
+
+/**
+ * The process ids of the engines started on `directory`, by any process: rivetkit starts the engine with its
+ * configuration file (`--config <directory>/.rivetkit/var/engine/config.json`), and a process that names that file
+ * on its command line is an engine of the directory. Empty when the process list cannot be read. On Linux an engine
+ * that ended and was not waited for yet has no command line, and is not listed.
  */
 export function running(directory: string): Effect.Effect<ReadonlyArray<number>> {
+	const argument = `--config ${config(directory)}`;
 	return Effect.map(processes, (lines) =>
 		lines.flatMap((line) => {
 			const [, pid, command] = /^\s*(\d+)\s+(.*)$/.exec(line) ?? [];
-			return pid !== undefined && command?.includes(`--config ${directory}`) ? [Number(pid)] : [];
+			return pid !== undefined && command?.includes(argument) ? [Number(pid)] : [];
 		}),
 	);
 }
@@ -22,7 +32,8 @@ export function running(directory: string): Effect.Effect<ReadonlyArray<number>>
 /**
  * Stops the engines started on `directory` and succeeds once none is left: the terminate signal first, and the kill
  * signal for one that is still there after a while. rivetkit stops its engine itself when a registry that became
- * ready shuts down; it leaves the engine of a start that failed or was interrupted, which is what this is for.
+ * ready shuts down; it leaves the engine of a start that failed or was interrupted, and the engine of a process that
+ * was killed, which is what this is for.
  */
 export function stop(directory: string): Effect.Effect<void> {
 	return Effect.gen(function* () {

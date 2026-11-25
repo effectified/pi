@@ -7,11 +7,13 @@ import { bunFfi } from "./bun/ffi.ts";
 import { EngineUnavailable } from "./errors.ts";
 import * as Local from "./node/local-engine.ts";
 
+export { running, stop } from "./node/engine-process.ts";
 export { available, type LocalEngine, type ServeOptions } from "./node/local-engine.ts";
 
 /**
- * Starts an engine and a registry of `actors` for the scope, on a free port and a new temporary directory: see
- * `LocalEngine`. It fails with `EngineUnavailable` on a platform whose C library this entry does not know.
+ * Starts an engine and a registry of `actors` for the scope: on a free port and a new temporary directory, or on the
+ * `port` and in the `directory` given, which is kept. See `Local.serve`. It fails with `EngineUnavailable` on a
+ * platform whose C library this entry does not know.
  */
 export function serve(options: Local.ServeOptions): Effect.Effect<Local.LocalEngine, EngineUnavailable, Scope.Scope> {
 	return Local.serve(bunEnvironment, options);
@@ -40,17 +42,6 @@ const bunEnvironment: Local.Environment = {
 					retryable: false,
 				}),
 		}),
-	unset: (name) =>
-		Effect.ignore(
-			Effect.try(() => {
-				const library = bunFfi()?.dlopen(C_LIBRARY[process.platform] ?? "", {
-					unsetenv: { args: ["ptr"], returns: "i32" },
-				});
-				library?.symbols.unsetenv?.(cString(name));
-				library?.close();
-				delete process.env[name];
-			}),
-		),
 };
 
 /** A NUL-terminated copy of `text`, as C reads a string. */

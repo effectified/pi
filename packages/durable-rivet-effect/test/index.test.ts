@@ -2,6 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import * as BunEntry from "../src/bun.ts";
 import * as Main from "../src/index.ts";
 import * as Node from "../src/node.ts";
 import * as Testing from "../src/testing/index.ts";
@@ -44,13 +45,14 @@ describe("the package's exports", () => {
 			"waitForIdle",
 		]);
 		expect(Object.keys(Main.Fork).sort()).toEqual(["lineage"]);
-		expect(Object.keys(Main.Host).sort()).toEqual(["serve", "use"]);
+		expect(Object.keys(Main.Host).sort()).toEqual(["holdBackExit", "serve", "use"]);
 		expect(Object.keys(Main.Self).sort()).toEqual(["client", "definition", "find", "getOrCreate", "handle"]);
 		expect(Object.keys(Main.SqliteDatabase).sort()).toEqual(["make"]);
 	});
 
 	it("are these, from the node entry, which the bun entry mirrors", () => {
-		expect(Object.keys(Node).sort()).toEqual(["available", "serve"]);
+		expect(Object.keys(Node).sort()).toEqual(["available", "running", "serve", "stop"]);
+		expect(Object.keys(BunEntry).sort()).toEqual(Object.keys(Node).sort());
 	});
 
 	it("are these, from the testing entry, which has no platform code", () => {
