@@ -24,13 +24,15 @@ import type { ModelNotFound, ModelRequestError } from "./errors.ts";
 import { getModel, type ModelRef } from "./model-ref.ts";
 import { Models } from "./models.ts";
 import { completeSimple, type ResponseEvent, streamSimple } from "./request.ts";
+import type { StrictOmit } from "./strict-omit.ts";
+import { emptyUsage } from "./usage.ts";
 
 /**
  * pi-ai's provider-neutral request options, sent with every request of the model (`reasoning`, `maxTokens`,
  * `temperature`, `sessionId`, ...). Without `signal` (the fiber owns cancellation), `toolChoice` (each effect/ai
  * request sets it) and `deferred` (a deferred response has no content to return).
  */
-export type Options = Omit<ModelsSimpleStreamOptions, "signal" | "toolChoice" | "deferred">;
+export type Options = StrictOmit<ModelsSimpleStreamOptions, "signal" | "toolChoice" | "deferred">;
 
 /**
  * An effect/ai `LanguageModel` backed by the pi-ai chat model `ref` names, looked up once, when this runs.
@@ -184,14 +186,7 @@ function toAssistantMessage(
 		api: model.api,
 		provider: model.provider,
 		model: model.id,
-		usage: {
-			input: 0,
-			output: 0,
-			cacheRead: 0,
-			cacheWrite: 0,
-			totalTokens: 0,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-		},
+		usage: emptyUsage(),
 		stopReason: content.some((block) => block.type === "toolCall") ? "toolUse" : "stop",
 		timestamp,
 	};

@@ -72,6 +72,21 @@ Pi's retry after a provider error, have the key of the first send. `@gunta/pi-ro
 events and `@gunta/pi-budget-effect` on its reservations, so a product's lease and its event store name one
 request alike. It is no idempotency key for a provider: a retry after an error has the same key by design.
 
+## Values that follow pi-ai's types
+
+Plugins classify, price and record pi-ai's responses. These exports say once what pi-ai's types say, so a member pi-ai
+adds fails to compile here, or in the package's conformance check (`test/pi-conformance.ts`), instead of being missed
+at run time:
+
+| | |
+|---|---|
+| `ANSWERED` | Per pi-ai `StopReason`, whether a response with it answered: `stop`, `length` and `toolUse` (Pi Durable's rule); `error`, `aborted`, `pending` and `deferred` did not |
+| `TOKEN_KINDS`, `TokenKind` | The kinds of tokens pi-ai prices (`input`, `output`, `cacheRead`, `cacheWrite`: the keys of `ModelCostRates`), for price tables and usage records |
+| `emptyUsage()` | A `Usage` of nothing, a new object each time (pi-ai's `calculateCost` writes into the usage it prices) |
+| `ErrorReason` | The reason of pi-ai's `error` event, `error` or `aborted`: what `ModelRequestError.reason` holds |
+| `ModelRef` | The schema of a model's name (`{ provider, modelId }`), Pi Durable's `ModelRef`, for state and wires that name one; also its type |
+| `StrictOmit<T, K>` | `Omit` that only takes keys `T` has: a key pi-ai renames fails to compile instead of being left in |
+
 ## Pi serves Effect
 
 `PiLanguageModel.layer(ref)` gives an `effect/ai` `LanguageModel` backed by a pi-ai model, so an Effect AI program

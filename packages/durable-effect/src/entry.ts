@@ -8,8 +8,10 @@ import {
 	type EntryRecord,
 	type Entry as PiEntry,
 } from "@earendil-works/pi-durable";
+import type { StrictOmit } from "@gunta/pi-ai-effect";
 import { decodeUnknown, encode, type SchemaDecodeError } from "@gunta/pi-schema-effect";
-import { Effect, Option, Schema } from "effect";
+import { Effect, Option, type Schema } from "effect";
+import * as Ids from "./id.ts";
 
 /** An entry kind made by `make`: entries of kind `kind` whose `data` has `schema`'s type. */
 export interface Entry<S extends Schema.Constraint> {
@@ -21,7 +23,7 @@ export interface Entry<S extends Schema.Constraint> {
 	readonly draft: (
 		draft: Draft<S["Type"]>,
 	) => Effect.Effect<
-		Omit<EntryDraft, "kind"> & { readonly data: JsonValue },
+		StrictOmit<EntryDraft, "kind"> & { readonly data: JsonValue },
 		SchemaDecodeError,
 		S["EncodingServices"]
 	>;
@@ -35,16 +37,25 @@ export interface Entry<S extends Schema.Constraint> {
 }
 
 /** A stored entry whose `data` is a decoded value. */
-export type Typed<A> = Omit<EntryRecord, "data"> & { readonly data: A };
+export type Typed<A> = StrictOmit<EntryRecord, "data"> & { readonly data: A };
 
 /** What a commit appends as a typed entry: the data, and Pi's other draft fields (`model`, `head`, `edits`). */
-export type Draft<A> = Omit<EntryDraft, "kind" | "data"> & { readonly data: A };
+export type Draft<A> = StrictOmit<EntryDraft, "kind" | "data"> & { readonly data: A };
 
 /**
- * The schema of an entry id, for a document or a task state that keeps one. Pi brands ids in the type system only,
- * which a schema cannot express: at run time an entry id is the number stored.
+ * The schema of an entry id, for a document, a task state or a wire that keeps one: the number Pi stores, typed with
+ * Pi's brand.
  */
-export const Id = Schema.Number as unknown as Schema.Codec<EntryId, number>;
+export const Id = Ids.entry;
+
+/**
+ * The smallest entry id after `id`: the bound of a read that starts after it (`minEntryId`). Pi numbers entries with
+ * increasing integers and brands them in its types only; its own `idFromNumber` is not exported.
+ */
+export function after(id: EntryId): EntryId {
+	// A plain cast, not one through `unknown`: it fails to compile if Pi's ids stop being numbers.
+	return (id + 1) as EntryId;
+}
 
 /**
  * Defines an entry kind, as Pi's `defineEntry`: `kind` is stored, so never rename it, and must not start with `pi.`.

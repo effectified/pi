@@ -107,8 +107,8 @@ refuses every write with `ReadOnlySession`.
 |---|---|
 | `Harness.root`, `rootWith({ agent, init })` | The root conversation, created on first use |
 | `Harness.conversation(id)`, `createConversation(options)` | Another conversation: an `Option`, or a new one |
-| `Harness.submission(id)`, `abortSubmission(id, conversationId?)` | Reacquire a submission, or withdraw a queued one |
-| `Harness.getTask(id)`, `waitForTask(id)`, `abortTask(id)` | A task's record, its terminal record, an abort mark |
+| `Harness.submission(id)`, `abortSubmission(id, conversationId?)` | Reacquire a submission, or withdraw a queued one (`AbortSubmissionResult`, Pi's own answer) |
+| `Harness.getTask(id)`, `waitForTask(id)`, `abortTask(id)` | A task's record, its terminal record, an abort mark (`AbortTaskResult`, Pi's own answer) |
 | `Harness.getTaskOf(task, id)`, `waitForTaskOf(task, id)` | The same, with the result decoded by the task's schema (see [Task](#task)) |
 | `Harness.signal(taskId, signal, key, value)`, `signalState(taskId, signal, key)` | Deliver a signal to a live task, read a key's state from outside it (see [Signal](#signal)) |
 | `Harness.waitForIdle`, `inspect`, `usage` | Wait for all work, see live work, sum tokens and cost |
@@ -140,8 +140,10 @@ A `Conversation` is a plain object of Effects bound to its harness.
   started from) and `owner` (the task that owns it, and that task's conversation) are its two fields as `Option`s.
   Pi stores nothing else of a conversation's creation: no time, and no creator besides the owner.
 
-`Conversation.Id`, `Entry.Id`, `Submission.Id` and `Task.Id` are the schemas of Pi's ids, for a document or a task
-state that keeps one: a number as stored, the branded id as decoded.
+`Conversation.Id`, `Entry.Id`, `Submission.Id` and `Task.Id` are the schemas of Pi's ids, for a document, a task
+state or a wire that keeps one: a number as stored, the branded id as decoded, with no cast (Pi brands ids in its
+types only, and TypeScript checks the brand is a number's). `Entry.after(id)` is the smallest entry id after `id`, the
+bound of a read that starts after it (`minEntryId`).
 
 ## Conversation init
 
@@ -268,7 +270,8 @@ each created from a seed.
 
 Every conversation of a harness has Pi's five built-in documents. `BuiltinDoc` gives each as a document of this
 package, over Pi's own token and typed with Pi's own state type, for `Harness.snapshot`, `Harness.watchDoc`,
-`tx.doc`, and the `snapshot` of a hook, a tool or a task.
+`tx.doc`, and the `snapshot` of a hook, a tool or a task. Its kind, version, history and state type are read from
+Pi's token; its `history` is typed as Pi types the token, `"latest" | "rewindable"` for all but `BuiltinDoc.agent`.
 
 | | Holds | Written by |
 |---|---|---|
@@ -322,8 +325,12 @@ another kind.
 ## Submission
 
 `status` reads the committed record; `wait` succeeds once it settled, `done` or `unanswered` (both are success: read
-`status` and `reason`); `abort` withdraws it while it is queued. A `requestId` makes a retried `submit` find the
-submission it already admitted.
+`status` and `reason`); `abort` withdraws it while it is queued, and says what it found (`Submission.AbortResult`,
+Pi's own answer). A `requestId` makes a retried `submit` find the submission it already admitted.
+
+`Submission.settled(status)` says whether a submission in that status is settled (`done`, `unanswered`) or open
+(`queued`, `placed`): the one place that reads Pi's statuses so, typed by Pi's `SettledSubmissionRecord`, so a status
+Pi adds fails to compile there until it is decided.
 
 ## Storage
 
@@ -460,6 +467,12 @@ yield* root.configure({ tools: null }); // back to the host default
 ```
 
 A name nothing is registered under is stored and offers nothing until an extension brings that tool.
+
+`Agent.Change` is derived from Pi's `AgentChange` field for field, so a field Pi adds is one of `Change` at once.
+`Agent.byName(change)` gives its JSON form, every tool and extension by its name, and `Agent.ByName` is the schema of
+that form, to keep a change in stored state or send it to another process and decode it back into a change
+`configure` takes; its thinking levels are pi-ai's own list, and its numbers those Pi's `configure` accepts.
+`Agent.ModelRef` is the schema of the model a change names (`@gunta/pi-ai-effect`'s `ModelRef`, Pi's `ModelRef`).
 
 ## Extension and Registry
 
@@ -757,7 +770,10 @@ const placeOrder = (cards: ReadonlyArray<string>) =>
   them.
 - **Reading.** `Harness.getTaskOf(task, id)` and `waitForTaskOf(task, id)` decode the result with the task's schema;
   `task.outcome(stored)` decodes any stored outcome. An outcome is Pi's: `completed` with the result, `failed` with an
-  error, `aborted`, and the scheduler's `faulted` and `orphaned`.
+  error, `aborted`, and the scheduler's `faulted` and `orphaned`. `Task.ended(status)` says whether a task in that
+  status has ended: its outcome is decided, so it runs no more code, takes no signal and has no memos. That is
+  `completing` (work it owns may still be live) and `terminal`; it is the one place that reads Pi's statuses so,
+  typed by Pi's states, so a status Pi adds fails to compile there until it is decided.
 - **A failing phase.** A phase that fails, with a failure or a defect, and one whose input, state or step does not
   match its schema, reaches Pi as a throwing phase: Pi ends the task `faulted` with the error's message, at once, and
   reports it (`task_faulted`, reason `threw`). Nothing is retried. An expected failure is an outcome the phase
@@ -996,6 +1012,8 @@ const bounded = Effect.provideService(program, ParentContext, deadline);
 A call into Pi fails with one of a closed union of tagged errors, `DurableError`: `ConversationBusy`,
 `ConversationIdle`, `ReadAfterWrite`, `ReadOnlySession`, `SessionFailed`, `StorageRequestError`, `Cancelled` (Pi
 cancelled a call the fiber did not interrupt) and `UnexpectedError` (anything else Pi rejects with, in `cause`).
+Every error class Pi Durable exports has its tag: the mapping is keyed by Pi's exports, so a class Pi adds fails to
+compile until it has one. `conversationId` of `ConversationBusy` and `ConversationIdle` is Pi's `ConversationId`.
 `Registry.layer` and signals add `SchemaConversionError`, and signals, documents and typed entries
 `SchemaDecodeError`, both from `@gunta/pi-schema-effect`. A commit also fails with whatever its body fails with.
 

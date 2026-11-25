@@ -104,6 +104,26 @@ describe("interruption", () => {
 	});
 });
 
+describe("settled", () => {
+	it("holds for done and unanswered, the statuses of Pi's settled record, and not for queued or placed", () => {
+		const statuses = ["queued", "placed", "done", "unanswered"] as const;
+		expect(statuses.filter(Submission.settled)).toEqual(["done", "unanswered"]);
+	});
+
+	it("agrees with what a submission's wait settles with", async () => {
+		const settled = await Effect.runPromise(
+			Effect.gen(function* () {
+				const root = yield* Harness.rootWith({ agent: AGENT });
+				const submission = yield* root.submit({ type: "input", content: "Go." });
+				const open = Submission.settled((yield* submission.status).status);
+				const record = yield* submission.wait;
+				return { open, settled: Submission.settled(record.status) };
+			}).pipe(Effect.provide(harnessLayer({ responses: [answer("Done.")] }))),
+		);
+		expect(settled).toEqual({ open: false, settled: true });
+	});
+});
+
 describe("Id", () => {
 	it("is a number in stored JSON and a submission id in the decoded value", async () => {
 		const Kept = Schema.Struct({ inputs: Schema.Array(Submission.Id) });

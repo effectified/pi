@@ -13,9 +13,10 @@ import { toMetricAttributes } from "./attributes.ts";
  * Pi's metric capability on the metric registry of `context`. A counter is an incremental Effect counter, an up-down
  * counter a counter that may go down, a histogram an Effect histogram. A measurement's attributes select the series;
  * the instrument's `unit` is the metric attribute `unit`, where Effect's exporters read it. A histogram's exemplar
- * context is not used: Effect metrics have no exemplars.
+ * context is not used: Effect metrics have no exemplars. Every instrument, optional ones too: one pi-telemetry adds
+ * fails to compile here until it is made.
  */
-export function makeMetrics(context: Context.Context<never>): TelemetryMetrics {
+export function makeMetrics(context: Context.Context<never>): Required<TelemetryMetrics> {
 	const record =
 		(metric: Metric.Metric<number, unknown>) =>
 		(value: number, attributes?: SpanAttributes): void => {

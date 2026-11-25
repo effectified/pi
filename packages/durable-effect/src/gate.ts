@@ -1,6 +1,7 @@
 // Gates: what a `beforeTool` hook decides about one tool call, as a tagged union.
 
 import type { JsonObject, ToolHooks } from "@earendil-works/pi-durable";
+import type { StrictOmit } from "@gunta/pi-ai-effect";
 import type { SchemaConversionError } from "@gunta/pi-schema-effect";
 import { Effect } from "effect";
 import * as Signal from "./signal.ts";
@@ -33,7 +34,7 @@ export interface Park {
 	readonly _tag: "Park";
 	readonly signals?: ReadonlyArray<Signal.Key>;
 	/** Epoch milliseconds on the harness clock. Fix it once (a memo): a hook runs again on every wake. */
-	readonly until?: number;
+	readonly until?: NonNullable<NonNullable<Decision>["sleep"]>["until"];
 }
 
 /** What Pi's `beforeTool` hook returns: replaced arguments, a block, a sleep, or nothing. */
@@ -53,7 +54,7 @@ export function rewrite(args: JsonObject): Gate {
 }
 
 /** Parks the call until a signal or a deadline; Pi ends a park with neither as `invalid_park`. */
-export function park(options: { readonly signals?: ReadonlyArray<Signal.Key>; readonly until?: number }): Gate {
+export function park(options: StrictOmit<Park, "_tag">): Gate {
 	return { _tag: "Park", ...options };
 }
 

@@ -2,6 +2,7 @@
 
 import type { Context as ChordContext } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord/json";
+import type { HookApi } from "@earendil-works/pi-durable";
 import { Effect, Option } from "effect";
 import { call } from "./call.ts";
 import type { DurableError } from "./errors.ts";
@@ -16,11 +17,8 @@ export interface Memo {
 	<T extends JsonValue>(name: string, candidate: T): Effect.Effect<T, DurableError>;
 }
 
-/** A Pi api that reads and writes the memos of its task: a hook's, a tool call's. */
-export interface Source {
-	memo<T extends JsonValue>(name: string, context: ChordContext): Promise<T | undefined>;
-	memo<T extends JsonValue>(name: string, candidate: T, context: ChordContext): Promise<T>;
-}
+/** A Pi api that reads and writes the memos of its task: a hook's, a tool call's, a task's runtime. */
+export type Source = Pick<HookApi, "memo">;
 
 /** The Effect form of a Pi api's memos; `parent` as for `call`. */
 export function fromPi(api: Source, parent?: ChordContext): Memo {

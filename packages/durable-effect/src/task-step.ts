@@ -1,13 +1,20 @@
 // Task steps: what a task commits for itself (its next state, a sleep, a wait, or its outcome), as a tagged union.
 
 import type { JsonValue } from "@earendil-works/chord/json";
-import type { JoinPolicy, JsonObject, NextTaskState, TaskId, TaskOutcomeError } from "@earendil-works/pi-durable";
+import type { JsonObject, NextTaskState, TaskOutcome, TaskOutcomeError } from "@earendil-works/pi-durable";
+import type { StrictOmit } from "@gunta/pi-ai-effect";
 import type { SchemaConversionError, SchemaDecodeError } from "@gunta/pi-schema-effect";
 import { Effect } from "effect";
 import * as Signal from "./signal.ts";
 
 /** The state a task commits for itself: Pi's `NextTaskState`, with the state and the result as decoded values. */
 export type Step<S, A> = Next<S> | Sleep<S> | Wait<S> | End<A>;
+
+/** The state of `status` Pi takes from a task that commits for itself. */
+type PiNext<Status extends NextTaskState<unknown, unknown>["status"]> = Extract<
+	NextTaskState<unknown, unknown>,
+	{ readonly status: Status }
+>;
 
 /** The task goes on at `state`: a new phase, or progress within the same one. */
 export interface Next<S> {
@@ -23,7 +30,7 @@ export interface Sleep<S> {
 	readonly _tag: "Sleep";
 	readonly state: S;
 	/** Epoch milliseconds on the harness clock (`api.now`). */
-	readonly until?: number;
+	readonly until?: PiNext<"sleeping">["until"];
 	readonly signals?: ReadonlyArray<Signal.Key>;
 }
 
@@ -31,9 +38,9 @@ export interface Sleep<S> {
 export interface Wait<S> {
 	readonly _tag: "Wait";
 	readonly state: S;
-	readonly on: ReadonlyArray<TaskId>;
+	readonly on: PiNext<"waiting">["on"];
 	/** `allSettled`: all of them; `failFast`: also aborts the others once one fails; `any`: the first one. */
-	readonly policy: JoinPolicy;
+	readonly policy: PiNext<"waiting">["policy"];
 }
 
 /** The task ends with `outcome`. Pi holds it as `completing` while work the task owns is still live. */
@@ -42,11 +49,8 @@ export interface End<A> {
 	readonly outcome: Outcome<A>;
 }
 
-/** An outcome a task decides itself; `faulted` and `orphaned` are the scheduler's. */
-export type Outcome<A> =
-	| { readonly status: "completed"; readonly result: A }
-	| { readonly status: "failed"; readonly error: TaskOutcomeError; readonly result?: A }
-	| { readonly status: "aborted"; readonly reason?: string; readonly result?: A };
+/** An outcome a task decides itself, Pi's `TaskOutcome` of that status; `faulted` and `orphaned` are the scheduler's. */
+export type Outcome<A> = Extract<TaskOutcome<A>, { readonly status: "completed" | "failed" | "aborted" }>;
 
 /** What a commit body returns to leave the task's state as it is: only its other writes are stored. */
 export interface Unchanged {
@@ -67,11 +71,7 @@ export function next<S>(state: S): Next<S> {
  * Sleeps until a signal or a time, then resumes at `state`. Pi rejects a sleep with neither, and a key that already
  * served a wait. There is no sleep inside a phase: what comes after the wait belongs in the phase `state` names.
  */
-export function sleep<S>(options: {
-	readonly state: S;
-	readonly until?: number;
-	readonly signals?: ReadonlyArray<Signal.Key>;
-}): Sleep<S> {
+export function sleep<S>(options: StrictOmit<Sleep<S>, "_tag">): Sleep<S> {
 	return { _tag: "Sleep", ...options };
 }
 
@@ -84,11 +84,7 @@ export function sleepUntil<S>(until: number, state: S): Sleep<S> {
  * Waits for tasks, then resumes at `state`. `on` may name tasks the waiting task does not own, with `allSettled` or
  * `any`. Pi rejects a missing task and a wait that closes a cycle.
  */
-export function wait<S>(options: {
-	readonly state: S;
-	readonly on: ReadonlyArray<TaskId>;
-	readonly policy: JoinPolicy;
-}): Wait<S> {
+export function wait<S>(options: StrictOmit<Wait<S>, "_tag">): Wait<S> {
 	return { _tag: "Wait", ...options };
 }
 

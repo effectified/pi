@@ -10,6 +10,7 @@ import type {
 	ModelsSimpleStreamOptions,
 	MutableModels,
 	Context as PiContext,
+	StreamOptions,
 } from "@earendil-works/pi-ai";
 import { Effect, Option, Stream } from "effect";
 import { ModelRequestError } from "./errors.ts";
@@ -21,6 +22,9 @@ export type RequestOptions<TOptions> = TOptions & { readonly signal?: never };
 /** An event of a response that has not failed. pi-ai's `error` event is the failure of the Stream instead. */
 export type ResponseEvent = Exclude<AssistantMessageEvent, { type: "error" }>;
 
+/** Why a response failed: the `reason` of pi-ai's `error` event, `error` or `aborted`. */
+export type ErrorReason = Extract<AssistantMessageEvent, { type: "error" }>["reason"];
+
 /**
  * Streams one response of `model` with the options of the model's own API. The events arrive as pi-ai emits them and
  * `done` is the last one. A response that ends in pi-ai's `error` event fails with `ModelRequestError`. Interrupting
@@ -31,10 +35,12 @@ export function stream<TApi extends Api>(
 	context: PiContext,
 	options?: RequestOptions<ModelsApiStreamOptions<TApi>>,
 ): Stream.Stream<ResponseEvent, ModelRequestError, Models> {
-	return responseEvents((models, signal) =>
+	return responseEvents((models, signal) => {
+		// Checked alone: the cast below cannot see whether pi-ai still names its abort signal `signal`.
+		const abort = { signal } satisfies Pick<StreamOptions, "signal">;
 		// TypeScript cannot resolve the conditional type of one API's options here; the spread only adds `signal`.
-		models.stream(model, context, { ...options, signal } as ModelsApiStreamOptions<TApi>),
-	);
+		return models.stream(model, context, { ...options, ...abort } as ModelsApiStreamOptions<TApi>);
+	});
 }
 
 /** The final message of one response of `model`, with the error and interruption rules of `stream`. */

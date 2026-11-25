@@ -674,6 +674,13 @@ describe("outcome, settled and record", () => {
 	});
 });
 
+describe("ended", () => {
+	it("holds for completing and terminal, the states that hold an outcome, and for no live state", () => {
+		const statuses = ["pending", "running", "waiting", "sleeping", "completing", "terminal"] as const;
+		expect(statuses.filter(Task.ended)).toEqual(["completing", "terminal"]);
+	});
+});
+
 describe("Id", () => {
 	it("is a number in the stored state and a task id in the decoded one", async () => {
 		const State = Schema.Struct({ phase: Schema.Literal("wait"), children: Schema.Array(Task.Id) });

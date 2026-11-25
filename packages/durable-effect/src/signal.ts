@@ -2,7 +2,13 @@
 
 import type { Context } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord/json";
-import { defineSignal, type SignalKey, type SignalState, type SignalToken } from "@earendil-works/pi-durable";
+import {
+	defineSignal,
+	type HookApi,
+	type SignalKey,
+	type SignalState,
+	type SignalToken,
+} from "@earendil-works/pi-durable";
 import { decodeUnknown, encode, SchemaConversionError, SchemaDecodeError, toJsonSchema } from "@gunta/pi-schema-effect";
 import { Effect, Option, Predicate, type Schema } from "effect";
 import { call } from "./call.ts";
@@ -41,9 +47,7 @@ export type Failure = SchemaConversionError | SchemaDecodeError;
 export type State<A> = SignalState<A>;
 
 /** A Pi api that reads signals of its task: a hook's, a tool call's, a task's runtime. */
-export interface Reader {
-	readSignal<T>(token: SignalToken<T>, key: string, context: Context): Promise<SignalState<T> | undefined>;
-}
+export type Reader = Pick<HookApi, "readSignal">;
 
 /**
  * Defines a signal kind, as Pi's `defineSignal`: `name` is unique like a task kind and has no "/", `version` is a

@@ -136,12 +136,10 @@ describe("the exports", () => {
 		expect(Object.keys(Package.Idle).sort()).toEqual(["quiet"]);
 		expect(Object.keys(Package.Signal).sort()).toEqual(["SubmissionSettled", "make", "read", "stateIn", "toPiKey"]);
 		expect(Object.keys(Package.Watch).sort()).toEqual(["commits", "observed", "stream"]);
-		expect([Package.Conversation.Id, Package.Entry.Id, Package.Submission.Id, Package.Task.Id]).toEqual([
-			Schema.Number,
-			Schema.Number,
-			Schema.Number,
-			Schema.Number,
-		]);
+		// Each id schema keeps the number Pi stores and refuses anything else.
+		const ids = [Package.Conversation.Id, Package.Entry.Id, Package.Submission.Id, Package.Task.Id];
+		expect(ids.map((id) => Schema.decodeSync(id)(7))).toEqual([7, 7, 7, 7]);
+		expect(ids.map((id) => Schema.is(id)("7"))).toEqual([false, false, false, false]);
 		// The types a product names without a second import: a memo function, and the JSON Pi stores.
 		const memo: Equal<Package.Memo, Package.Hook.Api["memo"]> = true;
 		const json: Equal<Package.JsonObject, { [key: string]: Package.JsonValue }> = true;

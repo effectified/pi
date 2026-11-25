@@ -2,19 +2,20 @@
 
 import type { Context } from "@earendil-works/chord/context";
 import type { Cursor, EntryQuery, EntryRecord, Page } from "@earendil-works/pi-durable";
+import type { StrictOmit } from "@gunta/pi-ai-effect";
 import { Effect, Option, Stream } from "effect";
 import { call } from "./call.ts";
 import type { DurableError } from "./errors.ts";
 
 /** Which entries a stream reads, and how many per storage read. */
-export interface EntriesQuery extends Omit<EntryQuery, "conversationId"> {
+export interface EntriesQuery extends StrictOmit<EntryQuery, "conversationId"> {
 	/** Entries per page read from storage. Default 100. */
 	readonly pageSize?: number;
 }
 
 /** One paged read of Pi: a conversation's `entries`, or a hook api's. */
 export type ReadPage = (
-	query: Omit<EntryQuery, "conversationId">,
+	query: StrictOmit<EntryQuery, "conversationId">,
 	limit: number,
 	cursor: Cursor | undefined,
 	context: Context,

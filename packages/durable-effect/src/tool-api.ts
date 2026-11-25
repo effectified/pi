@@ -1,5 +1,6 @@
 // The api a tool handler gets: an Effect view of what Pi Durable gives one tool call.
 
+import type { Context as ChordContext } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord/json";
 import type {
 	CommitOptions,
@@ -7,6 +8,7 @@ import type {
 	ConversationHandle,
 	ConversationId,
 	JsonObject,
+	NestedToolCall,
 	NestedToolExecutionResult,
 	Agent as PiAgent,
 	ToolExecutionApi as PiToolExecutionApi,
@@ -14,11 +16,11 @@ import type {
 	SubmissionDraft,
 	SubmissionId,
 	TaskId,
-	TaskOptions,
 	TaskRecord,
 	ToolDiagnostic,
 	WakeReason,
 } from "@earendil-works/pi-durable";
+import type { StrictOmit } from "@gunta/pi-ai-effect";
 import type { SchemaDecodeError } from "@gunta/pi-schema-effect";
 import { Effect, Option, type Schema } from "effect";
 import { call } from "./call.ts";
@@ -117,22 +119,28 @@ export interface Api extends Doc.Reader {
 	readonly pi: PiToolExecutionApi;
 }
 
-/** How a tool call creates a task: Pi's options without the conversation, which is the call's, and the `key`. */
-export type CreateTaskOptions = Omit<TaskOptions, "conversationId"> & { readonly key?: string };
+/**
+ * How a tool call creates a task: Pi's options of a tool's `createTask`, the task options without the conversation,
+ * which is the call's, and with the `key`.
+ */
+export type CreateTaskOptions = Parameters<PiToolExecutionApi["createTask"]>[2];
 
-/** How a nested call is made: its key within this call (default: its position), and whether its progress is shown. */
-export interface NestedOptions {
-	readonly key?: string;
-	readonly progress?: boolean;
-}
+/**
+ * How a nested call is made: Pi's options of `executeTool` without `wait`, which `executeTool` and `startTool` choose.
+ * Its `key` within this call (default: its position), and whether its `progress` is shown.
+ */
+export type NestedOptions = StrictOmit<Parameters<PiToolExecutionApi["executeTool"]>[3], "wait">;
 
-/** A nested call started without waiting for it. */
-export interface Started {
-	/** The nested call's task: what `Tool.wait` waits on. */
-	readonly taskId: TaskId;
-	/** The stored result once the nested call ended; until then it waits. */
-	readonly result: Effect.Effect<NestedToolExecutionResult, DurableError>;
-}
+/**
+ * A nested call started without waiting for it: Pi's `NestedToolCall`, each method that takes a context as an Effect.
+ * `taskId` is the nested call's task, what `Tool.wait` waits on; `result` is the stored result once the call ended,
+ * and waits until then.
+ */
+export type Started = {
+	readonly [K in keyof NestedToolCall]: NestedToolCall[K] extends (context: ChordContext) => Promise<infer A>
+		? Effect.Effect<A, DurableError>
+		: NestedToolCall[K];
+};
 
 /** A conversation as a tool call may drive it: any conversation, such as a subagent's. Bound to the run that got it. */
 export interface Handle {

@@ -1,30 +1,29 @@
 // Pi Durable's watches and observers as Streams: the state at attachment, then its changes, released with the scope.
 
 import type { Context as ChordContext } from "@earendil-works/chord/context";
-import type { Op } from "@earendil-works/chord/delta";
 import type {
 	CommitObservation,
 	CommitObserver,
 	CommitPublication,
 	Observation,
 	Observer,
+	WatchCall,
 	WatchEnd,
 	WatchHandle,
 } from "@earendil-works/pi-durable";
+import type { StrictOmit } from "@gunta/pi-ai-effect";
 import { Cause, Effect, Queue, Stream } from "effect";
+import { absurd } from "effect/Function";
 import { call } from "./call.ts";
 import { type DurableError, fromRejection } from "./errors.ts";
 
 /**
- * One element of a watch: the newest committed value and the Chord operations that turn the value of the element
- * before into it. The first element is the value at attachment, without operations. `retired` says the watched
- * document was retired since the element before; the value is then the last one it had.
+ * One element of a watch: Chord's value call without its tag. The newest committed value and the Chord operations
+ * that turn the value of the element before into it; the first element is the value at attachment, without
+ * operations. `retired` says the watched document was retired since the element before; the value is then the last
+ * one it had.
  */
-export interface Change<T> {
-	readonly value: T;
-	readonly ops: ReadonlyArray<Op>;
-	readonly retired: boolean;
-}
+export type Change<T> = StrictOmit<Extract<WatchCall<T>, { readonly kind: "value" }>, "kind">;
 
 /**
  * A Pi watch as a Stream. Pi delivers one change at a time and folds the commits that land meanwhile into the next
@@ -129,9 +128,10 @@ export function commits(attach: (observer: CommitObserver) => CommitObservation)
 	);
 }
 
-/** One value call of Pi as an element. */
-function change<T>(delivered: Change<T>): Change<T> {
-	return { value: delivered.value, ops: delivered.ops, retired: delivered.retired };
+/** One value call of Pi as an element: every field but the tag, so a field Chord adds reaches the stream. */
+function change<T>(delivered: Extract<WatchCall<T>, { readonly kind: "value" }>): Change<T> {
+	const { kind: _kind, ...element } = delivered;
+	return element;
 }
 
 /** Ends the stream of a watch as the watch ended. */
@@ -146,5 +146,8 @@ function finish<A>(queue: Queue.Queue<A, DurableError | Cause.Done>, end: WatchE
 		case "failed":
 			Queue.failCauseUnsafe(queue, Cause.fail(fromRejection(end.error)));
 			return;
+		default:
+			// A kind of end Chord adds fails to compile here, so no watch stream can be left open by one.
+			absurd(end);
 	}
 }

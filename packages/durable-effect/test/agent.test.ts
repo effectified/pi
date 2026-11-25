@@ -66,6 +66,48 @@ describe("toPi", () => {
 	});
 });
 
+describe("byName and ByName", () => {
+	it("give a change as plain JSON, every tool and extension by its name, the rest as it is", () => {
+		const json = Agent.byName({
+			model: { provider: "faux", modelId: "small" },
+			thinkingLevel: "high",
+			extensions: { add: ["extra"], remove: [Files] },
+			tools: { remove: [Read, PiTools[2]] },
+			modelTools: [Lookup],
+			maxTurns: 3,
+			compaction: { enabled: false, modelOverrides: { "faux/small": { reserveTokens: 100 } } },
+		});
+		expect(json).toEqual({
+			model: { provider: "faux", modelId: "small" },
+			thinkingLevel: "high",
+			extensions: { add: ["extra"], remove: ["files"] },
+			tools: { remove: ["read", "write"] },
+			modelTools: ["lookup"],
+			maxTurns: 3,
+			compaction: { enabled: false, modelOverrides: { "faux/small": { reserveTokens: 100 } } },
+		});
+		const decoded = Schema.decodeUnknownSync(Agent.ByName)(JSON.parse(JSON.stringify(json)));
+		expect(decoded).toEqual(json);
+		// What a decoded change is: a change `configure` takes.
+		expect(Agent.toPi(decoded).tools).toEqual({ remove: [{ name: "read" }, { name: "write" }] });
+	});
+
+	it("refuses what Pi's configure would refuse: turns below 1, a negative token count, a level pi-ai has not", () => {
+		const accepts = Schema.is(Agent.ByName);
+		expect(accepts({ maxTurns: 1, compaction: { reserveTokens: 0 }, thinkingLevel: "max" })).toBe(true);
+		expect(accepts({ maxTurns: 0 })).toBe(false);
+		expect(accepts({ compaction: { keepRecentTokens: -1 } })).toBe(false);
+		expect(accepts({ thinkingLevel: "extreme" })).toBe(false);
+		expect(accepts({ model: { provider: "faux" } })).toBe(false);
+	});
+
+	it("keeps null, which clears a field", () => {
+		const cleared = { model: null, tools: null, modelTools: null, maxTurns: null, compaction: null };
+		expect(Agent.byName(cleared)).toEqual(cleared);
+		expect(Schema.is(Agent.ByName)(cleared)).toBe(true);
+	});
+});
+
 describe("parity with Pi Durable", () => {
 	it("configure by names restricts a conversation to exactly the tools named, as Pi's objects do", async () => {
 		const both = await runBoth({

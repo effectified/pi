@@ -4,8 +4,8 @@ import type { Context as ChordContext } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord/json";
 import {
 	type CommitOptions,
+	type ConversationHandle,
 	type ConversationId,
-	type ConversationOwnership,
 	type ConversationQuery,
 	type ConversationRecord,
 	type Cursor,
@@ -108,14 +108,14 @@ export interface Tx {
 	 * A new conversation; a table write. A task-owned one starts as a copy of its owner's conversation's agent. It gives
 	 * the record, never a handle: use `Harness.conversation` or a tool's `api.conversation` after the commit.
 	 */
-	readonly createConversation: (options: {
-		readonly ownership: ConversationOwnership;
-	}) => Effect.Effect<ConversationRecord, DurableError>;
+	readonly createConversation: (
+		options: Parameters<PiTx["createConversation"]>[0],
+	) => Effect.Effect<ConversationRecord, DurableError>;
 	/** A fork of `parent` that sees its entries up to `at`; a table write. */
 	readonly forkConversation: (
 		parent: ConversationId,
 		at: EntryId,
-		options: { readonly ownership: ConversationOwnership },
+		options: Parameters<PiTx["forkConversation"]>[2],
 	) => Effect.Effect<ConversationRecord, DurableError>;
 	/** Appends an entry as it is; a table write. Model messages in `model` join the model's context. */
 	readonly appendEntry: (
@@ -223,7 +223,7 @@ export function fromPi(tx: PiTx): Tx {
  * catch it and go on. `target` is Pi's conversation or conversation handle.
  */
 export function admit(
-	target: { admit(tx: PiTx, draft: SubmissionDraft): Promise<SubmissionId> },
+	target: Pick<ConversationHandle, "admit">,
 	tx: Tx,
 	draft: SubmissionDraft,
 ): Effect.Effect<SubmissionId, DurableError> {

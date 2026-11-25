@@ -9,16 +9,17 @@ import {
 	StorageRequestError as PiStorageRequestError,
 } from "@earendil-works/pi-durable";
 import { Predicate, Schema } from "effect";
+import * as Ids from "./id.ts";
 
 /** A submission reached a busy conversation and was not admitted (`whenBusy: "reject"`, or a continue). */
 export class ConversationBusy extends Schema.TaggedError<ConversationBusy>()("ConversationBusy", {
-	conversationId: Schema.Number,
+	conversationId: Ids.conversation,
 	message: Schema.String,
 }) {}
 
 /** An input with `whenIdle: "reject"` reached an idle conversation and was not admitted. */
 export class ConversationIdle extends Schema.TaggedError<ConversationIdle>()("ConversationIdle", {
-	conversationId: Schema.Number,
+	conversationId: Ids.conversation,
 	message: Schema.String,
 }) {}
 
@@ -77,17 +78,44 @@ export type DurableError =
 
 /** What a Pi Durable promise rejected with, as a `DurableError`: the one place that reads Pi's error classes. */
 export function fromRejection(cause: unknown): DurableError {
-	if (cause instanceof PiConversationBusy) {
-		return new ConversationBusy({ conversationId: cause.conversationId, message: cause.message });
+	for (const tag of TAGS) {
+		const tagged = tag(cause);
+		if (tagged !== undefined) return tagged;
 	}
-	if (cause instanceof PiConversationIdle) {
-		return new ConversationIdle({ conversationId: cause.conversationId, message: cause.message });
-	}
-	if (cause instanceof PiReadAfterWrite) return new ReadAfterWrite({ message: cause.message });
-	if (cause instanceof PiReadOnlySession) return new ReadOnlySession({ message: cause.message });
-	if (cause instanceof PiSessionFailed) return new SessionFailed({ message: cause.message, cause: cause.cause });
-	if (cause instanceof PiStorageRequestError) return new StorageRequestError({ message: cause.message });
 	// Chord rejects a cancelled call with the signal's reason when it is an Error, else with an `AbortError`.
 	if (Predicate.isError(cause) && cause.name === "AbortError") return new Cancelled({ cause });
 	return new UnexpectedError({ cause });
+}
+
+/**
+ * The names of the Pi error classes `fromRejection` gives a tag of their own. The package's conformance check holds
+ * them equal to the error classes Pi Durable exports, so a class Pi adds fails to compile until it has a tag here and
+ * no Pi error becomes an `UnexpectedError` that a `catchTag` would miss.
+ */
+export type TaggedClass = keyof typeof BY_CLASS;
+
+/** The tag of `cause` when it is an instance of one Pi error class, else nothing. */
+type Tag = (cause: unknown) => DurableError | undefined;
+
+// One entry per error class of Pi, keyed by the class's exported name.
+const BY_CLASS = {
+	ConversationBusy: tag(
+		PiConversationBusy,
+		(error) => new ConversationBusy({ conversationId: error.conversationId, message: error.message }),
+	),
+	ConversationIdle: tag(
+		PiConversationIdle,
+		(error) => new ConversationIdle({ conversationId: error.conversationId, message: error.message }),
+	),
+	ReadAfterWrite: tag(PiReadAfterWrite, (error) => new ReadAfterWrite({ message: error.message })),
+	ReadOnlySession: tag(PiReadOnlySession, (error) => new ReadOnlySession({ message: error.message })),
+	SessionFailed: tag(PiSessionFailed, (error) => new SessionFailed({ message: error.message, cause: error.cause })),
+	StorageRequestError: tag(PiStorageRequestError, (error) => new StorageRequestError({ message: error.message })),
+};
+
+const TAGS: ReadonlyArray<Tag> = Object.values(BY_CLASS);
+
+/** The tag `make` gives an instance of `piClass`. */
+function tag<E extends Error>(piClass: abstract new (...args: never[]) => E, make: (error: E) => DurableError): Tag {
+	return (cause) => (cause instanceof piClass ? make(cause) : undefined);
 }

@@ -3,8 +3,6 @@
 import type { JsonValue } from "@earendil-works/chord/json";
 import {
 	defineTool,
-	type JoinPolicy,
-	type TaskId,
 	type ToolControl,
 	type ToolDiagnostic,
 	type ToolExecutionMode,
@@ -12,6 +10,7 @@ import {
 	type ToolPark,
 	type ToolRegistration,
 } from "@earendil-works/pi-durable";
+import type { StrictOmit } from "@gunta/pi-ai-effect";
 import {
 	decodeUnknown,
 	encode,
@@ -46,9 +45,9 @@ export interface Options<P extends Schema.Constraint, S extends Schema.Constrain
 	/** What the handler succeeds with; its JSON form is the tool's output. */
 	readonly success: S;
 	/** Whether a call cut off by a crash may run again on reopen. Pi's default: `unsafe`. */
-	readonly replay?: "safe" | "unsafe";
+	readonly replay?: ToolRegistration["replay"];
 	/** Who may call the tool: the model, other tools, or both (Pi's default). */
-	readonly callers?: ReadonlyArray<"model" | "tools">;
+	readonly callers?: ToolRegistration["callers"];
 	/**
 	 * Programs that call the tool (a nested call, a code mode script) get the success value as JSON instead of the text
 	 * the model reads: Pi's `structuredOutput`, declared with the JSON Schema of `success`, which Pi validates.
@@ -63,12 +62,12 @@ export interface Options<P extends Schema.Constraint, S extends Schema.Constrain
 	 * Not offered to the model until loaded (Pi's `deferred`), passed on unchanged: the model gets the tool only once
 	 * the conversation's `modelTools` names it. Other tools can call it any time.
 	 */
-	readonly deferred?: true;
+	readonly deferred?: ToolRegistration["deferred"];
 	/**
 	 * Repairs arguments models commonly get wrong, before Pi validates them, passed on unchanged: Pi's own callback,
 	 * which gets the arguments as the model sent them. Pure, and it must not change `args`: Pi may run it again.
 	 */
-	readonly prepareArguments?: (args: unknown) => unknown;
+	readonly prepareArguments?: ToolRegistration["prepareArguments"];
 	/** How much of the output the model reads, and which end is kept; passed on unchanged. */
 	readonly outputLimits?: ToolRegistration["outputLimits"];
 	/** pi-ai's provider-side constrained sampling of the arguments, passed on unchanged. */
@@ -144,13 +143,16 @@ export interface ErrorResult extends Omit<Extras, "output"> {
 	readonly text: string;
 }
 
+/** Pi's park of `kind`, which a `Sleep` or a `Wait` reply becomes. */
+type Park<Kind extends ToolPark["kind"]> = Extract<ToolPark, { readonly kind: Kind }>;
+
 /** A park until a signal or a time: the call holds no process meanwhile, then the handler runs again. */
 export interface Sleep {
 	readonly [ReplyTypeId]: typeof ReplyTypeId;
 	readonly _tag: "Sleep";
 	readonly signals?: ReadonlyArray<Signal.Key>;
 	/** Epoch milliseconds on the harness clock (`api.now`). */
-	readonly until?: number;
+	readonly until?: Park<"sleep">["until"];
 	/** JSON the next run finds in `api.checkpoint`. */
 	readonly checkpoint?: Schema.Json;
 }
@@ -159,9 +161,9 @@ export interface Sleep {
 export interface Wait {
 	readonly [ReplyTypeId]: typeof ReplyTypeId;
 	readonly _tag: "Wait";
-	readonly on: ReadonlyArray<TaskId>;
+	readonly on: Park<"wait">["on"];
 	/** `allSettled`: all of them; `failFast`: also aborts the others once one fails; `any`: the first one. */
-	readonly policy: JoinPolicy;
+	readonly policy: Park<"wait">["policy"];
 	readonly checkpoint?: Schema.Json;
 }
 
@@ -180,20 +182,12 @@ export function error(text: string, extras?: Omit<Extras, "output">): Reply<neve
  * Pi ends a park with neither as `invalid_park`. The handler then runs again with the same arguments, `api.wake`
  * saying why and `api.checkpoint` holding `checkpoint`. A restart while it is parked runs no handler.
  */
-export function sleep(options: {
-	readonly signals?: ReadonlyArray<Signal.Key>;
-	readonly until?: number;
-	readonly checkpoint?: Schema.Json;
-}): Reply<never> {
+export function sleep(options: StrictOmit<Sleep, typeof ReplyTypeId | "_tag">): Reply<never> {
 	return { ...options, [ReplyTypeId]: ReplyTypeId, _tag: "Sleep" };
 }
 
 /** Parks the call until tasks it owns have ended, as `policy` says; `api.wake` then lists the ended ones. */
-export function wait(options: {
-	readonly on: ReadonlyArray<TaskId>;
-	readonly policy: JoinPolicy;
-	readonly checkpoint?: Schema.Json;
-}): Reply<never> {
+export function wait(options: StrictOmit<Wait, typeof ReplyTypeId | "_tag">): Reply<never> {
 	return { ...options, [ReplyTypeId]: ReplyTypeId, _tag: "Wait" };
 }
 

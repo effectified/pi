@@ -1,6 +1,6 @@
-import { Effect } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { getModel } from "../src/index.ts";
+import { getModel, ModelRef } from "../src/index.ts";
 import { ScriptedModels } from "../src/testing/index.ts";
 
 const scripted = ScriptedModels.layer({ models: [{ id: "small" }, { id: "large", contextWindow: 200000 }] });
@@ -31,5 +31,13 @@ describe("getModel", () => {
 		);
 		expect(error._tag).toBe("ModelNotFound");
 		expect(error.provider).toBe("nowhere");
+	});
+});
+
+describe("ModelRef", () => {
+	it("decodes the provider and the model id, and rejects a reference without them", () => {
+		const decode = Schema.decodeUnknownExit(ModelRef);
+		expect(Exit.isSuccess(decode({ provider: "faux", modelId: "small" }))).toBe(true);
+		expect(Exit.isFailure(decode({ provider: "faux" }))).toBe(true);
 	});
 });

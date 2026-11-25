@@ -6,9 +6,10 @@ import type {
 	SubmissionId,
 	SubmissionRecord,
 } from "@earendil-works/pi-durable";
-import { type Effect, Schema } from "effect";
+import type { Effect } from "effect";
 import { call } from "./call.ts";
 import type { DurableError } from "./errors.ts";
+import * as Ids from "./id.ts";
 
 /** One durably admitted submission. A plain object of Effects, bound to the harness that returned it. */
 export interface Submission {
@@ -21,14 +22,35 @@ export interface Submission {
 	 */
 	readonly wait: Effect.Effect<SettledSubmissionRecord, DurableError>;
 	/** Withdraws the submission while it is queued; says what it found otherwise. */
-	readonly abort: Effect.Effect<"aborted" | "already_placed" | "settled", DurableError>;
+	readonly abort: Effect.Effect<AbortResult, DurableError>;
 }
 
+/** What Pi did with an abort of a submission: `aborted`, or what it found instead (`already_placed`, `settled`). */
+export type AbortResult = Awaited<ReturnType<PiSubmission["abort"]>>;
+
 /**
- * The schema of a submission id, for a document or a task state that keeps one. Pi brands ids in the type system
- * only, which a schema cannot express: at run time a submission id is the number stored.
+ * The schema of a submission id, for a document, a task state or a wire that keeps one: the number Pi stores, typed
+ * with Pi's brand.
  */
-export const Id = Schema.Number as unknown as Schema.Codec<SubmissionId, number>;
+export const Id = Ids.submission;
+
+/**
+ * Whether a submission in this status is settled: `done` or `unanswered`, as Pi's `SettledSubmissionRecord` says,
+ * so it changes no more and its `notify` was delivered. `queued` and `placed` are open. The one place that reads
+ * Pi's statuses so: a status Pi adds fails to compile here until it is decided.
+ */
+export function settled(status: SubmissionRecord["status"]): status is SettledSubmissionRecord["status"] {
+	return SETTLED[status];
+}
+
+// Typed by both of Pi's types: every status of a record is here, and true exactly when Pi's settled record has it.
+const SETTLED = {
+	queued: false,
+	placed: false,
+	done: true,
+	unanswered: true,
+} as const satisfies Record<SettledSubmissionRecord["status"], true> &
+	Record<Exclude<SubmissionRecord["status"], SettledSubmissionRecord["status"]>, false>;
 
 /** The Effect form of a Pi Durable submission. */
 export function fromPi(submission: PiSubmission): Submission {

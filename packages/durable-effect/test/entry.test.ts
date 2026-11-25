@@ -128,6 +128,27 @@ describe("from a hook and a conversation", () => {
 	});
 });
 
+describe("after", () => {
+	it("is the smallest entry id after an entry: a read from it starts with the entry that follows", async () => {
+		const read = await Effect.runPromise(
+			Effect.gen(function* () {
+				const root = yield* Harness.rootWith({ agent: AGENT });
+				const [first, second] = yield* root.commit((tx) =>
+					Effect.all([
+						tx.appendEntry(root.id, { kind: "app.note" }),
+						tx.appendEntry(root.id, { kind: "app.note" }),
+					]),
+				);
+				const after = yield* Stream.runCollect(
+					root.entries({ order: "ascending", minEntryId: Entry.after(first.id) }),
+				);
+				return { second: second.id, after: after.map((entry) => entry.id) };
+			}).pipe(Effect.provide(harnessLayer({}))),
+		);
+		expect(read.after).toEqual([read.second]);
+	});
+});
+
 describe("Id", () => {
 	it("is a number in stored JSON and an entry id in the decoded value", async () => {
 		const Kept = Schema.Struct({ answers: Schema.Array(Entry.Id) });

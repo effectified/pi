@@ -6,12 +6,14 @@ import {
 	defineTask,
 	type Task as PiTask,
 	type SettledTask,
-	type TaskId,
 	type TaskOutcome,
 	type TaskRecord,
+	type TaskState,
 } from "@earendil-works/pi-durable";
+import type { StrictOmit } from "@gunta/pi-ai-effect";
 import { decodeUnknown, encode, type SchemaDecodeError } from "@gunta/pi-schema-effect";
-import { Effect, Schema } from "effect";
+import { Effect, type Schema } from "effect";
+import * as Ids from "./id.ts";
 import { type Invoke, invoker } from "./invocation.ts";
 import * as TaskApi from "./task-api.ts";
 import type * as Step from "./task-step.ts";
@@ -156,16 +158,38 @@ export interface Any {
 /** The services a task's handlers, or those of each task of a union, need to run. */
 export type Services<T> = T extends { readonly registration: Effect.Effect<infer _A, infer _E, infer R> } ? R : never;
 
-/** A task's terminal record with the result of its outcome decoded. */
-export type Settled<A> = Omit<SettledTask<unknown>, "state"> & {
-	readonly state: { readonly status: "terminal"; readonly outcome: TaskOutcome<A> };
-};
+/** A task's terminal record with the result of its outcome decoded: Pi's `SettledTask`, its state of result `A`. */
+export type Settled<A> = StrictOmit<SettledTask<unknown>, "state"> & { readonly state: SettledTask<A>["state"] };
 
 /**
- * The schema of a task id, for a state that keeps the ids of the tasks it created. Pi brands ids in the type system
- * only, which a schema cannot express: at run time a task id is the number stored.
+ * The schema of a task id, for a state, a document or a wire that keeps one: the number Pi stores, typed with Pi's
+ * brand.
  */
-export const Id = Schema.Number as unknown as Schema.Codec<TaskId, number>;
+export const Id = Ids.task;
+
+/**
+ * Whether a task in this status has ended: its outcome is decided, so it runs no more code, a signal no longer reaches
+ * it, and its memos are gone. `completing` has ended although work it owns may still be live (Pi's `waitForTask` waits
+ * for `terminal`, when that work ended too). The one place that reads Pi's statuses so: a status Pi adds fails to
+ * compile here until it is decided.
+ */
+export function ended(status: TaskState<unknown, unknown>["status"]): boolean {
+	return ENDED[status];
+}
+
+/** The statuses of a task state that holds an outcome: Pi's own split of the live states from the ended ones. */
+type EndedStatus = Extract<TaskState<unknown, unknown>, { readonly outcome: unknown }>["status"];
+
+// Typed by Pi's states: every status is here, and true exactly when Pi's state of that status holds an outcome.
+const ENDED = {
+	pending: false,
+	running: false,
+	waiting: false,
+	sleeping: false,
+	completing: true,
+	terminal: true,
+} as const satisfies Record<EndedStatus, true> &
+	Record<Exclude<TaskState<unknown, unknown>["status"], EndedStatus>, false>;
 
 /**
  * Defines a task, as Pi's `defineTask`: a small state machine whose state is stored at every step, so a harness
@@ -209,9 +233,10 @@ export function settled<A>(
 	task: Kind<never, A>,
 	record: SettledTask<unknown>,
 ): Effect.Effect<Settled<A>, SchemaDecodeError> {
+	// The state as Pi stored it, its outcome decoded: a field Pi adds to a terminal state is kept.
 	return Effect.map(task.outcome(record.state.outcome), (outcome) => ({
 		...record,
-		state: { status: "terminal", outcome },
+		state: { ...record.state, outcome },
 	}));
 }
 
@@ -233,8 +258,7 @@ export function record<A>(
 			return Effect.map(
 				task.outcome(state.outcome),
 				// TypeScript does not narrow a record by the status of its state: one that holds an outcome has no memos.
-				(outcome) =>
-					({ ...found, state: { status: state.status, outcome } }) as TaskRecord<JsonValue, JsonValue, A>,
+				(outcome) => ({ ...found, state: { ...state, outcome } }) as TaskRecord<JsonValue, JsonValue, A>,
 			);
 	}
 }

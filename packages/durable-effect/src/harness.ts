@@ -10,7 +10,6 @@ import {
 	type EntryId,
 	type HarnessInspection,
 	type HarnessOptions,
-	type HarnessSettings,
 	Harness as PiHarness,
 	type Report,
 	type SettledTask,
@@ -60,9 +59,9 @@ export class Harness extends Context.Service<Harness, Open>()("@gunta/pi-durable
 /** Options of `layer`. `R` is what `conversationCreated` needs: the Layer requires it. */
 export interface Options<R = never> {
 	/** Run policy shared by every conversation, or a function returning the current one; read at each use. */
-	readonly settings?: HarnessSettings | (() => HarnessSettings | undefined);
+	readonly settings?: HarnessOptions["settings"];
 	/** Open as a viewer of a session another process drives: nothing is recovered, and every write is refused. */
-	readonly readOnly?: boolean;
+	readonly readOnly?: HarnessOptions["readOnly"];
 	/**
 	 * Continue the work the last process left unfinished as soon as the harness is open (Pi's `resume()`). Default
 	 * true; never for a read-only harness. With false, work continues at the first call that asks for progress.
@@ -407,11 +406,14 @@ export function submission(
 	);
 }
 
+/** What Pi did with an abort of a submission: `aborted`, or what it found instead. */
+export type AbortSubmissionResult = Awaited<ReturnType<PiHarness["abortSubmission"]>>;
+
 /** Withdraws a queued submission; `not_found` for an unknown one, or one of another conversation than `conversationId`. */
 export function abortSubmission(
 	id: SubmissionId,
 	conversationId?: ConversationId,
-): Effect.Effect<"aborted" | "already_placed" | "settled" | "not_found", DurableError, Harness> {
+): Effect.Effect<AbortSubmissionResult, DurableError, Harness> {
 	return use((harness, context) => harness.abortSubmission(id, context, conversationId));
 }
 
@@ -452,8 +454,11 @@ export function waitForTaskOf<A>(
 	return Effect.flatMap(waitForTask(id), (stored) => Task.settled(task, stored));
 }
 
+/** What Pi did with an abort of a task: `marked`, or `terminal` when it had ended already. */
+export type AbortTaskResult = Awaited<ReturnType<PiHarness["abortTask"]>>;
+
 /** Marks a task aborted and lets its abort handler run; `terminal` when it had ended already. */
-export function abortTask(id: TaskId): Effect.Effect<"marked" | "terminal", DurableError, Harness> {
+export function abortTask(id: TaskId): Effect.Effect<AbortTaskResult, DurableError, Harness> {
 	return use((harness, context) => harness.abortTask(id, context));
 }
 

@@ -31,18 +31,19 @@ import {
 import { transformMessages } from "@earendil-works/pi-ai/api/transform-messages";
 import { Cause, Clock, Effect, Exit, FiberSet, type JsonSchema, Layer, Predicate, type Scope, Stream } from "effect";
 import { LanguageModel, Prompt, type Response, Tool, Toolkit } from "effect/ai";
+import type { ErrorReason } from "./request.ts";
 
 /** One chat model of an Effect-backed provider: what pi-ai needs to know about it. Unset fields use the defaults. */
 export interface EffectModel {
-	readonly id: string;
+	readonly id: Model<Api>["id"];
 	/** Display name. Default: `id`. */
-	readonly name?: string;
+	readonly name?: Model<Api>["name"];
 	/** The size of the model's context window in tokens; Pi compacts a conversation against it. */
-	readonly contextWindow: number;
+	readonly contextWindow: Model<Api>["contextWindow"];
 	/** The most output tokens one response may have. */
-	readonly maxTokens: number;
+	readonly maxTokens: Model<Api>["maxTokens"];
 	/** Whether the model reasons. Default: false. */
-	readonly reasoning?: boolean;
+	readonly reasoning?: Model<Api>["reasoning"];
 	/** What the model reads. Default: text only. */
 	readonly input?: Model<Api>["input"];
 	/** Prices per million tokens, for pi-ai's cost of each response. Default: free. */
@@ -413,7 +414,7 @@ class ResponseWriter {
 
 /** How a failed response ends in pi-ai: its stop reason and the text of `errorMessage`. */
 interface Failure {
-	readonly reason: "error" | "aborted";
+	readonly reason: ErrorReason;
 	readonly message: string;
 }
 
@@ -458,6 +459,6 @@ function toPiUsage(model: Model<Api>, usage: Response.Usage | undefined): Usage 
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 	};
 	if (usage?.outputTokens.reasoning !== undefined) result.reasoning = usage.outputTokens.reasoning;
-	calculateCost(model, result);
+	result.cost = calculateCost(model, result);
 	return result;
 }

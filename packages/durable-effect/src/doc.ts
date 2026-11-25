@@ -1,10 +1,10 @@
 // Documents in Effect: typed JSON state stored beside the transcript, changed in commits, its value an Effect Schema.
 
 import type { Context as ChordContext } from "@earendil-works/chord/context";
-import type { Draft, Op } from "@earendil-works/chord/delta";
+import type { Draft } from "@earendil-works/chord/delta";
 import type { JsonValue } from "@earendil-works/chord/json";
 import {
-	type CheckpointInfo,
+	type CommonDocDefinition,
 	type ConversationId,
 	type DocumentObserver,
 	type DocumentReader,
@@ -17,6 +17,7 @@ import {
 	type TaskId,
 	type WatchHandle,
 } from "@earendil-works/pi-durable";
+import type { StrictOmit } from "@gunta/pi-ai-effect";
 import { decodeUnknown, encode, type Issue, SchemaDecodeError } from "@gunta/pi-schema-effect";
 import { Effect, type Option, Predicate, type Schema, Stream } from "effect";
 import { call, step } from "./call.ts";
@@ -29,19 +30,18 @@ import * as Watch from "./watch.ts";
  */
 export type ValueSchema = Schema.ConstraintCodec<unknown, unknown, never, never>;
 
-/** What a singleton and a family definition share. The rest is Pi's: `scope`, and `history` and `fork`. */
-export interface Shared<S extends ValueSchema> {
-	/** The stored kind: part of the stored data, so never rename it. */
-	readonly kind: string;
-	/** A positive integer: the version of the stored shape. */
-	readonly version: number;
+/**
+ * What a singleton and a family definition share: Pi's `CommonDocDefinition` (`kind`, which is stored, so never rename
+ * it; `version`, a positive integer; `checkpointWhen`, required as in Pi: true stores the change as a complete base
+ * instead of a delta, which bounds replay), with the value as `schema` and `migrate` giving a value. The rest is Pi's:
+ * `scope`, and `history` and `fork`. A field Pi adds to its definitions is one here, and reaches Pi.
+ */
+export type Shared<S extends ValueSchema> = StrictOmit<CommonDocDefinition<JsonObject>, "initial" | "migrate"> & {
 	/** The value: encoded to JSON when written, decoded when read. */
 	readonly schema: S;
 	/** A value stored by an older `version`, as stored, to the current value; without it Pi refuses older data. */
 	readonly migrate?: (stored: JsonObject, fromVersion: number) => S["Type"];
-	/** Required, as in Pi: true stores this change as a complete base instead of a delta, which bounds replay. */
-	readonly checkpointWhen: (stored: Readonly<JsonObject>, ops: ReadonlyArray<Op>, info: CheckpointInfo) => boolean;
-}
+};
 
 /** The definition of a singleton document. `initial` is the value of a document that does not exist yet. */
 export type Definition<S extends ValueSchema, M extends DocumentSemantics> = Shared<S> &

@@ -92,7 +92,8 @@ const spans = new WeakMap<TelemetryContext, Tracer.AnySpan>();
  * its attributes as annotations; attributes, status and links describe a span and are dropped.
  */
 function parentHandle(adapter: Adapter, parent: Tracer.ExternalSpan | undefined): TelemetrySpan {
-	const handle: TelemetrySpan = {
+	// Every member, optional ones too: a capability pi-telemetry adds fails to compile here until it is decided.
+	const handle: Required<TelemetrySpan> = {
 		metrics: adapter.metrics,
 		propagation: adapter.propagation,
 		startSpan: (options, callback) => startSpan(adapter, parent, options, callback),
@@ -113,7 +114,8 @@ function parentHandle(adapter: Adapter, parent: Tracer.ExternalSpan | undefined)
  * span's status goes to `setStatus`, because only the owner of a span ends it.
  */
 function recordingHandle(adapter: Adapter, span: Tracer.Span, setStatus: (status: SpanStatus) => void): TelemetrySpan {
-	const handle: TelemetrySpan = {
+	// As in `parentHandle`: every member.
+	const handle: Required<TelemetrySpan> = {
 		metrics: adapter.metrics,
 		propagation: adapter.propagation,
 		startSpan: (options, callback) => startSpan(adapter, span, options, callback),
@@ -209,15 +211,20 @@ function toLinks(links: readonly SpanLink[]): Tracer.SpanLink[] {
 }
 
 /**
- * What a Pi `error` status is in the exit of its Effect span: Pi's error name and message, which Effect's exporters
- * report as the exception's type and message, or `undefined` when Pi gave no detail.
+ * What a Pi `error` status is in the exit of its Effect span: Pi's error detail, its name and message, which Effect's
+ * exporters report as the exception's type and message, or `undefined` when Pi gave no detail.
  */
-type PiSpanFailure = { readonly name: string; readonly message: string } | undefined;
+type PiSpanFailure = Extract<SpanStatus, { status: "error" }>["error"];
 
 /** A Pi status as the exit an Effect span ends with, detached from the caller's object. */
 function toExit(status: SpanStatus): Exit.Exit<void, PiSpanFailure> {
-	if (status.status === "ok") return Exit.void;
-	return Exit.fail(status.error && { name: status.error.name, message: status.error.message });
+	switch (status.status) {
+		case "ok":
+			return Exit.void;
+		case "error":
+			// Copied field by field: the caller may pass an `Error`, whose `message` a spread would not copy.
+			return Exit.fail(status.error && { name: status.error.name, message: status.error.message });
+	}
 }
 
 /**

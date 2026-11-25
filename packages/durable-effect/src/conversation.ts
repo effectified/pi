@@ -21,18 +21,20 @@ import type {
 	TaskId,
 	UserInput,
 } from "@earendil-works/pi-durable";
-import { Effect, Option, Predicate, Schema, type Stream } from "effect";
+import type { StrictOmit } from "@gunta/pi-ai-effect";
+import { Effect, Option, Predicate, type Stream } from "effect";
 import * as Agent from "./agent.ts";
 import { call } from "./call.ts";
 import * as Entries from "./entries.ts";
 import { type DurableError, UnexpectedError } from "./errors.ts";
+import * as Ids from "./id.ts";
 import { type Init as Created, creating } from "./init.ts";
 import * as Submission from "./submission.ts";
 import * as Tx from "./tx.ts";
 import * as Watch from "./watch.ts";
 
 /** The options of an input besides its content: `requestId`, `whenBusy`, `whenIdle`, `onAbort`, `entry`, `notify`. */
-export type PromptOptions = Omit<InputSubmissionDraft, "type" | "content">;
+export type PromptOptions = StrictOmit<InputSubmissionDraft, "type" | "content">;
 
 /** Where a fork starts, who owns it, what it runs with, and what it gets in the commit that creates it. */
 export interface ForkOptions<E = never, R = never> {
@@ -52,10 +54,10 @@ export type Init<E = never, R = never> = Created<E, R>;
 export type EntriesQuery = Entries.EntriesQuery;
 
 /**
- * The schema of a conversation id, for a document or a task state that keeps one. Pi brands ids in the type system
- * only, which a schema cannot express: at run time a conversation id is the number stored.
+ * The schema of a conversation id, for a document, a task state or a wire that keeps one: the number Pi stores, typed
+ * with Pi's brand.
  */
-export const Id = Schema.Number as unknown as Schema.Codec<ConversationId, number>;
+export const Id = Ids.conversation;
 
 /** A handle for one conversation: a plain object of Effects, bound to its harness. Compare handles by `id`. */
 export interface Conversation {

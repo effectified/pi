@@ -2,6 +2,7 @@
 
 import { MemoryStorage, type Storage as PiStorage } from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
+import type { StrictOmit } from "@gunta/pi-ai-effect";
 import { Context, Effect, Layer, type Scope } from "effect";
 import type { SqlClient } from "effect/sql/SqlClient";
 import { call } from "./call.ts";
@@ -57,14 +58,15 @@ function scoped<E, R>(open: Effect.Effect<PiStorage, E, R>): Effect.Effect<PiSto
 
 /**
  * `storage` with a `close` that reaches it once: a harness closes its storage, and so does the scope that opened it,
- * while a Pi storage may reject a second close. The methods are bound once, so a call costs nothing more.
+ * while a Pi storage may reject a second close. The methods are bound once, so a call costs nothing more. Every
+ * method of Pi's `Storage` is forwarded by name, the optional `publishing` only when the storage has it: a method Pi
+ * adds fails to compile here until it is forwarded.
  */
 function closeOnce(storage: PiStorage): PiStorage {
 	let closing: Promise<void> | undefined;
 	const publishing = storage.publishing?.bind(storage);
-	return {
+	const forwarded = {
 		commit: storage.commit.bind(storage),
-		...(publishing === undefined ? {} : { publishing }),
 		mintId: storage.mintId.bind(storage),
 		conversation: storage.conversation.bind(storage),
 		scanConversations: storage.scanConversations.bind(storage),
@@ -83,5 +85,6 @@ function closeOnce(storage: PiStorage): PiStorage {
 			closing ??= storage.close(context);
 			return closing;
 		},
-	};
+	} satisfies StrictOmit<Required<PiStorage>, "publishing">;
+	return publishing === undefined ? forwarded : { ...forwarded, publishing };
 }

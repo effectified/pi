@@ -49,6 +49,13 @@ the packages and their state are in `effect/COMPAT.md`; the first consumer's bin
   with `runTest` of `@gunta/pi-ai-effect/testing`: a scope, the test clock and the test console, on both lanes.
   `runLive` is for a test of real processes or files. `schema-effect` and `telemetry-effect`, which do not depend
   on it, keep `Effect.runPromise`.
+- What Pi defines is not written a second time. A type comes from Pi's (`Pick`, `Extract`, indexed access, a mapped
+  type), a choice over a Pi union is exhaustive where it is written (`satisfies Record<Union, ...>`, a `switch`
+  with a declared return type, `absurd`), and what must stay hand-written (a Schema that mirrors a Pi type, the
+  list of methods a facade wraps) is asserted in the package's `test/pi-conformance.ts` with the helper
+  `effect/conformance.ts`, our side first, so that a change of Pi fails `npm run check` and names what moved.
+  The facades export the shared forms (`Task.ended`, `Submission.settled`, `ANSWERED`, `TOKEN_KINDS`, the id
+  schemas, `Agent.ByName`): a plugin uses them and restates nothing.
 - No test waits on the real clock. Time passes with `TestClock.adjust`; a forked fiber is started with
   `Effect.forkChild(effect, { startImmediately: true })` or awaited with a `Latch` or a `Deferred`, never with a
   short sleep.
