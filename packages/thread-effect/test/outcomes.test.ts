@@ -178,7 +178,9 @@ describe("an outcome sink that fails", () => {
 	it("is asked again on the product's schedule with the same event, and the thread does not wait for it", async () => {
 		const state = outside();
 		const labs = providers({ author: [answer("It is 42.")], reviewer: [CLEAN] });
-		state.told.failing = 3;
+		// The sink fails every call while the thread works, however long that takes on the machine of the run: a
+		// count of failures would be used up on a slow one, and the sink would have taken an event by then.
+		state.told.failing = Number.POSITIVE_INFINITY;
 		const result = await run(
 			state,
 			labs,
@@ -186,18 +188,25 @@ describe("an outcome sink that fails", () => {
 				const threads = yield* Threads.Threads;
 				// The sink takes nothing yet: the thread works to its end all the same.
 				const outcome = yield* threads.work(work("t1", "What is six times seven?"));
-				const before = state.told.events.length;
+				const before = { taken: state.told.events.length, calls: state.told.calls };
+				// From here on it fails three more calls, and takes what it is offered after them.
+				state.told.failing = 3;
 				return { outcome: outcome._tag, before, events: yield* told(state, reached("Reviewed")) };
 			}),
 			{ outcomes: { retry: Schedule.spaced("5 millis") } },
 		);
 		expect(result.outcome).toBe("Reviewed");
-		expect(result.before).toBe(0);
+		expect(result.before.taken).toBe(0);
 		expect(result.events.map(said)).toEqual(["Started", "Reviewed"]);
-		// Three calls failed, two were taken: an event is offered until it is taken, and the next one only then.
+		// Every call during the work failed and three after it, then two were taken: an event is offered until it is
+		// taken, and the next one only then.
 		const [started, ended] = result.events.map((event) => event.id);
-		expect(state.told.calls).toBe(5);
-		expect(state.told.offered.map((event) => event.id)).toEqual([started, started, started, started, ended]);
+		const failed = result.before.calls + 3;
+		expect(state.told.calls).toBe(failed + 2);
+		expect(state.told.offered.map((event) => event.id)).toEqual([
+			...Array.from({ length: failed + 1 }, () => started),
+			ended,
+		]);
 		// An event that is offered again is the same value: the id, and the content under it.
 		for (const event of result.events) {
 			const copies = state.told.offered.filter((other) => other.id === event.id);
