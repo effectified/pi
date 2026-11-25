@@ -12,8 +12,8 @@ The goal of the PRD (section 4): PatentOS deletes its hand-written agent loop
 | | Where | State |
 |---|---|---|
 | The packages | This repository, branch `effect`, committed, not pushed | `npm run check` passes; the suites pass on Node and on Bun (versions and counts in `COMPAT.md`) |
-| The binding | PatentOS, branches `build/s0-foundations` and `main`, from commit `15c7a11` on | Merged. PatentOS's gate `bun run check:all` passed on `efac708` (4,376 tests) |
-| The worktree to change it in | `/Volumes/Banana/GitHub/gunta/patentos-build-run/pi-effect-wt2`, branch `pi-effect/agent-thread-on-56fd828` | Level with `efac708` |
+| The binding | PatentOS, branches `build/s0-foundations` and `main`, from commit `15c7a11` on | Merged. PatentOS's gate `bun run check:all` passed on `8ef540f` (4,598 tests) |
+| The worktree to change it in | `/Volumes/Banana/GitHub/gunta/patentos-build-run/pi-effect-wt2`, branch `pi-effect/agent-thread-on-56fd828` | Level with `8ef540f` |
 
 PatentOS's shared checkout (`/Volumes/Banana/GitHub/gunta/patentos`) is never edited for this work: other
 sessions keep uncommitted files there. Section 7 says how a commit lands on it.
@@ -94,6 +94,10 @@ In PatentOS (fake providers everywhere; engines, actors, forks and kills are rea
   apart, a cancel mid-request (`apps/node-compute/test/threads.rivet.test.ts`).
 - RivetKit's `process.exit(1)` after a failed engine start no longer ends the edition
   (`packages/compute/test/rivet.exit.test.ts`).
+- A thread taken up after its host was killed is not stranded by its caller's polling. The restart test found it:
+  the wake keeper of `pi-durable-rivet-effect` cancelled a wake whose time had come at the next call to the actor,
+  and PatentOS asks a working thread's actor every 250 ms. Fixed here in `63ed08b30`; the case failed 4 of about
+  26 runs before and 0 of 22 after, with the other engine tests alongside.
 
 Here (scripted models; real engine, real host processes):
 
@@ -125,6 +129,15 @@ Here (scripted models; real engine, real host processes):
   machines, a network partition, engine upgrades, the engine tests on Linux.
 - Swarms across a restart of the edition; two editions started at once on one directory.
 - A real Spend context that grants one lease per fork holder.
+
+**Found and not ours to fix**
+
+- After a hard kill of the edition, the journal stream of a thread can stop for good: an event the Agents context
+  took just before the kill is not copied into the journal after the boot, nor anything after it in that stream.
+  It makes `agent-thread.restart.test.ts` red about one run in seventeen beside the other engine tests (the case at
+  ledger.sealed), with compute's work done and every command accepted. It is PatentOS's host (the journal
+  projection); the evidence is in `patentos-build-run/build-run.md` and
+  `patentos-build-run/logs/pi-effect-restart-journal-stall.log`.
 
 **Known limits**
 
