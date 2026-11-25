@@ -12,8 +12,8 @@ The goal of the PRD (section 4): PatentOS deletes its hand-written agent loop
 | | Where | State |
 |---|---|---|
 | The packages | This repository, branch `effect`, pushed to `origin` | Synced with upstream Pi 1.6.1. `npm run check` passes; the suites pass on Node and on Bun (versions and counts in `COMPAT.md`) |
-| The binding | PatentOS, branches `build/s0-foundations` and `main`, from commit `15c7a11` on | Merged and pushed. PatentOS's gate `bun run check:all` passed on `3bb32e9` (4,689 tests) |
-| The worktree to change it in | `/Volumes/Banana/GitHub/gunta/patentos-build-run/pi-effect-wt2`, branch `pi-effect/agent-thread-on-56fd828` | Level with `3bb32e9` |
+| The binding | PatentOS, branches `build/s0-foundations` and `main`, from commit `15c7a11` on | Merged and pushed. PatentOS's gate `bun run check:all` passed on `0bc8147` (4,715 tests) |
+| The worktree to change it in | `/Volumes/Banana/GitHub/gunta/patentos-build-run/pi-effect-wt2`, branch `pi-effect/agent-thread-on-56fd828` | Level with `0bc8147` |
 
 PatentOS's shared checkout (`/Volumes/Banana/GitHub/gunta/patentos`) is never edited for this work: other
 sessions keep uncommitted files there. Section 7 says how a commit lands on it.
@@ -106,7 +106,9 @@ In PatentOS (fake providers everywhere; engines, actors, forks and kills are rea
   Fixed in PatentOS's local host (`741e94f`: leases found when the file is opened are removed and their drains
   run), with a test that kills a process inside a projection's run and inside a reaction
   (`apps/node-domain/test/local-objects.restart.test.ts`). The restart test then passed 11 runs of 11 beside the
-  other engine tests: few runs, so the proof is the host's own test, which was red before.
+  other engine tests: few runs, so the proof is the host's own test, which was red before. (That test first read
+  the SQLite file while its process still made its tables, which ended the process once in four gate runs; fixed
+  in `0bc8147`.)
 
 Here (scripted models; real engine, real host processes):
 
@@ -183,6 +185,9 @@ PatentOS's `ExitGuard.ts` and most of its `LocalEngine.ts` can go.
   "Addition" in `build-run.md` tells that root what landed.
 - A test that boots the edition can pass on the committed head and fail in the shared tree because of another
   lane's unfinished work there. Judge a commit in the worktree.
+- The gate is red by other causes when the machine is loaded (the UI grid benchmark above load 25, tests that run
+  into their own time limits, the auditor export about one run in five on 2026-11-26). Read which file failed
+  before suspecting the commit, run again, and land only on a green run on the tip the swap is made against.
 - `patentos-db-bench/run-all.sh` runs `pkill rivet-engine` machine-wide. The host retries a start whose engine
   was stopped; a test whose engine dies later fails that run and is run again.
 - A push to this fork's `main` (a sync) starts upstream's own workflows in the fork. The ones that publish or need

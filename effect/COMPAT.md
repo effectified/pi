@@ -23,7 +23,9 @@ The first run of the package tests on Linux (after the sync) passed the Bun lane
 Node, and found two faults of the local engine start of `durable-rivet-effect` there: the engine's Linux binary
 says "Address in use" where macOS says "Address already in use", and an engine that ended at once has no command
 line in the process list. A start on a taken port then waited rivetkit's whole minute. Both are fixed and were
-reproduced and checked in a Linux container (Node 22, arm64).
+reproduced and checked in a Linux container (Node 22, arm64). The next run found one test of `thread-effect` that
+depended on the machine's speed (the failing outcome sink); it no longer does. On `135b6a18a` the `check` job passed
+whole on Linux: upstream's check, and every package's tests on Node 22 and on Bun.
 
 `./test.sh` exits 1 on this machine: three tests of upstream's `packages/coding-agent` fail (`exec`, `mcp-command`,
 `output-file-failures`), and the same three fail on an untouched copy of `main` at `f8149d1ab` in the same
