@@ -65,9 +65,10 @@ describe("RouteEvents", () => {
 			Effect.gen(function* () {
 				const events = yield* RouteEvents;
 				yield* events.publish(event(1));
-				const fiber = yield* Effect.forkChild(Stream.runCollect(Stream.take(events.stream, 2)));
-				// Real time, so the forked Stream has subscribed before the next event is published.
-				yield* Effect.sleep("5 millis");
+				// Started at once, the Stream has subscribed when the fork returns.
+				const fiber = yield* Effect.forkChild(Stream.runCollect(Stream.take(events.stream, 2)), {
+					startImmediately: true,
+				});
 				yield* events.publish(event(2));
 				yield* events.publish(event(3));
 				return yield* Fiber.join(fiber);
@@ -85,8 +86,7 @@ describe("RouteEvents", () => {
 					const events = Context.get(services, RouteEvents);
 					const subscribed = yield* events.subscribe;
 					yield* events.publish(event(1));
-					const fiber = yield* Effect.forkChild(Stream.runCollect(subscribed));
-					yield* Effect.sleep("5 millis");
+					const fiber = yield* Effect.forkChild(Stream.runCollect(subscribed), { startImmediately: true });
 					yield* Scope.close(hub, Exit.void);
 					return yield* Fiber.join(fiber);
 				}),

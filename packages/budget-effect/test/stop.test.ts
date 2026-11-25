@@ -1,7 +1,9 @@
 import type { Usage } from "@earendil-works/pi-ai";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { type Conversation, Extension, Harness, Registry, Tool } from "@gunta/pi-durable-effect";
 import { answer, held, ScriptedModels, toolCall } from "@gunta/pi-durable-effect/testing";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { continueStopped, refusalOf, stopOf } from "../src/index.ts";
 import {
@@ -33,10 +35,11 @@ const App = Extension.make({ name: "app", tools: [Lookup] });
 /** Pi's attempt retries are on, with no wait to speak of: a refusal must end the run all the same. */
 const RETRYING = { settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } } };
 
+/** The budgeted harness of this file, with `App` and Pi's retries on. */
+const harness = () => budgetedHarness({ registry: Layer.orDie(Registry.layer([App])), harness: RETRYING });
+
 const run = <A, E>(body: Effect.Effect<A, E, Harness.Harness | Budgeted>) =>
-	Effect.runPromise(
-		Effect.provide(body, budgetedHarness({ registry: Layer.orDie(Registry.layer([App])), harness: RETRYING })),
-	);
+	Effect.runPromise(Effect.provide(body, harness()));
 
 /** The kinds of a conversation's entries, oldest first, and for each assistant entry how it ended. */
 const transcript = (conversation: Conversation.Conversation) =>
@@ -160,7 +163,7 @@ describe("a run that is aborted", () => {
 
 describe("a run on a fenced lease", () => {
 	it("stops with a typed reason, is not retried, loses nothing, and answers when continued", () =>
-		run(
+		runTest(
 			Effect.gen(function* () {
 				const scripted = yield* ScriptedModels;
 				const lease = yield* TestLease;
@@ -179,7 +182,8 @@ describe("a run on a fenced lease", () => {
 				expect(yield* stopOf(root.id)).toEqual(Option.some({ refusal: fenced, inputs: [settled.id] }));
 
 				// Nothing was retried on the dead lease: one refused reservation, and the provider saw one request.
-				yield* Effect.sleep("50 millis");
+				// An hour passes Pi's every retry delay.
+				yield* TestClock.adjust("1 hour");
 				yield* root.waitForIdle;
 				expect(lease.steps.map(({ step }) => step)).toEqual(["reserve", "settle", "fenced"]);
 				expect(yield* scripted.callCount).toBe(1);
@@ -204,7 +208,7 @@ describe("a run on a fenced lease", () => {
 				expect(yield* scripted.callCount).toBe(2);
 				expect(lease.steps.map(({ step }) => step)).toEqual(["reserve", "settle", "fenced", "reserve", "settle"]);
 				expect(yield* stopOf(root.id)).toEqual(Option.none());
-			}),
+			}).pipe(Effect.provide(harness())),
 		));
 
 	it("stops a run whose first request is refused, and reads no stop from another failure", () =>

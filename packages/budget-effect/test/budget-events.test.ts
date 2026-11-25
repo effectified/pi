@@ -41,8 +41,10 @@ describe("BudgetEvents", () => {
 		Effect.runPromise(
 			Effect.gen(function* () {
 				const hub = yield* BudgetEvents;
-				const reader = yield* Effect.forkChild(Stream.runCollect(Stream.take(hub.stream, 1)));
-				yield* Effect.sleep("10 millis");
+				// Started at once, the reader subscribes before the fork returns.
+				const reader = yield* Effect.forkChild(Stream.runCollect(Stream.take(hub.stream, 1)), {
+					startImmediately: true,
+				});
 				yield* hub.publish(EVENTS[2] as BudgetEvent);
 				expect(yield* Fiber.join(reader)).toEqual([EVENTS[2]]);
 			}).pipe(Effect.provide(BudgetEvents.layer)),

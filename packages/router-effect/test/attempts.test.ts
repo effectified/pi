@@ -9,7 +9,8 @@ import {
 	isRetryableAssistantError,
 	type ProviderResponse,
 } from "@earendil-works/pi-ai";
-import { Deferred, Effect, Exit, Fiber } from "effect";
+import { runTest } from "@gunta/pi-ai-effect/testing";
+import { Deferred, Effect, Exit, Fiber, Latch } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { type AttemptServices, type RoutedRequest, serve } from "../src/attempts.ts";
@@ -21,32 +22,20 @@ import {
 	type Route,
 	type RouteEvent,
 } from "../src/index.ts";
-import {
-	context,
-	failing,
-	hanging,
-	label,
-	PRICE,
-	realTick,
-	recording,
-	route,
-	scripted,
-	summary,
-	until,
-} from "./scripted.ts";
+import { context, failing, hanging, label, PRICE, recording, route, scripted, summary } from "./scripted.ts";
 
 /** The services of a router over `handles`, with a recording event hub. Every key has four slots unless given. */
 const setup = Effect.fnUntraced(function* (handles: FauxProviderHandle[], options: LimiterOptions = { limits: {} }) {
 	const models = createModels();
 	for (const handle of handles) models.setProvider(handle.provider);
-	const { seen, events } = recording();
+	const { seen, events, when } = recording();
 	const limits = {
 		...Object.fromEntries(handles.map((handle) => [handle.provider.id, { maxInFlight: 4 }])),
 		...options.limits,
 	};
 	const limiter = yield* Limiter.make({ ...options, limits });
 	const services: AttemptServices = { router: "router", models, limiter, events };
-	return { services, seen, models };
+	return { services, seen, when, models };
 });
 
 /** Request 1 to alias `fast` over `routes`; what the caller sees goes to `emitted`. */
@@ -413,9 +402,9 @@ describe("serve", () => {
 		a.setResponses([failing("429 Too Many Requests")]);
 		b.setResponses([fauxAssistantMessage("Hello world")]);
 		const started = performance.now();
-		const result = await Effect.runPromise(
+		const result = await runTest(
 			Effect.gen(function* () {
-				const { services, seen } = yield* setup([a, b], {
+				const { services, seen, when } = yield* setup([a, b], {
 					limits: { shared: { maxInFlight: 2 } },
 					backoff: { baseMillis: 1_000, maxMillis: 60_000 },
 				});
@@ -424,14 +413,13 @@ describe("serve", () => {
 					route("b", { concurrencyKey: "shared" }),
 				] as const;
 				const fiber = yield* Effect.forkChild(serve(services, request(routes)));
-				yield* until(() => seen.length === 1);
+				yield* when(() => seen.length === 1);
 				yield* TestClock.adjust("999 millis");
-				yield* realTick;
 				const early = b.state.callCount;
 				yield* TestClock.adjust("1 millis");
 				const message = yield* Fiber.join(fiber);
 				return { early, message, seen };
-			}).pipe(Effect.provide(TestClock.layer())),
+			}),
 		);
 		expect(result.early).toBe(0);
 		expect(result.message.provider).toBe("b");
@@ -457,20 +445,20 @@ describe("serve", () => {
 		]);
 		b.setResponses([fauxAssistantMessage("Hello world")]);
 		const reported: ProviderResponse[] = [];
-		const waited = await Effect.runPromise(
+		const waited = await runTest(
 			Effect.gen(function* () {
-				const { services, seen } = yield* setup([a, b], { limits: { shared: { maxInFlight: 2 } } });
+				const { services, seen, when } = yield* setup([a, b], { limits: { shared: { maxInFlight: 2 } } });
 				const routes = [
 					route("a", { concurrencyKey: "shared" }),
 					route("b", { concurrencyKey: "shared" }),
 				] as const;
 				const options = { onResponse: (response: ProviderResponse) => void reported.push(response) };
 				const fiber = yield* Effect.forkChild(serve(services, request(routes, [], options)));
-				yield* until(() => seen.length === 1);
+				yield* when(() => seen.length === 1);
 				yield* TestClock.adjust("7 seconds");
 				yield* Fiber.join(fiber);
 				return seen.map((event) => event.waitedMillis);
-			}).pipe(Effect.provide(TestClock.layer())),
+			}),
 		);
 		expect(waited).toEqual([0, 7_000]);
 		// The scripted provider reports 200 before each response; the first route then reported its refusal.
@@ -499,10 +487,13 @@ describe("serve", () => {
 	it("keeps at most maxInFlight requests of a key at the provider", async () => {
 		const a = scripted("a");
 		const gauge = { inFlight: 0, max: 0 };
+		// Every response is held until the key is full, so the seven requests meet at the limiter.
+		const full = Promise.withResolvers<void>();
 		const slow = async (): Promise<AssistantMessage> => {
 			gauge.inFlight += 1;
 			gauge.max = Math.max(gauge.max, gauge.inFlight);
-			await new Promise((resolve) => setTimeout(resolve, 5));
+			if (gauge.inFlight === 2) full.resolve();
+			await full.promise;
 			gauge.inFlight -= 1;
 			return fauxAssistantMessage("ok");
 		};
@@ -547,16 +538,16 @@ describe("serve", () => {
 
 	it("records an attempt that is interrupted while it waits for its key, with nothing sent", async () => {
 		const a = scripted("a");
-		const result = await Effect.runPromise(
+		const result = await runTest(
 			Effect.gen(function* () {
 				const { services, seen } = yield* setup([a]);
 				yield* services.limiter.backOff("a");
-				const fiber = yield* Effect.forkChild(serve(services, request([route("a")])));
-				yield* realTick;
+				// Started at once, it is waiting for its key when the fork returns.
+				const fiber = yield* Effect.forkChild(serve(services, request([route("a")])), { startImmediately: true });
 				yield* TestClock.adjust("400 millis");
 				yield* Fiber.interrupt(fiber);
 				return seen.map((event) => [event.outcome, event.waitedMillis, event.durationMillis]);
-			}).pipe(Effect.provide(TestClock.layer())),
+			}),
 		);
 		expect(result).toEqual([["aborted", 400, 0]]);
 		expect(a.state.callCount).toBe(0);
@@ -595,8 +586,8 @@ describe("serve, with the product's settlement of the attempts another route tak
 				Effect.gen(function* () {
 					log.push(`port: settle #${event.attempt}`);
 					handed.push(event);
-					// A port that takes its time, as a lease does: the router waits for it.
-					yield* Effect.sleep("5 millis");
+					// A port that is asynchronous, as a lease is: the router waits for it.
+					yield* Effect.yieldNow;
 					log.push(`port: settled #${event.attempt}`);
 				}),
 		};
@@ -836,14 +827,15 @@ describe("serve, with the product's settlement of the attempts another route tak
 		const b = scripted("b");
 		a.setResponses([failing("overloaded")]);
 		b.setResponses([fauxAssistantMessage("Hello world")]);
-		const state = { entered: false, settled: false };
-		const result = await Effect.runPromise(
+		const state = { settled: false };
+		const result = await runTest(
 			Effect.gen(function* () {
 				const ledger = yield* Deferred.make<void>();
+				const entered = yield* Latch.make();
 				const port: AttemptSettlementService = {
 					settle: () =>
 						Effect.gen(function* () {
-							state.entered = true;
+							yield* entered.open;
 							yield* Deferred.await(ledger);
 							state.settled = true;
 						}),
@@ -852,10 +844,11 @@ describe("serve, with the product's settlement of the attempts another route tak
 				const fiber = yield* Effect.forkChild(
 					serve(services, request([route("a"), route("b")])).pipe(Effect.provideService(AttemptSettlement, port)),
 				);
-				yield* until(() => state.entered);
-				// The interruption waits for the fiber, so it is asked for from a fiber of its own.
-				const interruption = yield* Effect.forkChild(Fiber.interrupt(fiber));
-				yield* realTick;
+				yield* entered.await;
+				// The interruption waits for the fiber, so it is asked for from a fiber of its own. Started at once,
+				// it has reached the fiber when the fork returns; one turn of the scheduler lets the fiber react.
+				const interruption = yield* Effect.forkChild(Fiber.interrupt(fiber), { startImmediately: true });
+				yield* Effect.yieldNow;
 				const meanwhile = {
 					settled: state.settled,
 					ended: fiber.pollUnsafe() !== undefined,
@@ -864,7 +857,7 @@ describe("serve, with the product's settlement of the attempts another route tak
 				yield* Deferred.succeed(ledger, undefined);
 				yield* Fiber.join(interruption);
 				return { meanwhile, exit: yield* Fiber.await(fiber), seen };
-			}).pipe(Effect.provide(TestClock.layer())),
+			}),
 		);
 		// The caller's interruption waits for the port: nothing is recorded and nothing ends before it has settled.
 		expect(result.meanwhile).toEqual({ settled: false, ended: false, recorded: 0 });

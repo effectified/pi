@@ -16,7 +16,7 @@ import {
 	waitForHoldEnd,
 	waitOf,
 } from "../src/index.ts";
-import { AUTHOR, ask, findings, PARTIES, POLICY, reached, scene, tick, transcript } from "./scene.ts";
+import { AUTHOR, ask, findings, PARTIES, POLICY, reached, scene, transcript } from "./scene.ts";
 
 const WRONG: Finding = { severity: "block", text: "Six times seven is 42." };
 
@@ -380,7 +380,7 @@ describe("state", () => {
 			Effect.gen(function* () {
 				const { root, submission } = yield* ask();
 				yield* submission.wait;
-				yield* tick;
+				yield* root.waitForIdle;
 				return yield* state(root);
 			}).pipe(Effect.provide(clean.layer)),
 		);

@@ -1,7 +1,9 @@
 import { complete, type Models } from "@gunta/pi-ai-effect";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Harness } from "@gunta/pi-durable-effect";
 import { answer, ScriptedModels } from "@gunta/pi-durable-effect/testing";
 import { Effect, Layer, Option } from "effect";
+import type { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import {
 	type BudgetEvents,
@@ -24,8 +26,8 @@ const BACKUP_PRICE = { input: 1_000_000, output: 5_000_000, cacheRead: 100_000, 
  * Runs a test body on a budgeted harness whose table also lists the backup. A harness, because a spend that names a
  * session waits for the shares to be attached to one, as a request does.
  */
-const run = <A, E>(body: Effect.Effect<A, E, Harness.Harness | Budgeted>) =>
-	Effect.runPromise(Effect.provide(body, budgetedHarness({ prices: [{ ...BACKUP, ...BACKUP_PRICE }] })));
+const run = <A, E>(body: Effect.Effect<A, E, Harness.Harness | Budgeted | TestClock.TestClock>) =>
+	runTest(Effect.provide(body, budgetedHarness({ prices: [{ ...BACKUP, ...BACKUP_PRICE }] })));
 
 /**
  * The attempts of one request of a router, as plain data: the fields of its route events a product reads. The first

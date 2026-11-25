@@ -4,7 +4,8 @@ import type { Usage } from "@earendil-works/pi-ai";
 import type { Models } from "@gunta/pi-ai-effect";
 import { type Conversation, type DurableError, Harness, Registry, Storage } from "@gunta/pi-durable-effect";
 import { ScriptedModels } from "@gunta/pi-durable-effect/testing";
-import { Context, Duration, Effect, Layer, Option, Stream } from "effect";
+import { Context, Effect, Fiber, Latch, Layer, Option, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import {
 	type BudgetEvent,
 	BudgetEvents,
@@ -37,6 +38,8 @@ export interface TestLeaseState {
 	broken: Error | undefined;
 	/** While set, every settle is recorded and then dies with this defect. */
 	brokenSettle: Error | undefined;
+	/** Succeeds once `holds` is true, asked now and after every reserve, refusal and settle. */
+	readonly when: (holds: () => boolean) => Effect.Effect<void>;
 }
 
 /** The in-memory lease of a test: tokens `r1`, `r2`, and so on, in the order they were reserved. */
@@ -44,7 +47,24 @@ export class TestLease extends Context.Service<TestLease, TestLeaseState>()("tes
 	/** A fresh lease, as the `Lease` the budget draws on and as the record a test reads. */
 	static readonly layer: Layer.Layer<TestLease | Lease> = Layer.effectContext(
 		Effect.sync(() => {
-			const state: TestLeaseState = { steps: [], fenced: undefined, broken: undefined, brokenSettle: undefined };
+			const waits: Array<{ readonly holds: () => boolean; readonly latch: Latch.Latch }> = [];
+			const stepped = () => {
+				for (const wait of waits) if (wait.holds()) wait.latch.openUnsafe();
+			};
+			const when = (holds: () => boolean) =>
+				Effect.suspend(() => {
+					if (holds()) return Effect.void;
+					const latch = Latch.makeUnsafe();
+					waits.push({ holds, latch });
+					return latch.await;
+				});
+			const state: TestLeaseState = {
+				steps: [],
+				fenced: undefined,
+				broken: undefined,
+				brokenSettle: undefined,
+				when,
+			};
 			let reservations = 0;
 			return Context.make(TestLease, state).pipe(
 				Context.add(Lease, {
@@ -53,16 +73,19 @@ export class TestLease extends Context.Service<TestLease, TestLeaseState>()("tes
 							if (state.broken !== undefined) return Effect.die(state.broken);
 							if (state.fenced !== undefined) {
 								state.steps.push({ step: "fenced", reason: state.fenced });
+								stepped();
 								return Effect.fail(new LeaseFenced({ reason: state.fenced }));
 							}
 							reservations += 1;
 							const token = `r${reservations}`;
 							state.steps.push({ step: "reserve", token, estimate, request });
+							stepped();
 							return Effect.succeed(token);
 						}),
 					settle: (token, settlement) =>
 						Effect.suspend(() => {
 							state.steps.push({ step: "settle", token, settlement });
+							stepped();
 							return state.brokenSettle === undefined ? Effect.void : Effect.die(state.brokenSettle);
 						}),
 				}),
@@ -161,18 +184,22 @@ export const root: Effect.Effect<Conversation.Conversation, DurableError, Harnes
 
 /**
  * Runs `effect` and gives, beside its value, the `count` budget events published meanwhile, in order. Fails when a
- * further event arrives within a moment: the count is exact.
+ * further event arrives within an hour of the test clock: the count is exact.
  */
 export function withEvents<A, E, R>(
 	count: number,
 	effect: Effect.Effect<A, E, R>,
-): Effect.Effect<readonly [A, ReadonlyArray<BudgetEvent>], E, R | BudgetEvents> {
+): Effect.Effect<readonly [A, ReadonlyArray<BudgetEvent>], E, R | BudgetEvents | TestClock.TestClock> {
 	return Effect.scoped(
 		Effect.gen(function* () {
 			const published = yield* BudgetEvents.use((hub) => hub.subscribe);
 			const value = yield* effect;
 			const events = yield* Stream.runCollect(Stream.take(published, count));
-			const extra = yield* Effect.timeoutOption(Stream.runHead(published), Duration.millis(20));
+			const further = yield* Effect.forkChild(Effect.timeoutOption(Stream.runHead(published), "1 hour"), {
+				startImmediately: true,
+			});
+			yield* TestClock.adjust("1 hour");
+			const extra = yield* Fiber.join(further);
 			if (Option.isSome(Option.flatten(extra)))
 				return yield* Effect.die(new Error(`More than ${count} budget events`));
 			return [value, events] as const;

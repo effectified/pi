@@ -4,7 +4,7 @@
 
 import { Tool } from "@gunta/pi-durable-effect";
 import { answer, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
-import { Context, Effect, Layer, Option, Queue, Schema, Stream } from "effect";
+import { Context, Effect, Latch, Layer, Option, Queue, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Approvals from "../src/index.ts";
 
@@ -91,6 +91,7 @@ describe("the README", () => {
 		// A registry with `Approvals.extension(policy)` requires `Limits` and `Approvals.Inbox`.
 		// README: end
 		const inbox: Approvals.Request[] = [];
+		const asked = Latch.makeUnsafe();
 		const sent: string[] = [];
 		const Counted = Tool.make("transfer", {
 			description: "Transfer money to someone.",
@@ -107,7 +108,13 @@ describe("the README", () => {
 			],
 		}).pipe(
 			Layer.provide(
-				Layer.succeed(Approvals.Inbox, { publish: (request) => Effect.sync(() => void inbox.push(request)) }),
+				Layer.succeed(Approvals.Inbox, {
+					publish: (request) =>
+						Effect.sync(() => {
+							inbox.push(request);
+							asked.openUnsafe();
+						}),
+				}),
 			),
 			Layer.provide(Layer.succeed(Limits, { free: 100 })),
 		);
@@ -115,7 +122,7 @@ describe("the README", () => {
 			Effect.gen(function* () {
 				const root = yield* TestHarness.root;
 				yield* root.submit({ type: "input", content: "Send bob 10, then 250." });
-				while (inbox.length === 0) yield* Effect.sleep("1 millis");
+				yield* asked.await;
 				// README: pending
 				// Every request a decision can still reach, read from the harness storage: the same after a restart.
 				const open = yield* Approvals.pending;

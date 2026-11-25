@@ -2,7 +2,7 @@ import { answer, fauxAssistantMessage, fauxToolCall } from "@gunta/pi-durable-ef
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { approve, decide, pending } from "../src/index.ts";
-import { parked, scene, submit, tick } from "./scene.ts";
+import { parked, scene, submit } from "./scene.ts";
 
 /** One model turn with two `write` calls and a `read`, which needs no approval. */
 const THREE_CALLS = fauxAssistantMessage(
@@ -21,7 +21,7 @@ describe("pending", () => {
 	});
 
 	it("lists exactly the requests a decision can still reach, as the inbox was shown them, in task order", async () => {
-		const { written, published, layer, hold, release } = scene({ responses: [THREE_CALLS, answer("Done.")] });
+		const { written, published, layer, hold, release, when } = scene({ responses: [THREE_CALLS, answer("Done.")] });
 		hold();
 		const seen = await Effect.runPromise(
 			Effect.gen(function* () {
@@ -33,7 +33,7 @@ describe("pending", () => {
 				if (first === undefined || second === undefined) return yield* Effect.die("two requests were expected");
 				// Decided and still running: it is no longer pending, the other one is.
 				yield* decide(first, yield* approve(first, "ada"));
-				while (written.length === 0) yield* tick;
+				yield* when(() => written.length > 0);
 				const one = yield* pending;
 				yield* Effect.sync(release);
 				yield* decide(second, yield* approve(second, "ada"));

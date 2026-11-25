@@ -14,8 +14,9 @@ import {
 	type Usage,
 } from "@earendil-works/pi-ai";
 import { complete, ModelRequestError, Models, stream } from "@gunta/pi-ai-effect";
-import { fauxAssistantMessage, ScriptedModels } from "@gunta/pi-ai-effect/testing";
-import { Effect, Exit, Fiber, Layer, Option, Stream } from "effect";
+import { fauxAssistantMessage, runTest, ScriptedModels } from "@gunta/pi-ai-effect/testing";
+import { Effect, Exit, Fiber, Latch, Layer, Option, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { BudgetedModels, Estimator, type ModelPrice, Prices, refusalOf } from "../src/index.ts";
 import {
@@ -33,9 +34,9 @@ import {
 
 const HELLO = { messages: [{ role: "user" as const, content: "Hello", timestamp: 0 }] };
 
-/** Runs a test body on budgeted models over a scripted provider, whose table also lists `more`. */
-const run = <A, E>(body: Effect.Effect<A, E, Budgeted>, more: ReadonlyArray<ModelPrice> = []) =>
-	Effect.runPromise(Effect.provide(body, budgetedModels({ prices: more })));
+/** Runs a test body on budgeted models over a scripted provider, whose table also lists `more`, on the test clock. */
+const run = <A, E>(body: Effect.Effect<A, E, Budgeted | TestClock.TestClock>, more: ReadonlyArray<ModelPrice> = []) =>
+	runTest(Effect.provide(body, budgetedModels({ prices: more })));
 
 /** A chat model of a provider of this file. */
 const UNREACHABLE: Model<Api> = {
@@ -162,8 +163,11 @@ describe("a request that returns", () => {
 				const lease = yield* TestLease;
 				yield* scripted.setResponses([fauxAssistantMessage("Hi there")]);
 				// No harness is attached here: the budget cannot know the session's share yet, so nothing is sent.
-				const fiber = yield* Effect.forkChild(complete(scripted.model, HELLO, { sessionId: "session-1" }));
-				yield* Effect.sleep("20 millis");
+				const fiber = yield* Effect.forkChild(complete(scripted.model, HELLO, { sessionId: "session-1" }), {
+					startImmediately: true,
+				});
+				// No time releases it.
+				yield* TestClock.adjust("1 hour");
 				expect(lease.steps).toEqual([]);
 				expect(yield* scripted.callCount).toBe(0);
 				yield* Fiber.interrupt(fiber);
@@ -329,16 +333,18 @@ describe("a request that is given up", () => {
 				const lease = yield* TestLease;
 				const models = yield* Models;
 				const controller = new AbortController();
+				const sent = Latch.makeUnsafe();
 				yield* scripted.setResponses([
 					(_context, options) =>
 						new Promise<AssistantMessage>((resolve) => {
 							options?.signal?.addEventListener("abort", () => resolve(fauxAssistantMessage("Never")), {
 								once: true,
 							});
+							sent.openUnsafe();
 						}),
 				]);
 				const events = models.stream(scripted.model, HELLO, { signal: controller.signal });
-				yield* Effect.sleep("10 millis");
+				yield* sent.await;
 				expect(lease.steps.map(({ step }) => step)).toEqual(["reserve"]);
 				controller.abort();
 				const message = yield* Effect.promise(() => events.result());
@@ -381,6 +387,7 @@ describe("a request that is given up", () => {
 				const scripted = yield* ScriptedModels;
 				const lease = yield* TestLease;
 				let aborted = false;
+				const sent = Latch.makeUnsafe();
 				yield* scripted.setResponses([
 					(_context, options) =>
 						new Promise<AssistantMessage>((resolve) => {
@@ -392,14 +399,15 @@ describe("a request that is given up", () => {
 								},
 								{ once: true },
 							);
+							sent.openUnsafe();
 						}),
 				]);
 				const fiber = yield* Effect.forkChild(complete(scripted.model, HELLO));
-				yield* Effect.sleep("10 millis");
+				yield* sent.await;
 				expect(lease.steps.map(({ step }) => step)).toEqual(["reserve"]);
 				const exit = yield* Fiber.interrupt(fiber).pipe(Effect.andThen(Fiber.await(fiber)));
 				expect(Exit.hasInterrupts(exit)).toBe(true);
-				yield* Effect.sleep("10 millis");
+				yield* lease.when(() => lease.steps.length === 2);
 				expect(aborted).toBe(true);
 				expect(lease.steps.map(({ step }) => step)).toEqual(["reserve", "settle"]);
 				expect(lease.steps[1]).toMatchObject({ token: "r1", settlement: { cost: 0n, outcome: "aborted" } });
@@ -413,9 +421,15 @@ describe("a request that is given up", () => {
 					const scripted = yield* ScriptedModels;
 					const lease = yield* TestLease;
 					const models = yield* Models;
-					yield* scripted.setResponses([() => new Promise<AssistantMessage>(() => {})]);
+					const sent = Latch.makeUnsafe();
+					yield* scripted.setResponses([
+						() => {
+							sent.openUnsafe();
+							return new Promise<AssistantMessage>(() => {});
+						},
+					]);
 					const result = models.complete(scripted.model, HELLO);
-					yield* Effect.sleep("10 millis");
+					yield* sent.await;
 					expect(lease.steps.map(({ step }) => step)).toEqual(["reserve"]);
 					return { lease, result };
 				}).pipe(Effect.provide(budgetedModels()), Effect.scoped);
@@ -631,7 +645,8 @@ describe("the other provider requests", () => {
 				models.setProvider(relayProvider(scripted.model, "stalls"));
 				const controller = new AbortController();
 				const events = models.stream(UNREACHABLE, HELLO, { signal: controller.signal });
-				yield* Effect.sleep("10 millis");
+				// The response's start, with its usage, has passed the budget on its way to the caller.
+				yield* Effect.promise(() => events[Symbol.asyncIterator]().next());
 				controller.abort();
 				const message = yield* Effect.promise(() => events.result());
 				expect([message.stopReason, message.provider]).toEqual(["aborted", scripted.model.provider]);

@@ -1,10 +1,10 @@
 // Test helper: a harness whose tools sit behind the approvals extension, an inbox that records what it is shown, and
 // the waits and reads the tests share.
 
-import type { EntryRecord, TaskId } from "@earendil-works/pi-durable";
+import type { EntryRecord, TaskGraph, TaskId } from "@earendil-works/pi-durable";
 import { type DurableError, Harness, type Hook, Tool } from "@gunta/pi-durable-effect";
 import { answer, type FauxResponseStep, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
-import { Effect, Layer, Option, Schema, Stream } from "effect";
+import { Effect, Latch, Layer, Option, Schema, Stream } from "effect";
 import { extension, Inbox, type Policy, type Request } from "../src/index.ts";
 
 // The testing kit's own types, read from its values: the type check resolves the kit to the facade's built
@@ -41,6 +41,8 @@ export interface Scene<R> {
 	/** Makes every later `write` wait, running, until `release()`. */
 	readonly hold: () => void;
 	readonly release: () => void;
+	/** Succeeds once `holds` is true, asked now and after every `write` and every request the inbox is shown. */
+	readonly when: (holds: () => boolean) => Effect.Effect<void>;
 }
 
 /** Every call of `write` needs approval, and a request stays open for an hour. */
@@ -59,6 +61,10 @@ export const ONE_WRITE = [toolCall("write", { text: "hi" }, { id: "call-1" }), a
 export function scene<R = never>(options: SceneOptions<R> = {}): Scene<R> {
 	const written: string[] = [];
 	const published: Request[] = [];
+	const waits: Array<{ readonly holds: () => boolean; readonly latch: Latch.Latch }> = [];
+	const changed = () => {
+		for (const wait of waits) if (wait.holds()) wait.latch.openUnsafe();
+	};
 	let held: PromiseWithResolvers<void> | undefined;
 	const Write = Tool.make("write", {
 		description: "Write a text.",
@@ -67,6 +73,7 @@ export function scene<R = never>(options: SceneOptions<R> = {}): Scene<R> {
 		handler: ({ text }) =>
 			Effect.gen(function* () {
 				written.push(text);
+				changed();
 				const waiting = held;
 				if (waiting !== undefined) yield* Effect.promise(() => waiting.promise);
 				return `wrote ${text}`;
@@ -99,6 +106,7 @@ export function scene<R = never>(options: SceneOptions<R> = {}): Scene<R> {
 				publish: (request) =>
 					Effect.suspend(() => {
 						published.push(request);
+						changed();
 						return options.publish?.(request) ?? Effect.void;
 					}),
 			}),
@@ -113,11 +121,15 @@ export function scene<R = never>(options: SceneOptions<R> = {}): Scene<R> {
 			held = Promise.withResolvers<void>();
 		},
 		release: () => held?.resolve(),
+		when: (holds) =>
+			Effect.suspend(() => {
+				if (holds()) return Effect.void;
+				const latch = Latch.makeUnsafe();
+				waits.push({ holds, latch });
+				return latch.await;
+			}),
 	};
 }
-
-/** One millisecond of real time, also under a `TestClock`: lets Pi's promises and commits run. */
-export const tick: Effect.Effect<void> = Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 1)));
 
 /** Submits `content` to the root conversation without waiting for the run. */
 export function submit(
@@ -128,17 +140,31 @@ export function submit(
 	);
 }
 
-/** Waits until the inbox was shown `count` requests and the call of the newest one is parked, and gives that one. */
+/**
+ * Waits until the inbox was shown `count` requests and the call of the newest one is parked, and gives that one. It
+ * follows Pi's task graph: the gate shows the inbox a request before the call's task commits its sleep.
+ */
 export function parked(
 	published: ReadonlyArray<Request>,
 	count = 1,
 ): Effect.Effect<Request, DurableError, Harness.Harness> {
-	return Effect.gen(function* () {
-		while (published.length < count) yield* tick;
-		const request = published[count - 1] as Request;
-		while ((yield* status(request.task)) !== "sleeping") yield* tick;
-		return request;
-	});
+	const parkedIn = (graph: TaskGraph): Option.Option<Request> => {
+		const asked = published[count - 1];
+		return asked !== undefined && graph.tasks[String(asked.task)]?.state.status === "sleeping"
+			? Option.some(asked)
+			: Option.none();
+	};
+	return Harness.taskGraph.pipe(
+		Stream.map((change) => parkedIn(change.value)),
+		Stream.filter(Option.isSome),
+		Stream.runHead,
+		Effect.flatMap((found) =>
+			Option.match(Option.flatten(found), {
+				onNone: () => Effect.die("the harness closed before the call was parked"),
+				onSome: Effect.succeed,
+			}),
+		),
+	);
 }
 
 /** The stored status of a task. */

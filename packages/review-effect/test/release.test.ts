@@ -1,5 +1,7 @@
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { answer, held, TestHarness } from "@gunta/pi-durable-effect/testing";
 import { Effect, Fiber, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { type Finding, release, state, verdicts, waitForHoldEnd } from "../src/index.ts";
 import { ask, findings, POLICY, reached, scene, textOf, transcript } from "./scene.ts";
@@ -217,12 +219,13 @@ describe("waitForHoldEnd", () => {
 
 	it("waits while nobody decided, and ends with the hold when the conversation is aborted", async () => {
 		const blocked = scene({ policy: STRICT, author: [answer("It is 41.")], reviewer: [findings(WRONG)] });
-		const result = await Effect.runPromise(
+		const result = await runTest(
 			Effect.gen(function* () {
 				const { root } = yield* ask();
 				yield* reached(root, "Held");
-				const waiting = yield* Effect.forkChild(waitForHoldEnd(root));
-				yield* Effect.sleep("30 millis");
+				const waiting = yield* Effect.forkChild(waitForHoldEnd(root), { startImmediately: true });
+				// No time ends a hold.
+				yield* TestClock.adjust("1 hour");
 				const pending = waiting.pollUnsafe() === undefined;
 				yield* root.abort();
 				return { pending, after: yield* Fiber.join(waiting) };

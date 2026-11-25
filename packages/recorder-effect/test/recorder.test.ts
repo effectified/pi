@@ -1,8 +1,10 @@
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import type { ConversationId } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Harness } from "@gunta/pi-durable-effect";
 import { answer, type FauxResponseStep, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
-import { Effect, Fiber, Layer, Option, Schedule, Stream } from "effect";
+import { Effect, Fiber, Latch, Layer, Option, Schedule, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { fromEntry } from "../src/from-entry.ts";
 import { Cursor, Recorder } from "../src/index.ts";
@@ -43,10 +45,6 @@ const twoTurns = Effect.gen(function* () {
 /** The cursor of a conversation: the entry its records are delivered through, 0 while it has none. */
 const delivered = (conversationId: ConversationId) =>
 	Effect.map(Harness.snapshot(Cursor), (cursors) => Option.getOrUndefined(cursors)?.[conversationId] ?? 0);
-
-/** Succeeds once `reached` holds; the test's own timeout ends a wait that never does. */
-const until = (reached: () => boolean): Effect.Effect<void> =>
-	Effect.suspend(() => (reached() ? Effect.void : Effect.andThen(Effect.sleep("2 millis"), until(reached))));
 
 /** A run stored before any pump exists, then delivered by a pump built on it: `sink` gets what recovery delivers. */
 const recovered = (sink: TestSink) =>
@@ -215,17 +213,17 @@ describe("Recorder.layer", () => {
 
 	it("follows a run as it commits, without a flush: every entry's records once, in entry order", async () => {
 		const sink = testSink();
-		const result = await Effect.runPromise(
+		const result = await runTest(
 			Effect.gen(function* () {
 				const root = yield* TestHarness.root;
 				yield* root.prompt("Say hi.", { requestId: "one" });
-				yield* until(() => sink.stored.length === 7);
+				yield* sink.when(() => sink.stored.length === 7);
 				const first = sink.attempts.length;
 				yield* root.prompt("Again.", { requestId: "two" });
-				yield* until(() => sink.stored.length === 10);
+				yield* sink.when(() => sink.stored.length === 10);
 				const entries = yield* Stream.runCollect(root.entries({ order: "ascending" }));
 				// The cursor's commit follows the sink's success.
-				yield* until(() => sink.attempts.length > first);
+				yield* sink.when(() => sink.attempts.length > first);
 				yield* Recorder.flush(root.id);
 				return { entries, first, cursor: yield* delivered(root.id) };
 			}).pipe(Effect.provide(recorded(TWO_TURNS, sink))),
@@ -602,17 +600,19 @@ describe("Recorder.layer", () => {
 
 describe("Recorder.flush", () => {
 	it("waits until the sink took the records, for one conversation and for the harness", async () => {
-		const release = Promise.withResolvers<void>();
-		const sink = testSink(() => Effect.promise(() => release.promise));
-		const result = await Effect.runPromise(
+		const release = Latch.makeUnsafe();
+		const sink = testSink(() => release.await);
+		const result = await runTest(
 			Effect.gen(function* () {
 				const root = yield* TestHarness.root;
 				yield* root.prompt("Say hi.", { requestId: "one" });
-				const one = yield* Effect.forkChild(Recorder.flush(root.id));
-				const all = yield* Effect.forkChild(Recorder.flushAll);
-				yield* Effect.sleep("40 millis");
+				const one = yield* Effect.forkChild(Recorder.flush(root.id), { startImmediately: true });
+				const all = yield* Effect.forkChild(Recorder.flushAll, { startImmediately: true });
+				// The sink holds the batch: neither flush may return before it took it.
+				yield* sink.when(() => sink.attempts.length === 1);
+				yield* TestClock.adjust("1 hour");
 				const waiting = [one.pollUnsafe(), all.pollUnsafe(), sink.stored.length];
-				release.resolve();
+				yield* release.open;
 				yield* Fiber.join(one);
 				yield* Fiber.join(all);
 				return { waiting, head: Option.getOrThrow(yield* root.head), cursor: yield* delivered(root.id) };
@@ -641,7 +641,7 @@ describe("Recorder.flush", () => {
 
 	it("leaves a quiet harness alone: no commit and no sink call once everything is delivered", async () => {
 		const sink = testSink();
-		const quiet = await Effect.runPromise(
+		const quiet = await runTest(
 			Effect.gen(function* () {
 				const root = yield* TestHarness.root;
 				yield* root.prompt("Say hi.", { requestId: "one" });
@@ -651,7 +651,8 @@ describe("Recorder.flush", () => {
 				let commits = 0;
 				const harnessService = yield* Harness.Harness;
 				const observation = harnessService.observeCommits({ advance: () => void commits++, end: () => {} });
-				yield* Effect.sleep("60 millis");
+				// Any timer of the pump or of Pi fires within an hour.
+				yield* TestClock.adjust("1 hour");
 				observation.detach();
 				return { commits, calls: sink.attempts.length - calls };
 			}).pipe(Effect.provide(recorded([answer("Hi.")], sink))),

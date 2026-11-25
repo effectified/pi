@@ -1,8 +1,10 @@
 // The examples of README.md, as they stand there, each run once.
 
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Extension, Gate, Harness, Hook, Registry, Storage } from "@gunta/pi-durable-effect";
 import { answer, ScriptedModels, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
-import { Context, Effect, Layer, Option, Schedule } from "effect";
+import { Context, Effect, Latch, Layer, Option, Schedule } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { Advisory, Cursor, onStorageFork, Recorder, RecordSink, RecordSinkError, type Records } from "../src/index.ts";
 import { Echo } from "./support.ts";
@@ -127,15 +129,21 @@ describe("README", () => {
 
 		const table = new Map<string, Records.Record>();
 		let writes = 0;
+		const failed = Latch.makeUnsafe();
 		const rows = Layer.succeed(Rows, {
 			// The first write fails, so the pump delivers the batch a second time.
 			upsert: (id, row) =>
-				writes++ === 0 ? Effect.fail(new Error("busy")) : Effect.sync(() => void table.set(id, row)),
+				writes++ === 0
+					? Effect.andThen(failed.open, Effect.fail(new Error("busy")))
+					: Effect.sync(() => void table.set(id, row)),
 		});
-		const again = await Effect.runPromise(
+		const again = await runTest(
 			Effect.gen(function* () {
 				const root = yield* TestHarness.root;
 				yield* root.prompt("Say hi.", { requestId: "greeting" });
+				// The schedule's 250 milliseconds after the failed write, on the test clock.
+				yield* failed.await;
+				yield* TestClock.adjust("250 millis");
 				yield* Recorder.flush(root.id);
 				// A delivery that comes twice changes nothing.
 				const before = new Map(table);

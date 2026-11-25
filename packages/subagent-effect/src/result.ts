@@ -40,10 +40,8 @@ export function compile(subagent: Subagent, schema: ResultSchema): Effect.Effect
 			return {
 				contract: `Your final answer must be one JSON value that matches this JSON Schema, with no other text:\n${JSON.stringify(jsonSchema)}`,
 				decode: (answer) =>
-					Effect.try({
-						try: (): unknown => JSON.parse(unfenced(answer)),
-						catch: () => mismatch("it is not JSON"),
-					}).pipe(
+					decodeJsonText(unfenced(answer)).pipe(
+						Effect.mapError(() => mismatch("it is not JSON")),
 						Effect.flatMap((json) => Effect.flatMap(decodeJson(json), encodeJson)),
 						Effect.mapError((error) => (error._tag === "ResultMismatch" ? error : mismatch(error.message))),
 						// A decode boundary: the JSON codec of a schema encodes to JSON, which its `Encoded` type cannot say.
@@ -57,6 +55,10 @@ export function compile(subagent: Subagent, schema: ResultSchema): Effect.Effect
 			}),
 	});
 }
+
+// Text to JSON apart from the declared schema, so the child is told "it is not JSON" and not a schema issue.
+// `Unknown` checks nothing more: what `JSON.parse` returns is JSON.
+const decodeJsonText = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
 /** What a child whose answer did not match is told. */
 export function correction(mismatch: ResultMismatch): string {

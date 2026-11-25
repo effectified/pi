@@ -7,6 +7,7 @@ import { answer, TestHarness } from "@gunta/pi-durable-effect/testing";
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Review from "../src/index.ts";
+import { reached } from "./scene.ts";
 
 // Policy as data: who reviews, the family of every model, how many corrective runs, what blocks.
 const policy: Review.Policy.Policy = {
@@ -343,7 +344,7 @@ describe("README", () => {
 		const program = Effect.gen(function* () {
 			const root = yield* TestHarness.root;
 			const submission = yield* root.submit({ type: "input", content: "What is six times seven?" });
-			while ((yield* Review.state(root))._tag !== "Held") yield* Effect.sleep("1 millis");
+			yield* reached(root, "Held");
 			yield* Review.release(root, { _tag: "Correct", by: "user:bob", correction: "Multiply again." });
 			const settled = yield* submission.wait;
 			yield* root.waitForIdle;
@@ -363,9 +364,9 @@ describe("README", () => {
 		const program = Effect.gen(function* () {
 			const root = yield* TestHarness.root;
 			const submission = yield* root.submit({ type: "input", content: "What is six times seven?" });
-			while ((yield* Review.state(root))._tag !== "Held") yield* Effect.sleep("1 millis");
+			yield* reached(root, "Held");
 			yield* Review.release(root, { _tag: "Correct", by: "user:bob", correction: "Multiply again." });
-			while ((yield* Review.state(root))._tag !== "Deferred") yield* Effect.sleep("1 millis");
+			yield* reached(root, "Deferred");
 			yield* Review.retry(root);
 			yield* submission.wait;
 			yield* root.waitForIdle;

@@ -1,8 +1,10 @@
 // The in-storage driver, operation by operation, on a harness with a scripted model.
 
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Extension, Harness, Signal, Task } from "@gunta/pi-durable-effect";
 import { answer, type FauxResponseFactory, ScriptedModels, TestHarness } from "@gunta/pi-durable-effect/testing";
-import { Effect, Layer, Option, Schema, Stream } from "effect";
+import { Effect, Fiber, Latch, Layer, Option, Schema, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import * as Swarm from "../src/index.ts";
 import { noSetup, until, writtenBy } from "./support.ts";
@@ -28,11 +30,12 @@ const Owner = Task.make({
 });
 
 /** Answers every request with `Answer to <the last user text>`, unless it is held. */
-function echo(hold: (text: string) => boolean = () => false): FauxResponseFactory {
+function echo(hold: (text: string) => boolean = () => false, held?: Latch.Latch): FauxResponseFactory {
 	return (context, options) => {
 		const last = context.messages.flatMap((message) => (message.role === "user" ? [message.content] : [])).at(-1);
 		const text = typeof last === "string" ? last : "";
 		if (!hold(text)) return answer(`Answer to ${text}`);
+		held?.openUnsafe();
 		return new Promise((resolve) => {
 			options?.signal?.addEventListener("abort", () => resolve(answer("cut off")), { once: true });
 		});
@@ -195,12 +198,13 @@ describe("run and job", () => {
 	});
 
 	it("reads a job as running while its fork works, and as unanswered once the fork is cancelled", async () => {
+		const held = Latch.makeUnsafe();
 		const seen = await run(
 			Effect.gen(function* () {
 				const { driver, request, owner } = yield* scene;
 				const fork = yield* driver.fork(request("job-a"));
 				yield* driver.run({ fork, requestId: "r1", prompt: "Hold on.", notify: { taskId: owner, key: "k1" } });
-				yield* until(ScriptedModels.use((models) => Effect.map(models.callCount, (count) => count === 1)));
+				yield* held.await;
 				const running = yield* driver.job(fork, "r1");
 				yield* driver.cancel(fork);
 				const cancelled = yield* driver.job(fork, "r1");
@@ -208,7 +212,7 @@ describe("run and job", () => {
 				yield* driver.cancel(fork);
 				return { running, cancelled };
 			}),
-			echo((text) => text === "Hold on."),
+			echo((text) => text === "Hold on.", held),
 		);
 		expect(seen.running).toEqual({ _tag: "Running" });
 		expect(seen.cancelled).toEqual({ _tag: "Unanswered", reason: "aborted" });
@@ -217,13 +221,14 @@ describe("run and job", () => {
 
 describe("destroy and list", () => {
 	it("aborts the fork's work, marks it destroyed for good, and says what its own entries weigh: Pi cannot delete a conversation", async () => {
+		const held = Latch.makeUnsafe();
 		const seen = await run(
 			Effect.gen(function* () {
 				const { driver, request, owner } = yield* scene;
 				const a = yield* driver.fork(request("job-a"));
 				const b = yield* driver.fork(request("job-b"));
 				yield* driver.run({ fork: a, requestId: "r1", prompt: "Hold on.", notify: { taskId: owner, key: "k1" } });
-				yield* until(ScriptedModels.use((models) => Effect.map(models.callCount, (count) => count === 1)));
+				yield* held.await;
 				const listed = yield* driver.list("s");
 				const destroyed = yield* driver.destroy(a);
 				const again = yield* driver.destroy(a);
@@ -249,7 +254,7 @@ describe("destroy and list", () => {
 					b,
 				};
 			}),
-			echo((text) => text === "Hold on."),
+			echo((text) => text === "Hold on.", held),
 		);
 		expect(seen.listed.map((fork) => fork.jobKey)).toEqual(["job-a", "job-b"]);
 		// The bytes of the fork's own entries, the job's message among them, and nothing of the two entries it was
@@ -282,8 +287,15 @@ describe("destroy and list", () => {
 describe("attach", () => {
 	it("is what the driver waits for: without it no operation returns", async () => {
 		const unattached = TestHarness.layer({ extensions: [] }).pipe(Layer.provideMerge(Swarm.ConversationForks.layer));
-		const waited = await Effect.runPromise(
-			Swarm.ForkDriver.use((driver) => Effect.timeoutOption(driver.list("s"), 60)).pipe(Effect.provide(unattached)),
+		const waited = await runTest(
+			Effect.gen(function* () {
+				const driver = yield* Swarm.ForkDriver;
+				const listing = yield* Effect.forkChild(Effect.timeoutOption(driver.list("s"), "1 hour"), {
+					startImmediately: true,
+				});
+				yield* TestClock.adjust("1 hour");
+				return yield* Fiber.join(listing);
+			}).pipe(Effect.provide(unattached)),
 		);
 		expect(waited).toEqual(Option.none());
 		const listed = await run(Swarm.ForkDriver.use((driver) => Effect.timeoutOption(driver.list("s"), 1000)));

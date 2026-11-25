@@ -1,7 +1,7 @@
 // Test helper: a sink that keeps what it is given and can be told to fail or to wait, and the tools the tests call.
 
 import { Extension, Gate, Hook, Tool } from "@gunta/pi-durable-effect";
-import { Effect, Layer, Option, Schema } from "effect";
+import { Effect, Latch, Layer, Option, Schema } from "effect";
 import { RecordSink, RecordSinkError, type Records } from "../src/index.ts";
 
 /** What a test sink does with one call: nothing (the batch is stored), fail, or wait. */
@@ -14,22 +14,37 @@ export interface TestSink {
 	readonly attempts: Array<ReadonlyArray<Records.Record>>;
 	/** Every record of a call that succeeded, in delivery order, duplicates included. */
 	readonly stored: Array<Records.Record>;
+	/** Succeeds once `holds` is true, asked now and after every call and every stored batch. */
+	readonly when: (holds: () => boolean) => Effect.Effect<void>;
 }
 
 /** A sink that stores every batch `behaviour` lets through; without one, every batch. */
 export function testSink(behaviour: Behaviour = () => Effect.void): TestSink {
 	const attempts: Array<ReadonlyArray<Records.Record>> = [];
 	const stored: Array<Records.Record> = [];
+	const waits: Array<{ readonly holds: () => boolean; readonly latch: Latch.Latch }> = [];
+	const changed = () => {
+		for (const wait of waits) if (wait.holds()) wait.latch.openUnsafe();
+	};
 	const layer = Layer.succeed(RecordSink, {
 		deliver: (records) =>
 			Effect.suspend(() => {
 				attempts.push(records);
+				changed();
 				return Effect.map(behaviour(attempts.length, records), () => {
 					stored.push(...records);
+					changed();
 				});
 			}),
 	});
-	return { layer, attempts, stored };
+	const when = (holds: () => boolean) =>
+		Effect.suspend(() => {
+			if (holds()) return Effect.void;
+			const latch = Latch.makeUnsafe();
+			waits.push({ holds, latch });
+			return latch.await;
+		});
+	return { layer, attempts, stored, when };
 }
 
 /** The failure of a test sink. */

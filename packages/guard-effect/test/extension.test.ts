@@ -445,8 +445,10 @@ describe("refusals", () => {
 				Effect.gen(function* () {
 					const first = yield* watching;
 					const second = yield* watching;
-					const stream = yield* Effect.forkScoped(Stream.runCollect(Stream.take(Guard.refusals, 2)));
-					yield* Effect.sleep("5 millis");
+					// Started at once, the Stream has subscribed when the fork returns.
+					const stream = yield* Effect.forkScoped(Stream.runCollect(Stream.take(Guard.refusals, 2)), {
+						startImmediately: true,
+					});
 					const { model } = yield* TestHarness.agent;
 					const conversation = yield* Conversations.create({
 						ownership: ownerless,

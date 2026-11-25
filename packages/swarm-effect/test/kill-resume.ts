@@ -190,7 +190,7 @@ export function registerKillResume(
 					yield* Swarm.start(Measure, plan(root));
 					// Three jobs answer; every later one holds its fork, so the cap fills and stays full.
 					yield* until(Effect.map(tally("resumed"), (now) => now.succeeded === 3 && now.running === CAP));
-					yield* until(Effect.sync(() => first.live === CAP));
+					yield* first.when(() => first.live === CAP);
 					return yield* tally("resumed");
 				}),
 				{ holdFrom: 3 },
@@ -328,7 +328,7 @@ export function registerKillResume(
 					const root = yield* Harness.root;
 					yield* root.commit((tx) => tx.appendEntry(root.id, { kind: "test.primed" }));
 					yield* Swarm.start(Measure, plan(root));
-					yield* until(Effect.sync(() => remote.accepted.size === CAP));
+					yield* remote.when(() => remote.accepted.size === CAP);
 					// What an actor fork copies: the whole storage, with the live coordinator in it.
 					copyDatabaseFile(filename, copy);
 				}),

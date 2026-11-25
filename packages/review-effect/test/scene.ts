@@ -261,9 +261,6 @@ export function findings(...found: ReadonlyArray<Finding>): AssistantMessage {
 	return answer(JSON.stringify({ findings: found }));
 }
 
-/** One millisecond of real time: lets Pi's promises and commits run. */
-export const tick: Effect.Effect<void> = Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 1)));
-
 /** Submits `content` to the root conversation without waiting for the run; the same request id finds it again. */
 export function ask(
 	content = "What is six times seven?",
@@ -276,18 +273,26 @@ export function ask(
 	);
 }
 
-/** Waits until the review state of `root` has the tag `tag`, and gives that state. */
+/** Waits until the review state of `root` has the tag `tag`, and `holds` of it, and gives that state. */
 export function reached<T extends State["_tag"]>(
 	root: Root,
 	tag: T,
+	holds: (state: Extract<State, { readonly _tag: T }>) => boolean = () => true,
 ): Effect.Effect<Extract<State, { readonly _tag: T }>, DurableError, Harness.Harness> {
-	return Effect.gen(function* () {
-		for (;;) {
-			const current = yield* Effect.orDie(state(root));
-			if (current._tag === tag) return current as Extract<State, { readonly _tag: T }>;
-			yield* tick;
-		}
-	});
+	return Effect.scoped(
+		Effect.gen(function* () {
+			// The state is read from storage, so only a commit changes it. The observer is attached before the first
+			// look and keeps what comes meanwhile: no commit falls between a look and the wait for the next one.
+			const commits = yield* Stream.toPull(Harness.commits);
+			for (;;) {
+				const current = yield* Effect.orDie(state(root));
+				// TypeScript does not narrow a state to a generic tag's member by the check of that tag.
+				const found = current as Extract<State, { readonly _tag: T }>;
+				if (current._tag === tag && holds(found)) return found;
+				yield* Effect.orDie(commits);
+			}
+		}),
+	);
 }
 
 /** The entries of a conversation, oldest first, each as its kind and what it says: a message's text, or this package's data. */

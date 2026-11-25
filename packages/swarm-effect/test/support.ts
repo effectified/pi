@@ -1,8 +1,9 @@
 // Test helper: a swarm definition, a scripted model that answers by what it is asked, and the harness both run in.
 
-import { type Conversation, Doc, type Harness, type Storage } from "@gunta/pi-durable-effect";
+import type { TaskId } from "@earendil-works/pi-durable";
+import { type Conversation, Doc, type DurableError, Harness, type Storage } from "@gunta/pi-durable-effect";
 import { answer, type FauxResponseFactory, TestHarness } from "@gunta/pi-durable-effect/testing";
-import { Effect, Layer, Schema, Stream } from "effect";
+import { Effect, Latch, Layer, Schema, Stream } from "effect";
 import * as Swarm from "../src/index.ts";
 
 /** The swarm of the tests: each job measures one word. */
@@ -51,11 +52,32 @@ export interface Asked {
 	live: number;
 	/** Every request, with the text it ended in. */
 	readonly all: Array<string>;
+	/** Succeeds once `holds` is true, asked now and after every change of the count. */
+	readonly when: (holds: () => boolean) => Effect.Effect<void>;
+	/** Asks every `when` again: the model calls it after it changed the count. */
+	readonly changed: () => void;
 }
 
 /** A fresh count. */
 export function asked(): Asked {
-	return { requests: new Map(), primed: new Map(), maxLive: 0, live: 0, all: [] };
+	const waits: Array<{ readonly holds: () => boolean; readonly latch: Latch.Latch }> = [];
+	return {
+		requests: new Map(),
+		primed: new Map(),
+		maxLive: 0,
+		live: 0,
+		all: [],
+		when: (holds) =>
+			Effect.suspend(() => {
+				if (holds()) return Effect.void;
+				const latch = Latch.makeUnsafe();
+				waits.push({ holds, latch });
+				return latch.await;
+			}),
+		changed: () => {
+			for (const wait of waits) if (wait.holds()) wait.latch.openUnsafe();
+		},
+	};
 }
 
 /** How a scripted model answers one measure request: with this text, after this many milliseconds; `Infinity` never. */
@@ -86,12 +108,14 @@ export function model(counts: Asked, reply?: (word: string, attempt: number) => 
 		const given = reply?.(word, attempt) ?? { text: JSON.stringify(measured(word)), afterMillis: 2 };
 		counts.live += 1;
 		counts.maxLive = Math.max(counts.maxLive, counts.live);
+		counts.changed();
 		await new Promise<void>((resolve) => {
 			if (Number.isFinite(given.afterMillis)) setTimeout(resolve, given.afterMillis);
 			// A request the harness aborts (a close, a cancel) answers by itself, so nothing hangs.
 			options?.signal?.addEventListener("abort", () => resolve(), { once: true });
 		});
 		counts.live -= 1;
+		counts.changed();
 		return answer(given.text);
 	};
 }
@@ -204,9 +228,29 @@ export function primed(turns: number): Effect.Effect<Conversation.Conversation, 
 	});
 }
 
-/** Waits until `ready` holds, looking every few milliseconds. */
-export function until<E, R>(ready: Effect.Effect<boolean, E, R>): Effect.Effect<void, E, R> {
-	return Effect.flatMap(ready, (yes) => (yes ? Effect.void : Effect.andThen(Effect.sleep(2), until(ready))));
+/**
+ * Waits until `ready` holds, for what only a commit changes (a swarm's status, a job's stored state). It is asked
+ * now and after every commit; the observer is attached before the first look, so no commit falls between two.
+ */
+export function until<E, R>(ready: Effect.Effect<boolean, E, R>): Effect.Effect<void, E, R | Harness.Harness> {
+	return Effect.scoped(
+		Effect.gen(function* () {
+			const commits = yield* Stream.toPull(Harness.commits);
+			while (!(yield* ready)) yield* Effect.orDie(commits);
+		}),
+	);
+}
+
+/** Waits until the task sleeps in `phase`: what Pi's task graph says, now or at a later change. */
+export function sleeping(task: TaskId, phase: string): Effect.Effect<void, DurableError, Harness.Harness> {
+	return Effect.asVoid(
+		Stream.runHead(
+			Stream.filter(Harness.taskGraph, (change) => {
+				const state = change.value.tasks[String(task)]?.state;
+				return state?.status === "sleeping" && state.phase === phase;
+			}),
+		),
+	);
 }
 
 /** How many jobs of a swarm have each status. */

@@ -121,8 +121,7 @@ describe("retry", () => {
 				const { root, submission } = yield* ask();
 				const first = yield* reached(root, "Deferred");
 				yield* retry(root);
-				let second = yield* reached(root, "Deferred");
-				while (second.attempt === first.attempt) second = yield* reached(root, "Deferred");
+				const second = yield* reached(root, "Deferred", (deferred) => deferred.attempt !== first.attempt);
 				yield* retry(root);
 				const settled = yield* submission.wait;
 				yield* root.waitForIdle;

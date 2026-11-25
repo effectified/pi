@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Gate, Harness, Hook } from "@gunta/pi-durable-effect";
 import { answer, ScriptedModels, toolCall } from "@gunta/pi-durable-effect/testing";
 import { Context, Effect, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { approve, decide, deny, type Policy, pending } from "../src/index.ts";
-import { HOUR, parked, results, scene, shown, status, submit, tick } from "./scene.ts";
+import { HOUR, parked, results, scene, shown, status, submit } from "./scene.ts";
 
 /** The digest the package must give, computed without it. */
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -112,21 +113,20 @@ describe("a call that needs approval", () => {
 	it("expires on the TestClock without real waiting: the model is told, and the tool never runs", async () => {
 		const { written, published, layer } = scene();
 		const started = performance.now();
-		const seen = await Effect.runPromise(
+		const seen = await runTest(
 			Effect.gen(function* () {
 				yield* TestClock.setTime(1_000_000);
 				const { root, submission } = yield* submit();
 				const request = yield* parked(published);
 				// One millisecond before the expiry nothing has moved.
 				yield* TestClock.adjust(HOUR - 1);
-				yield* tick;
 				const early = { status: yield* status(request.task), pending: (yield* pending).length };
 				yield* TestClock.adjust(1);
 				const settled = yield* submission.wait;
 				yield* root.waitForIdle;
 				const late = yield* decide(request, yield* approve(request, "ada"));
 				return { early, settled: settled.status, late, results: (yield* results(root)).map(shown) };
-			}).pipe(Effect.provide(layer), Effect.provide(TestClock.layer())),
+			}).pipe(Effect.provide(layer)),
 		);
 		expect(seen).toEqual({
 			early: { status: "sleeping", pending: 1 },
@@ -151,7 +151,6 @@ describe("a call that needs approval", () => {
 				const request = yield* parked(published);
 				const other = yield* approve({ digest: sha256('{"text":"bye"}') }, "ada");
 				const error = yield* Effect.flip(decide(request, other));
-				yield* tick;
 				const after = { status: yield* status(request.task), pending: yield* pending };
 				yield* root.abort();
 				return { request, error, after };

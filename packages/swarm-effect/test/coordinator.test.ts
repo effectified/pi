@@ -1,15 +1,18 @@
 // The coordinator against the fake driver (fake-driver.ts): the proof that the port fits a driver whose forks live
 // elsewhere, whose calls fail and are retried, and whose jobs settle later.
 
-import type { EntryId, TaskId } from "@earendil-works/pi-durable";
+import type { EntryId } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { type Conversation, Extension, Harness, Signal, Task } from "@gunta/pi-durable-effect";
 import { TestHarness } from "@gunta/pi-durable-effect/testing";
-import { Effect, Layer, Option, Schema } from "effect";
+import { Effect, Fiber, Layer, Option, Schema, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
+import { destroyInARow } from "../src/coordinator.ts";
 import { MAX_ATTEMPTS } from "../src/fan-out.ts";
 import * as Swarm from "../src/index.ts";
 import { type Fake, fake, Settled } from "./fake-driver.ts";
-import { jobsOf, Measure, measured, words } from "./support.ts";
+import { jobsOf, Measure, measured, sleeping, words } from "./support.ts";
 
 const Go = Signal.make("test.go", 1, Schema.Struct({}));
 
@@ -54,34 +57,36 @@ function planOf(root: Conversation.Conversation, list: ReadonlyArray<string>, ch
 	return { id: "swarm-1", source: root.id, jobs: jobsOf(list), cap: 3, onFailure: "collect", ...change };
 }
 
-/** Starts a swarm of `list` on `driver` and waits for its result. */
+/**
+ * Starts a swarm of `list` on `driver` and waits for its result, on the test clock: each time the coordinator sleeps
+ * until a time, the clock is set to that time. So the swarm runs at its own pace and no faster, and what the fake
+ * does after so many milliseconds happens at that point of the swarm, however busy the machine is. Only a swarm that
+ * nothing but time wakes can be run so: one that waits for a signal of the test never ends here.
+ */
 function swarm(driver: Fake, list: ReadonlyArray<string>, change: Partial<Plan> = {}) {
-	return onFake(
-		driver,
+	return runTest(
 		Effect.gen(function* () {
 			const { root } = yield* source;
 			const started = yield* Swarm.start(Measure, planOf(root, list, change));
-			const result = yield* Swarm.result(Measure, started.swarmId);
+			const result = yield* Effect.forkChild(Swarm.result(Measure, started.swarmId), { startImmediately: true });
+			// The task graph lists live tasks only: the coordinator leaves it when it ends.
+			yield* Harness.taskGraph.pipe(
+				Stream.map((change) => change.value.tasks[String(started.taskId)]?.state),
+				Stream.takeWhile((state) => state !== undefined),
+				Stream.runForEach((state) =>
+					state?.status === "sleeping" && state.until !== undefined ? TestClock.setTime(state.until) : Effect.void,
+				),
+			);
 			const task = Option.getOrThrow(yield* Harness.getTask(started.taskId));
-			return { result, outcome: task.state.status === "terminal" ? task.state.outcome.status : "live" };
-		}),
+			return {
+				result: yield* Fiber.join(result),
+				outcome: task.state.status === "terminal" ? task.state.outcome.status : "live",
+			};
+		}).pipe(Effect.provide(TestHarness.layer({ extensions }).pipe(Layer.provideMerge(driver.layer)))),
 	);
 }
 
 const success = (word: string) => ({ _tag: "Success", key: `job-${word}`, value: measured(word) });
-
-/** Waits until `ready` holds, looking every few milliseconds. */
-function until(ready: () => boolean): Effect.Effect<void> {
-	return Effect.suspend(() => (ready() ? Effect.void : Effect.andThen(Effect.sleep(2), until(ready))));
-}
-
-/** The task's status once it is `wanted`. */
-function stateOnce(taskId: TaskId, wanted: string): Effect.Effect<string, unknown, Harness.Harness> {
-	return Effect.flatMap(Harness.getTask(taskId), (task) => {
-		const status = Option.getOrThrow(task).state.status;
-		return status === wanted ? Effect.succeed(status) : Effect.andThen(Effect.sleep(2), stateOnce(taskId, wanted));
-	});
-}
 
 const answers = (text: string, settlesAfterMillis = 0) => ({ answer: Option.some(text), settlesAfterMillis });
 
@@ -187,7 +192,8 @@ describe("a job whose result arrives late", () => {
 			job: () => answers(JSON.stringify(measured("a")), 40),
 		});
 		const { result } = await swarm(driver, ["a"]);
-		expect(driver.jobCalls.get("swarm-1/job-a/0")).toBeGreaterThanOrEqual(3);
+		// Asked every 5 milliseconds after it was accepted, until it settled 40 milliseconds later.
+		expect(driver.jobCalls.get("swarm-1/job-a/0")).toBe(8);
 		expect(driver.accepted.get("swarm-1/job-a/0")).toBe(1);
 		expect(driver.runCalls.get("swarm-1/job-a/0")).toBe(1);
 		expect(result.jobs).toEqual([success("a")]);
@@ -203,21 +209,20 @@ describe("a job whose result arrives late", () => {
 			Effect.gen(function* () {
 				const { root } = yield* source;
 				const started = yield* Swarm.start(Measure, planOf(root, ["a", "b", "c"], { cap: 2 }));
-				yield* until(() => driver.accepted.size === 2);
+				yield* driver.when(() => driver.accepted.size === 2);
 				// Both forks work, the cap is reached: the coordinator is parked, and nothing was asked.
-				const parked = yield* stateOnce(started.taskId, "sleeping");
+				yield* sleeping(started.taskId, "run");
 				const before = { jobCalls: driver.jobCalls.size, forks: driver.created.size };
 				for (const key of ["job-a", "job-b", "job-c"]) {
-					yield* until(() => (driver.forks.get(key)?.requests.size ?? 0) > 0);
+					yield* driver.when(() => (driver.forks.get(key)?.requests.size ?? 0) > 0);
 					const notify = Option.getOrThrow(driver.settle(key));
 					// What the fork's host does when the job settled: one signal to the coordinator's task.
 					const delivered = yield* Harness.signal(started.taskId, Settled, notify.key, {});
 					expect(delivered).toBe("delivered");
 				}
-				return { parked, before, result: yield* Swarm.result(Measure, started.swarmId) };
+				return { before, result: yield* Swarm.result(Measure, started.swarmId) };
 			}),
 		);
-		expect(seen.parked).toBe("sleeping");
 		expect(seen.before).toEqual({ jobCalls: 0, forks: 2 });
 		expect([...driver.jobCalls.values()]).toEqual([1, 1, 1]);
 		expect(driver.maxLive).toBe(2);
@@ -231,10 +236,10 @@ describe("a job whose result arrives late", () => {
 			Effect.gen(function* () {
 				const { root } = yield* source;
 				const started = yield* Swarm.start(Measure, planOf(root, ["a"]));
-				yield* until(() => driver.accepted.size === 1);
+				yield* driver.when(() => driver.accepted.size === 1);
 				// A signal too early: the key is used up, so the coordinator polls from here on.
 				yield* Harness.signal(started.taskId, Settled, "0.0", {});
-				yield* until(() => driver.jobCalls.get("swarm-1/job-a/0") === 1);
+				yield* driver.when(() => driver.jobCalls.get("swarm-1/job-a/0") === 1);
 				driver.settle("job-a");
 				return yield* Swarm.result(Measure, started.swarmId);
 			}),
@@ -406,8 +411,8 @@ describe("the source", () => {
 				const busy = yield* root.commit((tx) => tx.createTask(Busy, {}, { ownership: { kind: "conversation" } }));
 				yield* Harness.resume;
 				const started = yield* Swarm.start(Measure, planOf(root, ["a"]));
-				// Longer than the coordinator holds its process for a source about to be idle.
-				yield* Effect.sleep(400);
+				// Past the time the coordinator holds its process for a source about to be idle, it sleeps.
+				yield* sleeping(started.taskId, "idle");
 				const waiting = yield* Swarm.status(started.swarmId);
 				const task = Option.getOrThrow(yield* Harness.getTask(started.taskId));
 				const forksWhileBusy = driver.forkCalls.size;
@@ -434,7 +439,7 @@ describe("the source", () => {
 				yield* root.commit((tx) => tx.createTask(Busy, {}, { ownership: { kind: "conversation" } }));
 				yield* Harness.resume;
 				const started = yield* Swarm.start(Measure, planOf(root, ["a", "b"]));
-				yield* Effect.sleep(300);
+				yield* sleeping(started.taskId, "idle");
 				const cancelled = yield* Swarm.cancel(started.swarmId);
 				const result = yield* Swarm.result(Measure, started.swarmId);
 				return { cancelled, result, status: yield* Swarm.status(started.swarmId) };
@@ -464,7 +469,7 @@ describe("the source", () => {
 				const { root } = yield* source;
 				const started = yield* Swarm.start(Measure, planOf(root, ["a", "b"], { cap: 1 }));
 				// More busy answers in a row than "retry later" answers that fail a job as driver-unavailable.
-				yield* until(() => (driver.forkCalls.get("job-a") ?? 0) > MAX_ATTEMPTS * 2);
+				yield* driver.when(() => (driver.forkCalls.get("job-a") ?? 0) > MAX_ATTEMPTS * 2);
 				const waiting = yield* Swarm.status(started.swarmId);
 				busy = false;
 				const result = yield* Swarm.result(Measure, started.swarmId);
@@ -490,7 +495,7 @@ describe("the source", () => {
 			Effect.gen(function* () {
 				const { root } = yield* source;
 				const started = yield* Swarm.start(Measure, planOf(root, ["a"]));
-				yield* until(() => (driver.forkCalls.get("job-a") ?? 0) > MAX_ATTEMPTS);
+				yield* driver.when(() => (driver.forkCalls.get("job-a") ?? 0) > MAX_ATTEMPTS);
 				const cancelling = yield* Swarm.cancel(started.swarmId);
 				return { cancelling, result: yield* Swarm.result(Measure, started.swarmId) };
 			}),
@@ -571,5 +576,43 @@ describe("the fork's agent", () => {
 		const driver = fake();
 		await swarm(driver, ["a"]);
 		expect(driver.agents.get("job-a")).toEqual(Option.none());
+	});
+});
+
+describe("the destroys of a cancel", () => {
+	const pending = (jobKey: string) => ({
+		jobKey,
+		forkId: `id-${jobKey}`,
+		fate: "pending" as const,
+		bytesWritten: null,
+	});
+
+	/** The destroy calls of `job-a` after each step of the test clock, while `destroyInARow` runs on `driver`. */
+	const callsOver = (driver: Fake, steps: ReadonlyArray<number>) =>
+		runTest(
+			Effect.gen(function* () {
+				const running = yield* Effect.forkChild(destroyInARow(driver.driver, "s", [pending("job-a")], 1), {
+					startImmediately: true,
+				});
+				const calls = [driver.destroyCalls.get("job-a") ?? 0];
+				for (const millis of steps) {
+					yield* TestClock.adjust(millis);
+					calls.push(driver.destroyCalls.get("job-a") ?? 0);
+				}
+				return { calls, disposals: yield* Fiber.join(running) };
+			}),
+		);
+
+	it("asks four times in a row, 100, 200 and 400 milliseconds apart, and leaves a fork that stays pending", async () => {
+		const { calls, disposals } = await callsOver(fake({ destroyFails: () => true }), [99, 1, 199, 1, 399, 1, 10_000]);
+		expect(calls).toEqual([1, 1, 2, 2, 3, 3, 4, 4]);
+		expect(disposals).toEqual([pending("job-a")]);
+	});
+
+	it("stops asking once every fork is destroyed", async () => {
+		const driver = fake({ destroyFails: (_key, call) => call <= 2 });
+		const { calls, disposals } = await callsOver(driver, [100, 200, 10_000]);
+		expect(calls).toEqual([1, 2, 3, 3]);
+		expect(disposals).toMatchObject([{ jobKey: "job-a", fate: "destroyed" }]);
 	});
 });

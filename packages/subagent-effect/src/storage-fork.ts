@@ -1,9 +1,9 @@
 // A copied storage runs no subagent of the storage it was copied from: what a host runs on a copy of a whole harness
 // storage before its first call.
 
-import type { Cursor, TaskId } from "@earendil-works/pi-durable";
+import type { TaskId } from "@earendil-works/pi-durable";
 import { type Doc, Harness, type Tx } from "@gunta/pi-durable-effect";
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import * as Copy from "./copy.ts";
 import * as Run from "./run.ts";
 
@@ -43,18 +43,7 @@ export const onStorageFork: Effect.Effect<void, Doc.Failure, Harness.Harness> = 
 /** The statuses of a task that has not ended: Pi's scan filters by one status. */
 const LIVE = ["pending", "running", "waiting", "sleeping", "completing"] as const;
 
-const PAGE_SIZE = 100;
-
 /** The runs with `status`, which are as many as there are subagents at work, whatever else the storage holds. */
 function runsIn(tx: Tx.Tx, status: (typeof LIVE)[number]): Effect.Effect<ReadonlyArray<TaskId>, Doc.Failure> {
-	return Effect.gen(function* () {
-		const found: Array<TaskId> = [];
-		let next: Cursor | undefined;
-		do {
-			const page = yield* tx.scanTasks({ kind: Run.NAME, status }, PAGE_SIZE, next);
-			found.push(...page.items.map((task) => task.id));
-			next = page.next;
-		} while (next !== undefined);
-		return found;
-	});
+	return Stream.runCollect(Stream.map(tx.tasks({ kind: Run.NAME, status }), (task) => task.id));
 }

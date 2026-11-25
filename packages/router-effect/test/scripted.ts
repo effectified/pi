@@ -10,8 +10,7 @@ import {
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import { Models, type ResponseEvent } from "@gunta/pi-ai-effect";
-import { Effect, type Layer, Stream } from "effect";
-import { TestClock } from "effect/testing";
+import { Effect, Latch, type Layer, Stream } from "effect";
 import type { Price, Route, RouteEvent, RouteEventsService, RouteTable } from "../src/index.ts";
 
 /** What every test asks. pi-ai's scripted provider counts it as 2 input tokens: "user:hi", four characters each. */
@@ -81,19 +80,36 @@ export function label(event: ResponseEvent): string {
 	}
 }
 
+/** What `recording` gives a test. */
+export interface Recording {
+	readonly seen: RouteEvent[];
+	readonly events: RouteEventsService;
+	/** Succeeds once `holds` is true, asked now and after every published event. */
+	readonly when: (holds: () => boolean) => Effect.Effect<void>;
+}
+
 /** A `RouteEvents` that keeps what is published in `seen`, so a test reads the record without a subscriber fiber. */
-export function recording(): { readonly seen: RouteEvent[]; readonly events: RouteEventsService } {
+export function recording(): Recording {
 	const seen: RouteEvent[] = [];
+	const waits: Array<{ readonly holds: () => boolean; readonly latch: Latch.Latch }> = [];
 	return {
 		seen,
 		events: {
 			publish: (event) =>
 				Effect.sync(() => {
 					seen.push(event);
+					for (const wait of waits) if (wait.holds()) wait.latch.openUnsafe();
 				}),
 			stream: Stream.empty,
 			subscribe: Effect.succeed(Stream.empty),
 		},
+		when: (holds) =>
+			Effect.suspend(() => {
+				if (holds()) return Effect.void;
+				const latch = Latch.makeUnsafe();
+				waits.push({ holds, latch });
+				return latch.await;
+			}),
 	};
 }
 
@@ -122,12 +138,4 @@ export function hanging() {
 		return new Promise<AssistantMessage>(() => {});
 	};
 	return { response, signal };
-}
-
-/** Lets pi-ai's promises and microtasks run while the test clock stands still. */
-export const realTick = TestClock.withLive(Effect.sleep("2 millis"));
-
-/** Waits in real time until `condition` holds. */
-export function until(condition: () => boolean): Effect.Effect<void> {
-	return Effect.suspend(() => (condition() ? Effect.void : Effect.andThen(realTick, until(condition))));
 }

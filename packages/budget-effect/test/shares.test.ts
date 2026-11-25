@@ -1,7 +1,9 @@
 import type { ConversationId } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Harness } from "@gunta/pi-durable-effect";
 import { answer, ScriptedModels } from "@gunta/pi-durable-effect/testing";
 import { Effect, Option, Schema } from "effect";
+import type { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { continueStopped, NoProviderSession, Shares, stopOf } from "../src/index.ts";
 import {
@@ -13,8 +15,8 @@ import {
 	withEvents,
 } from "./support.ts";
 
-const run = <A, E>(body: Effect.Effect<A, E, Harness.Harness | Budgeted>) =>
-	Effect.runPromise(Effect.provide(body, budgetedHarness()));
+const run = <A, E>(body: Effect.Effect<A, E, Harness.Harness | Budgeted | TestClock.TestClock>) =>
+	runTest(Effect.provide(body, budgetedHarness()));
 
 /** A second conversation on the scripted model: what a subagent runs in. */
 const child = ScriptedModels.use(({ model }) =>

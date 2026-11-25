@@ -2901,7 +2901,7 @@ export type ConversationRecord = {
 };
 
 ## Cursor  durable/src/types.ts
-used by: durable-effect, recorder-effect, subagent-effect, swarm-effect; approvals-effect via ToolTask, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: durable-effect, recorder-effect; approvals-effect via ToolTask, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
 /**
  * Backend-owned JSON continuation state that callers only round-trip to the same scan. It carries the scan's order: a
  * scan given a cursor continues in that order, and rejects a different `order` in its query.
@@ -3282,7 +3282,7 @@ export type Observer<T> = {
 };
 
 ## Page  durable/src/types.ts
-used by: durable-effect, recorder-effect, subagent-effect, swarm-effect; approvals-effect via ToolTask, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: durable-effect; approvals-effect via ToolTask, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
 /** One ordered scan result and its optional continuation state. */
 export type Page<T, C> = {
 	readonly items: readonly T[];

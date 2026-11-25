@@ -1,11 +1,9 @@
 // A forked storage starts clean: what a host runs on a copy of a whole harness storage before its first call.
 
-import type { ConversationId, Cursor as ScanCursor } from "@earendil-works/pi-durable";
+import type { ConversationId } from "@earendil-works/pi-durable";
 import { type DurableError, Harness } from "@gunta/pi-durable-effect";
-import { Effect, Option } from "effect";
+import { Effect, Option, Stream } from "effect";
 import { Cursor } from "./cursor.ts";
-
-const PAGE_SIZE = 100;
 
 /**
  * Moves the cursor of every conversation to its newest entry, in one commit: whatever the copy holds counts as
@@ -20,15 +18,11 @@ export const onStorageFork: Effect.Effect<void, DurableError, Harness.Harness> =
 	Effect.gen(function* () {
 		// Pi's rule for a commit: every table read comes before the first write.
 		const heads: Array<readonly [ConversationId, number]> = [];
-		let next: ScanCursor | undefined;
-		do {
-			const page = yield* tx.scanConversations({}, PAGE_SIZE, next);
-			for (const conversation of page.items) {
-				const head = yield* tx.latestEntryId(conversation.id);
+		yield* Stream.runForEach(tx.conversations(), (conversation) =>
+			Effect.map(tx.latestEntryId(conversation.id), (head) => {
 				if (Option.isSome(head)) heads.push([conversation.id, head.value]);
-			}
-			next = page.next;
-		} while (next !== undefined);
+			}),
+		);
 		const cursors = yield* tx.doc(Cursor);
 		for (const [conversationId, delivered] of heads) cursors.draft[conversationId] = delivered;
 	}),

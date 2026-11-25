@@ -72,8 +72,10 @@ describe("imposedBy", () => {
 	it("stays interruptible: an interruption is not a refusal", async () => {
 		const exit = await Effect.runPromise(
 			Effect.gen(function* () {
-				const fiber = yield* Effect.forkChild(imposedBy({ constraintsOf: () => Effect.never }, REQUEST));
-				yield* Effect.sleep("5 millis");
+				// Started at once, it waits on the source when the fork returns.
+				const fiber = yield* Effect.forkChild(imposedBy({ constraintsOf: () => Effect.never }, REQUEST), {
+					startImmediately: true,
+				});
 				yield* Fiber.interrupt(fiber);
 				return yield* Fiber.await(fiber);
 			}),

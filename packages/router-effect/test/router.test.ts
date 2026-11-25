@@ -8,8 +8,9 @@ import {
 } from "@earendil-works/pi-ai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { complete, EffectProvider, getModel, Models } from "@gunta/pi-ai-effect";
-import { ScriptedLanguageModel } from "@gunta/pi-ai-effect/testing";
+import { runTest, ScriptedLanguageModel } from "@gunta/pi-ai-effect/testing";
 import { Effect, Exit, Fiber, Layer, Option, Scope, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import {
 	AttemptSettlement,
@@ -350,18 +351,19 @@ describe("the product's constraint source", () => {
 	it("refuses a request it cannot answer for, with a typed error Pi does not retry, and sends nothing", async () => {
 		const failure = new ConstraintsUnavailable({ alias: "fast", reason: "no grant: 503 overloaded" });
 		const { open, cloud, layer } = sourced(() => Effect.fail(failure));
-		const result = await Effect.runPromise(
-			Effect.scoped(
-				Effect.gen(function* () {
-					const recorded = yield* (yield* RouteEvents).subscribe;
-					const router = yield* Router;
-					const model = yield* getModel({ provider: "router", modelId: "fast" });
-					const typed = yield* Effect.flip(router.complete("fast", context));
-					const throughPi = yield* Effect.flip(complete(model, context, { sessionId: "session-7" }));
-					const events = yield* Effect.timeoutOption(Stream.runHead(recorded), "20 millis");
-					return { typed, throughPi, events };
-				}),
-			).pipe(Effect.provide(layer)),
+		const result = await runTest(
+			Effect.gen(function* () {
+				const recorded = yield* (yield* RouteEvents).subscribe;
+				const router = yield* Router;
+				const model = yield* getModel({ provider: "router", modelId: "fast" });
+				const typed = yield* Effect.flip(router.complete("fast", context));
+				const throughPi = yield* Effect.flip(complete(model, context, { sessionId: "session-7" }));
+				const first = yield* Effect.forkChild(Effect.timeoutOption(Stream.runHead(recorded), "1 hour"), {
+					startImmediately: true,
+				});
+				yield* TestClock.adjust("1 hour");
+				return { typed, throughPi, events: yield* Fiber.join(first) };
+			}).pipe(Effect.provide(layer)),
 		);
 		expect(result.typed).toBe(failure);
 		expect(result.throughPi._tag).toBe("ModelRequestError");

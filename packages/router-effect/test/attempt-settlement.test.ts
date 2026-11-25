@@ -1,9 +1,9 @@
-import { Deferred, Effect, Fiber } from "effect";
-import { TestClock } from "effect/testing";
+import { runTest } from "@gunta/pi-ai-effect/testing";
+import { Deferred, Effect, Fiber, Latch } from "effect";
 import { describe, expect, it } from "vitest";
 import { settledBy } from "../src/attempt-settlement.ts";
 import { AttemptSettlement, AttemptUnsettled, type RouteEvent } from "../src/index.ts";
-import { failing, realTick, route, until } from "./scripted.ts";
+import { failing, route } from "./scripted.ts";
 
 /** The route event of a first attempt that failed after it was billed, and that the next route is taking over. */
 const EVENT: RouteEvent = {
@@ -108,29 +108,30 @@ describe("settledBy", () => {
 	});
 
 	it("cannot be interrupted: a port that was asked settles to its end, also when its caller gives up", async () => {
-		const state = { entered: false, settled: false };
-		const result = await Effect.runPromise(
+		const state = { settled: false };
+		const result = await runTest(
 			Effect.gen(function* () {
 				const ledger = yield* Deferred.make<void>();
+				const entered = yield* Latch.make();
 				const port = {
 					settle: () =>
 						Effect.gen(function* () {
-							state.entered = true;
+							yield* entered.open;
 							yield* Deferred.await(ledger);
 							state.settled = true;
 						}),
 				};
 				const fiber = yield* Effect.forkChild(Effect.andThen(settledBy(port, EVENT, RESPONSE), Effect.never));
-				yield* until(() => state.entered);
-				// The interruption waits for the fiber, so it is asked for from a fiber of its own.
-				const interruption = yield* Effect.forkChild(Fiber.interrupt(fiber));
-				yield* realTick;
+				yield* entered.await;
+				// The interruption waits for the fiber, so it is asked for from a fiber of its own. Started at once,
+				// it has reached the fiber when the fork returns; one turn of the scheduler lets the fiber react.
+				const interruption = yield* Effect.forkChild(Fiber.interrupt(fiber), { startImmediately: true });
+				yield* Effect.yieldNow;
 				const meanwhile = { settled: state.settled, ended: fiber.pollUnsafe() !== undefined };
 				yield* Deferred.succeed(ledger, undefined);
 				yield* Fiber.join(interruption);
 				return { meanwhile, ended: fiber.pollUnsafe() !== undefined };
-				// The waits of this test are in real time, which `until` and `realTick` take from under a test clock.
-			}).pipe(Effect.provide(TestClock.layer())),
+			}),
 		);
 		// While the port waits, the interruption waits with it. Once it has settled, the interruption takes effect.
 		expect(result.meanwhile).toEqual({ settled: false, ended: false });

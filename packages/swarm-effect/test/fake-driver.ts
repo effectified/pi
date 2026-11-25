@@ -2,7 +2,7 @@
 // creation that answers "duplicate key", jobs that settle later, and a destroy that knows the bytes written.
 
 import { Signal } from "@gunta/pi-durable-effect";
-import { Effect, Layer, Option, Schema } from "effect";
+import { Clock, Effect, Latch, Layer, Option, Schema } from "effect";
 import * as Swarm from "../src/index.ts";
 import { measured } from "./support.ts";
 
@@ -13,7 +13,7 @@ export const Settled = Signal.make("fake.job-settled", 1, Schema.Struct({}));
 export interface FakeJob {
 	/** The answer text, or none for a job that settles without one. */
 	readonly answer: Option.Option<string>;
-	/** Milliseconds after it was accepted until `job` reads it as settled; `Infinity` never, until a cancel. */
+	/** Milliseconds of the `Clock` after it was accepted until `job` reads it as settled; `Infinity` never, until a cancel. */
 	readonly settlesAfterMillis: number;
 }
 
@@ -87,12 +87,23 @@ export interface Fake {
 	readonly ats: Map<string, number>;
 	/** Per job key: the prompts its fork accepted, in order; kept when the fork is destroyed. */
 	readonly prompts: Map<string, Array<string>>;
-	/** Settles the job's open request now; the notify it was accepted with, for a test that delivers the signal. */
+	/**
+	 * Settles the job's open request now, for a job that settles by nothing else (`settlesAfterMillis: Infinity`); the
+	 * notify it was accepted with, for a test that delivers the signal.
+	 */
 	readonly settle: (jobKey: string) => Option.Option<{ readonly taskId: number; readonly key: string }>;
+	/** Succeeds once `holds` is true, asked now and after every call of the driver and every `settle`. */
+	readonly when: (holds: () => boolean) => Effect.Effect<void>;
 }
 
 /** A fresh fake driver. */
 export function fake(options: FakeOptions = {}): Fake {
+	const waits: Array<{ readonly holds: () => boolean; readonly latch: Latch.Latch }> = [];
+	const changed = () => {
+		for (const wait of waits) if (wait.holds()) wait.latch.openUnsafe();
+	};
+	/** A call of the driver, after which every wait is asked again. */
+	const told = <A, E>(call: Effect.Effect<A, E>): Effect.Effect<A, E> => Effect.ensuring(call, Effect.sync(changed));
 	const count = (calls: Map<string, number>, key: string): number => {
 		const next = (calls.get(key) ?? 0) + 1;
 		calls.set(key, next);
@@ -138,108 +149,121 @@ export function fake(options: FakeOptions = {}): Fake {
 		});
 	const driver: Swarm.ForkDriverService = {
 		fork: (request) =>
-			Effect.suspend((): Effect.Effect<Swarm.Fork, Swarm.ForkRetryLater | Swarm.ForkGone> => {
-				const call = count(state.forkCalls, request.jobKey);
-				if (options.sourceGone?.(request.jobKey) === true) {
-					return Effect.fail(
-						new Swarm.ForkGone({
-							what: "source",
-							swarmId: request.swarmId,
-							jobKey: request.jobKey,
-							reason: "The source actor was destroyed",
-						}),
-					);
-				}
-				if (options.forkBusy?.(request.jobKey, call) === true) {
-					return Effect.fail(
-						new Swarm.ForkRetryLater({ operation: "fork", reason: "busy", afterMillis: 1, sourceBusy: true }),
-					);
-				}
-				if (options.forkFails?.(request.jobKey, call) === true) return Effect.fail(later("fork", "timed out"));
-				// Find or create: a duplicate key is the fork that is asked for.
-				create(request);
-				if (options.forkAnswerLost?.(request.jobKey, call) === true) {
-					return Effect.fail(later("fork", "the answer was lost"));
-				}
-				return found({ swarmId: request.swarmId, jobKey: request.jobKey, forkId: "" }).pipe(
-					Effect.map((fork) => forkOf(request.swarmId, request.jobKey, fork)),
-				);
-			}),
-		run: (request) =>
-			Effect.flatMap(found(request.fork), (fork) =>
-				Effect.suspend(() => {
-					const call = count(state.runCalls, request.requestId);
-					if (options.runFails?.(request.fork.jobKey, call) === true)
-						return Effect.fail(later("run", "timed out"));
-					if (!fork.requests.has(request.requestId)) {
-						count(state.accepted, request.requestId);
-						state.prompts.set(request.fork.jobKey, [
-							...(state.prompts.get(request.fork.jobKey) ?? []),
-							request.prompt,
-						]);
-						fork.requests.set(request.requestId, {
-							prompt: request.prompt,
-							notify: request.notify,
-							acceptedAt: Date.now(),
-							job: options.job?.(request.fork.jobKey, request.requestId, request.prompt) ?? defaultJob(request),
-							cancelled: false,
-							settledNow: false,
-						});
-						state.maxLive = Math.max(state.maxLive, live(Date.now()));
+			told(
+				Effect.suspend((): Effect.Effect<Swarm.Fork, Swarm.ForkRetryLater | Swarm.ForkGone> => {
+					const call = count(state.forkCalls, request.jobKey);
+					if (options.sourceGone?.(request.jobKey) === true) {
+						return Effect.fail(
+							new Swarm.ForkGone({
+								what: "source",
+								swarmId: request.swarmId,
+								jobKey: request.jobKey,
+								reason: "The source actor was destroyed",
+							}),
+						);
 					}
-					const place = options.place?.(request.fork.jobKey);
-					const where = place === undefined ? {} : { place };
-					const notice: Swarm.Notice =
-						options.notice === "signal"
-							? { _tag: "Signal", signal: Settled.name, ...where }
-							: { _tag: "Poll", afterMillis: options.notice?.pollMillis ?? 2, ...where };
-					return Effect.succeed(notice);
+					if (options.forkBusy?.(request.jobKey, call) === true) {
+						return Effect.fail(
+							new Swarm.ForkRetryLater({ operation: "fork", reason: "busy", afterMillis: 1, sourceBusy: true }),
+						);
+					}
+					if (options.forkFails?.(request.jobKey, call) === true) return Effect.fail(later("fork", "timed out"));
+					// Find or create: a duplicate key is the fork that is asked for.
+					create(request);
+					if (options.forkAnswerLost?.(request.jobKey, call) === true) {
+						return Effect.fail(later("fork", "the answer was lost"));
+					}
+					return found({ swarmId: request.swarmId, jobKey: request.jobKey, forkId: "" }).pipe(
+						Effect.map((fork) => forkOf(request.swarmId, request.jobKey, fork)),
+					);
 				}),
+			),
+		run: (request) =>
+			told(
+				Effect.flatMap(found(request.fork), (fork) =>
+					Effect.flatMap(Clock.currentTimeMillis, (now) => {
+						const call = count(state.runCalls, request.requestId);
+						if (options.runFails?.(request.fork.jobKey, call) === true)
+							return Effect.fail(later("run", "timed out"));
+						if (!fork.requests.has(request.requestId)) {
+							count(state.accepted, request.requestId);
+							state.prompts.set(request.fork.jobKey, [
+								...(state.prompts.get(request.fork.jobKey) ?? []),
+								request.prompt,
+							]);
+							fork.requests.set(request.requestId, {
+								prompt: request.prompt,
+								notify: request.notify,
+								acceptedAt: now,
+								job:
+									options.job?.(request.fork.jobKey, request.requestId, request.prompt) ?? defaultJob(request),
+								cancelled: false,
+								settledNow: false,
+							});
+							state.maxLive = Math.max(state.maxLive, live(now));
+						}
+						const place = options.place?.(request.fork.jobKey);
+						const where = place === undefined ? {} : { place };
+						const notice: Swarm.Notice =
+							options.notice === "signal"
+								? { _tag: "Signal", signal: Settled.name, ...where }
+								: { _tag: "Poll", afterMillis: options.notice?.pollMillis ?? 2, ...where };
+						return Effect.succeed(notice);
+					}),
+				),
 			),
 		job: (fork, requestId) =>
-			Effect.flatMap(found(fork), (held) =>
-				Effect.suspend((): Effect.Effect<Swarm.JobStatus, Swarm.ForkRetryLater> => {
-					const call = count(state.jobCalls, requestId);
-					if (options.jobFails?.(fork.jobKey, call) === true) return Effect.fail(later("job", "timed out"));
-					const request = held.requests.get(requestId);
-					if (request === undefined) return Effect.succeed({ _tag: "Unknown" });
-					if (request.cancelled) return Effect.succeed({ _tag: "Unanswered", reason: "cancelled" });
-					if (!isSettled(request, Date.now())) return Effect.succeed({ _tag: "Running" });
+			told(
+				Effect.flatMap(found(fork), (held) =>
+					Effect.flatMap(Clock.currentTimeMillis, (now): Effect.Effect<Swarm.JobStatus, Swarm.ForkRetryLater> => {
+						const call = count(state.jobCalls, requestId);
+						if (options.jobFails?.(fork.jobKey, call) === true) return Effect.fail(later("job", "timed out"));
+						const request = held.requests.get(requestId);
+						if (request === undefined) return Effect.succeed({ _tag: "Unknown" });
+						if (request.cancelled) return Effect.succeed({ _tag: "Unanswered", reason: "cancelled" });
+						if (!isSettled(request, now)) return Effect.succeed({ _tag: "Running" });
+						return Effect.succeed(
+							Option.match(request.job.answer, {
+								onNone: (): Swarm.JobStatus => ({ _tag: "Unanswered", reason: "model_error" }),
+								onSome: (text): Swarm.JobStatus => ({ _tag: "Answered", text }),
+							}),
+						);
+					}),
+				),
+			),
+		cancel: (fork) =>
+			told(
+				Effect.map(Clock.currentTimeMillis, (now) => {
+					state.cancelled.push(fork.jobKey);
+					for (const request of state.forks.get(fork.jobKey)?.requests.values() ?? []) {
+						if (!isSettled(request, now)) request.cancelled = true;
+					}
+				}),
+			),
+		destroy: (fork) =>
+			told(
+				Effect.suspend(() => {
+					const call = count(state.destroyCalls, fork.jobKey);
+					if (options.destroyFails?.(fork.jobKey, call) === true)
+						return Effect.fail(later("destroy", "timed out"));
+					const existed = state.forks.delete(fork.jobKey);
+					if (existed) state.destroyed.push(fork.jobKey);
+					const bytes = options.bytes?.(fork.jobKey) ?? Option.some(1000 + state.destroyed.length);
+					return Effect.succeed({ bytesWritten: existed ? bytes : Option.none() });
+				}),
+			),
+		list: (swarmId) =>
+			told(
+				Effect.suspend(() => {
+					state.listCalls += 1;
+					if (options.listFails?.(state.listCalls) === true) return Effect.fail(later("list", "timed out"));
 					return Effect.succeed(
-						Option.match(request.job.answer, {
-							onNone: (): Swarm.JobStatus => ({ _tag: "Unanswered", reason: "model_error" }),
-							onSome: (text): Swarm.JobStatus => ({ _tag: "Answered", text }),
-						}),
+						[...state.forks].flatMap(([jobKey, fork]) =>
+							fork.swarmId === swarmId ? [forkOf(swarmId, jobKey, fork)] : [],
+						),
 					);
 				}),
 			),
-		cancel: (fork) =>
-			Effect.sync(() => {
-				state.cancelled.push(fork.jobKey);
-				const now = Date.now();
-				for (const request of state.forks.get(fork.jobKey)?.requests.values() ?? []) {
-					if (!isSettled(request, now)) request.cancelled = true;
-				}
-			}),
-		destroy: (fork) =>
-			Effect.suspend(() => {
-				const call = count(state.destroyCalls, fork.jobKey);
-				if (options.destroyFails?.(fork.jobKey, call) === true) return Effect.fail(later("destroy", "timed out"));
-				const existed = state.forks.delete(fork.jobKey);
-				if (existed) state.destroyed.push(fork.jobKey);
-				const bytes = options.bytes?.(fork.jobKey) ?? Option.some(1000 + state.destroyed.length);
-				return Effect.succeed({ bytesWritten: existed ? bytes : Option.none() });
-			}),
-		list: (swarmId) =>
-			Effect.suspend(() => {
-				state.listCalls += 1;
-				if (options.listFails?.(state.listCalls) === true) return Effect.fail(later("list", "timed out"));
-				return Effect.succeed(
-					[...state.forks].flatMap(([jobKey, fork]) =>
-						fork.swarmId === swarmId ? [forkOf(swarmId, jobKey, fork)] : [],
-					),
-				);
-			}),
 	};
 	const state: Fake = {
 		driver,
@@ -261,12 +285,20 @@ export function fake(options: FakeOptions = {}): Fake {
 		prompts: new Map(),
 		settle: (jobKey) => {
 			const open = [...(state.forks.get(jobKey)?.requests.values() ?? [])].find(
-				(request) => !isSettled(request, Date.now()),
+				(request) => !request.cancelled && !request.settledNow,
 			);
 			if (open === undefined) return Option.none();
 			open.settledNow = true;
+			changed();
 			return Option.some(open.notify);
 		},
+		when: (holds) =>
+			Effect.suspend(() => {
+				if (holds()) return Effect.void;
+				const latch = Latch.makeUnsafe();
+				waits.push({ holds, latch });
+				return latch.await;
+			}),
 	};
 	return state;
 }

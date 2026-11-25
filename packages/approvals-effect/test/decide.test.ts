@@ -1,16 +1,17 @@
 import type { TaskId } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Gate, Harness, Hook } from "@gunta/pi-durable-effect";
 import { Effect } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { approve, decide, deny, pending } from "../src/index.ts";
-import { HOUR, parked, scene, status, submit, tick } from "./scene.ts";
+import { HOUR, parked, scene, status, submit } from "./scene.ts";
 
 const MISSING_TASK = 999_999 as TaskId;
 
 describe("decide", () => {
 	it("answers delivered, then already_decided while the call still runs, then gone once it ended", async () => {
-		const { written, published, layer, hold, release } = scene();
+		const { written, published, layer, hold, release, when } = scene();
 		hold();
 		const seen = await Effect.runPromise(
 			Effect.gen(function* () {
@@ -18,7 +19,7 @@ describe("decide", () => {
 				const request = yield* parked(published);
 				const delivered = yield* decide(request, yield* approve(request, "ada"));
 				// The tool runs and is held: the call is live, and its request holds ada's approval.
-				while (written.length === 0) yield* tick;
+				yield* when(() => written.length > 0);
 				const again = yield* decide(request, yield* deny(request, "bob", "Too late."));
 				yield* Effect.sync(release);
 				const settled = yield* submission.wait;
@@ -59,18 +60,17 @@ describe("decide", () => {
 	it("answers gone once the request expired, also before Pi has woken the call", async () => {
 		// The host wakes this harness itself and has not yet: the call still sleeps past its expiry.
 		const { written, published, layer } = scene({ harness: { hostWakes: true } });
-		const seen = await Effect.runPromise(
+		const seen = await runTest(
 			Effect.gen(function* () {
 				const { root } = yield* submit();
 				const request = yield* parked(published);
 				yield* TestClock.adjust(HOUR);
-				yield* tick;
 				const before = yield* status(request.task);
 				const late = yield* decide(request, yield* approve(request, "ada"));
 				const listed = yield* pending;
 				yield* root.abort();
 				return { before, late, listed };
-			}).pipe(Effect.provide(layer), Effect.provide(TestClock.layer())),
+			}).pipe(Effect.provide(layer)),
 		);
 		expect(seen).toEqual({ before: "sleeping", late: "gone", listed: [] });
 		expect(written).toEqual([]);

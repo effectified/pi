@@ -2,7 +2,7 @@
 
 import type { EntryId, WakeReason } from "@earendil-works/pi-durable";
 import { type Agent, type Signal, Task } from "@gunta/pi-durable-effect";
-import { Array as Arr, Effect, Option, Schedule, Schema, Stream } from "effect";
+import { Array as Arr, Effect, Option, Ref, Schedule, Schema, Stream } from "effect";
 import * as Cleanup from "./cleanup.ts";
 import { type Fork, ForkDriver, type ForkDriverService, type ForkRetryLater } from "./driver.ts";
 import { check, MAX_ATTEMPTS, notifyKey, retryDelay, type Site, start } from "./fan-out.ts";
@@ -329,7 +329,7 @@ function cancel(task: Task.Running<In, St>, api: Api) {
 						),
 						input.pins,
 					);
-		const destroyed = yield* destroyInARow(driver, input, disposals, CANCEL_TRIES);
+		const destroyed = yield* destroyInARow(driver, input.swarmId, disposals, input.cap);
 		const outcome = Outcome.of(input.swarmId, "cancelled", keys, jobs, Cleanup.fates(destroyed));
 		return yield* api.commit((tx) =>
 			Effect.as(report(tx, input.swarmId, keys, before, jobs), Task.aborted("cancelled", outcome)),
@@ -337,20 +337,27 @@ function cancel(task: Task.Running<In, St>, api: Api) {
 	});
 }
 
-/** Passes over the forks until none is pending, at most `tries` times. */
-function destroyInARow(
+/**
+ * Passes over the forks of a cancelled swarm until none is pending: at most `CANCEL_TRIES` passes, the pause between
+ * two doubling from `CANCEL_PAUSE_MILLIS`. Each pass starts from what the one before left.
+ */
+export function destroyInARow(
 	driver: ForkDriverService,
-	input: In,
+	swarmId: string,
 	disposals: ReadonlyArray<Cleanup.Disposal>,
-	tries: number,
+	cap: number,
 ): Effect.Effect<ReadonlyArray<Cleanup.Disposal>> {
-	return Effect.flatMap(Cleanup.pass(driver, input.swarmId, disposals, input.cap), (passed) =>
-		Option.isNone(passed.retry) || tries <= 1
-			? Effect.succeed(passed.disposals)
-			: Effect.andThen(
-					Effect.sleep(CANCEL_PAUSE_MILLIS * 2 ** (CANCEL_TRIES - tries)),
-					destroyInARow(driver, input, passed.disposals, tries - 1),
-				),
+	return Effect.flatMap(Ref.make(disposals), (left) =>
+		Ref.get(left).pipe(
+			Effect.flatMap((remaining) => Cleanup.pass(driver, swarmId, remaining, cap)),
+			Effect.tap((passed) => Ref.set(left, passed.disposals)),
+			Effect.repeat({
+				schedule: Schedule.exponential(CANCEL_PAUSE_MILLIS),
+				times: CANCEL_TRIES - 1,
+				while: (passed) => Option.isSome(passed.retry),
+			}),
+			Effect.map((passed) => passed.disposals),
+		),
 	);
 }
 

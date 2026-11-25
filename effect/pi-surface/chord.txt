@@ -100,7 +100,7 @@ export type JsonRepresentation<T> = IsAny<T> extends true
 					: never;
 
 ## JsonValue  chord/src/json.ts
-used by: durable-effect; approvals-effect via ToolExecutionResult, budget-effect via LiveState, durable-rivet-effect via SqliteStorage, guard-effect via ToolExecutionResult, recorder-effect via Cursor, review-effect via JsonObject, subagent-effect via ToolRegistration, swarm-effect via Cursor, thread-effect via EntryRecord
+used by: durable-effect; approvals-effect via ToolExecutionResult, budget-effect via LiveState, durable-rivet-effect via SqliteStorage, guard-effect via ToolExecutionResult, recorder-effect via Cursor, review-effect via JsonObject, subagent-effect via ToolRegistration, swarm-effect via EntryRecord, thread-effect via EntryRecord
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 ## SqliteDatabase  chord/src/sqlite/database.ts

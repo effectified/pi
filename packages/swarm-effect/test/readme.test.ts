@@ -328,7 +328,8 @@ describe("README", () => {
 			Effect.gen(function* () {
 				const root = yield* primed;
 				yield* Swarm.start(Covers, { id: "covers-1", source: root.id, jobs, cap: 2, onFailure: "collect" });
-				yield* Effect.sleep(20);
+				// The copy is made while the swarm's jobs run.
+				yield* until(Effect.map(tally("covers-1"), (now) => now.running === 2));
 				// README:
 				// In the host of the copy, on a harness opened with `resume: false`, before anything else:
 				yield* Swarm.onStorageFork;
