@@ -227,11 +227,12 @@ same commit as the task's decision: both are stored, or neither.
 | Field | |
 |---|---|
 | `answer` | The entry id of the answer it is about |
+| `inputs` | The submissions the reviewed run answers, as Pi's live run names them (`run.inputs`): which submission a verdict held or deferred. Absent from a verdict stored by an earlier version |
 | `pass` | The number of this review within its run, from 1 |
 | `corrections` | The corrective runs the run was sent on so far, this verdict's included |
 | `author` | `{ provider, modelId, family? }`: the model that wrote the answer, as the answer's message names it |
 | `reviewer` | The same for the model that reviewed, as the reviewer's response names it; the policy's reviewer when no response came |
-| `call` | The reviewer's request: `{ provider, model, stopReason, usage?, error? }`. Absent when nobody was asked |
+| `call` | The reviewer's request: `{ provider, model, api?, responseModel?, responseId?, stopReason, timestamp?, durationMs?, usage?, error? }`. Absent when nobody was asked |
 | `findings` | Every finding of every check, with the check's name, blocking or not |
 | `failures` | `{ check, error }` for each check that failed |
 | `outcome` | `Passed`, `Corrected`, `Held` with the waiting task, `Deferred` with the waiting task and the `attempt`, or `NotReviewed` with the reason |
@@ -239,10 +240,19 @@ same commit as the task's decision: both are stored, or neither.
 
 - **`pass` is counted per answer.** A review that was deferred and asked for again writes a second verdict about the
   same answer with the same `pass`. `Review.state` reads the newest one.
-- **`call` is what a product records as a model call**: `provider` and `model` are the response's, so behind an
-  alias they name the route that served. `usage` is `{ input, output, cacheRead, cacheWrite, totalTokens, cost }`,
-  with pi-ai's `usage.cost.total` as `cost`. `error` is the provider's error text of a failed request, as pi-ai gave
-  it. A request that ended without any response has no `usage`, and names the policy's reviewer.
+- **`call` is what a product records as a model call**, field for field what pi-ai's response says:
+  - `provider` and `model` are the response's, so behind an alias they name the route that served. `api` is the
+    response's api; `responseModel` and `responseId` are there when the provider reported them.
+  - `timestamp` is when the request started (pi-ai's `timestamp`), and `durationMs` how long the response took, when
+    pi-ai measured it.
+  - `usage` is `{ input, output, cacheRead, cacheWrite, cacheWrite1h?, reasoning?, totalTokens, cost, costs }`:
+    `cost` is pi-ai's `usage.cost.total`, and `costs` is pi-ai's whole `usage.cost`, the cost of each kind of token
+    with `totalFromProvider` when the provider billed the total.
+  - `error` is the provider's error text of a failed request, as pi-ai gave it.
+  - A request that ended without any response has no `usage`. It names the policy's reviewer, the reviewer model's
+    `api`, and the harness clock it was sent at as `timestamp`.
+  - A verdict stored by an earlier version has none of `api`, `timestamp`, `durationMs`, `responseModel`,
+    `responseId`, `cacheWrite1h`, `reasoning` and `costs`, and still decodes.
 - A verdict entry has no model message: the author never reads it, only the correction message. A fork sees the
   verdicts up to the entry it was forked at.
 
@@ -266,6 +276,7 @@ and `Review.ReleaseEntry.schema` decode their data.
 ```ts
 const state = yield* Review.state(root); // a conversation handle of `@gunta/pi-durable-effect`
 const verdicts = yield* Stream.runCollect(Review.verdicts(root)); // every stored verdict, oldest first
+const since = yield* Stream.runCollect(Review.verdicts(root, { from: entry })); // those from an entry on
 ```
 
 `Review.State` is a `Schema`, a union of eight:
@@ -297,6 +308,24 @@ already answered, so an aborted review does not read like one that was never ask
 
 It is three committed reads, not one transaction: Pi's live document, the entries back to the newest answer, and
 then the review task of a held or deferred answer, or the conversation's agent for an answer without a verdict.
+
+### The waits of a transcript
+
+`Review.state` says where the conversation stands now. What it went through is in its entries: a hold and a
+deferral each begin with the verdict that put the review task to sleep, in the same commit. `Review.waitOf(verdict)`
+gives that wait from the verdict alone: the `Held` or `Deferred` state, as `Review.state` read it while the wait
+lasted, and none for a verdict that waited for nobody. It is the same however long ago the verdict was stored and
+whatever ended the wait. A verdict's `inputs` say which submission waited.
+
+```ts
+// Every hold and deferral of a conversation, oldest first, read back after the fact.
+const waits = (yield* Stream.runCollect(Review.verdicts(root))).flatMap((entry) =>
+	Option.toArray(Review.waitOf(entry.data)),
+);
+```
+
+A decision or a retry that was stored and not yet taken (`Released`, a retry under way), and a wait that ended in an
+abort or a fault (`hold_ended`, `request_failed`), are not entries: `Review.state` reads them from the task.
 
 ## Held
 

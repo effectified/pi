@@ -61,11 +61,17 @@ export const POLICY: Policy.Policy = {
 	blocking: "block",
 };
 
-/** What a verdict keeps of a reviewer's request the scripted reviewer answered: who answered, and what it used. */
+/**
+ * What a verdict keeps of a reviewer's request the scripted reviewer answered: who answered through which api, when
+ * and for how long, and what it used and cost. A scripted model reports no response id, and has no catalog price.
+ */
 export const CALL = {
 	provider: REVIEWER.provider,
 	model: REVIEWER.modelId,
+	api: expect.any(String),
 	stopReason: "stop",
+	timestamp: expect.any(Number),
+	durationMs: expect.any(Number),
 	usage: {
 		input: expect.any(Number),
 		output: expect.any(Number),
@@ -73,11 +79,18 @@ export const CALL = {
 		cacheWrite: expect.any(Number),
 		totalTokens: expect.any(Number),
 		cost: 0,
+		costs: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 	},
 };
 
 /** What every verdict of a review the scripted reviewer answered holds besides its count, findings and outcome. */
-export const REVIEWED = { answer: expect.any(Number), ...PARTIES, call: CALL, time: expect.any(Number) };
+export const REVIEWED = {
+	answer: expect.any(Number),
+	inputs: [expect.any(Number)],
+	...PARTIES,
+	call: CALL,
+	time: expect.any(Number),
+};
 
 /** An extension of hooks that need nothing. */
 export type Hooks = Extension.Extension<readonly [], ReadonlyArray<Hook.Hook<never>>, readonly []>;
@@ -135,7 +148,7 @@ export function scene<R = never>(options: SceneOptions<R> = {}): Scene<R> {
 			(step): FauxResponseStep =>
 				(context, given, state, model) => {
 					reviewerRequests.push({ messages: [...context.messages], sessionId: given?.sessionId });
-					return typeof step === "function" ? step(context, given, state, model) : step;
+					return typeof step === "function" ? step(context, given, state, model) : dated(step);
 				},
 		),
 	);
@@ -176,13 +189,31 @@ export function scene<R = never>(options: SceneOptions<R> = {}): Scene<R> {
 	};
 }
 
-/** A scripted provider of one model that no harness installs: a route an alias sends its requests to. */
+/**
+ * `message` as a provider sends it now: dated when the scripted provider takes it, after the request's stream
+ * started, so pi-ai measures its duration as for a live response. A message dated when it was scripted is older than
+ * the stream, and pi-ai leaves such a response untimed, unless both fell into the same millisecond.
+ */
+export function dated(message: AssistantMessage): AssistantMessage {
+	return { ...message, timestamp: Date.now() };
+}
+
+/** `steps` with every scripted message `dated` when it is taken. */
+export function live(steps: ReadonlyArray<FauxResponseStep>): FauxResponseStep[] {
+	return steps.map((step) => (typeof step === "function" ? step : () => dated(step)));
+}
+
+/**
+ * A scripted provider of one model that no harness installs: a route an alias sends its requests to. Its responses
+ * are `dated` when it takes them.
+ */
 export function route(model: { readonly provider: string; readonly modelId: string }): FauxProviderHandle {
-	return fauxProvider({
+	const handle = fauxProvider({
 		api: `scripted-${model.provider}`,
 		provider: model.provider,
 		models: [{ id: model.modelId }],
 	});
+	return { ...handle, setResponses: (steps) => handle.setResponses(live(steps)) };
 }
 
 /**

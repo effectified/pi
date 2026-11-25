@@ -1,7 +1,7 @@
 // The delivery of outcome events on the open harness: what a thread's courier does at each wake, what wakes it, and
 // what an earlier process left undelivered.
 
-import type { ConversationId } from "@earendil-works/pi-durable";
+import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
 import type { Shares } from "@gunta/pi-budget-effect";
 import { type Conversation, type Doc, type DurableError, Harness, Task, type Tx } from "@gunta/pi-durable-effect";
 import { Recorder } from "@gunta/pi-recorder-effect";
@@ -65,9 +65,10 @@ type Composed = Harness.Harness | Shares | Forks.Accounts | Recorder.Recorder | 
  *   did not deliver is delivered now, also by a courier that was asleep until a later attempt. The Layer does not
  *   wait for those deliveries.
  *
- * Which states are events: `Started` for each submission of a thread, then each outcome the thread stands at when
- * its courier looks. A state the thread left before the courier looked, such as a hold a person released at once, is
- * not delivered: the state that followed it is.
+ * Which states are events: `Started` for each submission of a thread, then every wait of its review the transcript
+ * holds (each hold and each deferral, from its verdict), then how the submission ended once it settled. They are read
+ * from what the harness stored, not from where the thread stands when its courier looks, so a hold a person released
+ * at once is told, and so is the end of a run the product took on before it was told.
  */
 export function layer(options: Options = {}): Layer.Layer<never, DurableError, Composed | Courier.Delivery> {
 	return Layer.effectDiscard(
@@ -184,7 +185,8 @@ function reopened(thread: string): Effect.Effect<void, Cursor.Failure, Harness.H
 
 /**
  * Wakes the thread's courier when something is due for it and `waits` does not say that it is to be left asleep. A
- * thread whose events are all delivered costs four reads.
+ * thread whose events are all delivered costs a few reads: its cursor, its submissions, and the verdicts since the
+ * cursor.
  */
 function looked(
 	thread: string,
@@ -392,22 +394,28 @@ function sent(thread: string, event: OutcomeEvent, mark: Mark): Effect.Effect<vo
 	});
 }
 
-/** What is due for a thread: nothing, the start of its newest submission, or the outcome it stands at. */
+/**
+ * What is due for a thread: nothing, the start of a submission, or an outcome of one. An outcome is a wait of its
+ * review, which rests on the verdict that began it (`rests`), or where the thread stands, which rests on the newest
+ * entry.
+ */
 type Due =
 	| { readonly _tag: "Nothing"; readonly over: boolean }
-	| { readonly _tag: "Started"; readonly sight: Standing.Sight }
+	| { readonly _tag: "Started"; readonly submission: Thread.Newest }
 	| {
 			readonly _tag: "Reached";
-			readonly sight: Standing.Sight;
+			readonly submission: Thread.Newest;
 			readonly ending: Standing.Ending;
+			readonly rests: Option.Option<EntryId>;
 			readonly settled: boolean;
 	  };
 
 /**
- * What is due for the thread after the event `delivered`. `Started` comes first for a submission nothing was
- * delivered of, so an outcome always follows the start of its submission. An outcome of a settled submission is due
- * once: nothing can follow it. One of an open submission, a hold or a deferred review, is due again when it rests on
- * a newer entry: the thread was held, taken on, and held again.
+ * What is due for the thread after the event `delivered`, in the order the thread went: the start of a submission,
+ * then every wait of its review the transcript holds (a hold, a deferral), then how it ended once it settled, then
+ * the start of the next one. The waits are read from the verdicts, so a hold a person released before the courier
+ * looked is still told, and so is the end of a submission the product took on at once. A settled submission whose
+ * end was told costs no read of the transcript, but one page for an end that is a budget stop.
  */
 function dueOf(
 	thread: string,
@@ -415,18 +423,139 @@ function dueOf(
 	delivered: Mark | null,
 ): Effect.Effect<Due, Doc.Failure, Harness.Harness> {
 	return Effect.gen(function* () {
-		const found = yield* Standing.sight(thread, conversation);
-		if (Option.isNone(found)) return { _tag: "Nothing", over: false };
-		const sight = found.value;
-		if (delivered?.submission !== sight.record.id) return { _tag: "Started", sight };
-		if (Option.isNone(sight.ending)) return { _tag: "Nothing", over: false };
-		const ending = sight.ending.value;
-		const settled = sight.record.status === "done" || sight.record.status === "unanswered";
-		const again = delivered.state === ending._tag;
-		if (again && (settled || delivered.entry === (yield* headOf(conversation))))
-			return { _tag: "Nothing", over: settled };
-		return { _tag: "Reached", sight, ending, settled };
+		const all = yield* Thread.submissions(conversation.id, thread);
+		const at = delivered === null ? -1 : all.findIndex((one) => one.record.id === delivered.submission);
+		const current = all[at];
+		// Nothing told yet starts at the first submission. A cursor on a submission the thread does not hold, which no
+		// version writes, starts at the newest.
+		if (delivered === null || current === undefined) {
+			const first = delivered === null ? all[0] : all.at(-1);
+			return first === undefined ? { _tag: "Nothing", over: false } : { _tag: "Started", submission: first };
+		}
+		const next = all[at + 1];
+		const after: Due = next === undefined ? { _tag: "Nothing", over: true } : { _tag: "Started", submission: next };
+		const settled = current.record.status === "done" || current.record.status === "unanswered";
+		const ending = settled ? yield* Standing.endingOf(current.record, conversation) : Option.none<Standing.Ending>();
+		if (Option.isSome(ending) && (yield* told(conversation, delivered, ending.value))) return after;
+		const wait = yield* waitAfter(conversation, current, boundOf(all, at), delivered.entry);
+		if (Option.isSome(wait)) {
+			const reached = yield* Standing.waited(wait.value.wait);
+			return {
+				_tag: "Reached",
+				submission: current,
+				ending: reached,
+				rests: Option.some(wait.value.entry),
+				settled: false,
+			};
+		}
+		if (Option.isSome(ending)) {
+			return { _tag: "Reached", submission: current, ending: ending.value, rests: Option.none(), settled: true };
+		}
+		// An open submission after a newer one is no state Pi makes: what is due is the newer one's.
+		if (next !== undefined) return after;
+		return yield* storedBefore(conversation, current, delivered);
 	});
+}
+
+/**
+ * Whether `delivered` is the event of `ending`, the end of its settled submission. A wait of the same tag, a deferral
+ * the budget refused (`BudgetStopped`), rests on its verdict: the end is told after it.
+ */
+function told(
+	conversation: Conversation.Conversation,
+	delivered: Mark,
+	ending: Standing.Ending,
+): Effect.Effect<boolean, Doc.Failure, Harness.Harness> {
+	if (delivered.state !== ending._tag) return Effect.succeed(false);
+	if (ending._tag !== "BudgetStopped") return Effect.succeed(true);
+	return Effect.map(
+		Stream.runHead(Review.verdicts(conversation, { from: entryId(delivered.entry) })),
+		(found) =>
+			!Option.exists(found, (verdict) => verdict.id === delivered.entry && verdict.data.outcome._tag === "Deferred"),
+	);
+}
+
+/**
+ * The first wait of `submission`'s review stored after the entry `after`, with the entry of its verdict: a verdict
+ * that held the answer or deferred the review, and names the submission among its inputs. Read from `bound` on, the
+ * input entry of the submission or of the newest one before it that has one: a verdict before it is about an older
+ * run.
+ */
+function waitAfter(
+	conversation: Conversation.Conversation,
+	submission: Thread.Newest,
+	bound: number,
+	after: number,
+): Effect.Effect<Option.Option<{ readonly entry: EntryId; readonly wait: Review.Wait }>, Review.Failure> {
+	return Review.verdicts(conversation, { from: entryId(Math.max(bound, after + 1)) }).pipe(
+		Stream.map((verdict) =>
+			verdict.data.inputs?.includes(submission.record.id) === true
+				? Option.map(Review.waitOf(verdict.data), (wait) => ({ entry: verdict.id, wait }))
+				: Option.none(),
+		),
+		Stream.filter(Option.isSome),
+		Stream.map((found) => found.value),
+		Stream.runHead,
+	);
+}
+
+/** Where the entries of the submission at `at` begin: its input entry, or the one of the newest before it; 0 for none. */
+function boundOf(all: ReadonlyArray<Thread.Newest>, at: number): number {
+	for (let index = at; index >= 0; index -= 1) {
+		const entry = all[index]?.record.entry;
+		if (entry !== undefined) return entry;
+	}
+	return 0;
+}
+
+/**
+ * Pi brands an entry id in the type system only, and the cursor keeps one as the number it is: at run time the two
+ * are the same.
+ */
+function entryId(entry: number): EntryId {
+	return entry as EntryId;
+}
+
+/**
+ * What is due for an open submission whose review waits on a verdict stored before verdicts named their inputs: the
+ * wait where the thread stands, as the courier read it before, due again when it rests on a newer entry. So a thread
+ * in flight across the upgrade is told of the wait it is in; one it left before the courier looked is passed over.
+ */
+function storedBefore(
+	conversation: Conversation.Conversation,
+	submission: Thread.Newest,
+	delivered: Mark,
+): Effect.Effect<Due, Doc.Failure, Harness.Harness> {
+	return Effect.gen(function* () {
+		const nothing: Due = { _tag: "Nothing", over: false };
+		const ending = yield* Standing.endingOf(submission.record, conversation);
+		if (Option.isNone(ending)) return nothing;
+		// A wait whose verdict names its inputs was looked for in the transcript already.
+		const verdict = verdictOf(ending.value);
+		if (verdict === undefined || verdict.inputs !== undefined) return nothing;
+		if (delivered.state === ending.value._tag && delivered.entry === (yield* headOf(conversation))) return nothing;
+		return { _tag: "Reached", submission, ending: ending.value, rests: Option.none(), settled: false };
+	});
+}
+
+/**
+ * The verdict a wait rests on: what an open submission ends with is a wait (`Held`, `ReviewDeferred`, or
+ * `BudgetStopped` with the deferred verdict). None for any other ending.
+ */
+function verdictOf(ending: Standing.Ending): Review.Verdict | undefined {
+	switch (ending._tag) {
+		case "Held":
+		case "ReviewDeferred":
+			return ending.verdict;
+		case "BudgetStopped":
+			return ending.review;
+		case "Reviewed":
+		case "Answered":
+		case "NotReviewed":
+		case "Errored":
+		case "Cancelled":
+			return undefined;
+	}
 }
 
 /** The id of the conversation's newest entry, 0 for none. */
@@ -444,14 +573,17 @@ function headOf(conversation: Conversation.Conversation): Effect.Effect<number, 
  */
 const IDLE_GRACE_MILLIS = 250;
 
-/** The event that is due, and its mark. An outcome of a settled submission waits `IDLE_GRACE_MILLIS` at most. */
+/**
+ * The event that is due, and its mark. An outcome of a settled submission waits `IDLE_GRACE_MILLIS` at most. A wait
+ * rests on its verdict, any other outcome on the newest entry.
+ */
 function planOf(
 	thread: string,
 	conversation: Conversation.Conversation,
 	due: Exclude<Due, { readonly _tag: "Nothing" }>,
 ): Effect.Effect<{ readonly event: OutcomeEvent; readonly mark: Mark }, Failure, Composed> {
 	return Effect.gen(function* () {
-		const { key, attempt, record } = due.sight;
+		const { key, attempt, record } = due.submission;
 		const about = { thread, key, attempt };
 		switch (due._tag) {
 			case "Started": {
@@ -460,7 +592,8 @@ function planOf(
 			}
 			case "Reached": {
 				if (due.settled) yield* Effect.timeoutOption(conversation.waitForIdle, IDLE_GRACE_MILLIS);
-				const mark: Mark = { submission: record.id, entry: yield* headOf(conversation), state: due.ending._tag };
+				const entry = Option.isSome(due.rests) ? due.rests.value : yield* headOf(conversation);
+				const mark: Mark = { submission: record.id, entry, state: due.ending._tag };
 				const outcome = yield* Counts.counted(thread, conversation, due.ending);
 				return { mark, event: { _tag: "Reached", id: idOf(thread, mark), ...about, outcome } };
 			}

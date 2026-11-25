@@ -40,11 +40,14 @@ export type Started = typeof Started.Type;
 /**
  * The thread reached an outcome: any member of `Outcome`, as `Threads.outcome` gives it, with the counts as they were
  * when the state was first read for delivery. A thread reaches several in a row when a held answer is released or a
- * deferred review is asked for again: `Held`, then `Reviewed`.
+ * deferred review is asked for again: `Held`, then `Reviewed`. Each wait of the review is one, also one the thread
+ * left before it was told.
  *
- * `id` is `<thread>:<submission>:<entry>:<state>`: Pi's id of the submission the state rests on, the id of the newest
- * entry of the thread's conversation when the state was read (0 for none), and the outcome's `_tag`. A state of one
- * submission that comes again, such as a second hold, rests on a newer entry: the verdict that holds it.
+ * `id` is `<thread>:<submission>:<entry>:<state>`: Pi's id of the submission the state rests on, the entry it rests
+ * on, and the outcome's `_tag`. A wait of the review (`Held`, `ReviewDeferred`, or `BudgetStopped` with the deferred
+ * verdict) rests on the verdict that began it; any other outcome on the newest entry of the thread's conversation when
+ * it was read (0 for none). A state of one submission that comes again, such as a second hold, rests on a newer
+ * entry: the verdict that holds it.
  */
 export const Reached = Schema.TaggedStruct("Reached", { id: Schema.String, ...about, outcome: Outcome });
 

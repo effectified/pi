@@ -19,5 +19,25 @@ export * as Policy from "./policy.ts";
 export { type Delivery, release, waitForHoldEnd } from "./release.ts";
 export { type Retrial, retry } from "./retry.ts";
 export type { ReviewTask } from "./review-task.ts";
-export { type Failure, Reason, State, state, verdicts } from "./state.ts";
-export { Call, CheckFailure, Found, Outcome, Party, Unreviewed, Usage, Verdict, VerdictEntry } from "./verdict.ts";
+export {
+	type Failure,
+	Reason,
+	State,
+	state,
+	type VerdictsQuery,
+	verdicts,
+	type Wait,
+	waitOf,
+} from "./state.ts";
+export {
+	Call,
+	CheckFailure,
+	Cost,
+	Found,
+	Outcome,
+	Party,
+	Unreviewed,
+	Usage,
+	Verdict,
+	VerdictEntry,
+} from "./verdict.ts";

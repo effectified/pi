@@ -93,7 +93,14 @@ export function ask(request: Request, subject: Check.Subject): Effect.Effect<Rep
 		Effect.catch((reason) =>
 			Effect.succeed(
 				unanswered(
-					{ provider: reviewer.provider, model: reviewer.modelId, stopReason: "error", error: reason },
+					{
+						provider: reviewer.provider,
+						model: reviewer.modelId,
+						api: request.model.api,
+						stopReason: "error",
+						timestamp: request.now,
+						error: reason,
+					},
 					reason,
 				),
 			),
@@ -127,19 +134,38 @@ export function report(reply: Reply): Report {
 		: { _tag: "Failed", error: reply.error };
 }
 
-/** A response as a product records a model call: who answered, how it ended and what it used. */
+/**
+ * A response as a product records a model call: who answered, through which api, how it ended, when and for how
+ * long, and what it used and cost. pi-ai's optional fields stay absent when the response has none.
+ */
 function callOf(reply: AssistantMessage): Call {
+	const { usage } = reply;
 	return {
 		provider: reply.provider,
 		model: reply.model,
+		api: reply.api,
+		...(reply.responseModel === undefined ? {} : { responseModel: reply.responseModel }),
+		...(reply.responseId === undefined ? {} : { responseId: reply.responseId }),
 		stopReason: reply.stopReason,
+		timestamp: reply.timestamp,
+		...(reply.durationMs === undefined ? {} : { durationMs: reply.durationMs }),
 		usage: {
-			input: reply.usage.input,
-			output: reply.usage.output,
-			cacheRead: reply.usage.cacheRead,
-			cacheWrite: reply.usage.cacheWrite,
-			totalTokens: reply.usage.totalTokens,
-			cost: reply.usage.cost.total,
+			input: usage.input,
+			output: usage.output,
+			cacheRead: usage.cacheRead,
+			cacheWrite: usage.cacheWrite,
+			...(usage.cacheWrite1h === undefined ? {} : { cacheWrite1h: usage.cacheWrite1h }),
+			...(usage.reasoning === undefined ? {} : { reasoning: usage.reasoning }),
+			totalTokens: usage.totalTokens,
+			cost: usage.cost.total,
+			costs: {
+				input: usage.cost.input,
+				output: usage.cost.output,
+				cacheRead: usage.cost.cacheRead,
+				cacheWrite: usage.cost.cacheWrite,
+				total: usage.cost.total,
+				...(usage.cost.totalFromProvider === undefined ? {} : { totalFromProvider: usage.cost.totalFromProvider }),
+			},
 		},
 		...(reply.errorMessage === undefined ? {} : { error: reply.errorMessage }),
 	};

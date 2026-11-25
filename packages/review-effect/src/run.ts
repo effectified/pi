@@ -1,6 +1,13 @@
 // The run under review, as Pi stores it: Pi's built-in live and provider documents, and what a review reads of them.
 
-import { type EntryId, LiveDoc, type LiveState, ProviderDoc, type ProviderState } from "@earendil-works/pi-durable";
+import {
+	type EntryId,
+	LiveDoc,
+	type LiveState,
+	ProviderDoc,
+	type ProviderState,
+	type SubmissionId,
+} from "@earendil-works/pi-durable";
 import type { Doc } from "@gunta/pi-durable-effect";
 import { Effect, Option, Schema } from "effect";
 
@@ -18,6 +25,11 @@ export interface View {
 	readonly yielded: Option.Option<EntryId>;
 	/** The run's first entry (`run.first`), kept across corrective runs; none for a run Pi recorded none for. */
 	readonly first: Option.Option<EntryId>;
+	/**
+	 * The submissions the run answers (`run.inputs`): the user inputs it placed, and a continuation's own. Empty when no
+	 * run is live, and once the run answered for good.
+	 */
+	readonly inputs: ReadonlyArray<SubmissionId>;
 }
 
 /** The view of a conversation's run in `live`, a snapshot of `Live`; none is a conversation that never ran. */
@@ -27,6 +39,7 @@ export function view(live: Option.Option<LiveState>): View {
 		working: run !== undefined && run.afterRun === undefined,
 		yielded: Option.fromUndefinedOr(run?.yield?.answer),
 		first: Option.fromUndefinedOr(run?.first),
+		inputs: run?.inputs ?? [],
 	};
 }
 

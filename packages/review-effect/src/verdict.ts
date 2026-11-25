@@ -1,7 +1,7 @@
 // The verdict: what one review of one answer came to, stored as an entry of the reviewed conversation.
 
 import type { EntryId, TaskId } from "@earendil-works/pi-durable";
-import { Entry } from "@gunta/pi-durable-effect";
+import { Entry, Submission } from "@gunta/pi-durable-effect";
 import { Schema } from "effect";
 import { Finding } from "./finding.ts";
 
@@ -36,14 +36,40 @@ export const CheckFailure = Schema.Struct({ check: Schema.String, error: Schema.
 /** A check that failed instead of answering. */
 export type CheckFailure = typeof CheckFailure.Type;
 
-/** The tokens of the reviewer's response, and pi-ai's cost of them (`usage.cost.total`, in its catalog's currency). */
+/**
+ * pi-ai's whole cost of a response (`usage.cost`), in its catalog's currency: the cost of each kind of token, the
+ * total, and `totalFromProvider` when the total is what the provider billed rather than the catalog's estimate.
+ */
+export const Cost = Schema.Struct({
+	input: Schema.Number,
+	output: Schema.Number,
+	cacheRead: Schema.Number,
+	cacheWrite: Schema.Number,
+	total: Schema.Number,
+	totalFromProvider: Schema.optionalKey(Schema.Boolean),
+});
+
+/** pi-ai's whole cost of a response. */
+export type Cost = typeof Cost.Type;
+
+/**
+ * The tokens of the reviewer's response, and pi-ai's cost of them:
+ *
+ * - `input`, `output`, `cacheRead`, `cacheWrite`, `totalTokens`: pi-ai's counts.
+ * - `cacheWrite1h`, `reasoning`: pi-ai's, when the provider reported them.
+ * - `cost`: pi-ai's `usage.cost.total`.
+ * - `costs`: pi-ai's whole `usage.cost`. Absent from a verdict stored before it was kept.
+ */
 export const Usage = Schema.Struct({
 	input: Schema.Number,
 	output: Schema.Number,
 	cacheRead: Schema.Number,
 	cacheWrite: Schema.Number,
+	cacheWrite1h: Schema.optionalKey(Schema.Number),
+	reasoning: Schema.optionalKey(Schema.Number),
 	totalTokens: Schema.Number,
 	cost: Schema.Number,
+	costs: Schema.optionalKey(Cost),
 });
 
 /** The tokens of the reviewer's response, and pi-ai's cost of them. */
@@ -54,14 +80,26 @@ export type Usage = typeof Usage.Type;
  *
  * - `provider`, `model`: what the response names. Behind a router alias that is the route that served, not the alias.
  *   The policy's reviewer when the request ended without a response.
+ * - `api`: pi-ai's api of the response; the reviewer model's when the request ended without a response.
+ * - `responseModel`, `responseId`: what the provider said of its response, when it said it.
  * - `stopReason`: pi-ai's. `error` and `aborted` are a request that failed.
+ * - `timestamp`: when the request started, in epoch milliseconds: the response's own, or the harness clock the
+ *   request was sent at when it ended without a response.
+ * - `durationMs`: from the request's start to the end of its response, when pi-ai measured it.
  * - `usage`: the response's own; absent when the request ended without a response.
  * - `error`: the provider's error text of a failed request, as pi-ai gave it.
+ *
+ * A verdict stored before `api`, `timestamp` and `usage.costs` were kept has none of them.
  */
 export const Call = Schema.Struct({
 	provider: Schema.String,
 	model: Schema.String,
+	api: Schema.optionalKey(Schema.String),
+	responseModel: Schema.optionalKey(Schema.String),
+	responseId: Schema.optionalKey(Schema.String),
 	stopReason: Schema.Literals(["stop", "length", "toolUse", "error", "aborted", "pending", "deferred"]),
+	timestamp: Schema.optionalKey(Schema.Number),
+	durationMs: Schema.optionalKey(Schema.Number),
 	usage: Schema.optionalKey(Usage),
 	error: Schema.optionalKey(Schema.String),
 });
@@ -110,6 +148,8 @@ export type Outcome = typeof Outcome.Type;
  * One review of one answer:
  *
  * - `answer`: the entry of the answer it is about.
+ * - `inputs`: the submissions the reviewed run answers, as Pi's live run named them when the review read the run: so
+ *   a verdict says which submission it held or deferred. Absent from a verdict stored before it was kept.
  * - `pass`: the number of this review within its run, from 1. A review that was deferred and asked again keeps it.
  * - `corrections`: the corrective runs this run was sent on so far, this verdict's included.
  * - `author`: the model that wrote the answer, as the answer's own message names it, with its family.
@@ -122,6 +162,7 @@ export type Outcome = typeof Outcome.Type;
  */
 export const Verdict = Schema.Struct({
 	answer: AnswerId,
+	inputs: Schema.optionalKey(Schema.Array(Submission.Id)),
 	pass: Schema.Number,
 	corrections: Schema.Number,
 	author: Party,

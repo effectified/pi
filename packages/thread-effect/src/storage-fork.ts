@@ -55,8 +55,10 @@ function threadOf(input: typeof Courier.Input.Type): string {
 }
 
 /**
- * The mark of the newest event of the thread as it stands: after it nothing is due until the thread moves. None for
- * a thread without a submission, and for a key whose thread document the copy does not hold.
+ * The mark of the newest event of the thread as it stands, resting on the newest entry: after it nothing is due until
+ * the thread moves, and no wait of its review stored before the copy is told. A `Started` mark's id has no entry, so
+ * it rests there too. None for a thread without a submission, and for a key whose thread document the copy does not
+ * hold.
  */
 function standingOf(thread: string): Effect.Effect<Option.Option<Mark>, Doc.Failure, Harness.Harness> {
 	return Effect.gen(function* () {
@@ -64,9 +66,12 @@ function standingOf(thread: string): Effect.Effect<Option.Option<Mark>, Doc.Fail
 		const sight = yield* Standing.sight(thread, conversation);
 		if (Option.isNone(sight)) return Option.none<Mark>();
 		const submission = sight.value.record.id;
-		if (Option.isNone(sight.value.ending)) return Option.some<Mark>({ submission, entry: 0, state: "Started" });
 		const entry = Option.getOrElse(yield* conversation.head, () => 0);
-		return Option.some<Mark>({ submission, entry, state: sight.value.ending.value._tag });
+		const state = Option.match(sight.value.ending, {
+			onNone: () => "Started" as const,
+			onSome: (ending) => ending._tag,
+		});
+		return Option.some<Mark>({ submission, entry, state });
 	}).pipe(Effect.catchTag("ThreadNotFound", () => Effect.succeedNone));
 }
 

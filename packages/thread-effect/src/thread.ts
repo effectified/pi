@@ -107,6 +107,28 @@ export function newest(
 }
 
 /**
+ * Every submission the thread's conversation admitted, oldest first, each as `newest` gives one: its task, then each
+ * continuation. A request key without a submission yet is left out. One commit that only reads.
+ */
+export function submissions(
+	conversation: ConversationId,
+	thread: string,
+): Effect.Effect<ReadonlyArray<Newest>, Doc.Failure, Harness.Harness> {
+	return Harness.commit((tx) =>
+		Effect.gen(function* () {
+			const { requests } = yield* (yield* tx.doc(Document, thread, null)).get;
+			const found = yield* Effect.forEach(requests, (key, attempt) =>
+				Effect.map(
+					tx.submissionByRequest(conversation, key),
+					Option.map((record): Newest => ({ attempt, key, record })),
+				),
+			);
+			return found.flatMap(Option.toArray);
+		}),
+	);
+}
+
+/**
  * Notes `key` as the thread's newest request key, inside the caller's commit, unless the thread holds it already. It
  * gives the request keys the thread then has.
  */

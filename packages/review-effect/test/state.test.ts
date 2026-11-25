@@ -4,7 +4,18 @@ import { Extension, Harness, Hook } from "@gunta/pi-durable-effect";
 import { answer, held, TestHarness } from "@gunta/pi-durable-effect/testing";
 import { Effect, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { type Finding, NAME, release, retry, State, state, VerdictEntry, verdicts } from "../src/index.ts";
+import {
+	type Finding,
+	NAME,
+	release,
+	retry,
+	State,
+	state,
+	VerdictEntry,
+	verdicts,
+	waitForHoldEnd,
+	waitOf,
+} from "../src/index.ts";
 import { AUTHOR, ask, findings, PARTIES, POLICY, reached, scene, tick, transcript } from "./scene.ts";
 
 const WRONG: Finding = { severity: "block", text: "Six times seven is 42." };
@@ -403,5 +414,78 @@ describe("verdicts", () => {
 		// Each verdict names the entry of the answer it is about, and is the entry stored after it.
 		expect(result.stored.map((entry) => entry.data.answer)).toEqual(result.answers);
 		expect(result.stored.map((entry) => entry.data)).toEqual([result.transcript[2]?.[1], result.transcript[5]?.[1]]);
+	});
+
+	it("starts at an entry, so a reader that keeps where it stopped reads only what was stored since", async () => {
+		const corrected = scene({
+			author: [answer("It is 41."), answer("It is 42.")],
+			reviewer: [findings(WRONG), findings()],
+		});
+		const result = await Effect.runPromise(
+			Effect.gen(function* () {
+				const { root, submission } = yield* ask();
+				yield* submission.wait;
+				yield* root.waitForIdle;
+				const all = yield* Stream.runCollect(verdicts(root));
+				const second = all[1]?.id ?? all[0]?.id;
+				return {
+					all,
+					fromSecond: second === undefined ? [] : yield* Stream.runCollect(verdicts(root, { from: second })),
+				};
+			}).pipe(Effect.provide(corrected.layer)),
+		);
+		expect(result.all).toHaveLength(2);
+		expect(result.fromSecond).toEqual([result.all[1]]);
+	});
+});
+
+describe("waitOf", () => {
+	it("gives the hold a verdict began, from the verdict alone: the same after a person ended it", async () => {
+		const blocked = scene({
+			policy: { ...POLICY, maxCorrections: 0 },
+			author: [answer("It is 41.")],
+			reviewer: [findings(WRONG)],
+		});
+		const result = await Effect.runPromise(
+			Effect.gen(function* () {
+				const { root, submission } = yield* ask();
+				const heldState = yield* reached(root, "Held");
+				yield* release(root, { _tag: "Accept", by: "user:ada" });
+				yield* waitForHoldEnd(root);
+				const [stored] = yield* Stream.runCollect(verdicts(root));
+				return { submission: submission.id, held: heldState, after: yield* state(root), stored };
+			}).pipe(Effect.provide(blocked.layer)),
+		);
+		// The conversation is no longer held, and its verdict still says what it was held by.
+		expect(result.after._tag).toBe("Accepted");
+		expect(result.stored === undefined ? Option.none() : waitOf(result.stored.data)).toEqual(
+			Option.some(result.held),
+		);
+		// The verdict names the submission the held run answers.
+		expect(result.stored?.data.inputs).toEqual([result.submission]);
+	});
+
+	it("gives a deferral as `state` read it while it lasted, and no wait for any other outcome", async () => {
+		const failed = fauxAssistantMessage([], { stopReason: "error", errorMessage: "overloaded" });
+		const failing = scene({
+			author: [answer("It is 41."), answer("It is 42.")],
+			reviewer: [failed, findings(WRONG), findings()],
+		});
+		const result = await Effect.runPromise(
+			Effect.gen(function* () {
+				const { root, submission } = yield* ask();
+				const deferred = yield* reached(root, "Deferred");
+				yield* retry(root);
+				yield* submission.wait;
+				yield* root.waitForIdle;
+				return { deferred, stored: yield* Stream.runCollect(verdicts(root)) };
+			}).pipe(Effect.provide(failing.layer)),
+		);
+		expect(result.stored.map((entry) => entry.data.outcome._tag)).toEqual(["Deferred", "Corrected", "Passed"]);
+		expect(result.stored.map((entry) => waitOf(entry.data))).toEqual([
+			Option.some(result.deferred),
+			Option.none(),
+			Option.none(),
+		]);
 	});
 });

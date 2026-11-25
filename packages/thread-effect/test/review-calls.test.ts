@@ -30,7 +30,38 @@ const verdict = (call: Schema.Json | undefined): Records.Entry => ({
 	advisory: false,
 });
 
+/** The reviewer's request as the review stores it since it keeps the whole response: pi-ai's fields, as given. */
 const ANSWERED = {
+	provider: "reviewer-lab",
+	model: "judge",
+	api: "anthropic-messages",
+	responseModel: "judge-2026-10-01",
+	responseId: "msg_7",
+	stopReason: "stop",
+	timestamp: 1_699_999_998_500,
+	durationMs: 1_200,
+	usage: {
+		input: 120,
+		output: 9,
+		cacheRead: 30,
+		cacheWrite: 4,
+		cacheWrite1h: 4,
+		reasoning: 3,
+		totalTokens: 163,
+		cost: 0.0042,
+		costs: {
+			input: 0.0024,
+			output: 0.0009,
+			cacheRead: 0.0003,
+			cacheWrite: 0.0006,
+			total: 0.0042,
+			totalFromProvider: true,
+		},
+	},
+};
+
+/** The same request as a verdict stored it before the review kept the api, the times and the parts of the cost. */
+const STORED_BEFORE = {
 	provider: "reviewer-lab",
 	model: "judge",
 	stopReason: "stop",
@@ -38,20 +69,21 @@ const ANSWERED = {
 };
 
 describe("the model call of a verdict's record", () => {
-	it("is the reviewer's request in the shape of every other model call, with what a verdict does not hold named", () => {
+	it("is the reviewer's request in the shape of every other model call, with nothing a verdict does not hold", () => {
 		expect(Option.getOrThrow(ReviewCalls.modelCall(verdict(ANSWERED)))).toEqual({
 			_tag: "ModelCall",
 			id: "3:21:0:model",
 			conversation: 3,
 			entry: 21,
-			time: 1_700_000_000_000,
+			// When the request started, as in every model call record: not when the verdict was decided.
+			time: 1_699_999_998_500,
 			advisory: false,
 			task: 20,
 			provider: "reviewer-lab",
 			model: "judge",
-			api: "",
-			responseModel: null,
-			responseId: null,
+			api: "anthropic-messages",
+			responseModel: "judge-2026-10-01",
+			responseId: "msg_7",
 			stopReason: "stop",
 			error: null,
 			usage: {
@@ -59,31 +91,91 @@ describe("the model call of a verdict's record", () => {
 				output: 9,
 				cacheRead: 30,
 				cacheWrite: 4,
-				cacheWrite1h: null,
-				reasoning: null,
+				cacheWrite1h: 4,
+				reasoning: 3,
 				totalTokens: 163,
 			},
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.0042, fromProvider: false },
-			durationMs: null,
-			derived: {
-				from: "3:21:entry",
-				unknown: ["api", "cost.input", "cost.output", "cost.cacheRead", "cost.cacheWrite", "cost.fromProvider"],
+			cost: {
+				input: 0.0024,
+				output: 0.0009,
+				cacheRead: 0.0003,
+				cacheWrite: 0.0006,
+				total: 0.0042,
+				fromProvider: true,
 			},
+			durationMs: 1_200,
+			derived: { from: "3:21:entry", unknown: [] },
 		});
 	});
 
-	it("says of a request that ended without a response that its tokens and its cost are not known either", () => {
-		const failed = { provider: "router", model: "reviewer", stopReason: "error", error: "The lease is fenced" };
-		const call = Option.getOrThrow(ReviewCalls.modelCall(verdict(failed)));
+	it("gives `null` where pi-ai reported nothing, as every other model call record does, and names nothing", () => {
+		const { responseModel: _model, responseId: _id, durationMs: _duration, ...bare } = ANSWERED;
+		const { cacheWrite1h: _hour, reasoning: _reasoning, ...tokens } = ANSWERED.usage;
+		const { totalFromProvider: _billed, ...estimated } = ANSWERED.usage.costs;
+		const call = Option.getOrThrow(
+			ReviewCalls.modelCall(verdict({ ...bare, usage: { ...tokens, costs: estimated } })),
+		);
 		expect(call).toMatchObject({
+			responseModel: null,
+			responseId: null,
+			usage: { cacheWrite1h: null, reasoning: null },
+			cost: { input: 0.0024, total: 0.0042, fromProvider: false },
+			durationMs: null,
+			derived: { unknown: [] },
+		});
+	});
+
+	it("names what a verdict stored before the review kept the whole response lacks, and dates it by the verdict", () => {
+		const call = Option.getOrThrow(ReviewCalls.modelCall(verdict(STORED_BEFORE)));
+		expect(call).toMatchObject({
+			time: 1_700_000_000_000,
+			api: "",
+			usage: { input: 120, totalTokens: 163, cacheWrite1h: null, reasoning: null },
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.0042, fromProvider: false },
+			durationMs: null,
+		});
+		expect(call.derived?.unknown).toEqual([
+			"api",
+			"cost.input",
+			"cost.output",
+			"cost.cacheRead",
+			"cost.cacheWrite",
+			"cost.fromProvider",
+		]);
+	});
+
+	it("says of a request that ended without a response that its tokens and its cost are not known", () => {
+		const failed = {
 			provider: "router",
 			model: "reviewer",
+			api: "openai-responses",
+			stopReason: "error",
+			timestamp: 1_699_999_999_000,
+			error: "The lease is fenced",
+		};
+		const call = Option.getOrThrow(ReviewCalls.modelCall(verdict(failed)));
+		expect(call).toMatchObject({
+			time: 1_699_999_999_000,
+			provider: "router",
+			model: "reviewer",
+			api: "openai-responses",
 			stopReason: "error",
 			error: "The lease is fenced",
 			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
 			cost: { total: 0 },
 		});
 		expect(call.derived?.unknown).toEqual([
+			"cost.input",
+			"cost.output",
+			"cost.cacheRead",
+			"cost.cacheWrite",
+			"cost.fromProvider",
+			"usage",
+			"cost.total",
+		]);
+		// The same request as a verdict stored it before: its api is not known either.
+		const { api: _api, timestamp: _timestamp, ...before } = failed;
+		expect(Option.getOrThrow(ReviewCalls.modelCall(verdict(before))).derived?.unknown).toEqual([
 			"api",
 			"cost.input",
 			"cost.output",

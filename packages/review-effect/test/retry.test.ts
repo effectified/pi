@@ -11,6 +11,7 @@ const FAILED = fauxAssistantMessage([], { stopReason: "error", errorMessage: "ov
 /** The verdict of a request that failed, as the scripted reviewer's error leaves it. */
 const deferred = (task: number, attempt: number) => ({
 	answer: expect.any(Number),
+	inputs: [expect.any(Number)],
 	pass: 1,
 	corrections: 0,
 	...PARTIES,
@@ -194,6 +195,7 @@ describe("retry", () => {
 			// The failed request is in the deferred verdict: this one keeps none, so no call is recorded twice.
 			verdict: {
 				answer: result.before.verdict.answer,
+				inputs: result.before.verdict.inputs,
 				pass: 1,
 				corrections: 0,
 				...PARTIES,

@@ -353,6 +353,35 @@ describe("README", () => {
 		expect(await Effect.runPromise(Effect.provide(program, live))).toEqual({ settled: "done", state: "Reviewed" });
 	});
 
+	it("the waits of a transcript: a hold and a deferral are read back after both ended", async () => {
+		const live = harness({
+			policy: { ...policy, maxCorrections: 0 },
+			author: ["It is 41.", "It is 42."],
+			reviewer: [WRONG, fauxAssistantMessage([], { stopReason: "error", errorMessage: "overloaded" }), CLEAN],
+		});
+
+		const program = Effect.gen(function* () {
+			const root = yield* TestHarness.root;
+			const submission = yield* root.submit({ type: "input", content: "What is six times seven?" });
+			while ((yield* Review.state(root))._tag !== "Held") yield* Effect.sleep("1 millis");
+			yield* Review.release(root, { _tag: "Correct", by: "user:bob", correction: "Multiply again." });
+			while ((yield* Review.state(root))._tag !== "Deferred") yield* Effect.sleep("1 millis");
+			yield* Review.retry(root);
+			yield* submission.wait;
+			yield* root.waitForIdle;
+			// Every hold and deferral of a conversation, oldest first, read back after the fact.
+			const waits = (yield* Stream.runCollect(Review.verdicts(root))).flatMap((entry) =>
+				Option.toArray(Review.waitOf(entry.data)),
+			);
+			return { state: (yield* Review.state(root))._tag, waits: waits.map((wait) => wait._tag) };
+		});
+
+		expect(await Effect.runPromise(Effect.provide(program, live))).toEqual({
+			state: "Reviewed",
+			waits: ["Held", "Deferred"],
+		});
+	});
+
 	it("not reviewed: a reviewer of the author's family reviews nothing, and the state says so", async () => {
 		const sameFamily = {
 			...policy,

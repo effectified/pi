@@ -3,7 +3,7 @@
 // person, or it waits to ask a reviewer again whose request failed.
 
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
-import type { EntryId, TaskId } from "@earendil-works/pi-durable";
+import type { EntryId, SubmissionId, TaskId } from "@earendil-works/pi-durable";
 import { Hook, Task } from "@gunta/pi-durable-effect";
 import { Effect, Option, Schema, Stream } from "effect";
 import type * as Check from "./check.ts";
@@ -137,6 +137,8 @@ function memoName(attempt: number, position: number, name: string): string {
 /** The answer a review task decides about, the run that led to it, and the run's count so far. */
 interface Yielded {
 	readonly answerId: EntryId;
+	/** The submissions the run answers. */
+	readonly inputs: ReadonlyArray<SubmissionId>;
 	readonly message: AssistantMessage;
 	/** The model messages of the run, oldest first, the answer last. */
 	readonly transcript: ReadonlyArray<Message>;
@@ -171,6 +173,7 @@ function examined(api: Api) {
 		const earlier = (yield* Effect.forEach(entries, (entry) => VerdictEntry.read(entry))).flatMap(Option.toArray);
 		const yielded: Yielded = {
 			answerId,
+			inputs: run.inputs,
 			message,
 			transcript: entries.flatMap((entry) => entry.model ?? []),
 			// Per answer: an earlier answer whose review was deferred and asked again has two verdicts and one pass.
@@ -197,7 +200,7 @@ function answeredBy(policy: Policy, author: ModelRef, reply: ModelReview.Reply):
 }
 
 /** What every verdict of one review says, whatever its outcome. */
-type About = Pick<Verdict, "answer" | "pass" | "corrections" | "author" | "reviewer" | "call">;
+type About = Pick<Verdict, "answer" | "inputs" | "pass" | "corrections" | "author" | "reviewer" | "call">;
 
 /** A verdict before the harness clock is read for it. */
 type Undated = Omit<Verdict, "time">;
@@ -205,6 +208,7 @@ type Undated = Omit<Verdict, "time">;
 function aboutOf(yielded: Yielded, pairing: Pairing): About {
 	return {
 		answer: yielded.answerId,
+		inputs: yielded.inputs,
 		pass: yielded.pass,
 		corrections: yielded.corrections,
 		author: pairing.author,

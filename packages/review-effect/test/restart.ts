@@ -186,6 +186,7 @@ export function registerRestart(
 		const FAILED = fauxAssistantMessage([], { stopReason: "error", errorMessage: "overloaded" });
 		const failure = {
 			answer: expect.any(Number),
+			inputs: [expect.any(Number)],
 			pass: 1,
 			corrections: 0,
 			...PARTIES,

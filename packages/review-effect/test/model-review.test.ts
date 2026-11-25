@@ -1,4 +1,4 @@
-import { createModels, fauxProvider, type Models } from "@earendil-works/pi-ai";
+import { type AssistantMessage, createModels, fauxProvider, type Models } from "@earendil-works/pi-ai";
 import {
 	answer,
 	type FauxResponseStep,
@@ -10,7 +10,7 @@ import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { type Check, state } from "../src/index.ts";
 import { ask, kept, NAME, once, report, textOf } from "../src/model-review.ts";
-import { ask as asking, CALL, PARTIES, REVIEWED, scene } from "./scene.ts";
+import { ask as asking, CALL, live, PARTIES, REVIEWED, scene } from "./scene.ts";
 
 /** Asks once, with the reviewer answering `reply`, and reads the state the run ended in and what was asked. */
 function reviewedWith(reply: FauxResponseStep) {
@@ -98,7 +98,7 @@ describe("ask", () => {
 	/** Asks a scripted reviewer that answers with `step`; `models` is pi-ai's own collection. */
 	function asked(step: FauxResponseStep) {
 		const reviewer = fauxProvider({ provider: "reviewer-lab", models: [{ id: "judge" }] });
-		reviewer.setResponses([step]);
+		reviewer.setResponses(live([step]));
 		const models = createModels();
 		models.setProvider(reviewer.provider);
 		return Effect.runPromise(
@@ -164,10 +164,96 @@ describe("ask", () => {
 				SUBJECT,
 			),
 		);
+		// The api is the reviewer model's, and the time the one the request was sent at: no response says otherwise.
 		expect(reply).toEqual({
 			_tag: "Unanswered",
-			call: { provider: "reviewer-lab", model: "judge", stopReason: "error", error: "no route" },
+			call: {
+				provider: "reviewer-lab",
+				model: "judge",
+				api: reviewer.getModel().api,
+				stopReason: "error",
+				timestamp: 1,
+				error: "no route",
+			},
 			error: "The reviewer reviewer-lab/judge did not answer: no route",
+		});
+	});
+
+	it("keeps of a response its api, the provider's ids, its times, and pi-ai's whole usage and cost", async () => {
+		const reviewer = fauxProvider({ provider: "reviewer-lab", models: [{ id: "judge" }] });
+		// A response as a provider with every field reports it: a billed total, the cache and reasoning splits.
+		const response: AssistantMessage = {
+			...fauxAssistantMessage('{"findings":[]}'),
+			api: "anthropic-messages",
+			provider: "reviewer-lab",
+			model: "judge",
+			responseModel: "judge-2026-10-01",
+			responseId: "msg_7",
+			timestamp: 1_700_000_000_000,
+			durationMs: 1_200,
+			usage: {
+				input: 120,
+				output: 9,
+				cacheRead: 30,
+				cacheWrite: 4,
+				cacheWrite1h: 4,
+				reasoning: 3,
+				totalTokens: 163,
+				cost: {
+					input: 0.0024,
+					output: 0.0009,
+					cacheRead: 0.0003,
+					cacheWrite: 0.0006,
+					total: 0.005,
+					totalFromProvider: true,
+				},
+			},
+		};
+		// Stands for a provider whose responses carry every field: only the one call matters.
+		const answering = { completeSimple: () => Promise.resolve(response) } as unknown as Models;
+		const reply = await Effect.runPromise(
+			ask(
+				{
+					models: answering,
+					model: reviewer.getModel(),
+					sessionId: Option.none(),
+					now: 1,
+					instructions: Option.none(),
+				},
+				SUBJECT,
+			),
+		);
+		expect(reply).toEqual({
+			_tag: "Reviewed",
+			call: {
+				provider: "reviewer-lab",
+				model: "judge",
+				api: "anthropic-messages",
+				responseModel: "judge-2026-10-01",
+				responseId: "msg_7",
+				stopReason: "stop",
+				timestamp: 1_700_000_000_000,
+				durationMs: 1_200,
+				usage: {
+					input: 120,
+					output: 9,
+					cacheRead: 30,
+					cacheWrite: 4,
+					cacheWrite1h: 4,
+					reasoning: 3,
+					totalTokens: 163,
+					cost: 0.005,
+					costs: {
+						input: 0.0024,
+						output: 0.0009,
+						cacheRead: 0.0003,
+						cacheWrite: 0.0006,
+						total: 0.005,
+						totalFromProvider: true,
+					},
+				},
+			},
+			findings: [],
 		});
 	});
 });
@@ -184,7 +270,7 @@ describe("once and kept", () => {
 		// The fake has the two call forms of Pi's memo in one signature, which its overloads cannot be checked against.
 		const memos = memo as unknown as Parameters<typeof once>[0];
 		const reviewer = fauxProvider({ provider: "reviewer-lab", models: [{ id: "judge" }] });
-		reviewer.setResponses([answer('{"findings":[]}'), answer('{"findings":[]}')]);
+		reviewer.setResponses(live([answer('{"findings":[]}'), answer('{"findings":[]}')]));
 		const models = createModels();
 		models.setProvider(reviewer.provider);
 		const request = {

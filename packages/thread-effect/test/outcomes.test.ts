@@ -84,29 +84,116 @@ describe("what the outcome sink is told of a thread", () => {
 			author: [answer("It is 41."), answer("It is 40."), answer("It is 39."), answer("It is 42.")],
 			reviewer: [BLOCKING, BLOCKING, BLOCKING, CLEAN],
 		});
+		// The sink takes nothing while the thread works and a person decides: the courier tells of the thread only
+		// after both holds were released, from the transcript and not from where the thread stands.
+		state.told.failing = Number.POSITIVE_INFINITY;
 		const events = await run(
 			state,
 			labs,
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				yield* threads.work(work("t1", "What is six times seven?"));
-				// A product decides once it was told: a state the thread left before its courier looked is not delivered.
-				yield* told(state, reached("Held"));
 				const correct = { _tag: "Correct", by: "user:ada", correction: "Multiply again." } as const;
 				yield* threads.release("t1", correct);
-				yield* told(state, (seen) => seen.length === 3);
 				yield* threads.release("t1", correct);
-				return yield* told(state, reached("Reviewed"));
+				const before = state.told.events.length;
+				state.told.failing = 0;
+				return { before, events: yield* told(state, reached("Reviewed")) };
 			}),
+			{ outcomes: { retry: Schedule.spaced("5 millis") } },
 		);
-		expect(events.map(said)).toEqual(["Started", "Held", "Held", "Reviewed"]);
-		// One submission all along: a correction continues the run. The second hold rests on a newer entry, its own
-		// verdict, so the two have different ids.
-		const [, first, second, passed] = events.map(parts);
-		expect(new Set(events.map((event) => parts(event)[1])).size).toBe(1);
+		expect(events.before).toBe(0);
+		expect(events.events.map(said)).toEqual(["Started", "Held", "Held", "Reviewed"]);
+		// One submission all along: a correction continues the run. Each hold rests on its own verdict, so the two have
+		// different ids, and the outcome on the newest entry after them.
+		const [, first, second, passed] = events.events.map(parts);
+		expect(new Set(events.events.map((event) => parts(event)[1])).size).toBe(1);
 		expect(Number(second?.[2])).toBeGreaterThan(Number(first?.[2]));
 		expect(Number(passed?.[2])).toBeGreaterThan(Number(second?.[2]));
+		expect(new Set(events.events.map((event) => event.id)).size).toBe(4);
+		// Each hold is told with the verdict that held the answer, which names the submission it is about.
+		const held = events.events.flatMap((event) =>
+			event._tag === "Reached" && event.outcome._tag === "Held" ? [event.outcome.verdict] : [],
+		);
+		expect(held.map((verdict) => [verdict.pass, verdict.outcome._tag])).toEqual([
+			[2, "Held"],
+			[3, "Held"],
+		]);
+		expect(held.map((verdict) => verdict.inputs)).toEqual([[Number(first?.[1])], [Number(first?.[1])]]);
+	});
+
+	it("is told each deferral of a review that was asked for again at once, then the outcome", async () => {
+		const state = outside();
+		const labs = providers({
+			author: [
+				// The product loses its lease while the author's request is out: the reviewer's finds it fenced.
+				() => {
+					state.lease.fenced = "expired";
+					return answer("It is 42.");
+				},
+			],
+			reviewer: [CLEAN],
+		});
+		state.told.failing = Number.POSITIVE_INFINITY;
+		const events = await run(
+			state,
+			labs,
+			Effect.gen(function* () {
+				const threads = yield* Threads.Threads;
+				yield* threads.work(work("t1", "What is six times seven?"));
+				// Asked again while the lease is still fenced: refused again. Then under a new lease: reviewed.
+				yield* threads.resume("t1");
+				state.lease.fenced = undefined;
+				yield* threads.resume("t1");
+				state.told.failing = 0;
+				return yield* told(state, reached("Reviewed"));
+			}),
+			{ outcomes: { retry: Schedule.spaced("5 millis") } },
+		);
+		expect(events.map(said)).toEqual(["Started", "BudgetStopped", "BudgetStopped", "Reviewed"]);
+		expect(
+			events.flatMap((event) =>
+				event._tag === "Reached" && event.outcome._tag === "BudgetStopped" ? [event.outcome.review?.outcome] : [],
+			),
+		).toMatchObject([
+			{ _tag: "Deferred", attempt: 1 },
+			{ _tag: "Deferred", attempt: 2 },
+		]);
 		expect(new Set(events.map((event) => event.id)).size).toBe(4);
+	});
+
+	it("is told of a stop the product took on before it was told, before the continuation", async () => {
+		const state = outside();
+		const labs = providers({
+			author: [
+				() => {
+					state.lease.fenced = "expired";
+					return toolCall("lookup", { id: "42" }, { id: "call-1" });
+				},
+				answer("Record 42 is titled Answer."),
+			],
+			reviewer: [CLEAN],
+		});
+		state.told.failing = Number.POSITIVE_INFINITY;
+		const events = await run(
+			state,
+			labs,
+			Effect.gen(function* () {
+				const threads = yield* Threads.Threads;
+				yield* threads.work(work("t1", "What is record 42 called?"));
+				state.lease.fenced = undefined;
+				yield* threads.resume("t1");
+				state.told.failing = 0;
+				return yield* told(state, reached("Reviewed"));
+			}),
+			{ outcomes: { retry: Schedule.spaced("5 millis") } },
+		);
+		expect(events.map((event) => [said(event), event.key, event.attempt])).toEqual([
+			["Started", "t1#0", 0],
+			["BudgetStopped", "t1#0", 0],
+			["Started", "t1#1", 1],
+			["Reviewed", "t1#1", 1],
+		]);
 	});
 
 	it("is told of a stop by the budget, and of the continuation as a submission of its own", async () => {

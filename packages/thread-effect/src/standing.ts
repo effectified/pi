@@ -37,8 +37,12 @@ export function sight(
 	});
 }
 
-/** How the thread ended, by the record of its newest submission; none while it works. */
-function endingOf(
+/**
+ * How the thread ended by its submission `record`; none while it works. A submission that waits for its review ends
+ * the thread as far as it goes by itself, and one that settled by what the review says of the newest answer, or by
+ * the reason Pi gave when no answer came.
+ */
+export function endingOf(
 	record: SubmissionRecord,
 	conversation: Conversation.Conversation,
 ): Effect.Effect<Option.Option<Ending>, Review.Failure, Harness.Harness> {
@@ -67,19 +71,8 @@ function endingOf(
 function waiting(state: Review.State): Effect.Effect<Option.Option<Ending>> {
 	switch (state._tag) {
 		case "Held":
-			return Effect.succeedSome({ _tag: "Held", verdict: state.verdict });
-		case "Deferred": {
-			const { verdict, attempt, reason } = state;
-			// The budget's refusal reaches the review as the error text of the reviewer's request.
-			return Effect.map(
-				refusalOf(reason),
-				Option.match({
-					onNone: (): Option.Option<Ending> => Option.some({ _tag: "ReviewDeferred", verdict, attempt, reason }),
-					onSome: (refusal): Option.Option<Ending> =>
-						Option.some({ _tag: "BudgetStopped", refusal, review: verdict }),
-				}),
-			);
-		}
+		case "Deferred":
+			return Effect.asSome(waited(state));
 		case "InReview":
 		case "Released":
 		case "Reviewed":
@@ -87,6 +80,29 @@ function waiting(state: Review.State): Effect.Effect<Option.Option<Ending>> {
 		case "NotRequired":
 		case "NotReviewed":
 			return Effect.succeedNone;
+	}
+}
+
+/**
+ * How a thread stands while its review waits for somebody: `Held` for a person, `ReviewDeferred` until its reviewer can
+ * be asked again, or `BudgetStopped` with the deferred verdict when the budget refused the reviewer's request. The
+ * same for a wait read from its verdict alone (`Review.waitOf`), long after it ended.
+ */
+export function waited(wait: Review.Wait): Effect.Effect<Ending> {
+	switch (wait._tag) {
+		case "Held":
+			return Effect.succeed({ _tag: "Held", verdict: wait.verdict });
+		case "Deferred": {
+			const { verdict, attempt, reason } = wait;
+			// The budget's refusal reaches the review as the error text of the reviewer's request.
+			return Effect.map(
+				refusalOf(reason),
+				Option.match({
+					onNone: (): Ending => ({ _tag: "ReviewDeferred", verdict, attempt, reason }),
+					onSome: (refusal): Ending => ({ _tag: "BudgetStopped", refusal, review: verdict }),
+				}),
+			);
+		}
 	}
 }
 

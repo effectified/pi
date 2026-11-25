@@ -81,6 +81,12 @@ export const State = Schema.Union([
 /** The review state of a conversation. */
 export type State = typeof State.Type;
 
+/**
+ * A wait of a review: the state a verdict that held its answer (`Held`) or deferred its review (`Deferred`) put the
+ * conversation in when it was stored, in the commit that put its review task to sleep.
+ */
+export type Wait = Extract<State, { readonly _tag: "Held" | "Deferred" }>;
+
 /** What reading the review state fails with: a failed Pi call, or a stored entry of this package that does not decode. */
 export type Failure = DurableError | SchemaDecodeError;
 
@@ -149,23 +155,63 @@ export function state(conversation: Conversation.Conversation): Effect.Effect<St
 				// Asked again: the task reviews, or is about to, and its next verdict is not stored yet.
 				const retried = yield* Signalled.held(waiting.value, Deferral.Retried, Deferral.key(attempt));
 				if (Option.isSome(retried)) return { _tag: "InReview", verdict };
-				const failed = verdict.failures.find((failure) => failure.check === ModelReview.NAME)?.error ?? "";
-				return { _tag: "Deferred", verdict, task, attempt, reason: verdict.call?.error ?? failed };
+				return deferral(verdict, verdict.outcome);
 			}
 		}
 	});
 }
 
 /**
- * Every verdict stored in `conversation`, oldest first, each as its entry: `data` is the verdict, `id` the entry.
- * It ends with the newest one stored when it was read; it does not follow the conversation.
+ * The wait `verdict` put its conversation in when it was stored: `Held` for a held answer, `Deferred` for a deferred
+ * review, with its `reason`; none for every other outcome, which waits for nobody. Read from the verdict alone, so it
+ * is the same for a verdict stored long ago and whatever followed it: a decision, a retry, an abort. `state` gives the
+ * same value while the wait lasts.
  */
-export function verdicts(conversation: Conversation.Conversation): Stream.Stream<Entry.Typed<Verdict>, Failure> {
-	return conversation.entries({ order: "ascending" }).pipe(
-		Stream.mapEffect((entry) => VerdictEntry.read(entry)),
-		Stream.filter(Option.isSome),
-		Stream.map((found) => found.value),
-	);
+export function waitOf(verdict: Verdict): Option.Option<Wait> {
+	switch (verdict.outcome._tag) {
+		case "Held":
+			return Option.some({ _tag: "Held", verdict, task: verdict.outcome.task });
+		case "Deferred":
+			return Option.some(deferral(verdict, verdict.outcome));
+		case "Passed":
+		case "Corrected":
+		case "NotReviewed":
+			return Option.none();
+	}
+}
+
+/** The deferral of `verdict`, whose outcome is `outcome`: its task, its attempt, and the provider's error text. */
+function deferral(
+	verdict: Verdict,
+	outcome: Extract<Verdict["outcome"], { readonly _tag: "Deferred" }>,
+): Extract<State, { readonly _tag: "Deferred" }> {
+	const failed = verdict.failures.find((failure) => failure.check === ModelReview.NAME)?.error ?? "";
+	const { task, attempt } = outcome;
+	return { _tag: "Deferred", verdict, task, attempt, reason: verdict.call?.error ?? failed };
+}
+
+/** Where `verdicts` starts reading. */
+export interface VerdictsQuery {
+	/** The first entry read: a verdict before it is not given. Default: the conversation's first entry. */
+	readonly from?: EntryId;
+}
+
+/**
+ * Every verdict stored in `conversation`, oldest first, each as its entry: `data` is the verdict, `id` the entry.
+ * It ends with the newest one stored when it was read; it does not follow the conversation. With `from`, it starts
+ * there: a reader that keeps where it stopped reads only what was stored since.
+ */
+export function verdicts(
+	conversation: Conversation.Conversation,
+	query: VerdictsQuery = {},
+): Stream.Stream<Entry.Typed<Verdict>, Failure> {
+	return conversation
+		.entries({ order: "ascending", ...(query.from === undefined ? {} : { minEntryId: query.from }) })
+		.pipe(
+			Stream.mapEffect((entry) => VerdictEntry.read(entry)),
+			Stream.filter(Option.isSome),
+			Stream.map((found) => found.value),
+		);
 }
 
 /** The record of a waiting review task a signal can still reach: none once it ended, or holds its outcome. */

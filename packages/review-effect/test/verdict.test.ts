@@ -28,6 +28,36 @@ describe("Verdict", () => {
 		expect(Schema.encodeSync(Verdict)(verdict)).toEqual(STORED);
 	});
 
+	it("keeps the whole of a response, and still reads a verdict stored before it kept more than one cost", () => {
+		const whole = {
+			...STORED,
+			call: {
+				...STORED.call,
+				api: "anthropic-messages",
+				responseModel: "judge-2026-10-01",
+				responseId: "msg_7",
+				timestamp: 1_699_999_998_000,
+				durationMs: 1_200,
+				usage: {
+					...STORED.call.usage,
+					cacheWrite1h: 0,
+					reasoning: 12,
+					costs: {
+						input: 0.0012,
+						output: 0.0009,
+						cacheRead: 0,
+						cacheWrite: 0,
+						total: 0.0021,
+						totalFromProvider: true,
+					},
+				},
+			},
+		};
+		expect(Schema.decodeUnknownSync(Verdict)(whole)).toEqual(whole);
+		// `STORED` is the shape every verdict had before: none of the new fields, and it decodes as it is.
+		expect(Schema.decodeUnknownSync(Verdict)(STORED)).toEqual(STORED);
+	});
+
 	it("needs no request: a review that asked nobody has none", () => {
 		const { call: _call, ...unasked } = STORED;
 		expect(Schema.decodeUnknownSync(Verdict)(unasked)).toEqual(unasked);

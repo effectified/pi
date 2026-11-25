@@ -266,14 +266,15 @@ interface Left {
 
 /**
  * An outcome without what a close may change: the money and the tokens of the reviewer's request, which depend on the
- * provider's prompt cache, and the time of the verdict.
+ * provider's prompt cache, and the times of the verdict and of the request.
  */
 function comparable(outcome: Outcome): unknown {
 	const { settledMicros: _settled, ...counts } = outcome.counts;
 	// Every scenario ends reviewed, which the uninterrupted cases assert: any other outcome is compared whole.
 	if (outcome._tag !== "Reviewed") return { ...outcome, counts };
 	const { time: _time, call, ...verdict } = outcome.verdict;
-	return { ...outcome, counts, verdict: { ...verdict, call: { ...call, usage: call?.usage?.totalTokens } } };
+	const { timestamp: _timestamp, durationMs: _duration, ...asked } = call ?? {};
+	return { ...outcome, counts, verdict: { ...verdict, call: { ...asked, usage: call?.usage?.totalTokens } } };
 }
 
 const INPUT = {
@@ -319,10 +320,9 @@ async function scenario(client: Layer.Layer<SqlClient, SqlError>, flow: Flow, po
 			}
 			const worked = yield* Fiber.join(working);
 			if (flow === "unpaid") {
-				// The product renews its lease once it was told of the stop, and only then resumes: the deferred review
-				// is asked for again.
+				// The product renews its lease and resumes at once, without waiting to be told of the stop: the deferred
+				// review is asked for again, and the stop is told all the same, from its verdict.
 				stopped.push(worked);
-				yield* told(state, reached("BudgetStopped"));
 				state.lease.fenced = undefined;
 			}
 			const ended = flow === "unpaid" ? yield* threads.resume(INPUT[flow].thread) : worked;

@@ -251,6 +251,7 @@ describe("an answer the reviewer may not review", () => {
 			const result = await Effect.runPromise(settled(refused));
 			const verdict = {
 				answer: expect.any(Number),
+				inputs: [expect.any(Number)],
 				pass: 1,
 				corrections: 0,
 				author: reason === "author_family_unknown" ? AUTHOR : PARTIES.author,
@@ -343,17 +344,21 @@ describe("a check that fails", () => {
 });
 
 describe("the reviewer's request in the verdict", () => {
-	it("keeps who answered, how the response ended and what it used, and dates the verdict by the harness clock", async () => {
+	it("keeps who answered through which api, when and for how long, how it ended and what it used, and dates the verdict by the harness clock", async () => {
 		const clean = scene({ author: [answer("It is 42.")], reviewer: [findings()] });
 		const before = Date.now();
 		const result = await Effect.runPromise(settled(clean));
 		const verdict = result.state._tag === "Reviewed" ? result.state.verdict : undefined;
 		// The scripted provider counts tokens from the text: the request was written to its cache, the answer is output.
-		const usage = verdict?.call?.usage;
-		expect(verdict?.call).toEqual({
+		const call = verdict?.call;
+		const usage = call?.usage;
+		expect(call).toEqual({
 			provider: "reviewer-lab",
 			model: "judge",
+			api: clean.reviewer.getModel().api,
 			stopReason: "stop",
+			timestamp: call?.timestamp,
+			durationMs: call?.durationMs,
 			usage: {
 				input: 0,
 				output: 4,
@@ -361,10 +366,15 @@ describe("the reviewer's request in the verdict", () => {
 				cacheWrite: usage?.cacheWrite,
 				totalTokens: usage?.totalTokens,
 				cost: 0,
+				costs: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 		});
 		expect(usage?.cacheWrite).toBeGreaterThan(0);
 		expect(usage?.totalTokens).toBe((usage?.cacheWrite ?? 0) + 4);
+		// The request started after the run began and before the verdict was decided, and pi-ai timed it.
+		expect(call?.timestamp).toBeGreaterThanOrEqual(before);
+		expect(call?.timestamp).toBeLessThanOrEqual(verdict?.time ?? 0);
+		expect(call?.durationMs).toBeGreaterThanOrEqual(0);
 		expect(verdict?.time).toBeGreaterThanOrEqual(before);
 		expect(verdict?.time).toBeLessThanOrEqual(Date.now());
 	});
@@ -413,6 +423,7 @@ describe("the family rule and the model that reviewed", () => {
 			_tag: "Reviewed",
 			verdict: {
 				answer: expect.any(Number),
+				inputs: [expect.any(Number)],
 				pass: 1,
 				corrections: 0,
 				author: PARTIES.author,
@@ -436,6 +447,7 @@ describe("the family rule and the model that reviewed", () => {
 		const result = await Effect.runPromise(settled(given));
 		const verdict = {
 			answer: expect.any(Number),
+			inputs: [expect.any(Number)],
 			pass: 1,
 			corrections: 0,
 			author: PARTIES.author,
@@ -524,6 +536,7 @@ describe("a reviewer's request that failed", () => {
 		);
 		const verdict = {
 			answer: expect.any(Number),
+			inputs: [expect.any(Number)],
 			pass: 1,
 			corrections: 0,
 			...PARTIES,
@@ -649,6 +662,7 @@ describe("a review that is aborted", () => {
 			reason: "review_aborted",
 			verdict: {
 				answer: expect.any(Number),
+				inputs: [expect.any(Number)],
 				pass: 1,
 				corrections: 0,
 				...PARTIES,

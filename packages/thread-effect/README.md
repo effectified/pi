@@ -272,7 +272,8 @@ const Outcomes = Layer.succeed(OutcomeSink, {
 | `Reached` | The thread stands at an outcome: `Reviewed`, `Answered`, `NotReviewed`, `Held`, `ReviewDeferred`, `BudgetStopped`, `Errored` or `Cancelled` | The same, and `outcome`: the `Outcome`, as `Threads.outcome` gives it, counts included | `<thread>:<submission>:<entry>:<state>` |
 
 `<submission>` is Pi's id of the submission, `<entry>` the id of the newest entry of the thread's conversation when
-the state was read (0 for none), `<state>` the outcome's `_tag`. A thread reaches several outcomes in a row when a
+the state was read (0 for none), and for a hold or a deferral the entry of its verdict, `<state>` the outcome's
+`_tag`. A thread reaches several outcomes in a row when a
 held answer is released or a deferred review is asked for again: `Held`, then `Reviewed`, on the same submission. A
 state of one submission that comes again, a second hold after a person's correction, rests on a newer entry, the
 verdict that holds it, and so has an id of its own.
@@ -306,9 +307,9 @@ own id: a second channel would tell it twice under two ids.
 
 **What does not:**
 
-- **A state the thread left before its courier looked is not delivered.** The courier reads where the thread stands
-  when it is woken. A hold a person released at once, or a stop the product resumed before it was told, is passed
-  over: the state that followed is delivered. A product that acts on events, not on polls, never does that.
+- **A hold or a deferral whose verdict was stored before this package recorded a verdict's submission** (threads in
+  flight at an upgrade) is told from where the thread stands, as before: one the thread had left already stays
+  passed over. Every later one is told from the transcript, also when the thread left it at once.
 - **A process that dies between the commit that ends a thread's work and the commit that wakes its courier** (two
   commits of this process, with no port call between them) delivers at its next open.
 - **Counts are those of the first read.** `outcome.counts` of an event that is delivered again is what it was first:
@@ -332,12 +333,12 @@ no id of the recorder is used twice.
 |---|---|
 | `id` | `<conversation>:<entry>:0:model`: the recorder's id of the model call of an entry's first message. No record of the recorder has it, because an entry that gives an `Entry` record has no model message |
 | `entry`, `task`, `conversation` | The verdict's entry, the review task that appended it, the thread's conversation |
-| `time` | When the verdict was decided: the one time a verdict holds |
+| `time` | When the reviewer's request started; for a verdict stored before it kept that, when the verdict was decided |
 | `provider`, `model`, `stopReason`, `error` | The verdict's `call`: the route that served (the policy's reviewer when the request ended without a response), how it ended, the provider's error text |
-| `usage` | The tokens of the response, which are those the lease settled; `cacheWrite1h` and `reasoning` are `null` |
+| `usage` | The tokens of the response, which are those the lease settled, `cacheWrite1h` and `reasoning` included (`null` where pi-ai reported none) |
 | `cost.total` | pi-ai's cost of the response, as the verdict holds it: what `cost.total` is in every other `ModelCall`. It is not what the lease was charged: that is the route's price, which the product's `Lease` was told at `settle` |
-| `responseModel`, `responseId`, `durationMs` | `null`: a verdict does not hold them |
-| `derived` | `from`: the id of the verdict's record. `unknown`: the fields a verdict does not hold, which carry their empty value (`""`, `0`, `false`): `api`, the four parts of `cost`, `cost.fromProvider`; and `usage` and `cost.total` for a request that ended without a response |
+| `api`, `responseModel`, `responseId`, `durationMs`, the parts of `cost`, `cost.fromProvider` | The response's, as the verdict keeps them; of a request that ended without a response, the reviewer model's `api` and the time it was sent |
+| `derived` | `from`: the id of the verdict's record. `unknown`: empty for a verdict of this version. For a verdict stored before it kept the whole response, the fields it does not hold, which carry their empty value (`""`, `0`, `false`): `api`, the four parts of `cost`, `cost.fromProvider`; and `usage` and `cost.total` for a request that ended without a response |
 
 `derived` is an optional field of the recorder's `ModelCall` that no record of the recorder carries: a sink tells a
 derived call from a recorded one by it. A verdict without a request (the family rule stopped the review before one
@@ -488,8 +489,9 @@ by anything that carries one, and only the name crosses, since the code is insta
 The actor stores the change with the swarm as `Swarm.start` stores one, and each fork's actor applies it in the
 commit that creates the job's conversation, before the fork setup, which then narrows the tools to what the
 allowance and the thread's grant leave of them and takes the review out. So a fork runs on the model the plan names
-and is offered, of the tools the plan names, those it may have. `cwd` and `compaction` do not cross: a fork has its
-thread's. A change that is no data of that shape (a number of turns below 1) fails with `InvalidPlan` in the
+and is offered, of the tools the plan names, those it may have, in the plan's `cwd` and with its `compaction`
+settings. A change that is no data of that shape (a number of turns below 1, a negative token count) fails with
+`InvalidPlan` in the
 caller, before anything is sent. The
 actor holds every name of the change, of tools and of extensions, against its own registry: with one that nothing is
 installed under, `runSwarm` fails with `OperationFailed` of the reason `InvalidPlan`, which lists the names, and
@@ -721,27 +723,13 @@ host's reservations stay open**: the product's lease expires them.
 
 What remains: where the packages still do not compose, or cannot express what the consumer's loop and host do. Most
 serious first. Each names its evidence, the smallest change that would close it, and the package it belongs to. What
-earlier passes closed is listed below (1 to 26).
+earlier passes closed is listed below (1 to 30).
 
-**1. The reviewer's model call does not say its api, the parts of its cost, or whether a provider billed it.** The
-review stores of a request the route, the stop reason, the tokens and one cost. So the `ModelCall` the composition
-makes of a verdict carries `""`, `0` and `false` there and names them in `derived.unknown`, and its `time` is the
-verdict's, not the response's.
-- Evidence: `test/review-calls.test.ts`, "is the reviewer's request in the shape of every other model call, with
-  what a verdict does not hold named"; `test/review.test.ts`, "gets the verdict as the record of its entry, and the
-  reviewer's request as a model call record after it".
-- Smallest fix, `review-effect`: `Verdict.call` keeps the response's `api`, `responseId`, `responseModel`,
-  `timestamp`, `durationMs` and pi-ai's whole `usage.cost`. `ReviewCalls.modelCall` then fills them and
-  `derived.unknown` is empty.
+**1.** Closed: the reviewer's model call says its api, the parts of its cost and whether a provider billed it, and
+its time is when the request started (29).
 
-**2. An outcome a thread left before its courier looked is not told.** The events are read from where the thread
-stands when its courier is woken, because the review state behind an outcome is read from Pi's live state and
-cannot be read back for an earlier moment. A hold a person released at once is passed over.
-- Evidence: `test/outcomes.test.ts`, "is told each state a held thread goes through: held, then what a person's
-  decision made of it", which waits for `Held` before it decides; the same wait in `test/kill-resume.ts` before a
-  resume.
-- Smallest fix, `review-effect`: the state of a review as a function of the entries alone (a `review.hold` and a
-  `review.deferral` entry beside the verdict), so that the events are derived from the transcript as records are.
+**2.** Closed: an outcome a thread left before its courier looked is told, from the transcript: a hold a person
+released at once, a deferral asked for again at once, and the end of a run the product took on at once (30).
 
 **3. A process that dies between the end of a thread's work and the wake of its courier tells at its next open
 only.** The two are two commits of the same process: the first is Pi's, and a hook cannot commit with it.
@@ -756,16 +744,21 @@ cannot delete or measure a conversation.
   good, and says what its own entries weigh"; `test/swarm.test.ts`, "fans typed results in …".
 - Smallest fix: Pi, a delete of a conversation and its size.
 
-**5. The agent change that crosses to an actor carries neither `cwd` nor `compaction`.** A fork has its thread's.
-(That its names were not checked is closed: 26.)
+**5.** Closed: the agent change that crosses to an actor carries `cwd` and `compaction` (27).
 
-**6. A request that is sent again has no key of its own that a provider could refuse a repeat by.** Pi sends a
-conversation's session with every request, the same before and after a crash, and the advisory record of the request
-keeps its id. But the router makes a new request id in each process, and the reservation of the request is a new one,
-so neither the provider nor the lease can tell a repeat from a new request.
-- Evidence: `test/hosts-suite.ts`, "goes on in a second host process …": one session and one advisory id for the
-  request sent twice, two reservations.
-- Smallest fix, Pi: a key of the generation task and its attempt in the request options.
+**6. A request that is sent again has no key of its own that a provider could refuse a repeat by.** The lease has
+one now (28): a key of the session and the whole context, the same for the request a crash cut off and the request
+Pi sends again. A provider gets none, and the packages cannot make one it could use. Pi's retry after a provider
+error sends the same context, so it has the key of the send that failed: a provider that answered a key it has seen
+from its record would answer every retry with that error. What tells a resend from a retry is which attempt a send
+is, and that reaches no provider call. Nor would Pi's attempt number do as it is: Pi 1.6.1 counts a send a crash cut
+off as a failed attempt (`interrupted` in `generation.ts`), so the resend is the next attempt.
+- Evidence: `budget-effect`, `test/budgeted-models.test.ts`, "is reserved under the key of the send that failed when
+  Pi retries it after a provider error"; the resend's key is 28's evidence.
+- Smallest fix, Pi: the generation task keeps a key per send in its checkpoint, kept by `interrupted` for a send a
+  crash cut off and made anew after an attempt a provider answered (`classify`), and passes it with the request
+  options where `generation.ts` sets `sessionId`. pi-ai has no option for such a key today, so it needs one that its
+  adapters send where a provider's API takes it.
 
 ### Not proven on a local engine
 
@@ -795,8 +788,9 @@ A local engine is one node on one machine. What needs a Rivet deployment, or a m
 
 ### Limits the packages document, which a product inherits
 
-- **A crash between `reserve` and `settle`** leaves a reservation the product's lease must expire. The provider may
-  have billed the request (budget-effect).
+- **A crash between `reserve` and `settle`** leaves a reservation the product's lease must expire, or release when
+  the request is sent again: the new reservation carries the same `requestKey`. The provider may have billed the
+  request (budget-effect).
 - **A close or a crash between a settlement and the commit of a share's total** leaves the stored total, and so
   `settledMicros`, short by that request. The suite's aborted requests settle zero (budget-effect).
 - **A request a close cut off is sent and reserved again** (durable-effect; the table above).
@@ -865,8 +859,12 @@ A local engine is one node on one machine. What needs a Rivet deployment, or a m
 | 22 | A caller learns of a thread's end by asking | Closed here: the port `OutcomeSink`, called by the process that works the thread with `Started` and every outcome reached, at least once, in order, under an id of the submission and the entry, after the records. The delivery is a Pi task (`OutcomeCourier`), so the Rivet host holds an actor awake for it and wakes it for an attempt that failed. What is left is gaps 2 and 3 | `outcomes.test.ts`, all of it; `kill-resume.ts`, every case and "an outcome its sink refused is told when the storage is opened again …"; `rivet-suite.ts`, "works a thread …", "delivers an outcome its sink refused once after a forced sleep …"; `storage-fork.test.ts`, "are its source's to tell …" |
 | 23 | The reviewer's request is a field of an entry, not a model call record | Closed here (`ReviewCalls.layer`) with one optional field of `recorder-effect` (`ModelCall.derived`): a `ModelCall` after the verdict's record, under an id no record of the recorder has. What a verdict does not hold is gap 1 | `review-calls.test.ts`; `review.test.ts`, "gets the verdict as the record of its entry …", "stops the thread with the lease's reason when the budget refuses the reviewer …"; `thread.test.ts`, "reserves and settles once per provider request …" |
 | 24 | A destroyed fork in the thread's storage does not say what it wrote | Closed by `swarm-effect`: the in-storage driver answers the bytes of the UTF-8 JSON of the entries the fork appended after its fork point, and keeps the number. What it is not is gap 4 | `swarm.test.ts`, "fans typed results in …"; `swarm-effect`, `conversation-forks.test.ts`, `host.test.ts` |
-| 26 | The names of an agent change that crosses to an actor are not checked there | Closed here: `runSwarm` holds them against the actor's registry (`ForkAgent.requireInstalled`) and answers `InvalidPlan` with the names nothing is installed under | `fork-agent.test.ts`, "an agent change held against the registry of the actor"; `rivet-suite.ts`, "runs a swarm's forks with the agent change of its plan …" |
 | 25 | An agent change for a swarm's forks does not cross to an actor | Closed here (`ForkAgent`, `Remote.Plan.agent`, `runSwarm`) with `swarm-effect`'s `named`: the model, the thinking level, the instructions, the turns, and tools and extensions by name. What is left is gap 5; its names are 26 | `rivet-suite.ts`, "runs a swarm's forks with the agent change of its plan …"; `fork-agent.test.ts` |
+| 26 | The names of an agent change that crosses to an actor are not checked there | Closed here: `runSwarm` holds them against the actor's registry (`ForkAgent.requireInstalled`) and answers `InvalidPlan` with the names nothing is installed under | `fork-agent.test.ts`, "an agent change held against the registry of the actor"; `rivet-suite.ts`, "runs a swarm's forks with the agent change of its plan …" |
+| 27 | The agent change that crosses to an actor carries neither `cwd` nor `compaction` | Closed here: `ForkAgent` is all of `Agent.Change`, and `ForkAgent.Wire` checks `cwd` and `compaction` as Pi's `configure` would (token counts integers 0 or more), in the client and in the actor's `runSwarm`; each fork's actor stores them | `fork-agent.test.ts`, "is the working directory and the compaction settings as they are", "does not cross with a token count of its compaction that Pi's configure would refuse"; `rivet-suite.ts`, "runs a swarm's forks with the agent change of its plan …" (the forks' stored agent) |
+| 28 | A request that is sent again has no key a lease can tell it by | Closed by `budget-effect` (`BudgetRequest.requestKey`), `router-effect` (`RouteEvent.requestKey`) and here (`Fallbacks.layer` passes it with a failed attempt's charge): the SHA-256 of the session and the whole context, which Pi builds from committed entries without failed or cut-off answers. The provider half is gap 6 | `hosts-suite.ts`, "goes on in a second host process …": the killed request and its resend in the second process reserved under one key, the next request under another; `budget.test.ts`, "falls back to the next route …" (one key in the reservation, the route events and the charge); `budget-effect`, `sqlite-suites.ts`, "settles a request a close cut off … under its key …" |
+| 29 | The reviewer's model call does not say its api, the parts of its cost, or whether a provider billed it | Closed by `review-effect` (`Verdict.call` keeps the response's `api`, `responseModel`, `responseId`, `timestamp`, `durationMs`, `cacheWrite1h`, `reasoning` and pi-ai's whole `usage.cost` as `usage.costs`) and here: `ReviewCalls.modelCall` fills them, its `time` is when the request started, and `derived.unknown` is empty. A verdict stored before still decodes, and its model call names what it lacks, as before | `review-calls.test.ts`, "is the reviewer's request in the shape of every other model call, with nothing a verdict does not hold", "names what a verdict stored before …"; `review.test.ts`, "gets the verdict as the record of its entry …"; `review-effect`, `model-review.test.ts`, "keeps of a response its api, the provider's ids, its times, and pi-ai's whole usage and cost" |
+| 30 | An outcome a thread left before its courier looked is not told | Closed by `review-effect` (`Review.waitOf`: the hold or the deferral a verdict began, from the verdict alone; `Verdict.inputs`: the submissions the reviewed run answers; `Review.verdicts` from an entry) and here: the courier tells, submission by submission, every wait the transcript holds, each resting on its verdict, then how the submission ended, then the next one's start. No entry kind was added: a hold and a deferral begin with their verdict, in the commit that puts the review task to sleep. A wait whose verdict was stored before verdicts named their inputs is told as before, from where the thread stands | `outcomes.test.ts`, "is told each state a held thread goes through …", "is told each deferral of a review that was asked for again at once …", "is told of a stop the product took on before it was told …", each with a sink that takes nothing until the thread moved on; `kill-resume.ts`, the deferred case resumed at once; `review-effect`, `state.test.ts`, "waitOf" |
 
 ## What the loop does that this does not, and the reverse
 

@@ -431,10 +431,11 @@ describe("what the sink is told of a review", () => {
 		expect((verdict?.data.call?.usage?.totalTokens ?? 0) > 0).toBe(true);
 		// The request is the review task's own, not a generation: the recorder derives no `ModelCall` from it, and
 		// Pi's usage ledger does not hold it. The composition's sink wrapper makes one of the verdict's record, in the
-		// shape of every other model call: the verdict's entry and task, the route, the tokens the lease settled and
-		// pi-ai's cost as the verdict holds them, `null` where a model call may say so, and by name what a verdict
-		// does not hold, which is empty.
-		const usage = verdict?.data.call?.usage;
+		// shape of every other model call: the verdict's entry and task, the route and its api, when the request
+		// started and how long it took, the tokens the lease settled and pi-ai's whole cost of them, `null` where
+		// pi-ai reported nothing, and no field the verdict does not hold.
+		const call = verdict?.data.call;
+		const usage = call?.usage;
 		const calls = committed(state).flatMap((record) => (record._tag === "ModelCall" ? [record] : []));
 		expect(calls.map(shape)).toEqual([
 			{ _tag: "ModelCall", provider: "author-lab", model: "writer", stopReason: "stop", error: null },
@@ -446,12 +447,12 @@ describe("what the sink is told of a review", () => {
 			id: `${result.conversation}:${verdict?.id}:0:model`,
 			conversation: result.conversation,
 			entry: verdict?.id,
-			time: verdict?.data.time,
+			time: call?.timestamp,
 			advisory: false,
 			task: verdict?.byTaskId,
 			provider: JUDGE.provider,
 			model: JUDGE.modelId,
-			api: "",
+			api: call?.api,
 			responseModel: null,
 			responseId: null,
 			stopReason: "stop",
@@ -466,12 +467,13 @@ describe("what the sink is told of a review", () => {
 				totalTokens: usage?.totalTokens,
 			},
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: usage?.cost, fromProvider: false },
-			durationMs: null,
-			derived: {
-				from: `${result.conversation}:${verdict?.id}:entry`,
-				unknown: ["api", "cost.input", "cost.output", "cost.cacheRead", "cost.cacheWrite", "cost.fromProvider"],
-			},
+			// pi-ai times a scripted response only when it was scripted in the millisecond its request started.
+			durationMs: call?.durationMs ?? null,
+			derived: { from: `${result.conversation}:${verdict?.id}:entry`, unknown: [] },
 		});
+		// The api is the reviewer's own, and the time is when its request started: before the verdict was decided.
+		expect(calls[1]?.api).toBe("scripted-reviewer-lab");
+		expect(calls[1]?.time).toBeLessThanOrEqual(verdict?.data.time ?? 0);
 		// pi-ai's cost of the response, which is nothing for a scripted model without a catalog price, and not the
 		// route's price: that one the lease was told.
 		expect(calls[1]?.cost.total).toBe(0);
