@@ -1,7 +1,7 @@
 // The recorder: a pump that delivers the records of committed entries to the sink, in order, at least once.
 
-import type { ConversationId, EntryId, Cursor as ScanCursor } from "@earendil-works/pi-durable";
-import { type Doc, type DurableError, Harness } from "@gunta/pi-durable-effect";
+import type { ConversationId, Cursor as ScanCursor } from "@earendil-works/pi-durable";
+import { type Doc, type DurableError, Entry, Harness } from "@gunta/pi-durable-effect";
 import { Context, Effect, Layer, Option, Queue, Schedule, Semaphore, Stream } from "effect";
 import * as Cursor from "./cursor.ts";
 import { fromEntry } from "./from-entry.ts";
@@ -99,8 +99,10 @@ export function layer(options: Options = {}): Layer.Layer<Recorder, DurableError
 						conversation.value
 							.entries({
 								order: "ascending",
-								// Entry ids are integers, and Pi's brand on them is compile-time only: the id after `delivered`.
-								minEntryId: (delivered + 1) as EntryId,
+								...Option.match(delivered, {
+									onNone: () => ({}),
+									onSome: (id) => ({ minEntryId: Entry.after(id) }),
+								}),
 								pageSize: BATCH_ENTRIES,
 							})
 							.pipe(Stream.take(BATCH_ENTRIES)),

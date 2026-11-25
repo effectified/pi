@@ -1,14 +1,15 @@
 // The policy: who reviews, which family each model belongs to, how many corrective runs, and what blocks. Data the
 // product supplies.
 
+import { ModelRef as PiModelRef } from "@gunta/pi-ai-effect";
 import { Option, Schema } from "effect";
 import { Severity } from "./finding.ts";
 
-/** A model as Pi names one: its provider and its id there. */
-export const ModelRef = Schema.Struct({ provider: Schema.String, modelId: Schema.String });
+/** A model as Pi names one: its provider and its id there. The schema of Pi's `ModelRef`, `@gunta/pi-ai-effect`'s. */
+export const ModelRef = PiModelRef;
 
 /** A model as Pi names one. */
-export type ModelRef = typeof ModelRef.Type;
+export type ModelRef = PiModelRef;
 
 /** One row of the family table: the family a model belongs to, in the product's own labels. */
 export const Family = Schema.Struct({ provider: Schema.String, modelId: Schema.String, family: Schema.String });

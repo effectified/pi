@@ -1,3 +1,4 @@
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { PriceRows, PriceRowsError, priceRows, type RouteTable } from "../src/index.ts";
@@ -95,6 +96,68 @@ describe("priceRows", () => {
 		]);
 		const collision = await Effect.runPromise(Effect.flip(priceRows(shared)));
 		expect(collision.issues).toEqual([{ _tag: "ConflictingPrice", provider: "router", model: "m" }]);
+	});
+
+	it("carries a route's tiers, and prices an alias at the highest rate of its routes and their tiers", async () => {
+		const tier = {
+			inputTokensAbove: 200_000,
+			input: 6_000_000,
+			output: 30_000_000,
+			cacheRead: 0,
+			cacheWrite: 7_500_000,
+		};
+		const tiered = table([
+			{
+				alias: "author",
+				routes: [route("first", { price: { ...PRICE, tiers: [tier] } }), route("second", { price: OTHER })],
+			},
+		]);
+		const rows = await runTest(priceRows(tiered));
+		expect(rows.prices).toEqual([
+			{
+				provider: "first",
+				model: "m",
+				input: 3_000_000,
+				output: 15_000_000,
+				cacheRead: 300_000,
+				cacheWrite: 3_750_000,
+				tiers: [tier],
+			},
+			{
+				provider: "second",
+				model: "m",
+				input: 1_000_000,
+				output: 20_000_000,
+				cacheRead: 100_000,
+				cacheWrite: 5_000_000,
+			},
+			// No route charges more than this row for any request, a large one to `first` included.
+			{
+				provider: "router",
+				model: "author",
+				input: 6_000_000,
+				output: 30_000_000,
+				cacheRead: 300_000,
+				cacheWrite: 7_500_000,
+			},
+		]);
+		expect(Schema.decodeUnknownSync(PriceRows)(JSON.parse(JSON.stringify(rows)))).toEqual(rows);
+	});
+
+	it("fails when one model has two prices that differ only in their tiers", async () => {
+		const tier = {
+			inputTokensAbove: 200_000,
+			input: 3_000_000,
+			output: 15_000_000,
+			cacheRead: 300_000,
+			cacheWrite: 3_750_000,
+		};
+		const twice = table([
+			{ alias: "author", routes: [route("first", { price: { ...PRICE, tiers: [tier] } })] },
+			{ alias: "fast", routes: [route("first")] },
+		]);
+		const error = await runTest(Effect.flip(priceRows(twice)));
+		expect(error.issues).toEqual([{ _tag: "ConflictingPrice", provider: "first", model: "m" }]);
 	});
 
 	it("fails for a table without a route: it has no price and no currency", async () => {

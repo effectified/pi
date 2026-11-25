@@ -1,7 +1,7 @@
 // Shares: what one conversation has settled of the harness's lease, and a cap of its own, kept in the harness storage.
 
-import { type ConversationId, ProviderDoc, type ProviderState } from "@earendil-works/pi-durable";
-import { Doc, Harness, type Tx } from "@gunta/pi-durable-effect";
+import type { ConversationId } from "@earendil-works/pi-durable";
+import { BuiltinDoc, Doc, Harness, type Tx } from "@gunta/pi-durable-effect";
 import { Context, Deferred, Effect, Layer, Option, Schema } from "effect";
 
 /**
@@ -295,7 +295,7 @@ const shareIn = Effect.fnUntraced(function* (
 	conversation: ConversationId,
 	cap: bigint | undefined,
 ) {
-	const provider = yield* tx.doc(PROVIDER, conversation);
+	const provider = yield* tx.doc(BuiltinDoc.provider, conversation);
 	return yield* write(ledger, tx, (yield* provider.get).sessionId, conversation, cap);
 });
 
@@ -319,25 +319,7 @@ export function sessionOf(
 	conversation: ConversationId,
 ): Effect.Effect<Option.Option<string>, Doc.Failure, Harness.Harness> {
 	return Effect.map(
-		Harness.snapshot(PROVIDER, conversation),
+		Harness.snapshot(BuiltinDoc.provider, conversation),
 		Option.map((state) => state.sessionId),
 	);
 }
-
-/**
- * Pi's built-in `pi.provider` document as a document of the facade, which reads through Pi's own token. Nothing
- * here changes it, and Pi's type is the type of what Pi stored. Opened in a commit for a conversation that has none
- * yet (one made before Pi kept provider sessions), it is created as Pi itself creates it before that conversation's
- * first request.
- */
-const PROVIDER: Doc.Doc<Schema.Codec<ProviderState, ProviderState>, "conversation", "latest"> = {
-	kind: ProviderDoc.definition.kind,
-	version: ProviderDoc.definition.version,
-	schema: Schema.Struct({ sessionId: Schema.String }),
-	scope: "conversation",
-	history: "latest",
-	family: false,
-	token: ProviderDoc,
-	encode: (value) => Effect.succeed({ ...value }),
-	decode: (stored) => Effect.succeed(stored as ProviderState),
-};

@@ -1,15 +1,7 @@
-// The run under review, as Pi stores it: Pi's built-in live and provider documents, and what a review reads of them.
+// The run under review, as Pi stores it in its built-in live document: what a review reads of it.
 
-import {
-	type EntryId,
-	LiveDoc,
-	type LiveState,
-	ProviderDoc,
-	type ProviderState,
-	type SubmissionId,
-} from "@earendil-works/pi-durable";
-import type { Doc } from "@gunta/pi-durable-effect";
-import { Effect, Option, Schema } from "effect";
+import type { EntryId, LiveState, SubmissionId } from "@earendil-works/pi-durable";
+import { Option } from "effect";
 
 /** What Pi's live document says of a conversation's run, as far as a review needs it. */
 export interface View {
@@ -32,7 +24,7 @@ export interface View {
 	readonly inputs: ReadonlyArray<SubmissionId>;
 }
 
-/** The view of a conversation's run in `live`, a snapshot of `Live`; none is a conversation that never ran. */
+/** The view of a conversation's run in `live`, a snapshot of `BuiltinDoc.live`; none is a conversation that never ran. */
 export function view(live: Option.Option<LiveState>): View {
 	const run = Option.getOrUndefined(live)?.run;
 	return {
@@ -42,35 +34,3 @@ export function view(live: Option.Option<LiveState>): View {
 		inputs: run?.inputs ?? [],
 	};
 }
-
-/**
- * Pi's built-in `pi.live` document as a document of the facade, which reads through Pi's own token. Nothing here
- * writes it, and Pi's type is the type of what Pi stored.
- */
-export const Live: Doc.Doc<Schema.Codec<LiveState, LiveState>, "conversation", "latest"> = {
-	kind: LiveDoc.definition.kind,
-	version: LiveDoc.definition.version,
-	schema: Schema.declare((value: unknown): value is LiveState => typeof value === "object" && value !== null),
-	scope: "conversation",
-	history: "latest",
-	family: false,
-	token: LiveDoc,
-	encode: (value) => Effect.succeed({ ...value }),
-	decode: (stored) => Effect.succeed(stored as LiveState),
-};
-
-/**
- * Pi's built-in `pi.provider` document, in the same way: its `sessionId` is the provider session Pi sends with every
- * request of the conversation.
- */
-export const Provider: Doc.Doc<Schema.Codec<ProviderState, ProviderState>, "conversation", "latest"> = {
-	kind: ProviderDoc.definition.kind,
-	version: ProviderDoc.definition.version,
-	schema: Schema.Struct({ sessionId: Schema.String }),
-	scope: "conversation",
-	history: "latest",
-	family: false,
-	token: ProviderDoc,
-	encode: (value) => Effect.succeed({ ...value }),
-	decode: (stored) => Effect.succeed(stored as ProviderState),
-};

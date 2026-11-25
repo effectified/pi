@@ -206,6 +206,8 @@ describe("a pi-ai request to an alias", () => {
 				yield* Effect.promise(() =>
 					models.completeSimple(model, context, {
 						apiKey: "a key for some other provider",
+						// pi-ai resolves a provider's credentials from it: one provider's, never every route's.
+						env: { OPENAI_API_KEY: "a key for some other provider" },
 						deferred: true,
 						reasoning: "high",
 						maxTokens: 64,
@@ -225,6 +227,7 @@ describe("a pi-ai request to an alias", () => {
 			metadata: { user_id: "u1" },
 		});
 		expect(forwarded?.apiKey).toBeUndefined();
+		expect(forwarded?.env).toBeUndefined();
 		expect(forwarded?.deferred).toBeUndefined();
 		expect(forwarded?.signal).toBeInstanceOf(AbortSignal);
 	});

@@ -5,7 +5,6 @@ import type {
 	ModelsSimpleStreamOptions,
 	Context as PiContext,
 	Provider,
-	SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import { Models, type RequestOptions, type ResponseEvent, requestKey } from "@gunta/pi-ai-effect";
 import { Clock, Context, Effect, Layer, Queue, Random, Stream } from "effect";
@@ -107,7 +106,7 @@ const make = Effect.fnUntraced(function* (input: RouteTable, options: RouterOpti
 		alias: string,
 		context: PiContext,
 		given: Effect.Effect<Constraints | undefined, InvalidConstraints>,
-		requestOptions: (SimpleStreamOptions & { readonly constraints?: Constraints }) | undefined,
+		requestOptions: GivenOptions | undefined,
 		emit: RoutedRequest["emit"],
 	) {
 		const constraints = yield* given;
@@ -173,25 +172,80 @@ const make = Effect.fnUntraced(function* (input: RouteTable, options: RouterOpti
 	});
 });
 
+/** The options a request comes with: pi-ai's, and the router's own `constraints` when it came through `Router`. */
+type GivenOptions = ModelsSimpleStreamOptions & { readonly constraints?: Constraints };
+
 /**
- * What goes on to the provider of a route: the caller's options without the ones that are the router's own or that
- * cannot follow a request to another provider. The fiber owns cancellation (`signal`). An `apiKey` would be the key
- * of one provider sent to whichever route serves. A deferred response comes back with a handle only the route's
- * provider can fetch, so `deferred` is dropped and the response arrives in the request.
+ * What follows a request to the route that serves it, per option of pi-ai's requests. The fiber owns cancellation
+ * (`signal`). An `apiKey`, and `env`, from which pi-ai resolves a provider's credentials, would be one provider's
+ * given to whichever route serves: each route's provider has its own in `Models`. A deferred response comes back with
+ * a handle only the route's provider can fetch, so `deferred` is dropped and the response arrives in the request.
+ * `metadata` follows without the router's key. The rest is about the request, not about one provider, and follows
+ * it: `headers` too, the caller's own HTTP headers (a trace id), which pi-ai merges over each route's. An option
+ * pi-ai adds fails to compile here until it is decided.
  */
-function forwarded(
-	options: (SimpleStreamOptions & { readonly constraints?: Constraints }) | undefined,
-): RoutedRequest["options"] {
-	const {
-		signal: _signal,
-		apiKey: _apiKey,
-		deferred: _deferred,
-		constraints: _constraints,
-		metadata,
-		...rest
-	} = options ?? {};
-	if (metadata === undefined) return rest;
+const FORWARD = {
+	signal: "drop",
+	apiKey: "drop",
+	env: "drop",
+	deferred: "drop",
+	metadata: "forward",
+	headers: "forward",
+	transformHeaders: "forward",
+	identity: "forward",
+	fetch: "forward",
+	telemetry: "forward",
+	onPayload: "forward",
+	onResponse: "forward",
+	onProviderStreamEvent: "forward",
+	timeoutMs: "forward",
+	maxRetries: "forward",
+	maxRetryDelayMs: "forward",
+	transport: "forward",
+	websocketConnectTimeoutMs: "forward",
+	sessionId: "forward",
+	disableContinuation: "forward",
+	cacheRetention: "forward",
+	temperature: "forward",
+	samplingParams: "forward",
+	maxTokens: "forward",
+	toolChoice: "forward",
+	reasoning: "forward",
+	thinkingBudgets: "forward",
+} as const satisfies Record<keyof ModelsSimpleStreamOptions, "forward" | "drop">;
+
+/** pi-ai's options that follow a request to its route. */
+type Forwarded = {
+	[K in keyof typeof FORWARD]: (typeof FORWARD)[K] extends "forward" ? K : never;
+}[keyof typeof FORWARD];
+
+/** The names of the options `FORWARD` forwards. */
+const FORWARDED: ReadonlySet<string> = new Set(
+	Object.entries(FORWARD).flatMap(([option, decision]) => (decision === "forward" ? [option] : [])),
+);
+
+/**
+ * What goes on to the provider of a route: the caller's options that `FORWARD` forwards, with `metadata` without the
+ * router's own key. An option no pi-ai type names (a value that is not of this version's options) is not passed on.
+ */
+function forwarded(options: GivenOptions | undefined): RoutedRequest["options"] {
+	const kept: Pick<ModelsSimpleStreamOptions, Forwarded> = {};
+	if (options === undefined) return kept;
+	for (const option of Object.keys(options)) if (isForwarded(option)) copy(kept, options, option);
+	if (options.metadata === undefined) return kept;
 	// The constraints are for the router: a provider gets the rest of the caller's metadata.
-	const { [METADATA_KEY]: _own, ...others } = metadata;
-	return { ...rest, metadata: others };
+	const { [METADATA_KEY]: _own, ...others } = options.metadata;
+	return { ...kept, metadata: others };
+}
+
+function isForwarded(option: string): option is Forwarded {
+	return FORWARDED.has(option);
+}
+
+function copy<K extends Forwarded>(
+	to: Pick<ModelsSimpleStreamOptions, Forwarded>,
+	from: GivenOptions,
+	option: K,
+): void {
+	to[option] = from[option];
 }

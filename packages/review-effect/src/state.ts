@@ -3,11 +3,14 @@
 
 import { AssistantEntry, type EntryId, type TaskId } from "@earendil-works/pi-durable";
 import {
+	BuiltinDoc,
 	type Conversation,
 	type DurableError,
 	type Entry,
 	Harness,
 	type SchemaDecodeError,
+	Signal,
+	Task,
 } from "@gunta/pi-durable-effect";
 import { Effect, Option, Schema, Stream } from "effect";
 import * as Deferral from "./deferral.ts";
@@ -15,8 +18,7 @@ import { NAME } from "./extension.ts";
 import * as Hold from "./hold.ts";
 import * as ModelReview from "./model-review.ts";
 import * as Run from "./run.ts";
-import * as Signalled from "./signalled.ts";
-import { HoldId, Unreviewed, Verdict, VerdictEntry } from "./verdict.ts";
+import { Unreviewed, Verdict, VerdictEntry } from "./verdict.ts";
 
 /**
  * Why a conversation's newest answer is not reviewed: a reason of its verdict (`Unreviewed`), or
@@ -65,11 +67,11 @@ export const State = Schema.Union([
 	Schema.TaggedStruct("InReview", { verdict: Schema.optionalKey(Verdict) }),
 	Schema.TaggedStruct("Reviewed", { verdict: Verdict }),
 	Schema.TaggedStruct("Accepted", { verdict: Verdict, release: Hold.Release }),
-	Schema.TaggedStruct("Held", { verdict: Verdict, task: HoldId }),
-	Schema.TaggedStruct("Released", { verdict: Verdict, task: HoldId, decision: Hold.Decision }),
+	Schema.TaggedStruct("Held", { verdict: Verdict, task: Task.Id }),
+	Schema.TaggedStruct("Released", { verdict: Verdict, task: Task.Id, decision: Hold.Decision }),
 	Schema.TaggedStruct("Deferred", {
 		verdict: Verdict,
-		task: HoldId,
+		task: Task.Id,
 		/** The number of the request that failed, from 1: `retry` asks for the next one. */
 		attempt: Schema.Number,
 		reason: Schema.String,
@@ -102,7 +104,7 @@ const RECENT = 16;
  */
 export function state(conversation: Conversation.Conversation): Effect.Effect<State, Failure, Harness.Harness> {
 	return Effect.gen(function* () {
-		const run = Run.view(yield* Harness.snapshot(Run.Live, conversation.id));
+		const run = Run.view(yield* Harness.snapshot(BuiltinDoc.live, conversation.id));
 		// Newest first, down to the newest assistant entry: the answer, and what this package stored after it. That is
 		// a handful of entries, so the pages are small.
 		const recent = yield* Stream.runCollect(
@@ -143,7 +145,7 @@ export function state(conversation: Conversation.Conversation): Effect.Effect<St
 				const task = verdict.outcome.task;
 				const waiting = yield* live(task);
 				if (Option.isNone(waiting)) return settled({ _tag: "NotReviewed", reason: "hold_ended", verdict });
-				const decision = yield* Signalled.held(waiting.value, Hold.Released, Hold.KEY);
+				const decision = yield* delivered(waiting.value, Hold.Released, Hold.KEY);
 				return Option.isSome(decision)
 					? { _tag: "Released", verdict, task, decision: decision.value }
 					: { _tag: "Held", verdict, task };
@@ -153,7 +155,7 @@ export function state(conversation: Conversation.Conversation): Effect.Effect<St
 				const waiting = yield* live(task);
 				if (Option.isNone(waiting)) return settled({ _tag: "NotReviewed", reason: "request_failed", verdict });
 				// Asked again: the task reviews, or is about to, and its next verdict is not stored yet.
-				const retried = yield* Signalled.held(waiting.value, Deferral.Retried, Deferral.key(attempt));
+				const retried = yield* delivered(waiting.value, Deferral.Retried, Deferral.key(attempt));
 				if (Option.isSome(retried)) return { _tag: "InReview", verdict };
 				return deferral(verdict, verdict.outcome);
 			}
@@ -218,7 +220,20 @@ export function verdicts(
 function live(task: TaskId) {
 	return Effect.map(
 		Harness.getTask(task),
-		Option.filter((record) => record.state.status !== "terminal" && record.state.status !== "completing"),
+		Option.filter((record) => !Task.ended(record.state.status)),
+	);
+}
+
+/**
+ * The value delivered to a waiting task under `key` of `signal`: none while nothing was, and when the key expired.
+ * A memo another version of the signal stored fails with `SchemaDecodeError`.
+ */
+function delivered<S extends Schema.Constraint>(record: Signal.Stored, signal: Signal.Signal<S>, key: string) {
+	return Signal.stateIn(record, signal, key).pipe(
+		// The signals of this package have fixed schemas with a JSON Schema: one Pi cannot take is a defect of this
+		// package, not a failure of what was stored.
+		Effect.catchTag("SchemaConversionError", (error) => Effect.die(error)),
+		Effect.map(Option.flatMap((state) => (state.kind === "value" ? Option.some(state.value) : Option.none()))),
 	);
 }
 

@@ -4,7 +4,7 @@
 
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { EntryId, SubmissionId, TaskId } from "@earendil-works/pi-durable";
-import { Hook, Task } from "@gunta/pi-durable-effect";
+import { BuiltinDoc, Entry, Hook, Task } from "@gunta/pi-durable-effect";
 import { Effect, Option, Schema, Stream } from "effect";
 import type * as Check from "./check.ts";
 import * as Correction from "./correction.ts";
@@ -17,7 +17,7 @@ import { type Pairing, pair } from "./pairing.ts";
 import type { ModelRef, Policy } from "./policy.ts";
 import * as Report from "./report.ts";
 import * as Run from "./run.ts";
-import { AnswerId, type Unreviewed, type Verdict, VerdictEntry } from "./verdict.ts";
+import { type Unreviewed, type Verdict, VerdictEntry } from "./verdict.ts";
 
 /** What a review task is built from. `R` is what the product's checks need. */
 export interface Options<R> {
@@ -39,7 +39,7 @@ const Input = Schema.Struct({});
  */
 const State = Schema.Union([
 	Schema.Struct({ phase: Schema.Literal("review"), attempt: Schema.Number }),
-	Schema.Struct({ phase: Schema.Literal("held"), answer: AnswerId }),
+	Schema.Struct({ phase: Schema.Literal("held"), answer: Entry.Id }),
 	Schema.Struct({ phase: Schema.Literal("deferred"), attempt: Schema.Number }),
 ]);
 
@@ -103,7 +103,7 @@ function review<R>(options: Options<R>, attempt: number, api: Api) {
 				models: api.pi.models,
 				model,
 				sessionId: Option.map(
-					yield* api.snapshot(Run.Provider, api.conversationId),
+					yield* api.snapshot(BuiltinDoc.provider, api.conversationId),
 					(provider) => provider.sessionId,
 				),
 				now: yield* api.now,
@@ -158,7 +158,7 @@ interface Yielded {
 function examined(api: Api) {
 	return Effect.gen(function* () {
 		const missing = new NoAnswerUnderReview({ conversationId: api.conversationId, taskId: api.taskId });
-		const run = Run.view(yield* api.snapshot(Run.Live, api.conversationId));
+		const run = Run.view(yield* api.snapshot(BuiltinDoc.live, api.conversationId));
 		if (Option.isNone(run.yielded)) return yield* missing;
 		const answerId = run.yielded.value;
 		const entries = yield* Stream.runCollect(

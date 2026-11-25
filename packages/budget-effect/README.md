@@ -95,7 +95,13 @@ const estimate = Estimator.fixed(50_000n);
 ```
 
 - The four kinds are pi-ai's: `input` is the input neither read from nor written to the cache, `output` includes
-  reasoning. A cost is each count times its price, summed exactly, divided by a million and rounded up once.
+  reasoning. A cost is pi-ai's (`calculateCost`): each count times its price, cache writes kept for one hour
+  (`cacheWrite1h`, a part of `cacheWrite`) at twice the input price, summed exactly, divided by a million and rounded
+  up once.
+- A price may have `tiers`, as pi-ai's model costs do: a request whose input tokens (`input`, `cacheRead` and
+  `cacheWrite` together) are more than a tier's `inputTokensAbove` is charged at that tier's prices for all of its
+  tokens, the tier with the highest threshold below it winning. `{ ..., tiers: [{ inputTokensAbove: 200_000, input:
+  6_000_000, output: 30_000_000, cacheRead: 600_000, cacheWrite: 7_500_000 }] }`.
 - `Prices.layer(table)` fails with `InvalidPriceTable` for a table that is not whole numbers or lists a model
   twice. `Prices` also gives `priceOf` and `cost` as Effects, for an estimator that reads the table.
 - `Estimator` is a port: `Estimator.fixed(micros)`, or `Layer.succeed(Estimator, { estimate: (request) => … })`
@@ -135,9 +141,9 @@ const routerRows: PriceTable = {
 const routerPrices = Prices.layer(routerRows);
 ```
 
-Both packages price in the same units (integer micro units per million tokens) and round the same way: summed
-exactly, rounded up once per response, a count that is not a whole number rounded up, one that is not a positive
-number counted as zero. The cost in a route event is the cost this budget settles for the same usage.
+Both packages price in the same units (integer micro units per million tokens), by pi-ai's rule, and round the same
+way: summed exactly, rounded up once per response, a count that is not a whole number rounded up, one that is not a
+positive number counted as zero, one-hour cache writes counted at most all of `cacheWrite`. The cost in a route event is the cost this budget settles for the same usage.
 
 ## Compose
 

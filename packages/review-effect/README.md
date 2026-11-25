@@ -191,8 +191,9 @@ const reviewed = Review.extension({ policy, checks: [Cited, Wording] });
   is corrected as usual, and the failure is kept in the verdict. With no blocking finding, a failed check of the
   answer gives `NotReviewed` with the reason `check_failed`, and a failed request gives `Deferred`.
 - **A failed request is not a failed check of the answer.** The reviewer's request failed when pi-ai gave an `error`
-  or `aborted` response, or no response at all: a provider outage, a refusal by whatever wraps the models. Nothing
-  was said about the answer, so the review can be asked for again (see [Deferred](#deferred)). An answer that is not
+  or `aborted` response, a response still `pending` or `deferred` (Pi Durable takes neither as an answer:
+  `ANSWERED` of `@gunta/pi-ai-effect`), or no response at all: a provider outage, a refusal by whatever wraps the
+  models. Nothing was said about the answer, so the review can be asked for again (see [Deferred](#deferred)). An answer that is not
   the findings object is a failed check: asking again is not known to help.
 - **Nothing is retried by itself.** A check that should survive a flaky service retries inside its own Effect.
 
@@ -553,7 +554,9 @@ answers the review let stand.
 - **A held conversation blocks**, and so does a deferred one. Its queue does not move until a person decides, the
   review is asked for again, or it is aborted.
 - **`Released` is read from a task's memo.** Pi gives a task's own handlers `readSignal` and a host nothing. The
-  state reads what Pi's specification says a delivery stores, the task's memo `pi.signal.<name>/<key>`.
+  state reads what Pi's specification says a delivery stores, the task's memo `pi.signal.<name>/<key>`, through
+  `Signal.stateIn` of `@gunta/pi-durable-effect`: a memo another version of the signal stored fails the read with
+  `SchemaDecodeError`.
 - **The state is a snapshot** of three reads; a commit between them can make it one step old.
 - **Findings are stored as text** in the conversation, with the reviewer's words.
 

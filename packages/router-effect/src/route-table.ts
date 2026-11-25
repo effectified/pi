@@ -9,9 +9,26 @@ import { RouteTableError, type RouteTableIssue } from "./errors.ts";
 const Micros = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
 /**
+ * The rates of a large request, as pi-ai's `ModelCostTier`: a request whose input tokens (`input`, `cacheRead` and
+ * `cacheWrite` together) are more than `inputTokensAbove` is charged at these rates for all of its tokens.
+ */
+export const PriceTier = Schema.Struct({
+	inputTokensAbove: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	input: Micros,
+	output: Micros,
+	cacheRead: Micros,
+	cacheWrite: Micros,
+});
+
+/** The rates of a large request. */
+export type PriceTier = typeof PriceTier.Type;
+
+/**
  * What a route charges, per million tokens, in integer micro units of `currency` (one millionth of a unit: USD 3
  * per million tokens is 3000000). The four kinds are pi-ai's: `input` is the input neither read from nor written
- * to the cache, and `output` includes reasoning.
+ * to the cache, and `output` includes reasoning. Cache writes kept for one hour cost twice `input`, as pi-ai
+ * charges them. `tiers`, as pi-ai's model costs have them: the tier with the highest threshold below a request's
+ * input replaces the four rates for that request.
  */
 export const Price = Schema.Struct({
 	/** A label the product chooses, such as an ISO 4217 code. The router only carries it. */
@@ -20,6 +37,7 @@ export const Price = Schema.Struct({
 	output: Micros,
 	cacheRead: Micros,
 	cacheWrite: Micros,
+	tiers: Schema.optional(Schema.Array(PriceTier)),
 });
 
 /** What a route charges, per million tokens, in integer micro units. */

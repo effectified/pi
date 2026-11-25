@@ -1,3 +1,4 @@
+import type { ConversationId, TaskId } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import { describe as describeError } from "../src/errors.ts";
 import { NoAnswerUnderReview, NotDeferred, NotHeld, ReviewerRequestFailed, UndecodableReview } from "../src/index.ts";
@@ -5,12 +6,14 @@ import { NoAnswerUnderReview, NotDeferred, NotHeld, ReviewerRequestFailed, Undec
 describe("the errors of the package", () => {
 	it("are tagged, and say what happened", () => {
 		const reviewer = { provider: "reviewer-lab", modelId: "judge" };
+		// Pi brands its ids in the type system only: at run time they are the numbers stored.
+		const conversationId = 3 as ConversationId;
 		const errors = [
 			new ReviewerRequestFailed({ ...reviewer, reason: "overloaded" }),
 			new UndecodableReview({ ...reviewer, reason: "not JSON" }),
-			new NoAnswerUnderReview({ conversationId: 3, taskId: 9 }),
-			new NotHeld({ conversationId: 3, state: "Reviewed" }),
-			new NotDeferred({ conversationId: 3, state: "Held" }),
+			new NoAnswerUnderReview({ conversationId, taskId: 9 as TaskId }),
+			new NotHeld({ conversationId, state: "Reviewed" }),
+			new NotDeferred({ conversationId, state: "Held" }),
 		];
 		expect(errors.map((error) => [error._tag, error.message])).toEqual([
 			["ReviewerRequestFailed", "The reviewer reviewer-lab/judge did not answer: overloaded"],

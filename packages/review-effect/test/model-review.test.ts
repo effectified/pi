@@ -1,4 +1,5 @@
 import { type AssistantMessage, createModels, fauxProvider, type Models } from "@earendil-works/pi-ai";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import {
 	answer,
 	type FauxResponseStep,
@@ -10,7 +11,7 @@ import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { type Check, state } from "../src/index.ts";
 import { ask, kept, NAME, once, report, textOf } from "../src/model-review.ts";
-import { ask as asking, CALL, live, PARTIES, REVIEWED, scene } from "./scene.ts";
+import { ask as asking, CALL, live, PARTIES, REVIEWED, reached, scene } from "./scene.ts";
 
 /** Asks once, with the reviewer answering `reply`, and reads the state the run ended in and what was asked. */
 function reviewedWith(reply: FauxResponseStep) {
@@ -70,6 +71,26 @@ describe("the model review", () => {
 		});
 		// The run ended with the answer, after one request to each model: no correction was asked for.
 		expect([result.status, result.requests]).toEqual(["done", [1, 1]]);
+	});
+
+	it("defers the review of a reviewer whose response is deferred: Pi Durable takes it as no answer", async () => {
+		// The findings object, in a response the provider has not finished: no review of the answer passed.
+		const deferred = fauxAssistantMessage('{"findings":[]}', { stopReason: "deferred" });
+		const given = scene({ author: [answer("It is 42.")], reviewer: [deferred] });
+		const deferral = await runTest(
+			Effect.gen(function* () {
+				const { root } = yield* asking();
+				// Whichever comes first: a deferral, or the review the response would be if it were an answer.
+				return yield* Effect.raceFirst(reached(root, "Deferred"), reached(root, "Reviewed"));
+			}).pipe(Effect.provide(given.layer)),
+		);
+		expect(deferral).toMatchObject({
+			_tag: "Deferred",
+			attempt: 1,
+			// A deferred response has no error text of its own: the reason is the failure of the check.
+			reason: "The reviewer reviewer-lab/judge did not answer: deferred",
+			verdict: { findings: [], outcome: { _tag: "Deferred", attempt: 1 } },
+		});
 	});
 
 	it("records JSON of another shape, and a severity it does not know, as not reviewed", async () => {
@@ -136,6 +157,25 @@ describe("ask", () => {
 			"Failed",
 			{ _tag: "Failed", error: "The reviewer reviewer-lab/judge did not answer: overloaded" },
 		]);
+	});
+
+	it("gives a response that is deferred or still pending as unanswered, whatever its text", async () => {
+		const deferred = await asked(fauxAssistantMessage('{"findings":[]}', { stopReason: "deferred" }));
+		expect(deferred).toMatchObject({
+			_tag: "Unanswered",
+			call: { stopReason: "deferred" },
+			error: "The reviewer reviewer-lab/judge did not answer: deferred",
+		});
+		const reviewer = fauxProvider({ provider: "reviewer-lab", models: [{ id: "judge" }] });
+		const partial: AssistantMessage = { ...fauxAssistantMessage('{"findings":[]}'), stopReason: "pending" };
+		// Stands for models that resolve with a response that never ended: only the one call matters.
+		const pending = { completeSimple: () => Promise.resolve(partial) } as unknown as Models;
+		const request = { models: pending, model: reviewer.getModel(), sessionId: Option.none(), now: 1 };
+		expect(await runTest(ask({ ...request, instructions: Option.none() }, SUBJECT))).toMatchObject({
+			_tag: "Unanswered",
+			call: { stopReason: "pending" },
+			error: "The reviewer reviewer-lab/judge did not answer: pending",
+		});
 	});
 
 	it("gives a request the provider threw for as unanswered, with the provider's text", async () => {

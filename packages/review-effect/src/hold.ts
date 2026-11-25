@@ -3,7 +3,6 @@
 
 import { Entry, Signal } from "@gunta/pi-durable-effect";
 import { Schema } from "effect";
-import { AnswerId } from "./verdict.ts";
 
 /**
  * What a person decides about a held answer:
@@ -28,7 +27,7 @@ export const Released = Signal.make("review.release", 1, Decision);
 export const KEY = "release";
 
 /** A person's decision about the held answer `answer`, and the harness clock when it ended the hold (`time`). */
-export const Release = Schema.Struct({ answer: AnswerId, decision: Decision, time: Schema.Number });
+export const Release = Schema.Struct({ answer: Entry.Id, decision: Decision, time: Schema.Number });
 
 /** A person's decision about a held answer. */
 export type Release = typeof Release.Type;

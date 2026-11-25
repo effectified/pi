@@ -1,6 +1,7 @@
 // The typed failures of this package: a reviewer that gave no usable answer, a review task without an answer to
 // review, a release for a conversation that is not held, and a retry for one whose review is not deferred.
 
+import { Conversation, Task } from "@gunta/pi-durable-effect";
 import { Predicate, Schema } from "effect";
 
 /** The reviewer's request ended without an answer: the provider failed it, or it was aborted. */
@@ -30,8 +31,8 @@ export class UndecodableReview extends Schema.TaggedError<UndecodableReview>()("
  * assistant message. The task then faults, and the answer has no verdict.
  */
 export class NoAnswerUnderReview extends Schema.TaggedError<NoAnswerUnderReview>()("NoAnswerUnderReview", {
-	conversationId: Schema.Number,
-	taskId: Schema.Number,
+	conversationId: Conversation.Id,
+	taskId: Task.Id,
 }) {
 	override get message(): string {
 		return `Review task ${this.taskId} found no answer under review in conversation ${this.conversationId}`;
@@ -40,7 +41,7 @@ export class NoAnswerUnderReview extends Schema.TaggedError<NoAnswerUnderReview>
 
 /** `release` was called for a conversation that is not held; `state` is the tag of the state it is in. */
 export class NotHeld extends Schema.TaggedError<NotHeld>()("NotHeld", {
-	conversationId: Schema.Number,
+	conversationId: Conversation.Id,
 	state: Schema.String,
 }) {
 	override get message(): string {
@@ -50,7 +51,7 @@ export class NotHeld extends Schema.TaggedError<NotHeld>()("NotHeld", {
 
 /** `retry` was called for a conversation whose review is not deferred; `state` is the tag of the state it is in. */
 export class NotDeferred extends Schema.TaggedError<NotDeferred>()("NotDeferred", {
-	conversationId: Schema.Number,
+	conversationId: Conversation.Id,
 	state: Schema.String,
 }) {
 	override get message(): string {

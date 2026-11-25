@@ -3,9 +3,11 @@
 import {
 	type AnyModel,
 	type Api,
+	type AssistantImages,
 	type AssistantMessage,
 	type AssistantMessageEvent,
 	type AssistantMessageEventStream,
+	type ClassifierResult,
 	createAssistantMessageEventStream,
 	type Model,
 	type MutableModels,
@@ -13,7 +15,7 @@ import {
 	type StreamOptions,
 	type Usage,
 } from "@earendil-works/pi-ai";
-import { Models, requestKey } from "@gunta/pi-ai-effect";
+import { type ErrorReason, emptyUsage, Models, requestKey } from "@gunta/pi-ai-effect";
 import { Cause, Clock, Context, Effect, Exit, FiberSet, Layer, Option, Stream } from "effect";
 import { type Budget, gather, payerOf, refuse, reserve, settle } from "./budget.ts";
 import { BudgetEvents } from "./budget-events.ts";
@@ -103,7 +105,7 @@ const make = Effect.fnUntraced(function* (shares: SharesService | undefined) {
 			},
 		);
 		const request = { kind, model, session: options?.sessionId, context };
-		const ended = (reason: "error" | "aborted", errorMessage: string): TerminalEvent => ({
+		const ended = (reason: ErrorReason, errorMessage: string): TerminalEvent => ({
 			type: "error",
 			reason,
 			error: { ...(partial ?? blank(model, clock.currentTimeMillisUnsafe())), stopReason: reason, errorMessage },
@@ -129,7 +131,7 @@ const make = Effect.fnUntraced(function* (shares: SharesService | undefined) {
 		model: AnyModel,
 		signal: AbortSignal | undefined,
 		call: (signal: AbortSignal) => Promise<R>,
-		ended: (reason: "error" | "aborted", errorMessage: string) => R,
+		ended: (reason: ErrorReason, errorMessage: string) => R,
 	): Promise<R> => {
 		const send = Effect.map(
 			Effect.promise(call),
@@ -152,10 +154,12 @@ const make = Effect.fnUntraced(function* (shares: SharesService | undefined) {
 	};
 
 	const stream: MutableModels["stream"] = (model, context, options) =>
-		// TypeScript cannot resolve the conditional type of one API's options here; the spread only replaces `signal`.
-		respond("chat", model, context, options, (signal) =>
-			inner.stream(model, context, { ...options, signal } as typeof options),
-		);
+		respond("chat", model, context, options, (signal) => {
+			// Checked alone: the cast below cannot see whether pi-ai still names its abort signal `signal`.
+			const abort = { signal } satisfies Pick<StreamOptions, "signal">;
+			// TypeScript cannot resolve the conditional type of one API's options here; the spread only replaces `signal`.
+			return inner.stream(model, context, { ...options, ...abort } as typeof options);
+		});
 	const streamSimple: MutableModels["streamSimple"] = (model, context, options) =>
 		respond("chat", model, context, options, (signal) => inner.streamSimple(model, context, { ...options, signal }));
 	const streamDeferred: MutableModels["streamDeferred"] = (model, handle, options) =>
@@ -163,29 +167,8 @@ const make = Effect.fnUntraced(function* (shares: SharesService | undefined) {
 			inner.streamDeferred(model, handle, { ...options, signal }),
 		);
 
-	// The wrapped `Models` does everything that is not a provider request: catalogs, credentials and the providers
-	// themselves. Its request methods are replaced one by one, because it calls its own, never these.
-	const models = Models.of({
-		getProviders: inner.getProviders.bind(inner),
-		getProvider: inner.getProvider.bind(inner),
-		getModels: inner.getModels.bind(inner),
-		getModel: inner.getModel.bind(inner),
-		getModelsOfType: inner.getModelsOfType.bind(inner),
-		getModelOfType: inner.getModelOfType.bind(inner),
-		getAllModels: inner.getAllModels.bind(inner),
-		refresh: inner.refresh.bind(inner),
-		checkAuth: inner.checkAuth.bind(inner),
-		getAvailable: inner.getAvailable.bind(inner),
-		getAvailableOfType: inner.getAvailableOfType.bind(inner),
-		getAllAvailable: inner.getAllAvailable.bind(inner),
-		getAuth: inner.getAuth.bind(inner),
-		login: inner.login.bind(inner),
-		logout: inner.logout.bind(inner),
-		setProvider: inner.setProvider.bind(inner),
-		deleteProvider: inner.deleteProvider.bind(inner),
-		clearProviders: inner.clearProviders.bind(inner),
-		// Cancels a response the provider has not finished: it asks for no generation, so it reserves nothing.
-		cancelDeferred: inner.cancelDeferred.bind(inner),
+	// The members `MEMBERS` budgets, each replacing the wrapped one: the wrapped `Models` calls its own, never these.
+	const budgetedMembers: Pick<MutableModels, Budgeted> = {
 		stream,
 		streamSimple,
 		streamDeferred,
@@ -224,9 +207,79 @@ const make = Effect.fnUntraced(function* (shares: SharesService | undefined) {
 					timestamp: clock.currentTimeMillisUnsafe(),
 				}),
 			),
-	});
+	};
+	// The members `MEMBERS` forwards: catalogs, credentials and the providers themselves.
+	const forwardedMembers: Pick<MutableModels, Forwarded> = {
+		getProviders: inner.getProviders.bind(inner),
+		getProvider: inner.getProvider.bind(inner),
+		getModels: inner.getModels.bind(inner),
+		getModel: inner.getModel.bind(inner),
+		getModelsOfType: inner.getModelsOfType.bind(inner),
+		getModelOfType: inner.getModelOfType.bind(inner),
+		getAllModels: inner.getAllModels.bind(inner),
+		refresh: inner.refresh.bind(inner),
+		checkAuth: inner.checkAuth.bind(inner),
+		getAvailable: inner.getAvailable.bind(inner),
+		getAvailableOfType: inner.getAvailableOfType.bind(inner),
+		getAllAvailable: inner.getAllAvailable.bind(inner),
+		getAuth: inner.getAuth.bind(inner),
+		login: inner.login.bind(inner),
+		logout: inner.logout.bind(inner),
+		setProvider: inner.setProvider.bind(inner),
+		deleteProvider: inner.deleteProvider.bind(inner),
+		clearProviders: inner.clearProviders.bind(inner),
+		cancelDeferred: inner.cancelDeferred.bind(inner),
+	};
+	const models = Models.of({ ...forwardedMembers, ...budgetedMembers });
 	return Context.make(Models, models).pipe(Context.add(Spend, yield* makeSpend(budget)));
 });
+
+/**
+ * What the budgeted `Models` does with each member of pi-ai's: `budgeted`, a member that sends a provider request and
+ * is reserved and settled; `forwarded`, the wrapped `Models`' own. `cancelDeferred` asks for no generation, so it
+ * reserves nothing. A member pi-ai adds fails to compile here until it is decided, so a new paid request is never
+ * forwarded unbudgeted by default.
+ */
+const MEMBERS = {
+	stream: "budgeted",
+	streamSimple: "budgeted",
+	complete: "budgeted",
+	completeSimple: "budgeted",
+	streamDeferred: "budgeted",
+	fetchDeferred: "budgeted",
+	generateImages: "budgeted",
+	classify: "budgeted",
+	cancelDeferred: "forwarded",
+	getProviders: "forwarded",
+	getProvider: "forwarded",
+	getModels: "forwarded",
+	getModel: "forwarded",
+	getModelsOfType: "forwarded",
+	getModelOfType: "forwarded",
+	getAllModels: "forwarded",
+	refresh: "forwarded",
+	checkAuth: "forwarded",
+	getAvailable: "forwarded",
+	getAvailableOfType: "forwarded",
+	getAllAvailable: "forwarded",
+	getAuth: "forwarded",
+	login: "forwarded",
+	logout: "forwarded",
+	setProvider: "forwarded",
+	deleteProvider: "forwarded",
+	clearProviders: "forwarded",
+} as const satisfies Record<keyof MutableModels, "budgeted" | "forwarded">;
+
+/** The members of `Models` that `MEMBERS` gives `decision`. */
+type Decided<Decision> = {
+	[K in keyof typeof MEMBERS]: (typeof MEMBERS)[K] extends Decision ? K : never;
+}[keyof typeof MEMBERS];
+
+/** The members of `Models` this budget reserves and settles. */
+type Budgeted = Decided<"budgeted">;
+
+/** The members of `Models` that are the wrapped one's own. */
+type Forwarded = Decided<"forwarded">;
 
 /** The last event of a pi-ai response. */
 type TerminalEvent = Extract<AssistantMessageEvent, { type: "done" | "error" }>;
@@ -236,7 +289,7 @@ interface OneShotResult {
 	readonly provider: string;
 	readonly model: string;
 	readonly usage?: Usage;
-	readonly stopReason: "stop" | "error" | "aborted";
+	readonly stopReason: AssistantImages["stopReason"] | ClassifierResult["stopReason"];
 }
 
 /** Who answered a request and what it used, as the provider's adapter reported it. */
@@ -274,9 +327,12 @@ function responseEvents(
 }
 
 /** `failed` for an error of the provider, `aborted` when it gave the request up. */
-function outcomeOf(reason: "error" | "aborted"): Outcome {
-	return reason === "aborted" ? "aborted" : "failed";
+function outcomeOf(reason: ErrorReason): Outcome {
+	return OUTCOMES[reason];
 }
+
+// Typed by pi-ai's reasons, so a reason pi-ai adds fails to compile here until it is decided.
+const OUTCOMES = { error: "failed", aborted: "aborted" } as const satisfies Record<ErrorReason, Outcome>;
 
 /** An empty message of `model`, for a request that ended before the provider had output. */
 function blank(model: Model<Api>, timestamp: number): AssistantMessage {
@@ -286,14 +342,7 @@ function blank(model: Model<Api>, timestamp: number): AssistantMessage {
 		api: model.api,
 		provider: model.provider,
 		model: model.id,
-		usage: {
-			input: 0,
-			output: 0,
-			cacheRead: 0,
-			cacheWrite: 0,
-			totalTokens: 0,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-		},
+		usage: emptyUsage(),
 		stopReason: "pending",
 		timestamp,
 	};
@@ -383,7 +432,7 @@ function priceOfAnswer(
  * How a request that did not get the provider's own last word ends for its caller: a refusal with its text, which
  * Pi does not retry; an interruption as aborted; a defect with its message.
  */
-function failed<A>(cause: Cause.Cause<Refusal>, ended: (reason: "error" | "aborted", errorMessage: string) => A): A {
+function failed<A>(cause: Cause.Cause<Refusal>, ended: (reason: ErrorReason, errorMessage: string) => A): A {
 	if (Cause.hasInterruptsOnly(cause)) return ended("aborted", "Request was aborted");
 	const refusal = Cause.findErrorOption(cause);
 	if (Option.isSome(refusal)) return ended("error", refusalText(refusal.value));

@@ -1,7 +1,7 @@
 // The delivery cursors: one document that says, per conversation, through which entry its records are delivered.
 
-import type { ConversationId } from "@earendil-works/pi-durable";
-import { Doc, type DurableError, Harness } from "@gunta/pi-durable-effect";
+import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
+import { Doc, type DurableError, Entry, Harness } from "@gunta/pi-durable-effect";
 import { Effect, Option, Schema } from "effect";
 
 /** A complete copy of the document is stored after this many changes, which bounds what a reopen replays. */
@@ -18,7 +18,7 @@ export const Cursor = Doc.make({
 	kind: "recorder.cursor",
 	version: 1,
 	scope: "session",
-	schema: Schema.Record(Schema.String, Schema.Number),
+	schema: Schema.Record(Schema.String, Entry.Id),
 	initial: () => ({}),
 	checkpointWhen: (_stored, _ops, info) => info.deltasSinceBase >= CHECKPOINT_EVERY,
 });
@@ -30,17 +30,19 @@ export const ensure: Effect.Effect<void, DurableError, Harness.Harness> = Harnes
 
 /**
  * The id of the entry after which delivery of a conversation goes on: its cursor, or, while it has none, the entry a
- * fork was forked at, because the entries up to there are its parent's to deliver. 0 for a conversation that is no
- * fork and has delivered nothing.
+ * fork was forked at, because the entries up to there are its parent's to deliver. None for a conversation that is no
+ * fork and has delivered nothing: delivery starts at its first entry.
  */
-export function start(conversationId: ConversationId): Effect.Effect<number, Doc.Failure, Harness.Harness> {
+export function start(
+	conversationId: ConversationId,
+): Effect.Effect<Option.Option<EntryId>, Doc.Failure, Harness.Harness> {
 	return Effect.gen(function* () {
 		const cursors = yield* Harness.snapshot(Cursor);
 		const delivered = Option.flatMap(cursors, (all) => Option.fromUndefinedOr(all[conversationId]));
-		if (Option.isSome(delivered)) return delivered.value;
+		if (Option.isSome(delivered)) return delivered;
 		// A commit that only reads: the conversation's record is a table read, which Pi gives a transaction only.
 		const record = yield* Harness.commit((tx) => tx.conversation(conversationId));
-		return Option.match(record, { onNone: () => 0, onSome: (found) => found.parent?.at ?? 0 });
+		return Option.flatMap(record, (found) => Option.fromUndefinedOr(found.parent?.at));
 	});
 }
 
@@ -50,7 +52,7 @@ export function start(conversationId: ConversationId): Effect.Effect<number, Doc
  */
 export function advance(
 	conversationId: ConversationId,
-	through: number,
+	through: EntryId,
 ): Effect.Effect<void, DurableError, Harness.Harness> {
 	return Harness.commit((tx) =>
 		Effect.map(tx.doc(Cursor), (cursors) => {

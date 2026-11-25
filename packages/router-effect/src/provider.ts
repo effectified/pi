@@ -7,16 +7,18 @@ import {
 	type AssistantMessageEventStream,
 	createAssistantMessageEventStream,
 	createProvider,
+	getSupportedThinkingLevels,
 	type Model,
 	type Provider,
 	type ProviderAuth,
 	type SimpleStreamOptions,
+	type ThinkingLevelMap,
 	type TranscriptContext,
 } from "@earendil-works/pi-ai";
-import type { ResponseEvent } from "@gunta/pi-ai-effect";
+import { MODEL_THINKING_LEVELS } from "@earendil-works/pi-ai/providers/model-schema";
+import { type ErrorReason, emptyUsage, type ResponseEvent } from "@gunta/pi-ai-effect";
 import { Cause, Clock, Effect, Exit, FiberSet, Option, type Scope } from "effect";
 import type { RouterError } from "./errors.ts";
-import { noUsage } from "./price.ts";
 import type { Alias, ValidRouteTable } from "./route-table.ts";
 
 /** What the provider is built from. */
@@ -96,13 +98,47 @@ export function make(options: ProviderOptions): Effect.Effect<Provider, never, S
 const API = "pi-router";
 
 /**
+ * What the alias model takes of each field of pi-ai's chat model. `alias`: the alias's own. `combined`: from the
+ * models of its routes. `default`: left out, so pi-ai's default holds (a chat model). `dropped`: left out, because a
+ * route's request is made with the route's own model, which has its own; no request is made with the alias model.
+ * Pi Durable reads `inputLimits` of a conversation's model to resize the images its `read` tool returns, so under an
+ * alias it resizes with its defaults. A field pi-ai adds fails to compile here until it is decided.
+ */
+const ALIAS_FIELDS = {
+	id: "alias",
+	name: "alias",
+	api: "alias",
+	provider: "alias",
+	baseUrl: "alias",
+	type: "default",
+	reasoning: "combined",
+	thinkingLevelMap: "combined",
+	input: "combined",
+	cost: "combined",
+	contextWindow: "combined",
+	maxTokens: "combined",
+	inputLimits: "dropped",
+	headers: "dropped",
+	promptCache: "dropped",
+	samplingParams: "dropped",
+	samplingParamsByThinkingLevel: "dropped",
+	compat: "dropped",
+} as const satisfies Record<keyof Model<Api>, "alias" | "combined" | "default" | "dropped">;
+
+/** The fields an alias model sets. */
+type AliasField = {
+	[K in keyof typeof ALIAS_FIELDS]: (typeof ALIAS_FIELDS)[K] extends "alias" | "combined" ? K : never;
+}[keyof typeof ALIAS_FIELDS];
+
+/**
  * The pi-ai model of an alias, from the models of its routes: what every route can do. Pi compacts against the
- * smallest context window and offers only what each route reads. The catalog price is the first route's; the
- * price a response is charged at is the route's, in its route event.
+ * smallest context window, offers only what each route reads and the thinking levels each route's model offers. The
+ * catalog price is the first route's; the price a response is charged at is the route's, in its route event.
  */
 function aliasModel(provider: string, alias: Alias, routes: ReadonlyArray<Model<Api>>): Model<Api> {
 	const [first] = routes;
-	return {
+	// Every field `ALIAS_FIELDS` sets, and no other.
+	const model: Required<Pick<Model<Api>, AliasField>> = {
 		id: alias.alias,
 		name: alias.name ?? alias.alias,
 		api: API,
@@ -110,11 +146,29 @@ function aliasModel(provider: string, alias: Alias, routes: ReadonlyArray<Model<
 		// pi-ai requires a base URL; nothing reads this one, each route's provider knows where to go.
 		baseUrl: `pi-router://${provider}`,
 		reasoning: routes.every((model) => model.reasoning),
+		thinkingLevelMap: thinkingLevels(routes),
 		input: first.input.filter((modality) => routes.every((model) => model.input.includes(modality))),
 		cost: first.cost,
 		contextWindow: Math.min(...routes.map((model) => model.contextWindow)),
 		maxTokens: Math.min(...routes.map((model) => model.maxTokens)),
 	};
+	return model;
+}
+
+/**
+ * The thinking levels of an alias: a level every route's model offers (pi-ai's `getSupportedThinkingLevels`) is
+ * mapped to its own name, so pi-ai offers it, `xhigh` and `max` included; every other level is hidden (`null`). A
+ * request that falls back goes to the next route with the level it asked for, which that route's adapter lowers to
+ * one its model offers: the alias offers a level only when every route serves it as asked, as it promises the
+ * smallest context window. The names are never sent: a route's request maps the level with the route's own model.
+ */
+function thinkingLevels(routes: ReadonlyArray<Model<Api>>): ThinkingLevelMap {
+	const offered = routes.map((model) => getSupportedThinkingLevels(model));
+	const levels: ThinkingLevelMap = {};
+	for (const level of MODEL_THINKING_LEVELS) {
+		levels[level] = offered.every((supported) => supported.includes(level)) ? level : null;
+	}
+	return levels;
 }
 
 /** An empty message of the alias model, for a request that ended before any route had output. */
@@ -125,7 +179,7 @@ function blank(model: Model<Api>, timestamp: number): AssistantMessage {
 		api: model.api,
 		provider: model.provider,
 		model: model.id,
-		usage: noUsage(),
+		usage: emptyUsage(),
 		stopReason: "pending",
 		timestamp,
 	};
@@ -139,7 +193,7 @@ function errorEvent(
 	cause: Cause.Cause<RouterError>,
 	soFar: AssistantMessage,
 ): Extract<AssistantMessageEvent, { type: "error" }> {
-	const ended = (reason: "error" | "aborted", errorMessage: string) =>
+	const ended = (reason: ErrorReason, errorMessage: string) =>
 		({ type: "error", reason, error: { ...soFar, stopReason: reason, errorMessage } }) as const;
 	if (Cause.hasInterruptsOnly(cause)) return ended("aborted", "Request was aborted");
 	const failure = Cause.findErrorOption(cause);

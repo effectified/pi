@@ -5,11 +5,14 @@ import type {
 	ImageContent,
 	Message,
 	TextContent,
+	ToolCall,
 	ToolResultMessage,
 	Usage,
 	UserMessage,
 } from "@earendil-works/pi-ai";
+import { contentText } from "@earendil-works/pi-ai/utils/text";
 import { type EntryRecord, type ToolDiagnostic, ToolResultEntry } from "@earendil-works/pi-durable";
+import { absurd } from "effect/Function";
 import type * as Records from "./record.ts";
 
 /**
@@ -73,7 +76,16 @@ function committed(entry: EntryRecord, index: number, time: number, part: string
 	} as const;
 }
 
-function userMessage(entry: EntryRecord, message: UserMessage, index: number): Records.Message {
+/** What a record decides of each field of a pi-ai type: every field, so a field pi-ai adds fails to compile. */
+type Fields<T> = Record<keyof T, "recorded" | "excluded">;
+
+/** `T` with the fields `F` records and no other, so a mapping cannot read a field it decided to leave out. */
+type Recorded<T, F extends Fields<T>> = Pick<T, { [K in keyof T]: F[K] extends "recorded" ? K : never }[keyof T]>;
+
+// The role is the record's kind; the rest of a user message is recorded.
+const USER = { role: "recorded", content: "recorded", timestamp: "recorded" } as const satisfies Fields<UserMessage>;
+
+function userMessage(entry: EntryRecord, message: Recorded<UserMessage, typeof USER>, index: number): Records.Message {
 	const parts =
 		typeof message.content === "string" ? [{ type: "text" as const, text: message.content }] : message.content;
 	return {
@@ -86,8 +98,37 @@ function userMessage(entry: EntryRecord, message: UserMessage, index: number): R
 	};
 }
 
+/**
+ * What the records of a model response take of pi-ai's message. Not recorded: the thinking levels asked for and used,
+ * pi-ai's diagnostics of the response, a deferred response's handle, the provider's own stop reason and whether the
+ * model said its turn ended: what a provider or a resumed request needs, not what was said or what it cost.
+ */
+const RESPONSE = {
+	role: "recorded",
+	content: "recorded",
+	api: "recorded",
+	provider: "recorded",
+	model: "recorded",
+	responseModel: "recorded",
+	responseId: "recorded",
+	stopReason: "recorded",
+	errorMessage: "recorded",
+	usage: "recorded",
+	timestamp: "recorded",
+	durationMs: "recorded",
+	thinkingLevel: "excluded",
+	providerThinkingLevel: "excluded",
+	diagnostics: "excluded",
+	deferred: "excluded",
+	rawStopReason: "excluded",
+	endTurn: "excluded",
+} as const satisfies Fields<AssistantMessage>;
+
+/** A model response as its records read it. */
+type Response = Recorded<AssistantMessage, typeof RESPONSE>;
+
 /** A model response: the call, its text when it has any, and the tool calls it asks for, in call order. */
-function fromResponse(entry: EntryRecord, message: AssistantMessage, index: number): ReadonlyArray<Records.Record> {
+function fromResponse(entry: EntryRecord, message: Response, index: number): ReadonlyArray<Records.Record> {
 	const records: Array<Records.Record> = [modelCall(entry, message, index)];
 	const said = text(message.content);
 	if (said !== "") {
@@ -100,22 +141,42 @@ function fromResponse(entry: EntryRecord, message: AssistantMessage, index: numb
 			images: [],
 		});
 	}
-	let call = 0;
-	for (const part of message.content) {
-		if (part.type !== "toolCall") continue;
-		records.push({
-			_tag: "ToolCallRequested",
-			...committed(entry, index, message.timestamp, `call:${call++}`),
-			callId: part.id,
-			name: part.name,
-			arguments: part.arguments,
-			argumentsError: part.argumentsError ?? null,
-		});
+	const calls = message.content.flatMap((part) => (part.type === "toolCall" ? [part] : []));
+	for (const [call, part] of calls.entries()) {
+		records.push(toolCallRequested(committed(entry, index, message.timestamp, `call:${call}`), part));
 	}
 	return records;
 }
 
-function modelCall(entry: EntryRecord, message: AssistantMessage, index: number): Records.ModelCall {
+/**
+ * What a tool call record takes of pi-ai's tool call. Not recorded: a provider's signature of the thought behind the
+ * call and the namespace the provider resolves the tool in, which only that provider reads.
+ */
+const TOOL_CALL = {
+	type: "recorded",
+	id: "recorded",
+	name: "recorded",
+	arguments: "recorded",
+	argumentsError: "recorded",
+	thoughtSignature: "excluded",
+	namespace: "excluded",
+} as const satisfies Fields<ToolCall>;
+
+function toolCallRequested(
+	at: ReturnType<typeof committed>,
+	call: Recorded<ToolCall, typeof TOOL_CALL>,
+): Records.ToolCallRequested {
+	return {
+		_tag: "ToolCallRequested",
+		...at,
+		callId: call.id,
+		name: call.name,
+		arguments: call.arguments,
+		argumentsError: call.argumentsError ?? null,
+	};
+}
+
+function modelCall(entry: EntryRecord, message: Response, index: number): Records.ModelCall {
 	return {
 		_tag: "ModelCall",
 		...committed(entry, index, message.timestamp, "model"),
@@ -133,7 +194,28 @@ function modelCall(entry: EntryRecord, message: AssistantMessage, index: number)
 	};
 }
 
-function toolCallResult(entry: EntryRecord, message: ToolResultMessage, index: number): Records.ToolCallResult {
+/**
+ * What a tool result record takes of pi-ai's message. Not recorded: the calls the tool made to other tools while it
+ * ran, which pi-ai keeps for the session record and the model never reads.
+ */
+const TOOL_RESULT = {
+	role: "recorded",
+	toolCallId: "recorded",
+	toolName: "recorded",
+	content: "recorded",
+	details: "recorded",
+	usage: "recorded",
+	isError: "recorded",
+	timestamp: "recorded",
+	durationMs: "recorded",
+	nestedCalls: "excluded",
+} as const satisfies Fields<ToolResultMessage>;
+
+function toolCallResult(
+	entry: EntryRecord,
+	message: Recorded<ToolResultMessage, typeof TOOL_RESULT>,
+	index: number,
+): Records.ToolCallResult {
 	// Pi's own result entries carry their diagnostics as data; a result message in an entry of another kind has none.
 	const diagnostics: ReadonlyArray<ToolDiagnostic> = ToolResultEntry.is(entry) ? entry.data.diagnostics : [];
 	return {
@@ -183,12 +265,32 @@ function cost(usage: Usage): Records.Cost {
 /** A part of a user message, a model response or a tool result. */
 type Part = TextContent | ImageContent | AssistantMessage["content"][number];
 
-/** The text parts of a content list, joined. A response's thinking parts are not text. */
+/** The text parts of a content list, joined as they are: pi-ai's `contentText`. A response's thinking is not text. */
 function text(parts: ReadonlyArray<Part>): string {
-	return parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
+	return contentText(parts, "");
 }
 
 /** The image parts of a content list. */
 function images(parts: ReadonlyArray<Part>): ReadonlyArray<Records.Image> {
-	return parts.flatMap((part) => (part.type === "image" ? [{ mimeType: part.mimeType, data: part.data }] : []));
+	return parts.flatMap((part) => {
+		const image = imageOf(part);
+		return image === undefined ? [] : [image];
+	});
+}
+
+/**
+ * The image a part is, if it is one. Every kind of part is decided here, so a kind pi-ai adds fails to compile until
+ * it is: text goes into `text`, a tool call into its own record, and a response's thinking is not recorded.
+ */
+function imageOf(part: Part): Records.Image | undefined {
+	switch (part.type) {
+		case "image":
+			return { mimeType: part.mimeType, data: part.data };
+		case "text":
+		case "toolCall":
+		case "thinking":
+			return undefined;
+		default:
+			return absurd(part);
+	}
 }

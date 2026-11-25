@@ -1,8 +1,15 @@
 // A conversation the budget stopped: reading why from what Pi stored, and continuing it under a new lease.
 
-import { type ConversationId, LiveDoc, type LiveState, type SubmissionId } from "@earendil-works/pi-durable";
-import { type Conversation, type Doc, type DurableError, Harness, type Submission } from "@gunta/pi-durable-effect";
-import { Effect, Option, Schema } from "effect";
+import type { ConversationId, SubmissionId } from "@earendil-works/pi-durable";
+import {
+	BuiltinDoc,
+	type Conversation,
+	type Doc,
+	type DurableError,
+	Harness,
+	type Submission,
+} from "@gunta/pi-durable-effect";
+import { Effect, Option } from "effect";
 import { type Refusal, refusalOf } from "./refusal.ts";
 
 /** A run the budget stopped: why, and the inputs it left unanswered. */
@@ -20,7 +27,7 @@ export interface Stop {
  */
 export function stopOf(conversation: ConversationId): Effect.Effect<Option.Option<Stop>, Doc.Failure, Harness.Harness> {
 	return Effect.gen(function* () {
-		const live = yield* Harness.snapshot(LIVE, conversation);
+		const live = yield* Harness.snapshot(BuiltinDoc.live, conversation);
 		const failure = Option.getOrUndefined(live)?.runFailure;
 		if (failure?.reason !== "model_error") return Option.none();
 		const { inputs } = failure;
@@ -40,19 +47,3 @@ export function continueStopped(
 ): Effect.Effect<Submission.Submission, DurableError> {
 	return conversation.submit({ ...options, type: "continue" });
 }
-
-/**
- * Pi's built-in `pi.live` document as a document of the facade, which reads through Pi's own token. Nothing here
- * writes it, and Pi's type is the type of what Pi stored.
- */
-const LIVE: Doc.Doc<Schema.Codec<LiveState, LiveState>, "conversation", "latest"> = {
-	kind: LiveDoc.definition.kind,
-	version: LiveDoc.definition.version,
-	schema: Schema.declare((value: unknown): value is LiveState => typeof value === "object" && value !== null),
-	scope: "conversation",
-	history: "latest",
-	family: false,
-	token: LiveDoc,
-	encode: (value) => Effect.succeed({ ...value }),
-	decode: (stored) => Effect.succeed(stored as LiveState),
-};

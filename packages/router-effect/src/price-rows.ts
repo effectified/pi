@@ -1,11 +1,12 @@
 // A route table's prices as plain rows: what a budget needs to price the same models, written once.
 
+import { TOKEN_KINDS, type TokenKind } from "@gunta/pi-ai-effect";
 import { Effect, Schema } from "effect";
-import type { Price, RouteTable } from "./route-table.ts";
+import { type Price, PriceTier, type RouteTable } from "./route-table.ts";
 
 /**
- * What one model charges, per million tokens, in integer micro units: the units of `Price`. A row names either the
- * model of a route, or an alias under the router's provider id.
+ * What one model charges, per million tokens, in integer micro units: the units and the tiers of `Price`. A row names
+ * either the model of a route, or an alias under the router's provider id.
  */
 export const PriceRow = Schema.Struct({
 	provider: Schema.String,
@@ -14,6 +15,7 @@ export const PriceRow = Schema.Struct({
 	output: Schema.Int,
 	cacheRead: Schema.Int,
 	cacheWrite: Schema.Int,
+	tiers: Schema.optional(Schema.Array(PriceTier)),
 });
 
 /** What one model charges, per million tokens, in integer micro units. */
@@ -67,11 +69,11 @@ function describeIssue(issue: PriceRowsIssue): string {
 /**
  * The prices of `table` as rows, so a product writes each price once, in its route table:
  *
- * - one row per route's model, at the route's price: what a response is charged at, since a response names the
- *   route that served it. A model several aliases route to has one row.
- * - one row per alias, under the provider id `router` (the `id` the router is built with), at the highest price of
- *   its routes for each kind of token: the price of a request to the alias before it is known which route serves,
- *   never below what any route charges.
+ * - one row per route's model, at the route's price, its tiers included: what a response is charged at, since a
+ *   response names the route that served it. A model several aliases route to has one row.
+ * - one row per alias, under the provider id `router` (the `id` the router is built with), at the highest rate of
+ *   its routes for each kind of token, of their tiers too, and with no tiers: the price of a request to the alias
+ *   before it is known which route serves, never below what any route charges.
  *
  * Route rows first, then alias rows, each in table order. Fails with `PriceRowsError` when the table has no route,
  * prices its routes in more than one currency, or gives one model two prices.
@@ -85,15 +87,15 @@ export function priceRows(table: RouteTable, router = "router"): Effect.Effect<P
 			const key = `${row.provider}\0${row.model}`;
 			const known = rows.get(key);
 			if (known === undefined) rows.set(key, row);
-			else if (KINDS.some((kind) => known[kind] !== row[kind])) {
+			else if (!samePrice(known, row)) {
 				conflicts.set(key, { _tag: "ConflictingPrice", provider: row.provider, model: row.model });
 			}
 		};
 		const routes = table.aliases.flatMap((alias) => alias.routes);
 		for (const { provider, model, price } of routes) add({ provider, model, ...amounts(price) });
 		for (const alias of table.aliases) {
-			const [first, ...rest] = alias.routes.map((route) => amounts(route.price));
-			if (first !== undefined) add({ provider: router, model: alias.alias, ...rest.reduce(highest, first) });
+			const [first, ...rest] = alias.routes.flatMap((route) => [route.price, ...(route.price.tiers ?? [])]);
+			if (first !== undefined) add({ provider: router, model: alias.alias, ...rest.reduce(highest, rates(first)) });
 		}
 		const currencies = [...new Set(routes.map((route) => route.price.currency))];
 		const issues: PriceRowsIssue[] = [
@@ -109,21 +111,45 @@ export function priceRows(table: RouteTable, router = "router"): Effect.Effect<P
 	});
 }
 
-const KINDS = ["input", "output", "cacheRead", "cacheWrite"] as const;
+/** The rates of a price or of a tier. */
+type Rates = Pick<Price, TokenKind>;
 
-/** The four amounts of a price. */
-type Amounts = Pick<Price, (typeof KINDS)[number]>;
+/** What a row charges: its rates and its tiers. */
+type Amounts = Omit<PriceRow, "provider" | "model">;
 
+/** A route's price as the amounts of a row: its rates, and its tiers when it has any. */
 function amounts(price: Price): Amounts {
+	const { tiers } = price;
+	return { ...rates(price), ...(tiers === undefined ? {} : { tiers }) };
+}
+
+function rates(price: Rates): Record<TokenKind, number> {
 	return { input: price.input, output: price.output, cacheRead: price.cacheRead, cacheWrite: price.cacheWrite };
 }
 
-/** For each kind of token, the higher of two prices. */
-function highest(one: Amounts, other: Amounts): Amounts {
+/** For each kind of token, the higher of two rates. */
+function highest(one: Rates, other: Rates): Record<TokenKind, number> {
 	return {
 		input: Math.max(one.input, other.input),
 		output: Math.max(one.output, other.output),
 		cacheRead: Math.max(one.cacheRead, other.cacheRead),
 		cacheWrite: Math.max(one.cacheWrite, other.cacheWrite),
 	};
+}
+
+/** Whether two rows charge the same for every request: the same rates, and the same tiers in the same order. */
+function samePrice(one: Amounts, other: Amounts): boolean {
+	const tiers = one.tiers ?? [];
+	const others = other.tiers ?? [];
+	return (
+		sameRates(one, other) &&
+		tiers.length === others.length &&
+		tiers.every(
+			(tier, index) => tier.inputTokensAbove === others[index].inputTokensAbove && sameRates(tier, others[index]),
+		)
+	);
+}
+
+function sameRates(one: Rates, other: Rates): boolean {
+	return TOKEN_KINDS.every((kind) => one[kind] === other[kind]);
 }

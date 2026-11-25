@@ -1,8 +1,11 @@
+import { calculateCost, type Usage } from "@earendil-works/pi-ai";
+import { emptyUsage } from "@gunta/pi-ai-effect";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import { cost, type TokenUsage } from "../src/index.ts";
-import { noUsage, priced } from "../src/price.ts";
-import { PRICE, route } from "./scripted.ts";
+import { cost, type Price, type TokenUsage } from "../src/index.ts";
+import { priced } from "../src/price.ts";
+import { PRICE, route, scripted } from "./scripted.ts";
 
 const NONE: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
@@ -78,16 +81,74 @@ describe("priced", () => {
 	});
 });
 
-describe("noUsage", () => {
-	it("is pi-ai's usage of nothing, a new object each time", () => {
-		expect(noUsage()).toEqual({
-			input: 0,
-			output: 0,
-			cacheRead: 0,
-			cacheWrite: 0,
-			totalTokens: 0,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+describe("pi-ai's rule", () => {
+	/** `PRICE`, and from 200,000 input tokens on twice as much. */
+	const TIERED: Price = {
+		...PRICE,
+		tiers: [
+			{ inputTokensAbove: 200_000, input: 6_000_000, output: 30_000_000, cacheRead: 600_000, cacheWrite: 7_500_000 },
+		],
+	};
+
+	/** What pi-ai's own `calculateCost` charges for `counts` at `price`, in micro units: its rates are in units. */
+	function piCost(price: Price, counts: Partial<Usage>): number {
+		const rate = (micros: number) => micros / 1_000_000;
+		const rates = (of: Price | NonNullable<Price["tiers"]>[number]) => ({
+			input: rate(of.input),
+			output: rate(of.output),
+			cacheRead: rate(of.cacheRead),
+			cacheWrite: rate(of.cacheWrite),
 		});
-		expect(noUsage()).not.toBe(noUsage());
+		const model = {
+			...scripted("a").getModel(),
+			cost: {
+				...rates(price),
+				tiers: price.tiers?.map((tier) => ({ inputTokensAbove: tier.inputTokensAbove, ...rates(tier) })),
+			},
+		};
+		return calculateCost(model, { ...emptyUsage(), ...counts }).total * 1_000_000;
+	}
+
+	const USAGES: ReadonlyArray<TokenUsage> = [
+		{ input: 1234, output: 567, cacheRead: 8000, cacheWrite: 400 },
+		{ input: 1000, output: 0, cacheRead: 0, cacheWrite: 1000, cacheWrite1h: 1000 },
+		{ input: 50, output: 20, cacheRead: 100, cacheWrite: 900, cacheWrite1h: 300 },
+		{ input: 250_000, output: 1000, cacheRead: 0, cacheWrite: 0 },
+		{ input: 150_000, output: 10, cacheRead: 40_000, cacheWrite: 10_001, cacheWrite1h: 1 },
+		{ input: 200_000, output: 10, cacheRead: 0, cacheWrite: 0 },
+	];
+
+	it("gives what pi-ai's calculateCost gives for the same usage and model, rounded up once", () =>
+		runTest(
+			Effect.gen(function* () {
+				for (const price of [PRICE, TIERED]) {
+					for (const usage of USAGES) {
+						const micros = Number((yield* cost({ price }, usage)).micros);
+						// pi-ai adds floats; the exact cost is at most one micro unit below ours.
+						expect(micros - piCost(price, usage)).toBeGreaterThanOrEqual(-1e-6);
+						expect(micros - piCost(price, usage)).toBeLessThan(1);
+					}
+				}
+			}),
+		));
+
+	it("charges a cache write kept for one hour at twice the input rate", () => {
+		// 1000 input tokens at 3 and 1000 one-hour cache writes at 6 micro units per token, not at 3.75.
+		const usage = { input: 1000, output: 0, cacheRead: 0, cacheWrite: 1000, cacheWrite1h: 1000 };
+		expect(priced(PRICE, usage).micros).toBe(9000n);
+		// The other cache writes stay at the cache-write rate: 600 x 3.75 + 400 x 6.
+		expect(priced(PRICE, { ...usage, input: 0, cacheWrite1h: 400 }).micros).toBe(4650n);
+	});
+
+	it("charges all tokens of a request above a tier's threshold at the tier's rates", () => {
+		expect(priced(TIERED, { input: 200_000, output: 0, cacheRead: 0, cacheWrite: 0 }).micros).toBe(600_000n);
+		// Cache reads and writes count toward the threshold: 200,000 and 1 input tokens.
+		expect(priced(TIERED, { input: 200_000, output: 0, cacheRead: 1, cacheWrite: 0 }).micros).toBe(1_200_001n);
+	});
+
+	it("counts one-hour writes at most all of cacheWrite, and fails for one that is not a whole number", async () => {
+		expect(priced(PRICE, { input: 0, output: 0, cacheRead: 0, cacheWrite: 10, cacheWrite1h: 50 }).micros).toBe(60n);
+		const error = await runTest(Effect.flip(cost({ price: PRICE }, { ...NONE, cacheWrite: 2, cacheWrite1h: 1.5 })));
+		expect(error).toMatchObject({ _tag: "InvalidUsage", kind: "cacheWrite1h", count: 1.5 });
 	});
 });

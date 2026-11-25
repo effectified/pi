@@ -12,6 +12,7 @@ import {
 	type Usage,
 } from "@earendil-works/pi-ai";
 import {
+	emptyUsage,
 	type ModelRequestError,
 	Models,
 	type RequestOptions,
@@ -23,7 +24,7 @@ import { AttemptSettlement, settledBy } from "./attempt-settlement.ts";
 import { classify } from "./classify.ts";
 import { type AttemptUnsettled, type RouteFailure, RoutesExhausted } from "./errors.ts";
 import type { LimiterService } from "./limiter.ts";
-import { noUsage, priced, type TokenUsage } from "./price.ts";
+import { priced, tokensOf } from "./price.ts";
 import type { RouteEvent, RouteEventsService } from "./route-events.ts";
 import type { Route } from "./route-table.ts";
 
@@ -89,7 +90,7 @@ export const serve = Effect.fnUntraced(function* (
 				failures.push({ provider: route.provider, model: route.model, message: outcome.message });
 				// A route that was unavailable used nothing, and the response kept from before it must not repeat the
 				// usage its own route event already told.
-				response = outcome.response ?? (response === undefined ? undefined : { ...response, usage: noUsage() });
+				response = outcome.response ?? (response === undefined ? undefined : { ...response, usage: emptyUsage() });
 		}
 	}
 	return yield* Effect.fail(
@@ -278,8 +279,6 @@ function record(
 	);
 }
 
-const NO_TOKENS: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-
 /**
  * The route event of an attempt that ends now, with `reported` at the route's price. It cannot fail, whatever counts
  * a provider reported (`priced`).
@@ -293,15 +292,7 @@ const eventOf = Effect.fnUntraced(function* (
 ): Effect.fn.Return<RouteEvent> {
 	const { services, request, route, progress } = self;
 	const now = yield* Clock.currentTimeMillis;
-	const usage: TokenUsage =
-		reported === undefined
-			? NO_TOKENS
-			: {
-					input: reported.input,
-					output: reported.output,
-					cacheRead: reported.cacheRead,
-					cacheWrite: reported.cacheWrite,
-				};
+	const usage = tokensOf(reported);
 	return {
 		router: services.router,
 		request: request.request,

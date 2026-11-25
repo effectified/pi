@@ -1,14 +1,32 @@
 // The price table: what each model charges per million tokens, as data, and the exact cost of one response.
 
 import type { Usage } from "@earendil-works/pi-ai";
+import { TOKEN_KINDS, type TokenKind } from "@gunta/pi-ai-effect";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 
 const Micros = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
 /**
+ * The rates of a large request, as pi-ai's `ModelCostTier`: a request whose input tokens (`input`, `cacheRead` and
+ * `cacheWrite` together) are more than `inputTokensAbove` is charged at these rates for all of its tokens.
+ */
+export const PriceTier = Schema.Struct({
+	inputTokensAbove: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	input: Micros,
+	output: Micros,
+	cacheRead: Micros,
+	cacheWrite: Micros,
+});
+
+/** The rates of a large request. */
+export type PriceTier = typeof PriceTier.Type;
+
+/**
  * What one model charges, per million tokens, in integer micro units of the table's currency (one millionth of a
  * unit: 3 per million tokens is 3000000). The four kinds are pi-ai's: `input` is the input neither read from nor
- * written to the cache, and `output` includes reasoning.
+ * written to the cache, and `output` includes reasoning. Cache writes kept for one hour cost twice `input`, as pi-ai
+ * charges them. `tiers`, as pi-ai's model costs have them: the tier with the highest threshold below a request's
+ * input replaces the four rates for that request.
  */
 export const ModelPrice = Schema.Struct({
 	/** The id of the model's provider in `Models`. */
@@ -19,6 +37,7 @@ export const ModelPrice = Schema.Struct({
 	output: Micros,
 	cacheRead: Micros,
 	cacheWrite: Micros,
+	tiers: Schema.optional(Schema.Array(PriceTier)),
 });
 
 /** What one model charges, per million tokens, in integer micro units. */
@@ -34,12 +53,16 @@ export const PriceTable = Schema.Struct({
 /** The prices of a budget. */
 export type PriceTable = typeof PriceTable.Type;
 
-/** The token counts of one response by kind, as pi-ai counts them. */
+/**
+ * The token counts of one response by kind, as pi-ai counts them. `cacheWrite1h` is the part of `cacheWrite` written
+ * with one hour of retention, when the provider reported it.
+ */
 export const TokenUsage = Schema.Struct({
 	input: Schema.Number,
 	output: Schema.Number,
 	cacheRead: Schema.Number,
 	cacheWrite: Schema.Number,
+	cacheWrite1h: Schema.optionalKey(Schema.Number),
 });
 
 /** The token counts of one response by kind. */
@@ -121,28 +144,60 @@ function modelKey(provider: string, model: string): string {
 
 /** The token counts of a pi-ai usage; zeros when the provider reported none. */
 export function tokensOf(usage: Usage | undefined): TokenUsage {
-	return usage === undefined
-		? NO_TOKENS
-		: { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite };
+	if (usage === undefined) return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+	const { input, output, cacheRead, cacheWrite, cacheWrite1h } = usage;
+	return { input, output, cacheRead, cacheWrite, ...(cacheWrite1h === undefined ? {} : { cacheWrite1h }) };
 }
-
-const NO_TOKENS: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-
-const KINDS = ["input", "output", "cacheRead", "cacheWrite"] as const;
 
 const PER_MILLION = 1_000_000n;
 
 /**
- * What `usage` costs at `price`, in micro units: each count times its price per million tokens, summed exactly, then
- * rounded up to the next micro unit once, so a response is never charged less than it cost and never rounded twice.
- * It is total, because a settlement cannot fail: a count that is not a whole number (wire input: a provider reports
- * the counts) is rounded up, and one that is not a positive number counts as zero.
+ * What `usage` costs at `price`, in micro units, by pi-ai's rule (`calculateCost`): the rates of the price's highest
+ * tier below the request's input, each count times its rate per million tokens, and the cache writes kept for one
+ * hour at twice the input rate. Summed exactly, then rounded up to the next micro unit once, so a response is never
+ * charged less than it cost and never rounded twice. It is total, because a settlement cannot fail: a count that is
+ * not a whole number (wire input: a provider reports the counts) is rounded up, one that is not a positive number
+ * counts as zero, and one-hour cache writes count at most all of `cacheWrite`.
  */
 export function cost(price: ModelPrice, usage: TokenUsage): bigint {
-	let scaled = 0n;
-	for (const kind of KINDS) {
-		const count = usage[kind];
-		if (Number.isFinite(count) && count > 0) scaled += BigInt(Math.ceil(count)) * BigInt(price[kind]);
-	}
+	const counts = {
+		input: whole(usage.input),
+		output: whole(usage.output),
+		cacheRead: whole(usage.cacheRead),
+		cacheWrite: whole(usage.cacheWrite),
+	} satisfies Record<TokenKind, bigint>;
+	const rates = ratesAt(price, counts.input + counts.cacheRead + counts.cacheWrite);
+	// pi-ai charges a cache write kept for one hour at twice the input rate, and the rest at the cache-write rate.
+	const longWrites = min(whole(usage.cacheWrite1h ?? 0), counts.cacheWrite);
+	let scaled = longWrites * 2n * BigInt(rates.input);
+	counts.cacheWrite -= longWrites;
+	for (const kind of TOKEN_KINDS) scaled += counts[kind] * BigInt(rates[kind]);
 	return (scaled + PER_MILLION - 1n) / PER_MILLION;
+}
+
+/** `count` as a whole number of tokens: rounded up, and zero when it is not a positive number. */
+function whole(count: number): bigint {
+	return Number.isFinite(count) && count > 0 ? BigInt(Math.ceil(count)) : 0n;
+}
+
+function min(one: bigint, other: bigint): bigint {
+	return one < other ? one : other;
+}
+
+/**
+ * The rates of `price` for a request of `input` tokens (`input`, `cacheRead` and `cacheWrite` together): those of the
+ * tier with the highest threshold below it, else the base rates. pi-ai's rule; of two tiers with one threshold, the
+ * first.
+ */
+function ratesAt(price: ModelPrice, input: bigint): Pick<ModelPrice, TokenKind> {
+	let rates: Pick<ModelPrice, TokenKind> = price;
+	let above = -1n;
+	for (const tier of price.tiers ?? []) {
+		const threshold = BigInt(tier.inputTokensAbove);
+		if (input > threshold && threshold > above) {
+			rates = tier;
+			above = threshold;
+		}
+	}
+	return rates;
 }

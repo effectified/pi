@@ -111,8 +111,12 @@ A Pi Durable conversation whose agent model is `{ provider: "router", modelId: "
 with no other change.
 
 The alias model promises what every route of the alias can do: the smallest context window and output limit, a
-modality only if every route reads it, reasoning only if every route reasons. Its catalog price is pi-ai's price of
-the first route's model.
+modality only if every route reads it, reasoning only if every route reasons, and the thinking levels every route's
+model offers (pi-ai's `getSupportedThinkingLevels`), `xhigh` and `max` included when every route offers them. A
+request that falls back keeps the level it asked for, so a level only some routes offer is not offered for the alias.
+Its catalog price is pi-ai's price of the first route's model. It has no `inputLimits`, `headers`, `promptCache`,
+sampling parameters or `compat`: each route's request is made with its own model, which has its own. Pi Durable's
+`read` tool resizes images for a conversation of an alias with its default limits.
 
 The message a request returns is the route's own message, unchanged: its `provider` and `model` name the route that
 served it, and `usage.cost` is pi-ai's estimate from its catalog. When the route was not the first one tried, the
@@ -407,8 +411,12 @@ const limited = Effect.gen(function* () {
 
 ## Prices
 
-`cost(route, usage)` is the cost of a pi-ai `Usage` at a route's price, as a `bigint` of micro units. The four token
-counts are multiplied by their prices and summed exactly, then rounded up to the next micro unit once.
+`cost(route, usage)` is the cost of a pi-ai `Usage` at a route's price, as a `bigint` of micro units, by pi-ai's rule
+(`calculateCost`): the four token counts are multiplied by their prices, cache writes kept for one hour
+(`cacheWrite1h`, a part of `cacheWrite`) at twice the input price, summed exactly, then rounded up to the next micro
+unit once. A price may have `tiers`, as pi-ai's model costs do: a request whose input tokens (`input`, `cacheRead` and
+`cacheWrite` together) are more than a tier's `inputTokensAbove` is charged at that tier's prices for all of its
+tokens, the tier with the highest threshold below it winning.
 
 ```ts
 import { cost } from "@gunta/pi-router-effect";
@@ -417,12 +425,18 @@ import { cost } from "@gunta/pi-router-effect";
 const price = { currency: "USD", input: 3_000_000, output: 15_000_000, cacheRead: 0, cacheWrite: 0 };
 // { currency: "USD", micros: 12207n }
 yield* cost({ price }, { input: 1234, output: 567, cacheRead: 0, cacheWrite: 0 });
+
+// From 200,000 input tokens on, twice the price of every token.
+const large = { inputTokensAbove: 200_000, input: 6_000_000, output: 30_000_000, cacheRead: 0, cacheWrite: 0 };
+const tiered = { ...price, tiers: [large] };
+// { currency: "USD", micros: 1230000n }
+yield* cost({ price: tiered }, { input: 205_000, output: 0, cacheRead: 0, cacheWrite: 0 });
 ```
 
 It fails with `InvalidUsage` for a count that is not a whole number of tokens: it is the strict form, for a
 product's own figures. The cost in a route event is the same arithmetic and never fails, because an attempt is
-recorded whatever a provider reported: a count that is not a whole number is rounded up, and one that is not a
-positive number counts as zero. That is the rule of `@gunta/pi-budget-effect`, so both packages give the same amount
+recorded whatever a provider reported: a count that is not a whole number is rounded up, one that is not a positive
+number counts as zero, and one-hour cache writes count at most all of `cacheWrite`. That is the rule of `@gunta/pi-budget-effect`, so both packages give the same amount
 for the same usage at the same price.
 
 ### Prices for a budget
@@ -438,12 +452,12 @@ const rows = yield* priceRows(table); // or priceRows(table, "routes") for a rou
 // In the product, with the budget: Prices.layer(rows)
 ```
 
-- **One row per route's model**, at the route's price. A response names the route that served it, and the budget
-  settles a response at the price of the model it names. A model several aliases route to has one row.
+- **One row per route's model**, at the route's price, its tiers included. A response names the route that served it,
+  and the budget settles a response at the price of the model it names. A model several aliases route to has one row.
 - **One row per alias**, under the router's provider id, at the highest price of the alias's routes for each kind of
-  token. The budget checks a request against the model it was asked for, which is the alias, before it knows which
-  route will serve: without this row it refuses the request (`PriceMissing`). No route charges more than this row,
-  so an estimate made from it is never too low.
+  token, their tiers' prices included, and with no tiers. The budget checks a request against the model it was asked
+  for, which is the alias, before it knows which route will serve: without this row it refuses the request
+  (`PriceMissing`). No route charges more than this row, so an estimate made from it is never too low.
 - Route rows first, then alias rows, each in table order.
 
 It fails with `PriceRowsError`, which lists every issue: `MixedCurrencies` (routes priced in more than one currency: a
@@ -492,7 +506,9 @@ the route table: register one provider per base URL and name each in a route wit
 - Deferred responses are not routed: the `deferred` option is dropped and the response arrives in the request.
 - The options of one pi-ai API are not passed on: a route's model can have any API, so both of pi-ai's entry points
   forward pi-ai's provider-neutral options.
-- A request's `apiKey` is not passed on. Each route's provider uses its own credentials from `Models`.
+- A request's `apiKey` and `env` are not passed on: pi-ai resolves a provider's credentials from both. Each route's
+  provider uses its own credentials from `Models`. The request's other options follow it to the route that serves,
+  `headers` among them (pi-ai merges them over the route provider's own), and `metadata` without the router's key.
 - The table is validated once. A provider or a model that disappears later makes its route `unavailable`.
 - The limiter is per process. Image and classifier models are not routed.
 

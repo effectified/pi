@@ -1,6 +1,17 @@
+import { calculateCost, fauxProvider, type Usage } from "@earendil-works/pi-ai";
+import { emptyUsage } from "@gunta/pi-ai-effect";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { InvalidPriceTable, PriceMissing, Prices, PriceTable } from "../src/index.ts";
+import {
+	InvalidPriceTable,
+	type ModelPrice,
+	PriceMissing,
+	Prices,
+	type PricesService,
+	PriceTable,
+	type TokenUsage,
+} from "../src/index.ts";
 
 const TABLE = {
 	currency: "USD",
@@ -17,7 +28,7 @@ const TABLE = {
 	],
 };
 
-const cost = (model: string, usage: { input: number; output: number; cacheRead: number; cacheWrite: number }) =>
+const cost = (model: string, usage: TokenUsage) =>
 	Effect.runPromise(
 		Prices.use((prices) => prices.cost("acme", model, usage)).pipe(Effect.provide(Prices.layer(TABLE))),
 	);
@@ -93,6 +104,87 @@ describe("Prices", () => {
 	it("is data: a table decodes from JSON", () => {
 		expect(Schema.decodeUnknownSync(PriceTable)(JSON.parse(JSON.stringify(TABLE)))).toEqual(TABLE);
 	});
+});
+
+describe("pi-ai's rule", () => {
+	const LARGE: ModelPrice = TABLE.prices[0];
+
+	/** `LARGE`, and from 200,000 input tokens on twice as much. */
+	const TIERED: ModelPrice = {
+		...LARGE,
+		tiers: [
+			{ inputTokensAbove: 200_000, input: 6_000_000, output: 30_000_000, cacheRead: 600_000, cacheWrite: 7_500_000 },
+		],
+	};
+
+	/** `use` of the `Prices` of a table that lists `price` alone. */
+	function priceWith<A, E>(price: ModelPrice, use: (prices: PricesService) => Effect.Effect<A, E>) {
+		return Effect.provide(Prices.use(use), Prices.layer({ currency: "USD", prices: [price] }));
+	}
+
+	/** What pi-ai's own `calculateCost` charges for `counts` at `price`, in micro units: its rates are in units. */
+	function piCost(price: ModelPrice, counts: Partial<Usage>): number {
+		const rate = (micros: number) => micros / 1_000_000;
+		const rates = (of: ModelPrice | NonNullable<ModelPrice["tiers"]>[number]) => ({
+			input: rate(of.input),
+			output: rate(of.output),
+			cacheRead: rate(of.cacheRead),
+			cacheWrite: rate(of.cacheWrite),
+		});
+		const model = {
+			...fauxProvider({ provider: price.provider, models: [{ id: price.model }] }).getModel(),
+			cost: {
+				...rates(price),
+				tiers: price.tiers?.map((tier) => ({ inputTokensAbove: tier.inputTokensAbove, ...rates(tier) })),
+			},
+		};
+		return calculateCost(model, { ...emptyUsage(), ...counts }).total * 1_000_000;
+	}
+
+	const USAGES: ReadonlyArray<TokenUsage> = [
+		{ input: 1000, output: 200, cacheRead: 5000, cacheWrite: 400 },
+		{ input: 1000, output: 0, cacheRead: 0, cacheWrite: 1000, cacheWrite1h: 1000 },
+		{ input: 50, output: 20, cacheRead: 100, cacheWrite: 900, cacheWrite1h: 300 },
+		{ input: 250_000, output: 1000, cacheRead: 0, cacheWrite: 0 },
+		{ input: 150_000, output: 10, cacheRead: 40_000, cacheWrite: 10_001, cacheWrite1h: 1 },
+		{ input: 200_000, output: 10, cacheRead: 0, cacheWrite: 0 },
+	];
+
+	it("gives what pi-ai's calculateCost gives for the same usage and model, rounded up once", () =>
+		runTest(
+			Effect.gen(function* () {
+				for (const price of [LARGE, TIERED]) {
+					for (const usage of USAGES) {
+						const micros = Number(yield* priceWith(price, (prices) => prices.cost("acme", "large", usage)));
+						// pi-ai adds floats; the exact cost is at most one micro unit below ours.
+						expect(micros - piCost(price, usage)).toBeGreaterThanOrEqual(-1e-6);
+						expect(micros - piCost(price, usage)).toBeLessThan(1);
+					}
+				}
+			}),
+		));
+
+	it("charges a cache write kept for one hour at twice the input rate", async () => {
+		// 1000 input tokens at 3 and 1000 one-hour cache writes at 6 micro units per token, not at 3.75.
+		expect(await cost("large", { input: 1000, output: 0, cacheRead: 0, cacheWrite: 1000, cacheWrite1h: 1000 })).toBe(
+			9000n,
+		);
+		// The other cache writes stay at the cache-write rate, and one-hour writes count at most all of them.
+		expect(await cost("large", { input: 0, output: 0, cacheRead: 0, cacheWrite: 1000, cacheWrite1h: 400 })).toBe(
+			4650n,
+		);
+		expect(await cost("large", { input: 0, output: 0, cacheRead: 0, cacheWrite: 10, cacheWrite1h: 50 })).toBe(60n);
+	});
+
+	it("charges all tokens of a request above a tier's threshold at the tier's rates", () =>
+		runTest(
+			Effect.gen(function* () {
+				const charge = (usage: TokenUsage) => priceWith(TIERED, (prices) => prices.cost("acme", "large", usage));
+				expect(yield* charge({ input: 200_000, output: 0, cacheRead: 0, cacheWrite: 0 })).toBe(600_000n);
+				// Cache reads and writes count toward the threshold: 200,000 and 1 input tokens.
+				expect(yield* charge({ input: 200_000, output: 0, cacheRead: 1, cacheWrite: 0 })).toBe(1_200_001n);
+			}),
+		));
 });
 
 /**

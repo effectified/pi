@@ -1,12 +1,16 @@
 import {
+	type Api,
 	type AssistantMessage,
 	type AssistantMessageEvent,
 	fauxAssistantMessage,
+	getSupportedThinkingLevels,
+	type Model,
 	normalizeContext,
 	type Provider,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import { ModelRequestError, type ResponseEvent } from "@gunta/pi-ai-effect";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Effect, Exit, Scope } from "effect";
 import { describe, expect, it } from "vitest";
 import { AttemptUnsettled, NoRouteAvailable, type RouterError, RoutesExhausted } from "../src/index.ts";
@@ -100,6 +104,16 @@ describe("make", () => {
 				// The smallest of the routes, so Pi compacts in time for any of them.
 				contextWindow: 128_000,
 				maxTokens: 8_000,
+				// One route does not reason: pi-ai offers neither model a level but `off`.
+				thinkingLevelMap: {
+					off: "off",
+					minimal: null,
+					low: null,
+					medium: null,
+					high: null,
+					xhigh: null,
+					max: null,
+				},
 			},
 		]);
 	});
@@ -282,5 +296,52 @@ describe("make", () => {
 		expect(events.map((event) => event.type === "error" && [event.reason, event.error.errorMessage])).toEqual([
 			["error", "a broken provider"],
 		]);
+	});
+});
+
+describe("the alias model's thinking levels", () => {
+	/** The scripted model of route `id`, reasoning, with `levels` as its thinking level map. */
+	function reasoning(id: string, levels?: Model<Api>["thinkingLevelMap"]): Model<Api> {
+		return {
+			...scripted(id).getModel(),
+			reasoning: true,
+			...(levels === undefined ? {} : { thinkingLevelMap: levels }),
+		};
+	}
+
+	/** The levels pi-ai offers for an alias whose routes have `models`. */
+	function offered(...models: Model<Api>[]) {
+		const entry = { alias: "fast", routes: models.map((model) => route(model.provider)) };
+		const valid: ValidRouteTable = { table: table([entry]), aliases: [{ entry, models }] };
+		return runTest(
+			Effect.map(PiProvider.make({ id: "router", table: valid, run: () => Effect.never }), (provider) =>
+				getSupportedThinkingLevels(provider.getModels()[0]),
+			),
+		);
+	}
+
+	it("offers xhigh and max when every route's model offers them", async () => {
+		const levels = { xhigh: "xhigh", max: "max" };
+		expect(await offered(reasoning("a", levels), reasoning("b", levels))).toEqual([
+			"off",
+			"minimal",
+			"low",
+			"medium",
+			"high",
+			"xhigh",
+			"max",
+		]);
+	});
+
+	it("offers only the levels every route's model offers", async () => {
+		// `a` hides `minimal` and offers `xhigh`; `b` offers `max` and not `xhigh`.
+		const a = reasoning("a", { minimal: null, xhigh: "extra" });
+		const b = reasoning("b", { max: "max" });
+		expect(await offered(a, b)).toEqual(["off", "low", "medium", "high"]);
+		expect(await offered(a)).toEqual(["off", "low", "medium", "high", "xhigh"]);
+	});
+
+	it("offers only off when a route does not reason", async () => {
+		expect(await offered(reasoning("a", { xhigh: "xhigh" }), scripted("b").getModel())).toEqual(["off"]);
 	});
 });

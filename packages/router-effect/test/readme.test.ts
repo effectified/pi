@@ -303,13 +303,29 @@ describe("the README", () => {
 				// { currency: "USD", micros: 12207n }
 				const charged = yield* cost({ price }, { input: 1234, output: 567, cacheRead: 0, cacheWrite: 0 });
 
+				// From 200,000 input tokens on, twice the price of every token.
+				const large = {
+					inputTokensAbove: 200_000,
+					input: 6_000_000,
+					output: 30_000_000,
+					cacheRead: 0,
+					cacheWrite: 0,
+				};
+				const tiered = { ...price, tiers: [large] };
+				// { currency: "USD", micros: 1230000n }
+				const tieredCharge = yield* cost(
+					{ price: tiered },
+					{ input: 205_000, output: 0, cacheRead: 0, cacheWrite: 0 },
+				);
+
 				// README: prices for a budget
 				// { currency: "USD", prices: [{ provider, model, input, output, cacheRead, cacheWrite }, ...] }
 				const rows = yield* priceRows(table); // or priceRows(table, "routes") for a router built with { id: "routes" }
-				return { charged, rows };
+				return { charged, tieredCharge, rows };
 			}),
 		);
 		expect(result.charged).toEqual({ currency: "USD", micros: 12207n });
+		expect(result.tieredCharge).toEqual({ currency: "USD", micros: 1_230_000n });
 		expect(result.rows).toEqual({
 			currency: "USD",
 			prices: [

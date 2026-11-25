@@ -2,6 +2,7 @@
 // findings as one JSON object. What its one request came to is kept in a memo of the review task.
 
 import type { Api, AssistantMessage, Message, Model, Models } from "@earendil-works/pi-ai";
+import { ANSWERED } from "@gunta/pi-ai-effect";
 import type { DurableError } from "@gunta/pi-durable-effect";
 import { Effect, Option, Schema } from "effect";
 import type * as Check from "./check.ts";
@@ -74,10 +75,10 @@ export function ask(request: Request, subject: Check.Subject): Effect.Effect<Rep
 	}).pipe(
 		Effect.flatMap((reply): Effect.Effect<Reply> => {
 			const call = callOf(reply);
-			// pi-ai resolves with an error message for a request that failed or was aborted.
-			if (reply.stopReason === "error" || reply.stopReason === "aborted") {
+			// pi-ai resolves a request that gave no answer with its message too: one that failed or was aborted, or a
+			// response still pending or deferred, which Pi Durable does not take as an answer either.
+			if (!ANSWERED[reply.stopReason])
 				return Effect.succeed(unanswered(call, reply.errorMessage ?? reply.stopReason));
-			}
 			return decode(unfenced(textOf(reply))).pipe(
 				Effect.map((answered): Reply => ({ _tag: "Reviewed", call, findings: answered.findings })),
 				Effect.catch((error) =>
@@ -135,10 +136,40 @@ export function report(reply: Reply): Report {
 }
 
 /**
+ * What the record of the reviewer's request takes of each field of pi-ai's response. Its content is the reply, read
+ * into findings; not recorded: the thinking levels asked for and used, pi-ai's diagnostics of the response, a
+ * deferred response's handle, the provider's own stop reason and whether the model said its turn ended. A field
+ * pi-ai adds fails to compile here until it is decided.
+ */
+const CALL = {
+	role: "excluded",
+	content: "excluded",
+	api: "recorded",
+	provider: "recorded",
+	model: "recorded",
+	responseModel: "recorded",
+	responseId: "recorded",
+	stopReason: "recorded",
+	errorMessage: "recorded",
+	usage: "recorded",
+	timestamp: "recorded",
+	durationMs: "recorded",
+	thinkingLevel: "excluded",
+	providerThinkingLevel: "excluded",
+	diagnostics: "excluded",
+	deferred: "excluded",
+	rawStopReason: "excluded",
+	endTurn: "excluded",
+} as const satisfies Record<keyof AssistantMessage, "recorded" | "excluded">;
+
+/** The fields of a response the record of a call takes. */
+type Recorded = { [K in keyof typeof CALL]: (typeof CALL)[K] extends "recorded" ? K : never }[keyof typeof CALL];
+
+/**
  * A response as a product records a model call: who answered, through which api, how it ended, when and for how
  * long, and what it used and cost. pi-ai's optional fields stay absent when the response has none.
  */
-function callOf(reply: AssistantMessage): Call {
+function callOf(reply: Pick<AssistantMessage, Recorded>): Call {
 	const { usage } = reply;
 	return {
 		provider: reply.provider,

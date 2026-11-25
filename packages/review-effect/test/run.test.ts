@@ -37,15 +37,3 @@ describe("Run.view", () => {
 		expect(Run.view(Option.some<LiveState>({ run: { ...run, inputs: [], afterRun: {} } })).working).toBe(false);
 	});
 });
-
-describe("Pi's built-in documents as documents of the facade", () => {
-	it("carry Pi's own kinds and tokens", () => {
-		expect([Run.Live.kind, Run.Provider.kind]).toEqual(["pi.live", "pi.provider"]);
-		expect([Run.Live.scope, Run.Provider.scope, Run.Live.family, Run.Provider.family]).toEqual([
-			"conversation",
-			"conversation",
-			false,
-			false,
-		]);
-	});
-});

@@ -1,18 +1,8 @@
 // The verdict: what one review of one answer came to, stored as an entry of the reviewed conversation.
 
-import type { EntryId, TaskId } from "@earendil-works/pi-durable";
-import { Entry, Submission } from "@gunta/pi-durable-effect";
+import { Entry, Submission, Task } from "@gunta/pi-durable-effect";
 import { Schema } from "effect";
 import { Finding } from "./finding.ts";
-
-/**
- * The schema of an entry id, for what this package stores about an answer. Pi brands ids in the type system only,
- * which a schema cannot express: at run time an entry id is the number stored.
- */
-export const AnswerId = Schema.Number as unknown as Schema.Codec<EntryId, number>;
-
-/** The schema of a task id, with the same brand and the same reason. */
-export const HoldId = Schema.Number as unknown as Schema.Codec<TaskId, number>;
 
 /** A model in a review, with the family the policy gave it; no `family` when the policy gave none. */
 export const Party = Schema.Struct({
@@ -136,8 +126,8 @@ export type Unreviewed = typeof Unreviewed.Type;
 export const Outcome = Schema.Union([
 	Schema.TaggedStruct("Passed", {}),
 	Schema.TaggedStruct("Corrected", {}),
-	Schema.TaggedStruct("Held", { task: HoldId }),
-	Schema.TaggedStruct("Deferred", { task: HoldId, attempt: Schema.Number }),
+	Schema.TaggedStruct("Held", { task: Task.Id }),
+	Schema.TaggedStruct("Deferred", { task: Task.Id, attempt: Schema.Number }),
 	Schema.TaggedStruct("NotReviewed", { reason: Unreviewed }),
 ]);
 
@@ -161,7 +151,7 @@ export type Outcome = typeof Outcome.Type;
  * - `time`: the harness clock when the verdict was decided, in epoch milliseconds.
  */
 export const Verdict = Schema.Struct({
-	answer: AnswerId,
+	answer: Entry.Id,
 	inputs: Schema.optionalKey(Schema.Array(Submission.Id)),
 	pass: Schema.Number,
 	corrections: Schema.Number,

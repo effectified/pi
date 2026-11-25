@@ -1,4 +1,4 @@
-import type { ConversationId } from "@earendil-works/pi-durable";
+import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
 import { Harness } from "@gunta/pi-durable-effect";
 import { answer, TestHarness } from "@gunta/pi-durable-effect/testing";
 import { Effect, Option } from "effect";
@@ -23,7 +23,7 @@ describe("Cursor", () => {
 		expect(result.after).toEqual(Option.some({}));
 	});
 
-	it("starts at 0 for a conversation that is no fork, and for one that does not exist", async () => {
+	it("starts at the first entry of a conversation that is no fork, and of one that does not exist", async () => {
 		const starts = await Effect.runPromise(
 			Effect.gen(function* () {
 				const root = yield* TestHarness.root;
@@ -31,7 +31,7 @@ describe("Cursor", () => {
 				return [yield* Cursors.start(root.id), yield* Cursors.start(999 as ConversationId)];
 			}).pipe(Effect.provide(harness)),
 		);
-		expect(starts).toEqual([0, 0]);
+		expect(starts).toEqual([Option.none(), Option.none()]);
 	});
 
 	it("starts a fork at the entry it was forked at, until the fork has a cursor of its own", async () => {
@@ -45,21 +45,22 @@ describe("Cursor", () => {
 				yield* Cursors.advance(root.id, Option.getOrThrow(yield* root.head));
 				const fork = yield* root.fork({ at, ownership: { kind: "ownerless" } });
 				const fresh = yield* Cursors.start(fork.id);
-				yield* Cursors.advance(fork.id, at + 100);
+				// Pi brands entry ids in its types only: at run time an entry id is a number.
+				yield* Cursors.advance(fork.id, (at + 100) as EntryId);
 				return { at, fresh, moved: yield* Cursors.start(fork.id), root: yield* Cursors.start(root.id) };
 			}).pipe(Effect.provide(harness)),
 		);
-		expect(result.fresh).toBe(result.at);
-		expect(result.moved).toBe(result.at + 100);
-		expect(result.root).toBeGreaterThan(result.at);
+		expect(result.fresh).toEqual(Option.some(result.at));
+		expect(result.moved).toEqual(Option.some(result.at + 100));
+		expect(Option.getOrThrow(result.root)).toBeGreaterThan(result.at);
 	});
 
 	it("advances one conversation's key and leaves the others", async () => {
 		const stored = await Effect.runPromise(
 			Effect.gen(function* () {
-				yield* Cursors.advance(1 as ConversationId, 7);
-				yield* Cursors.advance(5 as ConversationId, 30);
-				yield* Cursors.advance(1 as ConversationId, 12);
+				yield* Cursors.advance(1 as ConversationId, 7 as EntryId);
+				yield* Cursors.advance(5 as ConversationId, 30 as EntryId);
+				yield* Cursors.advance(1 as ConversationId, 12 as EntryId);
 				return yield* Harness.snapshot(Cursors.Cursor);
 			}).pipe(Effect.provide(harness)),
 		);

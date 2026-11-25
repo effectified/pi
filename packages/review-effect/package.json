@@ -44,6 +44,7 @@
 	"dependencies": {
 		"@earendil-works/pi-ai": "1.6.1",
 		"@earendil-works/pi-durable": "1.6.1",
+		"@gunta/pi-ai-effect": "0.1.0",
 		"@gunta/pi-durable-effect": "0.1.0"
 	},
 	"peerDependencies": {
@@ -52,7 +53,6 @@
 	"devDependencies": {
 		"@effect/sql-sqlite-bun": "4.1.5",
 		"@effect/sql-sqlite-node": "4.1.5",
-		"@gunta/pi-ai-effect": "0.1.0",
 		"effect": "4.1.5",
 		"vitest": "4.1.12"
 	}
