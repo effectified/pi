@@ -1,8 +1,10 @@
 import type { TaskId } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Extension, Gate, Harness, Hook, Signal, Tool } from "../src/index.ts";
 import { answer, TestHarness, toolCall } from "../src/testing/index.ts";
+import { untilTask } from "./until-task.ts";
 
 // A value whose type differs from its JSON form: a Date travels as an ISO string.
 const Decision = Signal.make("test.decision", 1, Schema.Struct({ allow: Schema.Boolean, at: Schema.Date }));
@@ -51,9 +53,7 @@ const untilParked = (asked: Promise<TaskId>) =>
 		const root = yield* TestHarness.root;
 		const submission = yield* root.submit({ type: "input", content: "Write hi." });
 		const taskId = yield* Effect.promise(() => asked);
-		while (Option.getOrThrow(yield* Harness.getTask(taskId)).state.status !== "sleeping") {
-			yield* Effect.sleep("1 millis");
-		}
+		yield* untilTask("sleeping", taskId);
 		return { root, submission, taskId };
 	});
 
@@ -97,7 +97,7 @@ describe("make", () => {
 describe("Harness.signal", () => {
 	it("fails with SchemaDecodeError for a value outside the schema, before anything is stored", async () => {
 		const scene = parked();
-		const seen = await Effect.runPromise(
+		const seen = await runTest(
 			Effect.gen(function* () {
 				const { root, taskId } = yield* untilParked(scene.asked);
 				const before = Option.getOrThrow(yield* Harness.getTask(taskId));
@@ -124,7 +124,7 @@ describe("Harness.signal", () => {
 	it("delivers a value that arrives decoded where the gate reads it, and the call continues", async () => {
 		const scene = parked();
 		const at = new Date("2026-11-24T10:00:00.000Z");
-		const seen = await Effect.runPromise(
+		const seen = await runTest(
 			Effect.gen(function* () {
 				const { submission, taskId } = yield* untilParked(scene.asked);
 				const delivered = yield* Harness.signal(taskId, Decision, "decide", { allow: true, at });
@@ -155,7 +155,7 @@ describe("Harness.signal", () => {
 
 	it("answers invalid, as Pi does, for an empty key", async () => {
 		const scene = parked();
-		const result = await Effect.runPromise(
+		const result = await runTest(
 			Effect.gen(function* () {
 				const { root, taskId } = yield* untilParked(scene.asked);
 				const invalid = yield* Harness.signal(taskId, Decision, "", { allow: true, at: new Date(0) });
@@ -190,7 +190,7 @@ describe("stateIn", () => {
 			}),
 		);
 		const at = new Date("2026-11-25T08:00:00.000Z");
-		const seen = await Effect.runPromise(
+		const seen = await runTest(
 			Effect.gen(function* () {
 				const { submission, taskId } = yield* untilParked(asked.promise);
 				const record = Option.getOrThrow(yield* Harness.getTask(taskId));

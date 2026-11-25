@@ -237,7 +237,8 @@ export function open<D extends Any>(
 		// Pi's writes are overloaded by the token's scope, which `Opening` checks at this package's call sites instead.
 		step(() => (tx as unknown as Writes).doc(doc.token, ...opening)),
 		(draft): Open<Value<D>> => {
-			// A copy: values read through the draft are revoked with it, and a decoded value may keep what it read.
+			// A copy: values read through the draft are revoked with it, and a decoded value may keep what it read. The
+			// draft is a Proxy, which `structuredClone` refuses on Node and Bun (`DataCloneError`); it holds only JSON.
 			const get = Effect.suspend(() => fromStored(JSON.parse(JSON.stringify(draft))));
 			const set = (value: Value<D>) => Effect.map(toStored(value), (next) => replace(draft, next));
 			return { get, set, update: (change) => Effect.flatMap(get, (value) => set(change(value))), draft };

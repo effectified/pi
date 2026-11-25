@@ -191,10 +191,11 @@ describe("what a handler may use", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const reports: Report[] = [];
+					// Started at once, it has subscribed when the fork returns.
 					yield* Effect.forkScoped(
 						Stream.runForEach(Harness.reports, (report) => Effect.sync(() => reports.push(report))),
+						{ startImmediately: true },
 					);
-					yield* Effect.yieldNow;
 					const ran = yield* run(task);
 					return { state: ran.state, reports: reports.map((report) => [report.kind, String(report.error)]) };
 				}),

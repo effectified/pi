@@ -7,21 +7,30 @@ import {
 	withContextValue,
 } from "@earendil-works/chord/context";
 import { type ConversationId, ConversationBusy as PiConversationBusy } from "@earendil-works/pi-durable";
-import { Cause, Effect, Exit, Fiber } from "effect";
+import { runTest } from "@gunta/pi-ai-effect/testing";
+import { Cause, Effect, Exit, Fiber, Latch } from "effect";
 import { describe, expect, it } from "vitest";
 import { call, ParentContext, step } from "../src/call.ts";
 
-/** A Pi call that settles only when its context is cancelled, a little later, as Pi's waits do. */
-function cancellable(onSettled: () => void): (context: Context) => Promise<never> {
-	return (context) =>
+/**
+ * A Pi call that settles only when its context is cancelled, as Pi's waits do, and then only once the test calls
+ * `settle` (at once when it was called before). `cancelled` succeeds when the cancellation reached the call.
+ */
+function cancellable() {
+	const cancelled = Latch.makeUnsafe();
+	const released = Promise.withResolvers<void>();
+	let settled = false;
+	const run = (context: Context): Promise<never> =>
 		new Promise((_resolve, reject) => {
 			context.abortSignal?.addEventListener("abort", () => {
-				setTimeout(() => {
-					onSettled();
+				cancelled.openUnsafe();
+				void released.promise.then(() => {
+					settled = true;
 					reject(context.abortSignal?.reason);
-				}, 10);
+				});
 			});
 		});
+	return { run, cancelled: cancelled.await, settle: () => released.resolve(), settled: () => settled };
 }
 
 describe("call", () => {
@@ -50,19 +59,22 @@ describe("call", () => {
 	});
 
 	it("cancels the Chord context when the fiber is interrupted, and is interrupted itself, not failed", async () => {
-		let settled = false;
-		const fiber = Effect.runFork(
-			call(
-				cancellable(() => {
-					settled = true;
-				}),
-			),
+		const pi = cancellable();
+		const seen = await runTest(
+			Effect.gen(function* () {
+				const fiber = yield* Effect.forkChild(call(pi.run), { startImmediately: true });
+				const interrupting = yield* Effect.forkChild(Fiber.interrupt(fiber), { startImmediately: true });
+				yield* pi.cancelled;
+				// The interruption waits until Pi settled the call.
+				const waiting = interrupting.pollUnsafe() === undefined;
+				pi.settle();
+				yield* Fiber.join(interrupting);
+				return { waiting, settled: pi.settled(), exit: yield* Fiber.await(fiber) };
+			}),
 		);
-		await Effect.runPromise(Effect.yieldNow);
-		const exit = await Effect.runPromise(Fiber.interrupt(fiber).pipe(Effect.andThen(Fiber.await(fiber))));
-		// The interruption waited until Pi had settled the call.
-		expect(settled).toBe(true);
-		expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
+		expect(seen.waiting).toBe(true);
+		expect(seen.settled).toBe(true);
+		expect(Exit.isFailure(seen.exit) && Cause.hasInterruptsOnly(seen.exit.cause)).toBe(true);
 	});
 
 	it("runs under the parent context it is given: its values carry over, and its cancellation cancels the call", async () => {
@@ -70,17 +82,17 @@ describe("call", () => {
 		const { context: parent, cancel } = withCancel(withContextValue(key, "trace-1", BACKGROUND_CONTEXT));
 		const value = await Effect.runPromise(call(async (context) => context.value(key), parent));
 		expect(value).toBe("trace-1");
-		const fiber = Effect.runFork(
-			Effect.flip(
-				call(
-					cancellable(() => {}),
-					parent,
-				),
-			),
+		const pi = cancellable();
+		pi.settle();
+		const failure = await runTest(
+			Effect.gen(function* () {
+				// Started at once, the call is with Pi when its fork returns.
+				const fiber = yield* Effect.forkChild(Effect.flip(call(pi.run, parent)), { startImmediately: true });
+				cancel(new DOMException("The invocation was aborted", "AbortError"));
+				return yield* Fiber.join(fiber);
+			}),
 		);
-		await Effect.runPromise(Effect.yieldNow);
-		cancel(new DOMException("The invocation was aborted", "AbortError"));
-		expect((await Effect.runPromise(Fiber.join(fiber)))._tag).toBe("Cancelled");
+		expect(failure._tag).toBe("Cancelled");
 	});
 
 	it("fails with Cancelled when Pi cancels a call the fiber did not interrupt", async () => {
@@ -110,10 +122,20 @@ describe("ParentContext", () => {
 	});
 
 	it("fails a call with Cancelled when the host's context is past its deadline", async () => {
-		const deadline = AbortSignal.timeout(5);
-		const host = withAbortSignal(deadline, BACKGROUND_CONTEXT);
-		const failure = await Effect.runPromise(
-			Effect.flip(call(cancellable(() => {}))).pipe(Effect.provideService(ParentContext, host)),
+		const deadline = new AbortController();
+		const host = withAbortSignal(deadline.signal, BACKGROUND_CONTEXT);
+		const pi = cancellable();
+		pi.settle();
+		const failure = await runTest(
+			Effect.gen(function* () {
+				const fiber = yield* Effect.forkChild(
+					Effect.flip(call(pi.run)).pipe(Effect.provideService(ParentContext, host)),
+					{ startImmediately: true },
+				);
+				// What `AbortSignal.timeout` does once its time is up.
+				deadline.abort(new DOMException("The operation timed out.", "TimeoutError"));
+				return yield* Fiber.join(fiber);
+			}),
 		);
 		expect(failure._tag).toBe("Cancelled");
 		expect(failure).toMatchObject({ cause: { name: "TimeoutError" } });
@@ -142,15 +164,23 @@ describe("step", () => {
 	it("waits for Pi to settle the call when the fiber is interrupted", async () => {
 		const settle = Promise.withResolvers<void>();
 		let settled = false;
-		const fiber = Effect.runFork(
-			step(async () => {
-				await settle.promise;
-				settled = true;
+		const waiting = await runTest(
+			Effect.gen(function* () {
+				const fiber = yield* Effect.forkChild(
+					step(async () => {
+						await settle.promise;
+						settled = true;
+					}),
+					{ startImmediately: true },
+				);
+				const interrupting = yield* Effect.forkChild(Fiber.interrupt(fiber), { startImmediately: true });
+				const waiting = interrupting.pollUnsafe() === undefined;
+				settle.resolve();
+				yield* Fiber.join(interrupting);
+				return waiting;
 			}),
 		);
-		await Effect.runPromise(Effect.yieldNow);
-		setTimeout(() => settle.resolve(), 10);
-		await Effect.runPromise(Fiber.interrupt(fiber));
+		expect(waiting).toBe(true);
 		expect(settled).toBe(true);
 	});
 });

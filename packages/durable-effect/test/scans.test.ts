@@ -1,11 +1,13 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord/json";
 import type { ConversationId, ConversationRecord, Cursor, Page, TaskRecord } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Effect, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { type DurableError, Extension, Harness, type Scans, Storage, Task } from "../src/index.ts";
 import { answer, TestHarness } from "../src/testing/index.ts";
 import { KeptStorage } from "./scripted.ts";
+import { untilTask } from "./until-task.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
@@ -107,7 +109,7 @@ describe("Harness.scanConversations", () => {
 
 describe("Harness.scanTasks", () => {
 	it("streams the stored tasks Pi's filters select, ended ones included, as Pi's scan in a commit gives them", async () => {
-		const seen = await Effect.runPromise(
+		const seen = await runTest(
 			Effect.gen(function* () {
 				const root = yield* TestHarness.root;
 				yield* root.prompt("Hi.");
@@ -115,11 +117,8 @@ describe("Harness.scanTasks", () => {
 				const waiting = yield* root.commit((tx) =>
 					Effect.forEach([1, 2, 3], () => tx.createTask(Waiting, {}, { ownership: { kind: "conversation" } })),
 				);
-				// Each has slept once the harness is idle but for them.
-				yield* Effect.repeat(Effect.sleep("5 millis"), {
-					until: () =>
-						Effect.map(Harness.inspect, ({ tasks }) => tasks.every((task) => task.state.kind === "sleeping")),
-				});
+				// Each sleeps for an hour, which the test clock never reaches.
+				yield* Effect.forEach(waiting, (id) => untilTask("sleeping", id));
 				const pi = yield* Harness.Harness;
 				const own = (query: Scans.TasksQuery) =>
 					Effect.promise(() =>

@@ -6,7 +6,8 @@ import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/conte
 import { type AssistantMessage, fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai";
 import type { ConversationId, EntryId, Report, TaskId, Wake } from "@earendil-works/pi-durable";
 import { Models } from "@gunta/pi-ai-effect";
-import { Context, Effect, Fiber, Layer, Option, Schedule, Schema, Stream } from "effect";
+import { runTest } from "@gunta/pi-ai-effect/testing";
+import { Context, Effect, Fiber, Latch, Layer, Option, Queue, Schedule, Schema, Stream } from "effect";
 import { Tool as AiTool, Toolkit } from "effect/ai";
 import { describe, expect, it } from "vitest";
 import {
@@ -296,7 +297,7 @@ describe("the agent example of the README", () => {
 
 describe("the watch example of the README", () => {
 	it("streams a conversation's view and a document, decoded", async () => {
-		const outcome = await Effect.runPromise(
+		const outcome = await runTest(
 			Effect.gen(function* () {
 				const root = yield* TestHarness.root;
 				yield* addTodo("write docs", new Date(0));
@@ -309,9 +310,26 @@ describe("the watch example of the README", () => {
 				// One of your own documents, decoded.
 				const counts = Stream.map(Harness.watchDoc(Todos, root.id), (change) => change.value.items.length);
 
-				const answered = yield* Effect.forkChild(Stream.runCollect(Stream.take(answers, 2)));
-				const counted = yield* Effect.forkChild(Stream.runCollect(Stream.take(counts, 2)));
-				yield* Effect.sleep("5 millis");
+				// Each stream's first element is the value at attachment: the changes below come after it.
+				const attached = { answers: yield* Latch.make(), counts: yield* Latch.make() };
+				const answered = yield* Effect.forkChild(
+					Stream.runCollect(
+						Stream.take(
+							Stream.tap(answers, () => attached.answers.open),
+							2,
+						),
+					),
+				);
+				const counted = yield* Effect.forkChild(
+					Stream.runCollect(
+						Stream.take(
+							Stream.tap(counts, () => attached.counts.open),
+							2,
+						),
+					),
+				);
+				yield* attached.answers.await;
+				yield* attached.counts.await;
 				yield* addTodo("ship", new Date(0));
 				yield* root.prompt("Hi.");
 				return { answers: yield* Fiber.join(answered), counts: yield* Fiber.join(counted) };
@@ -330,9 +348,11 @@ class Alarm extends Context.Service<Alarm, { readonly arm: (wake: Wake) => Effec
 describe("the host example of the README", () => {
 	// README: Hosts.
 	const host = Effect.gen(function* () {
-		// Failures that fail no call: a throwing hook, a faulted task, the error that failed the harness.
+		// Failures that fail no call: a throwing hook, a faulted task, the error that failed the harness. Started at once,
+		// it has subscribed when the fork returns, so it misses no report of what comes after.
 		yield* Effect.forkScoped(
 			Stream.runForEach(Harness.reports, (report) => Alerts.use((alerts) => alerts.send(report))),
+			{ startImmediately: true },
 		);
 		// The host owns the wake-ups: arm an alarm from each value, and resume when it fires.
 		yield* Effect.forkScoped(Stream.runForEach(Harness.wakes, (wake) => Alarm.use((alarm) => alarm.arm(wake))));
@@ -346,34 +366,42 @@ describe("the host example of the README", () => {
 	});
 
 	it("hands reports and wakes to the host, and gives every conversation its documents", async () => {
-		const reports: Report[] = [];
-		const wakes: Wake[] = [];
 		const Failing = Hook.afterResponse(() => Effect.fail(new Error("refused")));
-		const todos = await Effect.runPromise(
+		const seen = await runTest(
 			Effect.gen(function* () {
-				yield* host;
-				yield* Effect.sleep("5 millis");
-				const root = yield* TestHarness.root;
-				yield* root.prompt("Hi.");
-				yield* onAlarm;
-				yield* Effect.sleep("5 millis");
-				return Option.getOrUndefined(yield* Harness.snapshot(Todos, root.id));
-			}).pipe(
-				Effect.scoped,
-				Effect.provide(live),
-				Effect.provide(Registry.layer([Extension.make({ name: "app", hooks: [Failing] })])),
-				Effect.provide(Storage.memory),
-				Effect.provide(
-					Layer.effectDiscard(ScriptedModels.use((models) => models.setResponses([answer("Hello.")]))),
-				),
-				Effect.provide(ScriptedModels.layer({ api: "scripted" })),
-				Effect.provide(Layer.succeed(Alerts, { send: (report) => Effect.sync(() => void reports.push(report)) })),
-				Effect.provide(Layer.succeed(Alarm, { arm: (wake) => Effect.sync(() => void wakes.push(wake)) })),
-			),
+				// What the host was handed, in order: the test takes as many as it expects, then what else is there.
+				const alerted = yield* Queue.unbounded<Report>();
+				const armed = yield* Queue.unbounded<Wake>();
+				return yield* Effect.gen(function* () {
+					yield* host;
+					const root = yield* TestHarness.root;
+					yield* root.prompt("Hi.");
+					yield* onAlarm;
+					const reports = yield* Queue.takeN(alerted, 1);
+					// The values of the open, then of the run: Pi gives the last after the run's last commit.
+					const wakes = yield* Queue.takeN(armed, 4);
+					return {
+						todos: Option.getOrUndefined(yield* Harness.snapshot(Todos, root.id)),
+						reports: [...reports, ...(yield* Queue.clear(alerted))],
+						wakes: [...wakes, ...(yield* Queue.clear(armed))],
+					};
+				}).pipe(
+					Effect.scoped,
+					Effect.provide(live),
+					Effect.provide(Registry.layer([Extension.make({ name: "app", hooks: [Failing] })])),
+					Effect.provide(Storage.memory),
+					Effect.provide(
+						Layer.effectDiscard(ScriptedModels.use((models) => models.setResponses([answer("Hello.")]))),
+					),
+					Effect.provide(ScriptedModels.layer({ api: "scripted" })),
+					Effect.provide(Layer.succeed(Alerts, { send: (report) => Queue.offer(alerted, report) })),
+					Effect.provide(Layer.succeed(Alarm, { arm: (wake) => Queue.offer(armed, wake) })),
+				);
+			}),
 		);
-		expect(todos).toEqual({ items: [] });
-		expect(reports.map((report) => report.kind)).toEqual(["extension_error"]);
-		expect(wakes).toEqual([{ active: true }, { active: false }, { active: true }, { active: false }]);
+		expect(seen.todos).toEqual({ items: [] });
+		expect(seen.reports.map((report) => report.kind)).toEqual(["extension_error"]);
+		expect(seen.wakes).toEqual([{ active: true }, { active: false }, { active: true }, { active: false }]);
 	});
 
 	it("bounds every Pi call of a program with a parent context", async () => {
@@ -953,7 +981,7 @@ describe("the scans example of the README", () => {
 
 describe("the commits example of the README", () => {
 	it("streams every entry as it is stored, in commit order", async () => {
-		const kinds = await Effect.runPromise(
+		const kinds = await runTest(
 			Effect.gen(function* () {
 				const root = yield* TestHarness.root;
 				// README: Commits as a stream.
@@ -962,8 +990,10 @@ describe("the commits example of the README", () => {
 					Stream.fromIterable(commit.changes.flatMap((change) => (change.type === "entry" ? [change.value] : []))),
 				);
 				// README: end
-				const collecting = yield* Effect.forkChild(Stream.runCollect(Stream.take(storedEntries, 2)));
-				yield* Effect.sleep("5 millis");
+				// Started at once, the stream has attached when its fork returns.
+				const collecting = yield* Effect.forkChild(Stream.runCollect(Stream.take(storedEntries, 2)), {
+					startImmediately: true,
+				});
 				yield* root.prompt("Hi.");
 				return (yield* Fiber.join(collecting)).map((entry) => [entry.conversationId, entry.kind]);
 			}).pipe(Effect.provide(TestHarness.layer({ responses: [answer("Hello.")] }))),

@@ -21,7 +21,7 @@ import type {
 	TaskId,
 	UserInput,
 } from "@earendil-works/pi-durable";
-import { Effect, Option, Schema, type Stream } from "effect";
+import { Effect, Option, Predicate, Schema, type Stream } from "effect";
 import * as Agent from "./agent.ts";
 import { call } from "./call.ts";
 import * as Entries from "./entries.ts";
@@ -137,13 +137,11 @@ export function fromPi(conversation: PiConversation): Conversation {
 			call((context) => conversation.submit(draft, context)),
 			Submission.fromPi,
 		);
-	const record = Effect.flatMap(
+	const record = Effect.filterOrFail(
 		call((context) => conversation.commit((tx) => tx.conversation(conversation.id), context)),
-		(found) =>
-			found === undefined
-				? // Pi gives a handle only for a stored conversation and never deletes one: this is Pi's own inconsistency.
-					Effect.fail(new UnexpectedError({ cause: new Error(`Conversation ${conversation.id} has no record`) }))
-				: Effect.succeed(found),
+		Predicate.isNotUndefined,
+		// Pi gives a handle only for a stored conversation and never deletes one: this is Pi's own inconsistency.
+		() => new UnexpectedError({ cause: new Error(`Conversation ${conversation.id} has no record`) }),
 	);
 	return {
 		id: conversation.id,

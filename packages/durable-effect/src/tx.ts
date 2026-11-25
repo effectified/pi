@@ -26,12 +26,13 @@ import {
 	type TaskRecord,
 } from "@earendil-works/pi-durable";
 import type { SchemaDecodeError } from "@gunta/pi-schema-effect";
-import { type Cause, Effect, Exit, Option, type Schema } from "effect";
+import { type Cause, Effect, Exit, Option, type Schema, type Stream } from "effect";
 import * as Agent from "./agent.ts";
 import { call, step } from "./call.ts";
 import * as Doc from "./doc.ts";
 import * as Entry from "./entry.ts";
 import type { DurableError } from "./errors.ts";
+import * as Scans from "./scans.ts";
 import type * as Signal from "./signal.ts";
 import type * as Task from "./task.ts";
 
@@ -84,6 +85,15 @@ export interface Tx {
 		limit: number,
 		cursor?: Cursor,
 	) => Effect.Effect<Page<TaskRecord<JsonValue, JsonValue, JsonValue>, Cursor>, DurableError>;
+	/**
+	 * Every conversation `query` selects, in id order: `scanConversations` page by page as the stream is pulled, every
+	 * page in this commit, so the stream is one point in time. A table read for each page.
+	 */
+	readonly conversations: (query?: Scans.ConversationsQuery) => Stream.Stream<ConversationRecord, DurableError>;
+	/** Every task `query` selects, in id order, ended ones included: `scanTasks` read as `conversations` reads. */
+	readonly tasks: (
+		query?: Scans.TasksQuery,
+	) => Stream.Stream<TaskRecord<JsonValue, JsonValue, JsonValue>, DurableError>;
 	/** The id of the newest entry visible from the conversation: where a fork of this commit starts; a table read. */
 	readonly latestEntryId: (conversationId: ConversationId) => Effect.Effect<Option.Option<EntryId>, DurableError>;
 	/** A submission's record; a table read. */
@@ -165,6 +175,7 @@ export interface Tx {
 export function fromPi(tx: PiTx): Tx {
 	const found = <A>(read: () => Promise<A | undefined>) => Effect.map(step(read), Option.fromUndefinedOr);
 	const entry = (id: EntryId) => found(() => tx.entry(id));
+	const read: Scans.Read = (scan) => step(() => scan(tx));
 	return {
 		conversation: (id) => found(() => tx.conversation(id)),
 		entry,
@@ -173,6 +184,8 @@ export function fromPi(tx: PiTx): Tx {
 		scanConversations: (query, limit, cursor) => step(() => tx.scanConversations(query, limit, cursor)),
 		scanEntries: (query, limit, cursor) => step(() => tx.scanEntries(query, limit, cursor)),
 		scanTasks: (query, limit, cursor) => step(() => tx.scanTasks(query, limit, cursor)),
+		conversations: (query) => Scans.conversations(read, query),
+		tasks: (query) => Scans.tasks(read, query),
 		latestEntryId: (conversationId) => found(() => tx.latestEntryId(conversationId)),
 		submission: (id) => found(() => tx.submission(id)),
 		submissionByRequest: (conversationId, requestId) =>

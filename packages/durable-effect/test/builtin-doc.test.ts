@@ -13,7 +13,8 @@ import {
 	UsageDoc,
 	type UsageState,
 } from "@earendil-works/pi-durable";
-import { Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
+import { runTest } from "@gunta/pi-ai-effect/testing";
+import { Effect, Exit, Fiber, Latch, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { BuiltinDoc, type Doc, Extension, Gate, Harness, Hook, Tool } from "../src/index.ts";
 import { answer, type FauxResponseStep, held, TestHarness, toolCall } from "../src/testing/index.ts";
@@ -182,21 +183,24 @@ describe("reading a built-in document", () => {
 	});
 
 	it("streams through watchDoc: the usage ledger now, then after each response", async () => {
-		const totals = await run(
+		const totals = await runTest(
 			Effect.gen(function* () {
 				const root = yield* TestHarness.root;
+				// The first element is the ledger at attachment: the response's change comes after it.
+				const attached = yield* Latch.make();
 				const watching = yield* Effect.forkChild(
 					Harness.watchDoc(BuiltinDoc.usage, root.id).pipe(
+						Stream.tap(() => attached.open),
 						Stream.map((change) => Object.keys(change.value.models).length),
 						Stream.changes,
 						Stream.take(2),
 						Stream.runCollect,
 					),
 				);
-				yield* Effect.sleep("10 millis");
+				yield* attached.await;
 				yield* root.prompt("Hi.");
 				return yield* Fiber.join(watching);
-			}),
+			}).pipe(Effect.provide(TestHarness.layer({ responses: [answer("Done.")] }))),
 		);
 		expect(totals).toEqual([0, 1]);
 	});

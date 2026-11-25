@@ -1,14 +1,13 @@
 import type { EntryRecord } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Effect, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { Gate, Hook, Signal, Tool } from "../src/index.ts";
 import { answer, TestHarness, toolCall } from "../src/testing/index.ts";
+import { untilTask } from "./until-task.ts";
 
 const Approval = Signal.make("test.approval", 1, Schema.Struct({ allow: Schema.Boolean }));
-
-/** Lets Pi's promises and timers of the real clock run while the test clock stands still. */
-const realTick = TestClock.withLive(Effect.sleep("2 millis"));
 
 /** A `write` tool that records the texts it was run with, and the harness of one call to it behind `gates`. */
 function guarded(gates: ReadonlyArray<Hook.Hook<never>>) {
@@ -166,22 +165,22 @@ describe("a beforeTool hook's gate", () => {
 			),
 		]);
 		const started = performance.now();
-		const seen = await Effect.runPromise(
+		const seen = await runTest(
 			Effect.gen(function* () {
 				yield* TestClock.setTime(1_000_000);
 				const root = yield* TestHarness.root;
 				const submission = yield* root.submit({ type: "input", content: "Write hi." });
-				while (passes.length === 0) yield* realTick;
-				// One millisecond before the deadline nothing has moved.
+				yield* untilTask("sleeping");
+				// One millisecond before the deadline nothing has moved, once Pi had a turn to move it.
 				yield* TestClock.adjust(59_999);
-				yield* realTick;
+				yield* Effect.yieldNow;
 				const early = { passes: passes.length, status: (yield* submission.status).status };
 				yield* TestClock.adjust(1);
 				const settled = yield* submission.wait;
 				yield* root.waitForIdle;
 				const entries = yield* Stream.runCollect(root.entries({ order: "ascending" }));
 				return { early, settled, result: shown(entries.filter((entry) => entry.kind === "pi.tool-result")) };
-			}).pipe(Effect.provide(layer), Effect.provide(TestClock.layer())),
+			}).pipe(Effect.provide(layer)),
 		);
 		expect(seen.early).toEqual({ passes: 1, status: "placed" });
 		expect(passes).toEqual(["1000000 nothing", "1060000 expired"]);
@@ -211,14 +210,14 @@ describe("a beforeTool hook's gate", () => {
 				}),
 			),
 		]);
-		const settled = await Effect.runPromise(
+		const settled = await runTest(
 			Effect.gen(function* () {
 				const root = yield* TestHarness.root;
 				const submission = yield* root.submit({ type: "input", content: "Write hi." });
-				while (passes.length === 0) yield* realTick;
+				yield* untilTask("sleeping");
 				yield* TestClock.adjust(5_000);
 				return yield* submission.wait;
-			}).pipe(Effect.provide(layer), Effect.provide(TestClock.layer())),
+			}).pipe(Effect.provide(layer)),
 		);
 		expect(settled.status).toBe("done");
 		expect(passes).toEqual([0, 5_000]);

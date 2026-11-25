@@ -472,7 +472,8 @@ describe("the other options of Pi's defineTool", () => {
 			handler: ({ items }) =>
 				Effect.gen(function* () {
 					ran.push(`start ${items[0]}`);
-					yield* Effect.sleep("5 millis");
+					// A turn for anything else to run: a call that ran beside this one would start now.
+					yield* Effect.yieldNow;
 					ran.push(`end ${items[0]}`);
 					return items.join("\n");
 				}),

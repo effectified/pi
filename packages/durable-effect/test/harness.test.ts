@@ -11,20 +11,24 @@ import {
 	type Wake,
 } from "@earendil-works/pi-durable";
 import type { Models } from "@gunta/pi-ai-effect";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import {
 	Cause,
 	Context,
 	Effect,
 	Exit,
 	Fiber,
+	Latch,
 	type Layer,
 	Logger,
 	Option,
+	Queue,
 	References,
 	Schedule,
 	Schema,
 	Stream,
 } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it, vi } from "vitest";
 import {
 	Doc,
@@ -327,11 +331,15 @@ describe("reports", () => {
 	const failing = Registry.layer([Extension.make({ name: "app", hooks: [Failing] })]);
 
 	it("gives every report of Pi to each subscriber, whole", async () => {
-		const collected = await Effect.runPromise(
+		const collected = await runTest(
 			Effect.gen(function* () {
-				const first = yield* Effect.forkChild(Stream.runCollect(Stream.take(Harness.reports, 1)));
-				const second = yield* Effect.forkChild(Stream.runCollect(Stream.take(Harness.reports, 1)));
-				yield* Effect.sleep("5 millis");
+				// Started at once, each has subscribed when its fork returns.
+				const first = yield* Effect.forkChild(Stream.runCollect(Stream.take(Harness.reports, 1)), {
+					startImmediately: true,
+				});
+				const second = yield* Effect.forkChild(Stream.runCollect(Stream.take(Harness.reports, 1)), {
+					startImmediately: true,
+				});
 				const root = yield* Harness.rootWith({ agent: AGENT });
 				const settled = yield* root.prompt("Hi.");
 				return { settled: settled.status, first: yield* Fiber.join(first), second: yield* Fiber.join(second) };
@@ -358,11 +366,13 @@ describe("reports", () => {
 				annotations: options.fiber.getRef(References.CurrentLogAnnotations),
 			});
 		});
-		await Effect.runPromise(
+		await runTest(
 			Effect.gen(function* () {
+				// The layer logs a report when Pi hands it on, before a subscriber gets it.
+				const reported = yield* Effect.forkChild(Stream.runHead(Harness.reports), { startImmediately: true });
 				const root = yield* Harness.rootWith({ agent: AGENT });
 				yield* root.prompt("Hi.");
-				yield* Effect.sleep("5 millis");
+				yield* Fiber.join(reported);
 			}).pipe(
 				Effect.provide(harnessLayer({ responses: [answer("Hello.")], registry: failing })),
 				Effect.provide(Logger.layer([capture])),
@@ -386,11 +396,9 @@ describe("reports", () => {
 	});
 
 	it("ends when the harness closes", async () => {
-		const reports = await Effect.runPromise(
+		const reports = await runTest(
 			Effect.gen(function* () {
-				const collecting = yield* Effect.forkDetach(Stream.runCollect(Harness.reports));
-				yield* Effect.sleep("5 millis");
-				return collecting;
+				return yield* Effect.forkDetach(Stream.runCollect(Harness.reports), { startImmediately: true });
 			}).pipe(
 				Effect.provide(harnessLayer({})),
 				Effect.flatMap((collecting) => Fiber.join(collecting)),
@@ -402,21 +410,33 @@ describe("reports", () => {
 
 describe("the wake seam for hosts", () => {
 	it("gives Pi's onWake values in order with the option, and the current value as `wake`", async () => {
-		const outcome = await Effect.runPromise(
+		const outcome = await runTest(
 			Effect.gen(function* () {
 				const seen: Array<Wake | "prompt"> = [];
-				const watching = yield* Effect.forkChild(
-					Stream.runForEach(Harness.wakes, (wake) => Effect.sync(() => seen.push(wake))),
-				);
-				yield* Effect.sleep("10 millis");
-				const root = yield* Harness.rootWith({ agent: AGENT });
-				seen.push("prompt");
-				yield* root.prompt("Hi.");
-				yield* root.waitForIdle;
-				yield* Effect.sleep("10 millis");
-				yield* Fiber.interrupt(watching);
-				return { seen, wake: yield* Harness.wake };
-			}).pipe(Effect.provide(harnessLayer({ responses: [answer("Hello.")], harness: { hostWakes: true } }))),
+				// Each wake the consumer took, so the test waits for the ones it expects.
+				const taken = yield* Queue.unbounded<Wake>();
+				const { watching, wake } = yield* Effect.gen(function* () {
+					const watching = yield* Effect.forkDetach(
+						Stream.runForEach(Harness.wakes, (wake) =>
+							Effect.andThen(
+								Effect.sync(() => seen.push(wake)),
+								Queue.offer(taken, wake),
+							),
+						),
+					);
+					yield* Queue.takeN(taken, 2);
+					const root = yield* Harness.rootWith({ agent: AGENT });
+					seen.push("prompt");
+					yield* root.prompt("Hi.");
+					yield* root.waitForIdle;
+					// Pi gives the idle value after the run's last commit, which can be after the wait returned.
+					yield* Queue.takeN(taken, 2);
+					return { watching, wake: yield* Harness.wake };
+				}).pipe(Effect.provide(harnessLayer({ responses: [answer("Hello.")], harness: { hostWakes: true } })));
+				// The stream ends when the harness closes, after every value Pi gave: `seen` is all of them.
+				yield* Fiber.join(watching);
+				return { seen, wake };
+			}),
 		);
 		expect(outcome.seen).toEqual([
 			{ active: true },
@@ -458,7 +478,7 @@ describe("the wake seam for hosts", () => {
 			success: Schema.String,
 			handler: () => Effect.succeed("ran"),
 		});
-		const outcome = await Effect.runPromise(
+		const outcome = await runTest(
 			Effect.gen(function* () {
 				const root = yield* Harness.rootWith({ agent: AGENT });
 				const submission = yield* root.submit({ type: "input", content: "Go." });
@@ -469,7 +489,7 @@ describe("the wake seam for hosts", () => {
 					),
 				))[0] as Wake;
 				// Past the deadline: with Pi's own timer the call would have woken by now.
-				yield* Effect.sleep("80 millis");
+				yield* TestClock.adjust("80 millis");
 				const before = (yield* submission.status).status;
 				const due = yield* Harness.wake;
 				yield* Harness.resume;
@@ -499,11 +519,20 @@ describe("the wake seam for hosts", () => {
 
 describe("usageEvents", () => {
 	it("is one element per commit that changed the ledger: an answer, and a failed attempt too", async () => {
-		const outcome = await Effect.runPromise(
+		const outcome = await runTest(
 			Effect.gen(function* () {
 				const root = yield* Harness.rootWith({ agent: AGENT });
-				const collecting = yield* Effect.forkChild(Stream.runCollect(Stream.take(Harness.usageEvents(root.id), 3)));
-				yield* Effect.sleep("5 millis");
+				// The first element is the ledger at attachment: every later commit is an element.
+				const attached = yield* Latch.make();
+				const collecting = yield* Effect.forkChild(
+					Stream.runCollect(
+						Stream.take(
+							Stream.tap(Harness.usageEvents(root.id), () => attached.open),
+							3,
+						),
+					),
+				);
+				yield* attached.await;
 				const answered = yield* root.prompt("Hi.");
 				yield* root.waitForIdle;
 				const failed = yield* root.prompt("Again.");
@@ -548,11 +577,19 @@ describe("usageEvents", () => {
 
 describe("taskGraph", () => {
 	it("starts with the live tasks now and shows a run's generation task", async () => {
-		const changes = await Effect.runPromise(
+		const changes = await runTest(
 			Effect.gen(function* () {
 				const root = yield* Harness.rootWith({ agent: AGENT });
-				const collecting = yield* Effect.forkChild(Stream.runCollect(Stream.take(Harness.taskGraph, 2)));
-				yield* Effect.sleep("5 millis");
+				const attached = yield* Latch.make();
+				const collecting = yield* Effect.forkChild(
+					Stream.runCollect(
+						Stream.take(
+							Stream.tap(Harness.taskGraph, () => attached.open),
+							2,
+						),
+					),
+				);
+				yield* attached.await;
 				yield* root.prompt("Hi.");
 				return yield* Fiber.join(collecting);
 			}).pipe(Effect.provide(harnessLayer({ responses: [answer("Hello.")] }))),
@@ -725,27 +762,27 @@ describe("getTaskOf and waitForTaskOf", () => {
 
 describe("commits", () => {
 	it("is Pi's observeCommits as a stream: the same publications, in order, each with what its commit stored", async () => {
-		const seen = await Effect.runPromise(
+		const seen = await runTest(
 			Effect.gen(function* () {
-				const root = yield* Harness.rootWith({ agent: AGENT });
-				const pi = yield* Harness.Harness;
 				const own: CommitPublication[] = [];
-				const observation = pi.observeCommits({
-					advance: (publication) => void own.push(publication),
-					end: () => {},
-				});
 				const elements: Watch.Commit[] = [];
-				const collecting = yield* Effect.forkChild(
-					Stream.runForEach(Harness.commits, (element) => Effect.sync(() => elements.push(element))),
-				);
-				yield* Effect.sleep("5 millis");
-				yield* root.prompt("Hi.");
-				yield* root.waitForIdle;
-				yield* Effect.sleep("5 millis");
-				yield* Fiber.interrupt(collecting);
-				observation.detach();
-				return { own, elements, root: root.id };
-			}).pipe(Effect.provide(harnessLayer({ responses: [answer("Hello.")] }))),
+				const { collecting, root } = yield* Effect.gen(function* () {
+					const root = yield* Harness.rootWith({ agent: AGENT });
+					const pi = yield* Harness.Harness;
+					pi.observeCommits({ advance: (publication) => void own.push(publication), end: () => {} });
+					// Started at once, the stream has attached when its fork returns.
+					const collecting = yield* Effect.forkDetach(
+						Stream.runForEach(Harness.commits, (element) => Effect.sync(() => elements.push(element))),
+						{ startImmediately: true },
+					);
+					yield* root.prompt("Hi.");
+					yield* root.waitForIdle;
+					return { collecting, root: root.id };
+				}).pipe(Effect.provide(harnessLayer({ responses: [answer("Hello.")] })));
+				// The harness closed, which ends the stream after every publication: both observers saw all of them.
+				yield* Fiber.await(collecting);
+				return { own, elements, root };
+			}),
 		);
 		expect(seen.elements.length).toBeGreaterThan(1);
 		expect(seen.elements).toHaveLength(seen.own.length);
@@ -773,17 +810,17 @@ describe("commits", () => {
 	});
 
 	it("has no element for a commit that wrote nothing, nor for one stored before the stream ran", async () => {
-		const elements = await Effect.runPromise(
+		const elements = await runTest(
 			Effect.gen(function* () {
 				const root = yield* Harness.rootWith({ agent: AGENT });
 				yield* root.configure({ instructions: "Before." });
-				const collecting = yield* Effect.forkChild(Stream.runCollect(Stream.take(Harness.commits, 1)));
-				yield* Effect.sleep("5 millis");
-				// Commits that only read: scans, a record, an empty body.
+				const collecting = yield* Effect.forkChild(Stream.runCollect(Stream.take(Harness.commits, 1)), {
+					startImmediately: true,
+				});
+				// Commits that only read: scans, a record, an empty body. Pi hands on publications in commit order.
 				yield* Stream.runCollect(Harness.scanConversations());
 				yield* root.record;
 				yield* Harness.commit(() => Effect.void);
-				yield* Effect.sleep("5 millis");
 				yield* root.configure({ instructions: "After." });
 				return yield* Fiber.join(collecting);
 			}).pipe(Effect.provide(harnessLayer({}))),
@@ -795,11 +832,9 @@ describe("commits", () => {
 	});
 
 	it("fails with Pi's session closed when the harness closes", async () => {
-		const exit = await Effect.runPromise(
+		const exit = await runTest(
 			Effect.gen(function* () {
-				const collecting = yield* Effect.forkDetach(Stream.runCollect(Harness.commits));
-				yield* Effect.sleep("5 millis");
-				return collecting;
+				return yield* Effect.forkDetach(Stream.runCollect(Harness.commits), { startImmediately: true });
 			}).pipe(
 				Effect.provide(harnessLayer({})),
 				Effect.flatMap((collecting) => Fiber.await(collecting)),

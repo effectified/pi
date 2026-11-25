@@ -1,13 +1,14 @@
 // Test helper: a gate that parks a tool call across a close and a reopen of a SQLite file, registered once per
 // SQLite driver by a platform test file.
 
-import type { JsonValue } from "@earendil-works/chord/json";
-import type { TaskId, TaskRecord } from "@earendil-works/pi-durable";
+import type { TaskId } from "@earendil-works/pi-durable";
 import { createExpectAssertions, type StorageConformanceRunner } from "@earendil-works/pi-durable/testing";
-import { Effect, Layer, Option, Schema, Stream } from "effect";
-import { type DurableError, Extension, Gate, Harness, Hook, Signal, Storage, Tool } from "../src/index.ts";
+import { runLive } from "@gunta/pi-ai-effect/testing";
+import { Effect, Latch, Layer, Option, Schema, Stream } from "effect";
+import { Extension, Gate, Harness, Hook, Signal, Storage, Tool } from "../src/index.ts";
 import { answer, type FauxResponseStep, ScriptedModels, TestHarness, toolCall } from "../src/testing/index.ts";
 import type { ClientLayer, WithDatabaseFile } from "./sqlite-suites.ts";
+import { untilTask } from "./until-task.ts";
 
 const Approval = Signal.make("test.approval", 1, Schema.Struct({ allow: Schema.Boolean, by: Schema.String }));
 
@@ -30,6 +31,8 @@ export function registerParkedGate(
 				const asked: TaskId[] = [];
 				const passes: string[] = [];
 				const parked = Promise.withResolvers<void>();
+				// Open once the gate parked the call a second time: after the reopen, before the signal.
+				const parkedAgain = Latch.makeUnsafe();
 				const Write = Tool.make("write", {
 					description: "Write a text.",
 					parameters: Schema.Struct({ text: Schema.String }),
@@ -47,6 +50,7 @@ export function registerParkedGate(
 							passes.push("nothing yet");
 							asked.push(api.taskId);
 							parked.resolve();
+							if (passes.length === 2) parkedAgain.openUnsafe();
 							return Gate.park({ signals: [Approval.key(call.id)] });
 						}
 						if (state.value.kind === "expired") return Gate.block("No approval in time");
@@ -65,25 +69,27 @@ export function registerParkedGate(
 					});
 				const input = { type: "input", content: "Write hi.", requestId: "run" } as const;
 
-				await Effect.runPromise(
+				await runLive(
 					Effect.gen(function* () {
 						const root = yield* TestHarness.root;
 						yield* root.submit(input);
 						yield* Effect.promise(() => parked.promise);
-						yield* sleeping(asked[0]!, () => true);
+						yield* untilTask("sleeping", asked[0]);
 					}).pipe(
 						Effect.provide(harness([toolCall("write", { text: "hi" }, { id: "call-1" }), answer("Unused.")])),
 					),
 				);
 				assert.deepEqual({ runs, asked: asked.length, passes }, { runs: 0, asked: 1, passes: ["nothing yet"] });
 
-				const resumed = await Effect.runPromise(
+				const resumed = await runLive(
 					Effect.gen(function* () {
 						const root = yield* TestHarness.root;
 						const submission = yield* root.submit(input);
 						const taskId = asked[0]!;
 						// Reopening wakes a parked gate, so the gates installed now decide (spec 7.2): it parks again.
-						const before = yield* sleeping(taskId, () => passes.length === 2);
+						yield* parkedAgain.await;
+						yield* untilTask("sleeping", taskId);
+						const before = Option.getOrThrow(yield* Harness.getTask(taskId));
 						const delivered = yield* Harness.signal(taskId, Approval, "call-1", { allow: true, by: "ada" });
 						const again = yield* Harness.signal(taskId, Approval, "call-1", { allow: false, by: "bob" });
 						const settled = yield* submission.wait;
@@ -118,21 +124,5 @@ export function registerParkedGate(
 					content: [{ type: "text", text: "Written." }],
 				});
 			}));
-	});
-}
-
-/** The record of the tool call `taskId` once `ready` holds and its park is stored: polls, since nothing announces it. */
-function sleeping(
-	taskId: TaskId,
-	ready: () => boolean,
-): Effect.Effect<TaskRecord<JsonValue, JsonValue, unknown>, DurableError, Harness.Harness> {
-	return Effect.flatMap(Harness.getTask(taskId), (found) => {
-		const record = Option.getOrThrow(found);
-		return ready() && record.state.status === "sleeping"
-			? Effect.succeed(record)
-			: Effect.andThen(
-					Effect.sleep("1 millis"),
-					Effect.suspend(() => sleeping(taskId, ready)),
-				);
 	});
 }

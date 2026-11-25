@@ -233,11 +233,11 @@ const addTodo = (item: string, at: Date) =>
 - **Interruption.** A caller interrupted while the body runs interrupts the body, which stores nothing. Once the body
   has ended, Pi stores the commit whatever happens to the caller.
 - **Pi's rules for a body.** Table reads (`conversation`, `entry`, `task`, `scanConversations`, `scanEntries`,
-  `scanTasks`, `latestEntryId`, `submission`) come before the first table write (`appendEntry`, `append`,
-  `createConversation`, `forkConversation`); afterwards they fail with `ReadAfterWrite`, and so do `signal` and an
-  admission. Documents can be read and written at any point. Read only through `tx`: a read of the harness or a
-  conversation inside the body waits for the line of commits the body holds, and never returns. No long work: every
-  other commit waits for the body.
+  `scanTasks`, `conversations`, `tasks`, `latestEntryId`, `submission`) come before the first table write
+  (`appendEntry`, `append`, `createConversation`, `forkConversation`); afterwards they fail with `ReadAfterWrite`, and
+  so do `signal` and an admission. Documents can be read and written at any point. Read only through `tx`: a read of the
+  harness or a conversation inside the body waits for the line of commits the body holds, and never returns. No long
+  work: every other commit waits for the body.
 - **What a `Tx` has.** The reads above; `appendEntry`, `append` (a typed entry) and `entryOf`; `createConversation`
   and `forkConversation`; `createTask(task, input, options)` (see [Task](#task)); `configure(conversationId, change)`;
   `signal(taskId, signal, key, value)`; `doc` and `retireDoc`; and `pi`, Pi's own transaction, for raw submissions.
@@ -920,9 +920,11 @@ const origin = (conversation: Conversation.Conversation) =>
 | `Harness.scanTasks(query?)` | A Stream of task records in id order, ended ones included. Pi's filters: `conversationId`, `kind`, `status`, `abortRequested`, `background`, `order`; and `pageSize` |
 | `Harness.conversationRecord(id)` | A conversation's record, an `Option`: its `id`, `parent` and `owner` |
 | `tx.scanConversations`, `tx.scanTasks`, `tx.scanEntries` | One page, inside a commit of yours |
+| `tx.conversations(query?)`, `tx.tasks(query?)` | The harness's two Streams, every page read inside a commit of yours: one point in time |
 
 A stream reads a page when it is pulled, and each page is a commit of its own: a scan is not one point in time, so a
-record created or changed while it runs may or may not appear. Read inside one commit when that matters.
+record created or changed while it runs may or may not appear. Read with `tx.conversations` or `tx.tasks` inside
+one commit when that matters.
 
 ```ts
 const waiting = {
@@ -944,8 +946,12 @@ What a host that embeds a harness needs, beside the storage and the clock.
 
 ```ts
 const host = Effect.gen(function* () {
-	// Failures that fail no call: a throwing hook, a faulted task, the error that failed the harness.
-	yield* Effect.forkScoped(Stream.runForEach(Harness.reports, (report) => Alerts.use((alerts) => alerts.send(report))));
+	// Failures that fail no call: a throwing hook, a faulted task, the error that failed the harness. Started at once,
+	// it has subscribed when the fork returns, so it misses no report of what comes after.
+	yield* Effect.forkScoped(
+		Stream.runForEach(Harness.reports, (report) => Alerts.use((alerts) => alerts.send(report))),
+		{ startImmediately: true },
+	);
 	// The host owns the wake-ups: arm an alarm from each value, and resume when it fires.
 	yield* Effect.forkScoped(Stream.runForEach(Harness.wakes, (wake) => Alarm.use((alarm) => alarm.arm(wake))));
 });

@@ -7,8 +7,9 @@ import {
 	type TaskId,
 	type WatchHandle,
 } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import type { SchemaDecodeError } from "@gunta/pi-schema-effect";
-import { Effect, Fiber, Option, Schema, Stream } from "effect";
+import { Effect, Fiber, Option, Queue, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { Doc, type DurableError, Harness } from "../src/index.ts";
 import { runBoth } from "./parity.ts";
@@ -137,6 +138,20 @@ describe("a document in a commit", () => {
 			}),
 		);
 		expect(value).toEqual({ items: ["a", "b"] });
+	});
+
+	it("reads a value that stays whole after the commit, even where the schema keeps what it decoded", async () => {
+		const Raw = Doc.make({
+			kind: "app.raw",
+			version: 1,
+			scope: "session",
+			schema: Schema.Struct({ payload: Schema.Json }),
+			initial: () => ({ payload: { nested: { list: [1, 2] } } }),
+			checkpointWhen: () => false,
+		});
+		// Pi revokes its draft when the body ends: a value holding a part of it could not be read afterwards.
+		const value = await run(Harness.commit((tx) => Effect.flatMap(tx.doc(Raw), (raw) => raw.get)));
+		expect(value).toEqual({ payload: { nested: { list: [1, 2] } } });
 	});
 
 	it("fails with SchemaDecodeError for a value the schema rejects, on write and on read", async () => {
@@ -279,7 +294,7 @@ describe("committed reads", () => {
 describe("watchDoc", () => {
 	it("gives the value now and each change, decoded, and releases Pi's watch with its scope", async () => {
 		let acquired: WatchHandle<unknown> | undefined;
-		const outcome = await run(
+		const outcome = await runTest(
 			Effect.gen(function* () {
 				const harness = yield* Harness.Harness;
 				yield* Harness.commit((tx) => Effect.asVoid(tx.doc(Counter)));
@@ -290,14 +305,23 @@ describe("watchDoc", () => {
 						return acquired;
 					},
 				} as unknown as DocumentObserver;
-				const watching = yield* Effect.forkChild(Stream.runCollect(Stream.take(Doc.watch(spied, Counter), 3)));
-				yield* Effect.yieldNow;
+				// Each element the stream gave: a commit made once the one before was taken is an element of its own.
+				const taken = yield* Queue.unbounded<unknown>();
+				const watching = yield* Effect.forkChild(
+					Stream.runCollect(
+						Stream.take(
+							Stream.tap(Doc.watch(spied, Counter), (change) => Queue.offer(taken, change)),
+							3,
+						),
+					),
+				);
+				yield* Queue.take(taken);
 				yield* Harness.commit((tx) => Effect.flatMap(tx.doc(Counter), (counter) => counter.set({ count: 1 })));
-				yield* Effect.sleep("10 millis");
+				yield* Queue.take(taken);
 				yield* Harness.commit((tx) => Effect.flatMap(tx.doc(Counter), (counter) => counter.set({ count: 2 })));
 				const changes = yield* Fiber.join(watching);
 				return { changes, end: yield* Effect.promise(() => acquired!.closed) };
-			}),
+			}).pipe(Effect.provide(harnessLayer({}))),
 		);
 		expect(outcome.changes).toEqual([
 			{ value: { count: 0 }, ops: [], retired: false },

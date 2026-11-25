@@ -143,21 +143,21 @@ function registerDatabaseSuite(runner: StorageConformanceRunner, driver: string,
 		it("holds other statements until a transaction has finished", () =>
 			withDatabase(async (database) => {
 				const order: string[] = [];
-				const gate = Promise.withResolvers<void>();
+				const sent = Promise.withResolvers<void>();
 				const transaction = database.transaction(async (handle) => {
 					await handle.run("INSERT INTO notes (id, text) VALUES (?, ?)", 1, "inside");
-					await gate.promise;
+					await sent.promise;
+					// Sent after the outside statement: on the one connection it would wait for that one, were it not held.
+					await handle.run("INSERT INTO notes (id, text) VALUES (?, ?)", 3, "later");
 					order.push("transaction");
 				});
 				const outside = database
 					.run("INSERT INTO notes (id, text) VALUES (?, ?)", 2, "outside")
 					.then(() => order.push("outside"));
-				await new Promise((resolve) => setTimeout(resolve, 20));
-				assert.deepEqual(order, []);
-				gate.resolve();
+				sent.resolve();
 				await Promise.all([transaction, outside]);
 				assert.deepEqual(order, ["transaction", "outside"]);
-				assert.deepEqual(await texts(database), ["inside", "outside"]);
+				assert.deepEqual(await texts(database), ["inside", "outside", "later"]);
 			}));
 
 		it("rejects a transaction handle used after its transaction ended", () =>

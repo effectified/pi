@@ -7,7 +7,8 @@ import type {
 	EntryRecord,
 	Conversation as PiConversation,
 } from "@earendil-works/pi-durable";
-import { Effect, Fiber, Option, Schema, Stream } from "effect";
+import { runTest } from "@gunta/pi-ai-effect/testing";
+import { Effect, Fiber, Latch, Option, Schema, Stream } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { Conversation, ConversationBusy, ConversationIdle, Extension, Harness, Registry, Task } from "../src/index.ts";
 import { runBoth } from "./parity.ts";
@@ -371,14 +372,17 @@ describe("changes", () => {
 				// Pi's own watch, kept so the test can ask how it ended.
 				const watch = vi.spyOn(pi, "watch");
 				const root = Conversation.fromPi(pi);
+				// The first element is the view at attachment: the run's changes come after it.
+				const attached = yield* Latch.make();
 				const watching = yield* Effect.forkChild(
 					Stream.runCollect(
-						Stream.takeUntil(root.changes({ min: 5 }), (change) =>
-							change.value.entries.some((entry) => entry.kind === "pi.assistant"),
+						Stream.takeUntil(
+							Stream.tap(root.changes({ min: 5 }), () => attached.open),
+							(change) => change.value.entries.some((entry) => entry.kind === "pi.assistant"),
 						),
 					),
 				);
-				yield* Effect.sleep("5 millis");
+				yield* attached.await;
 				yield* root.prompt("Hi.");
 				const changes = yield* Fiber.join(watching);
 				const acquired = yield* Effect.promise(() => watch.mock.results[0]?.value as Promise<ConversationWatch>);
@@ -402,11 +406,14 @@ describe("changes", () => {
 	});
 
 	it("ends when the harness closes", async () => {
-		const changes = await Effect.runPromise(
+		const changes = await runTest(
 			Effect.gen(function* () {
 				const root = yield* Harness.rootWith({ agent: AGENT });
-				const collecting = yield* Effect.forkDetach(Stream.runCollect(root.changes()));
-				yield* Effect.sleep("5 millis");
+				const attached = yield* Latch.make();
+				const collecting = yield* Effect.forkDetach(
+					Stream.runCollect(Stream.tap(root.changes(), () => attached.open)),
+				);
+				yield* attached.await;
 				return collecting;
 			}).pipe(
 				Effect.provide(harnessLayer({})),

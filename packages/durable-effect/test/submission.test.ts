@@ -1,4 +1,5 @@
 import type { SubmissionId } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Cause, Effect, Exit, Fiber, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Harness, Submission } from "../src/index.ts";
@@ -82,13 +83,13 @@ describe("interruption", () => {
 	it("interrupting wait cancels only the wait: the run still completes", async () => {
 		const held = heldAnswer("Done.");
 		const scripted = scriptedModels([held.response, answer("Unused.")]);
-		const result = await Effect.runPromise(
+		const result = await runTest(
 			Effect.gen(function* () {
 				const root = yield* Harness.rootWith({ agent: AGENT });
 				const submission = yield* root.submit({ type: "input", content: "Go.", requestId: "a" });
 				yield* Effect.promise(() => held.requested);
-				const waiting = yield* Effect.forkChild(submission.wait);
-				yield* Effect.sleep("5 millis");
+				// Started at once, the wait has asked Pi when its fork returns.
+				const waiting = yield* Effect.forkChild(submission.wait, { startImmediately: true });
 				yield* Fiber.interrupt(waiting);
 				const exit = yield* Fiber.await(waiting);
 				const whileHeld = yield* submission.status;

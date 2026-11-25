@@ -29,15 +29,16 @@ export interface TasksQuery extends TaskQuery {
 }
 
 /**
- * One read on Pi's transaction, run in a commit of its own that writes nothing: Pi has table scans only inside a
- * commit. Such a commit stores nothing and publishes nothing; it waits its turn on the harness's line of commits.
+ * One read on Pi's transaction: Pi has table scans only inside a commit. The harness's scans run each read in a commit
+ * of its own that writes nothing, which stores and publishes nothing and waits its turn on the harness's line of
+ * commits; a `Tx`'s scans run it in the commit of that `Tx`.
  */
 export type Read = <A>(read: (tx: PiTx) => Promise<A>) => Effect.Effect<A, DurableError>;
 
 const DEFAULT_PAGE_SIZE = 100;
 
 /**
- * The conversations `query` selects, in id order, one page per pull. Each page is a commit of its own, so the stream
+ * The conversations `query` selects, in id order, one page per pull. When each page is a commit of its own, the stream
  * is not one point in time: a conversation created while it is read appears when its id is still ahead.
  */
 export function conversations(
@@ -48,7 +49,7 @@ export function conversations(
 }
 
 /**
- * The tasks `query` selects, in id order, one page per pull. Each page is a commit of its own, so the stream is not
+ * The tasks `query` selects, in id order, one page per pull. When each page is a commit of its own, the stream is not
  * one point in time: a task that changes its status while it is read may appear under either status, or not at all.
  */
 export function tasks(

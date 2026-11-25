@@ -1,4 +1,5 @@
 import { defineExtension, defineTask, type Report, type TaskId } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { Context, Effect, Exit, Layer, Option, Schema, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
@@ -6,6 +7,7 @@ import { Extension, Harness, Registry, Signal, Task } from "../src/index.ts";
 import { TestHarness } from "../src/testing/index.ts";
 import { runBoth } from "./parity.ts";
 import { AGENT } from "./scripted.ts";
+import { untilTask } from "./until-task.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
@@ -72,8 +74,11 @@ const pay = (task: Task.Kind<{ readonly card: string; readonly due: Date }, unkn
 /** Every report of the harness from now on, collected until the scope closes. */
 const collectReports = Effect.gen(function* () {
 	const reports: Report[] = [];
-	yield* Effect.forkScoped(Stream.runForEach(Harness.reports, (report) => Effect.sync(() => reports.push(report))));
-	yield* Effect.yieldNow;
+	// Started at once, it has subscribed when the fork returns.
+	yield* Effect.forkScoped(
+		Stream.runForEach(Harness.reports, (report) => Effect.sync(() => reports.push(report))),
+		{ startImmediately: true },
+	);
 	return reports;
 });
 
@@ -454,30 +459,24 @@ describe("sleeping and waiting", () => {
 		abort: () => Effect.succeed(Task.aborted()),
 	});
 
-	/** Polls in real time until the task has `status`; `tick` is a real millisecond on the clock of the test. */
-	const untilStatus = (id: TaskId, status: string, tick: Effect.Effect<void> = Effect.sleep("1 millis")) =>
-		Effect.gen(function* () {
-			while (Option.getOrThrow(yield* Harness.getTask(id)).state.status !== status) yield* tick;
-		});
-
 	it("sleeps until the harness clock reaches the time, on a TestClock, and wakes with the reason `time`", async () => {
-		const seen = await Effect.runPromise(
+		const seen = await runTest(
 			Effect.gen(function* () {
 				yield* TestClock.setTime(1_000);
 				const root = yield* TestHarness.root;
 				const id = yield* root.commit((tx) =>
 					tx.createTask(Reminder, { after: 60_000 }, { ownership: { kind: "conversation" } }),
 				);
-				yield* untilStatus(id, "sleeping", TestClock.withLive(Effect.sleep("1 millis")));
+				yield* untilTask("sleeping", id);
 				const asleep = Option.getOrThrow(yield* Harness.getTask(id)).state;
+				// One millisecond early, once Pi had a turn to wake it, it still sleeps.
 				yield* TestClock.adjust(59_999);
-				yield* TestClock.withLive(Effect.sleep("5 millis"));
+				yield* Effect.yieldNow;
 				const early = Option.getOrThrow(yield* Harness.getTask(id)).state.status;
 				yield* TestClock.adjust(1);
 				return { asleep, early, state: (yield* Harness.waitForTaskOf(Reminder, id)).state };
 			}).pipe(
 				Effect.provide(TestHarness.layer({ extensions: [Extension.make({ name: "app", tasks: [Reminder] })] })),
-				Effect.provide(TestClock.layer()),
 			),
 		);
 		expect(seen.asleep).toEqual({ status: "sleeping", checkpoint: { phase: "deliver" }, until: 61_000 });
@@ -490,11 +489,11 @@ describe("sleeping and waiting", () => {
 
 	it("sleeps on a signal, wakes when it is delivered, and reads its value decoded", async () => {
 		const at = new Date("2026-11-25T08:00:00.000Z");
-		const seen = await Effect.runPromise(
+		const seen = await runTest(
 			Effect.gen(function* () {
 				const root = yield* TestHarness.root;
 				const id = yield* root.commit((tx) => tx.createTask(Ask, null, { ownership: { kind: "conversation" } }));
-				yield* untilStatus(id, "sleeping");
+				yield* untilTask("sleeping", id);
 				const asleep = Option.getOrThrow(yield* Harness.getTask(id)).state;
 				const delivered = yield* Harness.signal(id, Answer, "answer", { text: "yes", at });
 				return { asleep, delivered, state: (yield* Harness.waitForTaskOf(Ask, id)).state };

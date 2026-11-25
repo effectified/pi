@@ -1,4 +1,5 @@
 import { configure, defineDoc, defineExtension, defineTask, type TaskId } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import type { SchemaDecodeError } from "@gunta/pi-schema-effect";
 import { Cause, Context, Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
@@ -532,18 +533,20 @@ describe("during", () => {
 	});
 });
 
+/** A task that sleeps until it is aborted: live work to scan for. */
+const Idle = Task.make({
+	name: "test.idle",
+	version: 1,
+	input: Schema.Struct({ label: Schema.String }),
+	state: Schema.Struct({ phase: Schema.Literal("wait") }),
+	result: Schema.Null,
+	initial: () => ({ phase: "wait" as const }),
+	phases: { wait: (task, api) => Effect.map(api.now, (now) => Task.sleepUntil(now + 3_600_000, task.state)) },
+	abort: () => Effect.succeed(Task.aborted()),
+});
+
 describe("scanTasks", () => {
 	it("gives the pages Pi's own scan gives in the same commit, and is a table read", async () => {
-		const Idle = Task.make({
-			name: "test.idle",
-			version: 1,
-			input: Schema.Struct({ label: Schema.String }),
-			state: Schema.Struct({ phase: Schema.Literal("wait") }),
-			result: Schema.Null,
-			initial: () => ({ phase: "wait" as const }),
-			phases: { wait: (task, api) => Effect.map(api.now, (now) => Task.sleepUntil(now + 3_600_000, task.state)) },
-			abort: () => Effect.succeed(Task.aborted()),
-		});
 		const seen = await Effect.runPromise(
 			Effect.gen(function* () {
 				const root = yield* Harness.rootWith({ agent: AGENT });
@@ -583,6 +586,51 @@ describe("scanTasks", () => {
 		expect(seen.scanned.rest.items.map((task) => task.id)).toEqual(seen.ids.slice(2));
 		expect(seen.scanned.rest.next).toBeUndefined();
 		expect(seen.scanned.newest.items.map((task) => task.id)).toEqual(seen.ids.slice(2));
+		expect(seen.afterWrite).toBe("ReadAfterWrite");
+	});
+});
+
+describe("tasks and conversations", () => {
+	it("stream every page of Pi's scan inside the commit, as Pi's own scan gives them, and are table reads", async () => {
+		const seen = await runTest(
+			Effect.gen(function* () {
+				const root = yield* Harness.rootWith({ agent: AGENT });
+				const ids = yield* root.commit((tx) =>
+					Effect.forEach(["a", "b", "c"], (label) =>
+						tx.createTask(Idle, { label }, { ownership: { kind: "conversation" } }),
+					),
+				);
+				const owned = yield* Harness.commit((tx) =>
+					Effect.forEach(ids, (taskId) => tx.createConversation({ ownership: { kind: "task", taskId } })),
+				);
+				const scanned = yield* Harness.commit((tx) =>
+					Effect.all({
+						tasks: Stream.runCollect(tx.tasks({ kind: "test.idle", pageSize: 2 })),
+						descending: Stream.runCollect(tx.tasks({ kind: "test.idle", order: "descending", pageSize: 1 })),
+						own: Effect.promise(() => tx.pi.scanTasks({ kind: "test.idle" }, 100)),
+						conversations: Stream.runCollect(tx.conversations({ ownerConversationId: root.id, pageSize: 2 })),
+					}),
+				);
+				const afterWrite = yield* Effect.flip(
+					root.commit((tx) =>
+						Effect.andThen(
+							tx.createTask(Idle, { label: "d" }, { ownership: { kind: "conversation" } }),
+							Stream.runCollect(tx.tasks()),
+						),
+					),
+				);
+				yield* Effect.forEach(ids, (id) => Harness.abortTask(id));
+				return { ids, owned, scanned, afterWrite: afterWrite._tag };
+			}).pipe(
+				Effect.provide(
+					harnessLayer({ registry: Registry.layer([Extension.make({ name: "app", tasks: [Idle] })]) }),
+				),
+			),
+		);
+		expect(seen.scanned.tasks).toEqual(seen.scanned.own.items);
+		expect(seen.scanned.tasks.map((task) => task.id)).toEqual(seen.ids);
+		expect(seen.scanned.descending.map((task) => task.id)).toEqual([...seen.ids].reverse());
+		expect(seen.scanned.conversations).toEqual(seen.owned);
 		expect(seen.afterWrite).toBe("ReadAfterWrite");
 	});
 });

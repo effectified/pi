@@ -25,7 +25,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { Models } from "@gunta/pi-ai-effect";
 import type { SchemaDecodeError } from "@gunta/pi-schema-effect";
-import { type Cause, Context, Effect, Layer, Option, PubSub, Queue, type Schema, Stream } from "effect";
+import { type Cause, Context, Effect, FiberSet, Layer, Option, PubSub, Queue, type Schema, Stream } from "effect";
 import * as Agent from "./agent.ts";
 import { call } from "./call.ts";
 import * as Conversation from "./conversation.ts";
@@ -102,9 +102,11 @@ export function layer<R = never>(
 			const storage = yield* HarnessStorage;
 			const models = yield* Models;
 			const registry = yield* Registry;
+			// Pi's timers and the report log lines are fibers of this scope, made before the harness opens: they are
+			// interrupted after it closed, so none outlives the Layer, nor reaches a closed harness.
 			const clock = yield* clockOptions;
+			const fork = yield* FiberSet.makeRuntime();
 			const services = yield* Effect.context<R>();
-			const fork = Effect.runForkWith(services);
 			const invoke = invoker(services);
 			const seams = yield* Effect.acquireRelease(
 				Effect.all({ reports: PubSub.unbounded<Report>(), wakes: Queue.unbounded<Wake, Cause.Done>() }),

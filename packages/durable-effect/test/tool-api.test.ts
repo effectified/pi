@@ -8,12 +8,14 @@ import {
 	type EntryRecord,
 	type TaskId,
 } from "@earendil-works/pi-durable";
+import { runTest } from "@gunta/pi-ai-effect/testing";
 import { type SchemaConversionError, toJsonSchema } from "@gunta/pi-schema-effect";
-import { Effect, type Layer, Option, Schema, Stream } from "effect";
+import { Effect, Fiber, Latch, type Layer, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { Doc, Extension, Harness, Registry, Signal, Task, Tool } from "../src/index.ts";
 import { runBoth } from "./parity.ts";
 import { AGENT, answer, harnessLayer } from "./scripted.ts";
+import { untilTask } from "./until-task.ts";
 
 /** A model turn that calls `name` with `args`. */
 function toolCall(name: string, args: Record<string, string>, id = "call-1") {
@@ -268,12 +270,12 @@ describe("a call that parks", () => {
 					return state.value.kind === "value" && state.value.value.allow ? "allowed" : Tool.error("refused");
 				}),
 		});
-		const outcome = await Effect.runPromise(
+		const outcome = await runTest(
 			Effect.gen(function* () {
 				const root = yield* Harness.rootWith({ agent: AGENT });
 				const submission = yield* root.submit({ type: "input", content: "May I?" });
 				const taskId = yield* Effect.promise(() => parked.promise);
-				yield* Effect.sleep("20 millis");
+				yield* untilTask("sleeping", taskId);
 				const sleeping = (yield* Harness.inspect).tasks.find((task) => task.record.id === taskId)?.state.kind;
 				const delivered = yield* Harness.signal(taskId, Approval, "answer", { allow: true });
 				const settled = yield* submission.wait;
@@ -303,14 +305,17 @@ describe("a call that parks", () => {
 	});
 
 	it("waits for a nested call it started, and reads its result once woken", async () => {
+		// The nested call ends only once the call that started it waits for it.
+		const release = Latch.makeUnsafe();
 		const Slow = Tool.make("slow", {
 			description: "Takes a moment.",
 			parameters: Schema.Struct({}),
 			success: Schema.String,
 			callers: ["tools"],
-			handler: () => Effect.as(Effect.sleep("10 millis"), "slow result"),
+			handler: () => Effect.as(release.await, "slow result"),
 		});
 		const wakes: unknown[] = [];
+		const waiting = Promise.withResolvers<TaskId>();
 		const Both = Tool.make("both", {
 			description: "Start a slow call and wait for it.",
 			parameters: Schema.Struct({}),
@@ -319,12 +324,27 @@ describe("a call that parks", () => {
 			handler: (_params, api) =>
 				Effect.gen(function* () {
 					const started = yield* api.startTool("slow", {}, { key: "slow" });
+					waiting.resolve(api.taskId);
 					wakes.push(Option.getOrUndefined(api.wake)?.reason);
 					if (Option.isNone(api.wake)) return Tool.wait({ on: [started.taskId], policy: "allSettled" });
 					return String((yield* started.result).structuredOutput);
 				}),
 		});
-		const outcome = await Effect.runPromise(prompt(app([Slow, Both]), [toolCall("both", {}), answer("Done.")]));
+		const outcome = await runTest(
+			Effect.gen(function* () {
+				const root = yield* Harness.rootWith({ agent: AGENT });
+				const prompting = yield* Effect.forkChild(root.prompt("Go."));
+				yield* untilTask("waiting", yield* Effect.promise(() => waiting.promise));
+				yield* release.open;
+				yield* Fiber.join(prompting);
+				yield* root.waitForIdle;
+				return { results: yield* results };
+			}).pipe(
+				Effect.provide(
+					harnessLayer({ responses: [toolCall("both", {}), answer("Done.")], registry: app([Slow, Both]) }),
+				),
+			),
+		);
 		expect(wakes).toEqual([undefined, "tasks"]);
 		expect(outcome.results).toEqual([
 			{ text: [{ type: "text", text: "slow result" }], isError: false, details: undefined },
@@ -352,12 +372,12 @@ describe("a call that parks", () => {
 					});
 				}),
 		});
-		const outcome = await Effect.runPromise(
+		const outcome = await runTest(
 			Effect.gen(function* () {
 				const root = yield* Harness.rootWith({ agent: AGENT });
 				yield* root.submit({ type: "input", content: "Build main." });
 				yield* Effect.promise(() => parked.promise);
-				yield* Effect.sleep("20 millis");
+				yield* untilTask("sleeping");
 				yield* root.abort();
 				return yield* results;
 			}).pipe(
