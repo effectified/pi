@@ -5,12 +5,13 @@ only after the whole suite ran on those versions (`npm run check`, each package'
 
 | pi-effect | Pi packages (`@earendil-works/*`) | `effect` | Node | Bun | Tested at upstream commit |
 |---|---|---|---|---|---|
-| 0.1.0 (unreleased) | 1.6.0 | 4.1.5 (peer `~4.1.5`) | 26.13.1 and 24.22.0 | 1.4.5 | `f8149d1ab` |
+| 0.1.0 (unreleased) | 1.6.0 | 4.1.5 (peer `~4.1.5`) | 26.13.1 and 22.19.0 (24.22.0 ran an earlier state) | 1.4.5 | `f8149d1ab` |
 
 Also installed and run outside this repository beside the published `@earendil-works/*` 1.6.0 (the quick start of
 `durable-effect`, from packed tarballs, on Node and on Bun with its isolated linker). `rivetkit` 3.1.1 is the peer of
-`durable-rivet-effect`; its engine tests ran on macOS only. Not yet run on Node 22.19, the lowest version the packages
-declare, nor against a real model provider; CI runs Node 22 (see `effect/M0.md`).
+`durable-rivet-effect`; its engine tests ran on macOS only. Node 22.19.0 is the lowest version the packages declare:
+all fifteen suites pass on it (1,747 tests, 2026-11-25). Not yet run against a real model provider, and CI
+(`effect-ci.yml`, Node 22) has never run: the branch is not pushed.
 
 `./test.sh` exits 1 on this machine: three tests of upstream's `packages/coding-agent` fail (`exec`, `mcp-command`,
 `output-file-failures`), and the same three fail on an untouched copy of `main` at `f8149d1ab` in the same
