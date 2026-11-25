@@ -103,7 +103,8 @@ export interface Service {
 		/**
 		 * Starts a swarm on a primed thread; idempotent by `plan.id`. It returns once the coordinator is stored. Fails
 		 * with `SwarmIdNotOfThread`, before anything is sent, for a `plan.id` that does not name `plan.thread`, and with
-		 * `InvalidPlan` for an agent change that is no data.
+		 * `InvalidPlan` for an agent change that is no data. A change that names a tool or an extension the actor has not
+		 * installed is refused there: `OperationFailed` with the reason `InvalidPlan`.
 		 */
 		readonly run: <I>(
 			swarm: Swarm.Swarm<I, unknown>,

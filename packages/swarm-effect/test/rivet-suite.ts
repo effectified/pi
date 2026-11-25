@@ -4,8 +4,8 @@
 // when the binary is not installed. Models are scripted: nothing leaves the machine. One suite for every engine
 // test, because one process hosts one local engine at a time.
 //
-// Not testable here, and not tested: an engine that refuses a fork or cannot be reached, a call that times out, the
-// fork depth limit, and a fork whose hygiene ran twice.
+// Not testable here, and not tested: an engine that refuses a fork for now or cannot be reached, a call that times out,
+// and a fork whose hygiene ran twice.
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -448,6 +448,27 @@ function suite(engines: typeof LocalEngine): void {
 		expect(list.map((word) => [counts.primed.get(word), counts.requests.get(word)])).toEqual(list.map(() => [2, 1]));
 		expect(fates(result.forks)).toEqual(keys.map((key) => [key, "destroyed"]));
 		expect(await run(existing(source, "sleeper-1", keys))).toBe(0);
+	}, 120_000);
+
+	it("fails every job as too deep, at once, when its source is as deep as the engine forks", async () => {
+		const { source } = await run(primed("deep", 2));
+		let deepest = source;
+		for (let depth = 1; depth <= 16; depth++) {
+			await run(Client.waitForIdle(deepest));
+			deepest = await run(Client.fork(deepest, { key: ["deep", String(depth)] }));
+		}
+		const list = words(2);
+		await run(Client.call(deepest, "start", plan("deep-1", list, 2, [])));
+		const result = await run(ended(deepest, "deep-1"));
+		expect(result.ending).toBe("completed");
+		expect(result.jobs.map((job) => (job._tag === "Failure" ? job.reason : job._tag))).toEqual([
+			"too-deep",
+			"too-deep",
+		]);
+		expect(result.jobs[0]).toMatchObject({ message: expect.stringContaining("already 16 forks deep") });
+		expect(result.forks).toEqual([]);
+		expect(await run(existing(deepest, "deep-1", keysOf(list)))).toBe(0);
+		expect(list.map((word) => counts.requests.get(word) ?? 0)).toEqual([0, 0]);
 	}, 120_000);
 
 	// The PRD's fork and swarm test (sections 8 and 10), on Rivet: 50 forks of a 30-turn conversation, cap 8.

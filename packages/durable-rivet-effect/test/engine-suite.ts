@@ -4,9 +4,9 @@
 // removes all of it afterwards. Skipped when the binary is not installed. Models are scripted: nothing leaves the
 // machine. One suite for every engine test, because one process hosts one local engine at a time.
 //
-// Not testable here, and not tested: an actor process that dies during a run (the recovery wake that resumes it), an
-// engine that refuses forks (`actor.fork_unavailable`), a schedule write Rivet refuses, the fork depth limit, and
-// remote (wasm) SQLite, where `onFork` is not atomic.
+// Not testable here: an actor process that dies, whose actors must not share the test's process (thread-effect's
+// hosts-suite.ts kills one). Not testable, and not tested: an
+// engine that refuses forks (`actor.fork_unavailable`), a schedule write Rivet refuses, and remote (wasm) SQLite, where `onFork` is not atomic.
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -21,6 +21,9 @@ import { Agent, configured, gate, Napper, PARK_MILLIS, Refused, raw } from "./ag
 const TestAgent = Testing.observed(Agent);
 const TestNapper = Testing.observed(Napper);
 const Raw = { name: "raw", actions: {}, rivet: raw(expect) };
+
+/** How many forks may lie behind an actor: the engine's `max_depth` in rivetkit 3.1.1. */
+const ENGINE_FORK_DEPTH = 16;
 
 /** Registers the suite on the local engine of one runtime: `src/node.ts` or `src/bun.ts`. */
 export function registerEngineSuite(runtime: string, engines: typeof LocalEngine): void {
@@ -307,6 +310,38 @@ function suite(engines: typeof LocalEngine): void {
 			sibling: Option.some(agent.actorId),
 		});
 	}, 60_000);
+
+	it("forks of forks go 16 deep, and the next fork fails with the host's own error, at once and leaving nothing", async () => {
+		const root = await run(Client.getOrCreate(TestAgent, ["deep"]));
+		let deepest = root;
+		const primed = await run(Client.call(root, "ask", { text: "one", requestId: "first" }));
+		for (let depth = 1; depth <= ENGINE_FORK_DEPTH; depth++) {
+			await run(Client.waitForIdle(deepest));
+			deepest = await run(Client.fork(deepest, { key: ["deep", String(depth)] }));
+		}
+		// The deepest fork is a whole actor: it has every fork behind it, sees the transcript and works.
+		expect((await run(Client.lineage(deepest))).chain).toHaveLength(ENGINE_FORK_DEPTH);
+		expect(await run(Client.call(deepest, "transcript", null))).toEqual(primed);
+		const key = ["deep", "over"];
+		const refused = await run(Effect.flip(Effect.timeout(Client.fork(deepest, { key }), "10 seconds")));
+		expect(refused).toMatchObject({
+			_tag: "ForkTooDeep",
+			actor: "agent",
+			actorId: deepest.actorId,
+			reason: "The actor's database is already 16 forks deep.",
+		});
+		expect(Option.isNone(await run(Client.find(TestAgent, key)))).toBe(true);
+		// Asked again it says the same, and the actor goes on working.
+		expect(await run(Effect.flip(Client.fork(deepest, { key })))).toEqual(refused);
+		expect(await run(Client.call(deepest, "ask", { text: "two", requestId: "second" }))).toEqual([
+			...primed,
+			"user: two",
+			"assistant: answer 2: two",
+		]);
+		// The limit is the copy's depth, not the source's count: the root is forked as often as before.
+		const sibling = await run(Client.fork(root, { key: ["deep", "sibling"] }));
+		expect((await run(Client.lineage(sibling))).chain).toHaveLength(1);
+	}, 90_000);
 
 	it("carries an action's own failure and a defect across as typed errors", async () => {
 		const agent = await run(Client.getOrCreate(TestAgent, ["errors"]));

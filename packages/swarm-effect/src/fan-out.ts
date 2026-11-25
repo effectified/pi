@@ -174,7 +174,7 @@ type Tries = Pick<typeof Starting.Type, "attempts" | "busy">;
  * the first fork: the answer is not counted, so the job never fails over it, and only a cancel ends the wait.
  */
 function refused(site: Site, error: ForkRetryLater | ForkGone, fork: string | null, before: Tries): Job {
-	if (error._tag === "ForkGone") return failed(fork, "gone", error.message);
+	if (error._tag === "ForkGone") return failed(fork, error.what === "depth" ? "too-deep" : "gone", error.message);
 	if (error.sourceBusy === true) {
 		const pause = error.afterMillis ?? Math.min(BUSY_BASE_MILLIS * 2 ** before.busy, BUSY_MAX_MILLIS);
 		return { status: "starting", fork, attempts: before.attempts, busy: before.busy + 1, retryAt: site.now + pause };

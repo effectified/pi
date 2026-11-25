@@ -20,6 +20,7 @@ export {
 	type CallError,
 	EngineUnavailable,
 	ForkKeyHeld,
+	ForkTooDeep,
 	type HostError,
 	NotIdle,
 } from "./errors.ts";

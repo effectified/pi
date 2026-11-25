@@ -232,6 +232,7 @@ ends fails the wait with `NotIdle`.
 | `ActorDefect` | The call failed inside the actor otherwise: a defect of the handler, a harness that did not open, a value its schema rejects, Rivet's action timeout. `message` says which |
 | `ActorGone` | The actor does not exist or was destroyed |
 | `NotIdle` | A fork of a harness with work in flight, or a wait that gave up: `tasks` (every live task), `submissions` |
+| `ForkTooDeep` | The actor can never be forked: as many forks lie behind it as the engine allows, 16 in rivetkit 3.1.1. `reason` is the engine's own sentence |
 | `ForkKeyHeld` | The key asked for a fork is held by an actor that is not a fork of the source |
 | `EngineUnavailable` | The engine could not be reached or refused: `code` (Rivet's `group.code`, or `transport`, `start`, `port`, `environment`), `retryable`, `retryAfterMillis` |
 
@@ -287,6 +288,11 @@ const fork = yield* Client.fork(source, { key: ["job", "7"], input: { job: 7 } }
   running starts again from its top in the fork: the product's fork hygiene must end it or make it the fork's own
   before the first call (below). A child task of a background task, and work in a conversation it owns, are not
   background and refuse the fork.
+- **Sixteen deep.** A fork may be forked, and its fork again: the engine of rivetkit 3.1.1 makes 16 forks in a line
+  (each in about 45 milliseconds on a local engine) and refuses the next at once with `actor.fork_too_deep` ("The
+  actor's database is already 16 forks deep.", `max_depth: 16`). `Client.fork` then fails with `ForkTooDeep`, no actor
+  is made, and the deepest one works on. The depth is that of the copy: how often one actor is forked is another
+  matter.
 - **Two requests.** The question and the fork are not one step: nothing must start work in the source between them,
   or the copy inherits it and both actors run it.
 - **Idempotent by key.** A key that already names a fork of this source gives that fork, whatever the source does
@@ -393,8 +399,11 @@ to a client's fork.
   environment, which an assignment to `process.env` does not change on Bun. Without the variable the engine keeps
   the data of every project in `~/.rivetkit`. The `/node` entry refuses to start an engine on Bun for that reason.
 - **A deployment.** `Host.serve({ actors, endpoint })` registers the actors with an engine that runs already.
-  Needing one: several host processes, actors that survive the machine, engine upgrades (the only source of
-  `actor.fork_unavailable`), and the fork depth limit, which the engine enforces and no package here names.
+  Needing one: hosts on several machines, actors that survive the machine, and engine upgrades (the only source of
+  `actor.fork_unavailable`). Several host processes on one machine serve a local engine as well: a child process that
+  calls `Host.serve` with the local engine's `endpoint`, which is how `packages/thread-effect/test/hosts-suite.ts` kills them.
+  Give those hosts and their clients a pool of their own (`node: { poolName }` of `Host.serve`, `poolName` of
+  `Client.layer`), as that suite does, so that the pool holds only hosts that serve the same actors.
 
 ## Testing
 

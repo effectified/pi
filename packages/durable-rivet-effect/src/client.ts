@@ -13,6 +13,7 @@ import {
 	type CallError,
 	EngineUnavailable,
 	ForkKeyHeld,
+	ForkTooDeep,
 	NotIdle,
 } from "./errors.ts";
 import type { Lineage } from "./fork.ts";
@@ -190,13 +191,14 @@ export interface ForkOptions {
  *   coordinator, does not refuse the fork, so a task can fork its own actor; the copy holds that task live, and the
  *   product's fork hygiene ends or adopts it. The question and the fork are two requests: nothing must start work in
  *   the source between them, or the copy inherits it.
+ * - **Only so deep.** A source with as many forks behind it as the engine allows fails with `ForkTooDeep`.
  * - Interrupting the caller aborts the request; a fork the engine already accepted is still made, and the same key
  *   finds it.
  */
 export function fork<D extends Target>(
 	source: Handle<D>,
 	options: ForkOptions,
-): Effect.Effect<Handle<D>, NotIdle | ForkKeyHeld | CallError, RivetClient> {
+): Effect.Effect<Handle<D>, NotIdle | ForkKeyHeld | ForkTooDeep | CallError, RivetClient> {
 	const key = keyOf(options.key);
 	const existing = Effect.flatMap(
 		find(source.definition, key),
@@ -210,7 +212,7 @@ export function fork<D extends Target>(
 				),
 		}),
 	);
-	const create: Effect.Effect<Handle<D>, NotIdle | CallError, RivetClient> = Effect.gen(function* () {
+	const create: Effect.Effect<Handle<D>, NotIdle | ForkTooDeep | CallError, RivetClient> = Effect.gen(function* () {
 		const now = yield* status(source);
 		if (!forkable(now)) return yield* notIdle(source, now);
 		const request = engine((client, signal) =>
@@ -223,7 +225,12 @@ export function fork<D extends Target>(
 			while: (error) => error.code === FORK_UNAVAILABLE,
 		});
 		return { definition: source.definition, actorId, key };
-	}).pipe(Effect.catchIf(isCode(NOT_FOUND), () => Effect.fail(gone(source))));
+	}).pipe(
+		Effect.catchIf(isCode(NOT_FOUND), () => Effect.fail(gone(source))),
+		Effect.catchIf(isCode(TOO_DEEP), ({ message: reason }) =>
+			Effect.fail(new ForkTooDeep({ actor: source.definition.name, actorId: source.actorId, reason })),
+		),
+	);
 	return Effect.gen(function* () {
 		const before = yield* existing;
 		if (Option.isSome(before)) return before.value;
@@ -336,6 +343,8 @@ function hintOf(error: unknown): number | undefined {
 const NOT_FOUND = "actor.not_found";
 
 const DUPLICATE_KEY = "actor.duplicate_key";
+
+const TOO_DEEP = "actor.fork_too_deep";
 
 const FORK_UNAVAILABLE = "actor.fork_unavailable";
 

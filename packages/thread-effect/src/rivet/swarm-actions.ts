@@ -2,6 +2,7 @@
 // and the destruction of a fork. The coordinator of a swarm lives in the actor of its thread.
 
 import type { EntryId } from "@earendil-works/pi-durable";
+import type { Registry } from "@gunta/pi-durable-effect";
 import { Action } from "@gunta/pi-durable-rivet-effect";
 import * as Swarm from "@gunta/pi-swarm-effect";
 import { Effect, Schema } from "effect";
@@ -46,7 +47,8 @@ const Spent = Schema.Array(Schema.Struct({ key: Schema.String, settledMicros: Sc
  * - `runSwarm`: starts a swarm on the actor's thread and answers once its coordinator is stored. Idempotent by the
  *   swarm id: `created` is false for a swarm that existed, whose own plan stands. The id must name the thread
  *   (`SwarmId`), so that every swarm of a thread actor is found by its id alone. An agent change of the plan is
- *   stored with the swarm by its names, as `Swarm.start` stores one, and applied in each fork.
+ *   stored with the swarm by its names, as `Swarm.start` stores one, and applied in each fork. A change that names
+ *   a tool or an extension nothing is installed under in this actor fails with `InvalidPlan`, and nothing is stored.
  * - `cancelSwarm`: `cancelling` once the abort is durably marked, `ended` for a swarm that had ended.
  * - `probeSwarm`: whether the coordinator still runs, and the keys of the jobs it planned.
  * - `swarmResult`: the result as the coordinator stored it, values in their JSON form; none while the swarm runs.
@@ -75,6 +77,8 @@ export function actions(swarms: ReadonlyArray<Swarm.Swarm<never, unknown>>) {
 						(job) => crossing("runSwarm", swarm.work.promptOf(job.input, { swarmId: plan.id, key: job.key })),
 						{ discard: true },
 					);
+					// Wire input: what the forks' agent change names is installed here, or the swarm does not start.
+					yield* agentInstalled(plan);
 					const started = yield* crossing(
 						"runSwarm",
 						Swarms.Swarms.use((service) =>
@@ -136,6 +140,13 @@ export function actions(swarms: ReadonlyArray<Swarm.Swarm<never, unknown>>) {
 				),
 		}),
 	};
+}
+
+/** Whether what the plan's agent change names is installed in this actor. */
+function agentInstalled(plan: Pick<Run, "id" | "agent">): Effect.Effect<void, OperationFailed, Registry.Registry> {
+	return plan.agent === undefined
+		? Effect.void
+		: crossing("runSwarm", ForkAgent.requireInstalled(plan.id, plan.agent));
 }
 
 /** The swarm actions of a thread actor, as a caller's `Client.call` is typed by them. */

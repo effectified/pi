@@ -1,6 +1,6 @@
 // The agent change of a swarm's forks as it crosses to a thread actor: what `ForkAgent.toWire` makes of a change.
 
-import { Extension, Tool } from "@gunta/pi-durable-effect";
+import { Extension, Registry, Tool } from "@gunta/pi-durable-effect";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { ForkAgent } from "../src/rivet.ts";
@@ -60,5 +60,35 @@ describe("an agent change as it crosses", () => {
 		// Only a cast lets a field of `Agent.Change` that is not `ForkAgent`'s through: it stays with the caller.
 		const wider = { maxTurns: 2, cwd: "/tmp" } as ForkAgent.ForkAgent;
 		expect(await crossed(wider)).toEqual({ maxTurns: 2 });
+	});
+});
+
+describe("an agent change held against the registry of the actor", () => {
+	const held = (agent: ForkAgent.Wire) =>
+		Effect.runPromise(
+			Effect.result(ForkAgent.requireInstalled("t1/covers-1", agent)).pipe(
+				Effect.provide(Registry.layer([Office])),
+				Effect.map((result) => (result._tag === "Success" ? "installed" : result.failure.reason)),
+			),
+		);
+
+	it("passes when every name is installed, and when it names nothing", async () => {
+		expect(await held({})).toBe("installed");
+		expect(await held({ model: null, tools: null, extensions: null, modelTools: null })).toBe("installed");
+		expect(
+			await held({ extensions: ["office"], tools: ["lookup"], modelTools: { add: ["lookup"], remove: ["lookup"] } }),
+		).toBe("installed");
+	});
+
+	it("names every tool and extension nothing is installed under, in a list and in an edit", async () => {
+		expect(await held({ tools: ["lookup", "lokup"] })).toBe("Nothing is installed under: tool lokup");
+		expect(await held({ tools: { remove: ["lokup"] } })).toBe("Nothing is installed under: tool lokup");
+		expect(
+			await held({ modelTools: { add: ["a"], remove: ["b"] }, extensions: { add: ["c"], remove: ["office"] } }),
+		).toBe("Nothing is installed under: extension c, tool a, tool b");
+		// A tool's name is no extension's, and the reverse.
+		expect(await held({ tools: ["office"], extensions: ["lookup"] })).toBe(
+			"Nothing is installed under: extension lookup, tool office",
+		);
 	});
 });

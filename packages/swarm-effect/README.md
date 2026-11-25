@@ -209,6 +209,7 @@ driver that does not say.
 | `invalid-result` | The fork's answers did not decode, corrections included; the message is the last issue report |
 | `invalid-input` | The stored input does not decode against the definition's input schema |
 | `driver-unavailable` | The driver said "retry later" 10 times in a row, not counting the times it said that the source is busy |
+| `too-deep` | The source is a fork of forks as deep as the engine allows (16 on Rivet 3.1.1), so no job of it can have a fork |
 | `gone` | The fork or the source is gone, the source has no entry to fork at, or the product's fork setup refused the fork (the message is its reason) |
 | `cancelled` | The swarm was cancelled, or failed under `onFailure: "fail"`, before the job settled |
 
@@ -402,7 +403,7 @@ interface Destroyed {
 
 | Operation | Contract |
 |---|---|
-| `fork` | Find or create the fork of `(swarmId, jobKey)`: never a second copy. A creation that answers "duplicate key" is a success with the fork that holds the key. `ForkRetryLater` when the source cannot be forked now, with `sourceBusy: true` when that is because the source has work in flight; `ForkGone` with `what: "source"` when it never can, with `what: "fork"` when the key's fork was destroyed or the product's setup refused it |
+| `fork` | Find or create the fork of `(swarmId, jobKey)`: never a second copy. A creation that answers "duplicate key" is a success with the fork that holds the key. `ForkRetryLater` when the source cannot be forked now, with `sourceBusy: true` when that is because the source has work in flight; `ForkGone` with `what: "source"` when it never can, with `what: "depth"` when the source is as deep as forks go, with `what: "fork"` when the key's fork was destroyed or the product's setup refused it |
 | `run` | Hand the fork its job and return once the fork has durably accepted it, never at the answer. Idempotent by `requestId`: a second call starts nothing and answers as the first. The answer says how the coordinator learns of the settlement (below), and may say where the job runs (`place`) |
 | `job` | Where the request stands, and the final answer's text once it settled. It never waits. `Unknown` for a request the fork does not hold |
 | `cancel` | Stop the fork's work and return once nothing of it runs; an unsettled job then reads `Unanswered`. A fork that is gone or idle is cancelled already |
@@ -742,12 +743,12 @@ results in job order with every fork on the primed transcript; one swarm for two
 key, also one whose fork call never returned, and never after its destroy; the cap; unpinned forks destroyed, a
 pinned one kept and destroyed by `destroyFork`; `status` and `events`; a cancel in the middle; a source actor put to
 sleep in the middle; a source that is busy when a fork is asked for; the fork setup inside each fork actor, and
-where each job ran; a copied coordinator that does nothing; a fork of a fork; a fork without hygiene; and the
+where each job ran; a copied coordinator that does nothing; a fork of a fork; a source 16 forks deep, whose jobs fail as `too-deep`; a fork without hygiene; and the
 50-fork swarm. It uses the host's `/testing` entry for the forced sleep and the lifecycle, and `Self.client` for the
 engine. [`test/rivet-job.test.ts`](test/rivet-job.test.ts) shows, in process, that a job runs on the context as of
 `at` when the copy is past it, and what a refusing setup leaves. Not tested: an engine that refuses a fork or cannot
 be reached, a timeout, a source that is busy for longer than seconds on an engine (the coordinator's wait without an
-end is tested in process), the fork depth limit, a hygiene that runs twice, and an agent change in a fork.
+end is tested in process), a hygiene that runs twice, and an agent change in a fork.
 
 ## Guarantees and their limits
 

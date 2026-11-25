@@ -9,6 +9,7 @@ import {
 	Client,
 	type EngineUnavailable,
 	type ForkKeyHeld,
+	type ForkTooDeep,
 	type NotIdle,
 	Self,
 } from "@gunta/pi-durable-rivet-effect";
@@ -222,6 +223,7 @@ type Operation = ForkRetryLater["operation"];
 type Failure =
 	| NotIdle
 	| ForkKeyHeld
+	| ForkTooDeep
 	| ActorGone
 	| EngineUnavailable
 	| ActorDefect
@@ -257,6 +259,8 @@ function portFailure(operation: Operation, subject: Subject, missing: "source" |
 				return gone(subject, "source", error.message);
 			case "ForkKeyHeld":
 				return gone(subject, "fork", error.message);
+			case "ForkTooDeep":
+				return gone(subject, "depth", error.message);
 			case "ActorGone":
 				return gone(subject, missing, error.message);
 			case "ActionFailed":
@@ -291,6 +295,6 @@ function toFork(subject: Subject, actorId: string): Fork {
 	return { swarmId: subject.swarmId, jobKey: subject.jobKey, forkId: actorId };
 }
 
-function gone(subject: Subject, what: "source" | "fork", reason: string): ForkGone {
+function gone(subject: Subject, what: ForkGone["what"], reason: string): ForkGone {
 	return new ForkGone({ what, swarmId: subject.swarmId, jobKey: subject.jobKey, reason });
 }

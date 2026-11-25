@@ -15,6 +15,8 @@ export const Reason = Schema.Literals([
 	"driver-unavailable",
 	/** The fork or the source is gone, or the fork lost the job it had accepted. */
 	"gone",
+	/** The source is a fork of forks as deep as the engine allows: no job of it can have a fork. */
+	"too-deep",
 	/** The swarm was cancelled, or failed with `onFailure: "fail"`, before the job settled. */
 	"cancelled",
 ]);

@@ -490,7 +490,10 @@ commit that creates the job's conversation, before the fork setup, which then na
 allowance and the thread's grant leave of them and takes the review out. So a fork runs on the model the plan names
 and is offered, of the tools the plan names, those it may have. `cwd` and `compaction` do not cross: a fork has its
 thread's. A change that is no data of that shape (a number of turns below 1) fails with `InvalidPlan` in the
-caller, before anything is sent. A name that is installed nowhere selects nothing: the actor does not check names.
+caller, before anything is sent. The
+actor holds every name of the change, of tools and of extensions, against its own registry: with one that nothing is
+installed under, `runSwarm` fails with `OperationFailed` of the reason `InvalidPlan`, which lists the names, and
+nothing is stored.
 
 ### What a fork inherits, and the fork hygiene
 
@@ -691,11 +694,34 @@ sleep twice while parked for approval, it repeats no model request and publishes
 put to sleep with an outcome its sink had refused, it is woken by the wake of its courier's next attempt and tells
 it.
 
+### A host process that dies, and several of them
+
+`test/hosts-suite.ts` runs the actors in child processes on one local engine that outlives them, with everything the
+hosts change (the lease, the sinks, the models, what the tools do) in the test's process behind HTTP. The local
+engine keeps an actor's storage and its schedules when the host's process dies. Every case passed on Node and on Bun.
+
+| What happens | What was seen |
+|---|---|
+| SIGKILL with a model request out, then a second host | The recovery wake brings the actor up in the second host, with no caller, about 15 seconds later. The request is sent again, with the same session and the same advisory record id. The tool runs once, `Reviewed` is told once. The killed request's reservation is settled by nobody; every other one once, and the thread's amount is what was settled |
+| SIGKILL after an unsafe tool's effect, before its commit | The tool does not run again: the model reads an `interrupted` error result. No request is repeated |
+| SIGKILL in a safe tool, and no host for 18 seconds | The wake that came due with nobody to run it is kept: the thread goes on in the next host, and the tool runs again. A call made meanwhile fails with `HostUnavailable` |
+| SIGKILL after the outcome sink took an event, before its reply | The event is told again under the same id with the same content: at least once, as the port says |
+| Two hosts, twelve threads | Both hosts run some, each actor in one host. A call reaches every actor; eight `getOrCreate`s of one key at once are one actor |
+| One of two hosts leaves, by SIGKILL or SIGTERM, with requests out | Every thread ends in the host that stays. SIGTERM settles the requests it cuts off; SIGKILL leaves their reservations open |
+| A host is frozen (SIGSTOP) until the engine moved its actor, then goes on with the model's reply in its socket | The other host took over after about 30 seconds. The thawed host sends no request, runs no tool, and delivers no record and no event: it closes its actor, at most after settling the request it had sent |
+| The host of a swarm's coordinator is killed while forks work | The swarm ends with every typed result and one fork per job; a job whose host died is asked again with its session |
+
+Two limits show in it. **A frozen host is not stopped the instant its actor moves**: after the thaw it still holds the
+actor in memory for some milliseconds until it is told, and a settlement and a sign of life were seen from it. None
+of its commits was seen to land. Code that acts outside without a commit before it (a tool in the middle of its effect) is not
+fenced by the host: the product's own service must refuse it, by the lease or by an idempotency key. **A killed
+host's reservations stay open**: the product's lease expires them.
+
 ## Gaps
 
 What remains: where the packages still do not compose, or cannot express what the consumer's loop and host do. Most
-serious first. Each names its evidence, the smallest change that would close it, and the package it belongs to. The
-four gaps of the pass before this one are closed, and listed below (22 to 25).
+serious first. Each names its evidence, the smallest change that would close it, and the package it belongs to. What
+earlier passes closed is listed below (1 to 26).
 
 **1. The reviewer's model call does not say its api, the parts of its cost, or whether a provider billed it.** The
 review stores of a request the route, the stop reason, the tokens and one cost. So the `ModelCall` the composition
@@ -719,8 +745,8 @@ cannot be read back for an earlier moment. A hold a person released at once is p
 
 **3. A process that dies between the end of a thread's work and the wake of its courier tells at its next open
 only.** The two are two commits of the same process: the first is Pi's, and a hook cannot commit with it.
-- Evidence: none on an engine: a forced sleep is no crash (below). `test/kill-resume.ts` closes at five points and
-  loses no event, and "an outcome its sink refused is told when the storage is opened again".
+- Evidence: none of that window, which is two commits wide. `test/kill-resume.ts` closes at five points and loses no
+  event; `test/hosts-suite.ts` kills the process before the sink replied, and the event is told again.
 - Smallest fix, Pi: a submission that notifies a task when it settles does so in the settling commit already
   (`notify`); the same for a task that ends (a hold, a deferral) would close the window.
 
@@ -730,15 +756,20 @@ cannot delete or measure a conversation.
   good, and says what its own entries weigh"; `test/swarm.test.ts`, "fans typed results in …".
 - Smallest fix: Pi, a delete of a conversation and its size.
 
-**5. The agent change that crosses to an actor is not checked against what is installed there, and carries neither
-`cwd` nor `compaction`.** A name nothing is installed under selects nothing, silently, as it does in one process.
-- Evidence: `test/fork-agent.test.ts`; `test/rivet-suite.ts`, "runs a swarm's forks with the agent change of its
-  plan …", where `transfer`, which no fork may have, is named and simply not offered.
-- Smallest fix, here: `runSwarm` holds the names against the actor's registry and answers `InvalidPlan`.
+**5. The agent change that crosses to an actor carries neither `cwd` nor `compaction`.** A fork has its thread's.
+(That its names were not checked is closed: 26.)
+
+**6. A request that is sent again has no key of its own that a provider could refuse a repeat by.** Pi sends a
+conversation's session with every request, the same before and after a crash, and the advisory record of the request
+keeps its id. But the router makes a new request id in each process, and the reservation of the request is a new one,
+so neither the provider nor the lease can tell a repeat from a new request.
+- Evidence: `test/hosts-suite.ts`, "goes on in a second host process …": one session and one advisory id for the
+  request sent twice, two reservations.
+- Smallest fix, Pi: a key of the generation task and its attempt in the request options.
 
 ### Not proven on a local engine
 
-A local engine's actors run in the test's process, on one node. What needs a Rivet deployment to be shown:
+A local engine is one node on one machine. What needs a Rivet deployment, or a moment no test can hold, to be shown:
 
 - **A background subagent's run that is live when its actor is forked.** The host copies one only in two windows a
   few commits wide: after the run was created and before its child got the task, and after the child's submission
@@ -748,15 +779,14 @@ A local engine's actors run in the test's process, on one node. What needs a Riv
   copies another in the middle of its child's request. On the engine, step 3 runs in every fork of the suite, on
   storages without a live run.
 
-- **An actor process that dies.** A forced sleep closes the harness; a crash does not. The recovery wake that
-  resumes a thread after one is the same wake the sleep test waits for, but the crash itself was not made.
-- **The product's ports across a process boundary.** In the tests the lease, the sink and the inbox are values the
-  test shares with every actor. A real lease that fences a fork's actor, and a sink that keys a record by the
-  actor it came from, are the product's.
-- **Several host processes**, engine upgrades (the only source of `actor.fork_unavailable`), and the fork depth
-  limit, which the engine enforces.
-- **An engine that cannot be reached, and a call that times out**: `HostUnavailable` is built from the host's
-  errors and a timeout, and neither was made to happen.
+- **The product's own ports.** In the host process suite the lease and the sinks are reached over HTTP from each
+  host, but they are a test's: a real lease that fences a fork's actor, and a sink that keys a record by the actor
+  it came from, are the product's.
+- **Host processes on several machines**, an engine of several nodes, an engine process that dies, engine upgrades
+  (the only source of `actor.fork_unavailable`), and a network that parts a host from the engine. A frozen process
+  is the nearest the suite comes to the last.
+- **An engine that cannot be reached.** A call that nobody answers was made to happen (below), an engine that is gone
+  was not.
 - **A statement the storage refuses in the middle of a Pi commit.** The engine answered `depot.overloaded`
   (`volume_transition`) to forks of the 50-fork swarm, once or twice a run; the host sent them again, as its README
   says. None was seen inside a commit.
@@ -835,7 +865,8 @@ A local engine's actors run in the test's process, on one node. What needs a Riv
 | 22 | A caller learns of a thread's end by asking | Closed here: the port `OutcomeSink`, called by the process that works the thread with `Started` and every outcome reached, at least once, in order, under an id of the submission and the entry, after the records. The delivery is a Pi task (`OutcomeCourier`), so the Rivet host holds an actor awake for it and wakes it for an attempt that failed. What is left is gaps 2 and 3 | `outcomes.test.ts`, all of it; `kill-resume.ts`, every case and "an outcome its sink refused is told when the storage is opened again …"; `rivet-suite.ts`, "works a thread …", "delivers an outcome its sink refused once after a forced sleep …"; `storage-fork.test.ts`, "are its source's to tell …" |
 | 23 | The reviewer's request is a field of an entry, not a model call record | Closed here (`ReviewCalls.layer`) with one optional field of `recorder-effect` (`ModelCall.derived`): a `ModelCall` after the verdict's record, under an id no record of the recorder has. What a verdict does not hold is gap 1 | `review-calls.test.ts`; `review.test.ts`, "gets the verdict as the record of its entry …", "stops the thread with the lease's reason when the budget refuses the reviewer …"; `thread.test.ts`, "reserves and settles once per provider request …" |
 | 24 | A destroyed fork in the thread's storage does not say what it wrote | Closed by `swarm-effect`: the in-storage driver answers the bytes of the UTF-8 JSON of the entries the fork appended after its fork point, and keeps the number. What it is not is gap 4 | `swarm.test.ts`, "fans typed results in …"; `swarm-effect`, `conversation-forks.test.ts`, `host.test.ts` |
-| 25 | An agent change for a swarm's forks does not cross to an actor | Closed here (`ForkAgent`, `Remote.Plan.agent`, `runSwarm`) with `swarm-effect`'s `named`: the model, the thinking level, the instructions, the turns, and tools and extensions by name. What is left is gap 5 | `rivet-suite.ts`, "runs a swarm's forks with the agent change of its plan …"; `fork-agent.test.ts` |
+| 26 | The names of an agent change that crosses to an actor are not checked there | Closed here: `runSwarm` holds them against the actor's registry (`ForkAgent.requireInstalled`) and answers `InvalidPlan` with the names nothing is installed under | `fork-agent.test.ts`, "an agent change held against the registry of the actor"; `rivet-suite.ts`, "runs a swarm's forks with the agent change of its plan …" |
+| 25 | An agent change for a swarm's forks does not cross to an actor | Closed here (`ForkAgent`, `Remote.Plan.agent`, `runSwarm`) with `swarm-effect`'s `named`: the model, the thinking level, the instructions, the turns, and tools and extensions by name. What is left is gap 5; its names are 26 | `rivet-suite.ts`, "runs a swarm's forks with the agent change of its plan …"; `fork-agent.test.ts` |
 
 ## What the loop does that this does not, and the reverse
 
@@ -881,13 +912,17 @@ node ../../node_modules/vitest/dist/cli.js --run
 bun test --conditions=source
 ```
 
-- **In one process** (105 tests): the thread, the guard, the budget and the router, approvals, the review, subagents,
+- **In one process** (107 tests): the thread, the guard, the budget and the router, approvals, the review, subagents,
   swarms on the in-storage driver, the outcome sink (which events, their ids and their order, the record sink before
   it, a sink that fails, a schedule that ends, the sink that keeps nothing), the reviewer's model call, the events
   and the agent change as data, kill and resume on a SQLite file with both drivers, the swarm ids, the
   composition's own step on a copied storage, a thread actor's definition with product actions and a Layer of the
   product on the open harness, and what their types refuse (`thread-actor.test.ts`), and the client on a stand-in engine: which actor each operation asks with and
   without `actorKey`, and a product action called for a thread (`remote.test.ts`).
+- **On host processes that die** (`test/hosts-suite.ts`, 9 tests, registered by `hosts.node.test.ts` and
+  `hosts.bun.test.ts`): child processes that host the thread actor on a local engine the test started, killed, stopped
+  and frozen by their pid ([above](#a-host-process-that-dies-and-several-of-them)). About 200 seconds on Node and 185
+  on Bun, most of it waits for the recovery wake and for the engine to give up a frozen host.
 - **On a local Rivet engine** (`test/rivet-suite.ts`, 15 tests, registered by `rivet.node.test.ts` and
   `rivet.bun.test.ts`): the engine binary of rivetkit's platform package, started by the host's `/node` or `/bun`
   entry on a free port set with its data in a temporary directory. Skipped, with a message, when the binary is not

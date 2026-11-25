@@ -113,8 +113,9 @@ The old loop is deleted. `Thread.ts` keeps the vocabulary (`ThreadInput`, `Threa
 **Not proven**
 
 - A real model provider: every test uses scripted or fake models.
-- An actor process that crashes (a forced sleep was tested), several host processes, the fork depth limit, a real
-  Spend context that grants one lease per fork holder.
+- Hosts on several machines, an engine that dies, a real Spend context that grants one lease per fork holder. (Host
+  processes that crash, several of them on one engine, and the fork depth limit are proven on a local engine:
+  `packages/thread-effect/README.md`, "A host process that dies, and several of them".)
 - Node 22.19 (24.22 and 26.13 ran), the engine tests on Linux, CI (it needs a push).
 - The 50-fork swarm takes about 0.2 s in process and 5 to 8 s on a local engine, against the PRD's 5 s.
 

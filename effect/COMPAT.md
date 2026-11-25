@@ -26,7 +26,7 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@gunta/pi-ai-effect` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges | 44 | Images, classifiers, OAuth login, deferred responses |
 | `@gunta/pi-telemetry-effect` | facade | `@earendil-works/pi-telemetry` | 59 | `TelemetryStore`; histogram exemplars |
 | `@gunta/pi-durable-effect` | facade | `@earendil-works/pi-durable` | 426 | A task's own hooks, `setTimer`, prompt sections and wrappers, synchronous observers |
-| `@gunta/pi-durable-rivet-effect` | host | A harness in a Rivet actor: storage, wake-ups, forks | 164 | Linux engine runs; a crashed actor; several host processes |
+| `@gunta/pi-durable-rivet-effect` | host | A harness in a Rivet actor: storage, wake-ups, forks | 165 | Linux engine runs; several machines; an engine that dies |
 | `@gunta/pi-router-effect` | plugin | Routes, fallback, limiter, prices, constraints | 169 | A real provider; image and classifier routing |
 | `@gunta/pi-budget-effect` | plugin | Lease at the model boundary, shares | 86 | |
 | `@gunta/pi-guard-effect` | plugin | Denied verbs, grants, argument rules, ceilings | 111 | |
@@ -34,9 +34,9 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@gunta/pi-recorder-effect` | plugin | Records from committed entries to a sink | 57 | A real crash (closes were tested) |
 | `@gunta/pi-review-effect` | plugin | Second-family review, checks, corrections, holds | 147 | |
 | `@gunta/pi-subagent-effect` | plugin | Foreground and background children | 66 | |
-| `@gunta/pi-swarm-effect` | plugin | Keyed forks under a cap, in storage and as actor forks | 142 | |
+| `@gunta/pi-swarm-effect` | plugin | Keyed forks under a cap, in storage and as actor forks | 143 | |
 | `@gunta/pi-search-effect` | plugin | Search and fetch tools, Exa adapter | 60 | A real Exa call |
-| `@gunta/pi-thread-effect` | composition | An agent thread made of all of them, in process and as a Rivet actor | 120 | See its README, "Gaps" |
+| `@gunta/pi-thread-effect` | composition | An agent thread made of all of them, in process and as a Rivet actor | 131 | See its README, "Gaps" |
 
 Not built: `mcp-effect`, `codemode-effect`, `agent-effect`, `env-effect`, `workflow-effect`, `sandbox-effect`
 (PRD priorities P2 and P3).

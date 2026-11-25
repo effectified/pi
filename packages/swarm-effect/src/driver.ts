@@ -28,15 +28,20 @@ export class ForkRetryLater extends Schema.TaggedError<ForkRetryLater>()("ForkRe
 
 /**
  * "Gone": what the operation addresses does not exist any more and never will again: the source to fork, or a fork
- * that was destroyed or lost. Retrying cannot help, so the coordinator fails the job.
+ * that was destroyed or lost. `depth` says that the source exists and can never be forked: its storage is a copy as
+ * many times over as the engine allows. Retrying cannot help, so the coordinator fails the job: as `too-deep` for
+ * `depth`, as `gone` otherwise.
  */
 export class ForkGone extends Schema.TaggedError<ForkGone>()("ForkGone", {
-	what: Schema.Literals(["source", "fork"]),
+	what: Schema.Literals(["source", "fork", "depth"]),
 	swarmId: Schema.String,
 	jobKey: Schema.String,
 	reason: Schema.String,
 }) {
 	override get message(): string {
+		if (this.what === "depth") {
+			return `No fork for job ${this.jobKey} of swarm ${this.swarmId}: ${this.reason}`;
+		}
 		return `The ${this.what} of job ${this.jobKey} of swarm ${this.swarmId} is gone: ${this.reason}`;
 	}
 }
@@ -164,7 +169,8 @@ export interface ForkDriverService {
 	 * Finds the fork of `(swarmId, jobKey)` or makes it from the source: find or create, never a second copy. A driver
 	 * whose creation answers "duplicate key" looks the fork up and succeeds with it. `ForkRetryLater` when the source
 	 * cannot be forked now; a driver that forks only an idle harness answers it with `sourceBusy` while the source is
-	 * busy. `ForkGone` with `what: "source"` when it never can, and with `what: "fork"` when the key's fork was
+	 * busy. `ForkGone` with `what: "source"` when it never can, with `what: "depth"` when it is as deep as
+	 * forks go, and with `what: "fork"` when the key's fork was
 	 * destroyed or the product's fork setup refused it (`ForkRequest.setup`).
 	 */
 	readonly fork: (request: ForkRequest) => Effect.Effect<Fork, ForkRetryLater | ForkGone>;

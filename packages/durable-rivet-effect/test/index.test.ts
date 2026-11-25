@@ -21,6 +21,7 @@ describe("the package's exports", () => {
 			"EngineUnavailable",
 			"Fork",
 			"ForkKeyHeld",
+			"ForkTooDeep",
 			"Host",
 			"NotIdle",
 			"Self",

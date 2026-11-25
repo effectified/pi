@@ -4,9 +4,9 @@
 // when the binary is not installed. Models are scripted: nothing leaves the machine. One suite for every engine
 // test, because one process hosts one local engine at a time.
 //
-// Not testable here, and not tested: an actor process that dies (a forced sleep closes the harness, a crash does
-// not), an engine that cannot be reached or refuses, a call that times out, several host processes, and what the
-// product's ports do across a real process boundary: here they are values in the test's process.
+// Not testable here, since the actors run in the test's process, and tested by hosts-suite.ts: an actor process that
+// dies, a call nobody answers, several host processes, and ports across a process boundary. Not testable in either,
+// and not tested: an engine that refuses.
 
 import type { FauxResponseFactory } from "@earendil-works/pi-ai";
 import * as Approvals from "@gunta/pi-approvals-effect";
@@ -778,6 +778,15 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 			_tag: "InvalidPlan",
 			swarmId: id,
 		});
+		expect(await run(Effect.flip(remote.swarms.probe(id)))).toMatchObject({ reason: "SwarmNotFound" });
+		// Data that names a tool nothing is installed under crosses, and the actor refuses it: nothing is stored.
+		expect(await run(Effect.flip(remote.swarms.run(Covers, { ...plan, agent: { tools: ["lokup"] } })))).toEqual(
+			new OperationFailed({
+				operation: "runSwarm",
+				reason: "InvalidPlan",
+				message: "Swarm agents/covers-1 cannot start: Nothing is installed under: tool lokup",
+			}),
+		);
 		expect(await run(Effect.flip(remote.swarms.probe(id)))).toMatchObject({ reason: "SwarmNotFound" });
 		const started = await run(
 			remote.swarms.run(Covers, {

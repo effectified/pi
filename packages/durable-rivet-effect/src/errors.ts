@@ -76,8 +76,29 @@ export class ForkKeyHeld extends Schema.TaggedError<ForkKeyHeld>()("ForkKeyHeld"
 	}
 }
 
+/**
+ * The actor cannot be forked, now or later: its storage is a copy of a copy as many times over as the engine allows
+ * (16 in rivetkit 3.1.1). `reason` is the engine's own sentence, which says the limit. The actor itself works on.
+ */
+export class ForkTooDeep extends Schema.TaggedError<ForkTooDeep>()("ForkTooDeep", {
+	actor: Schema.String,
+	actorId: Schema.String,
+	reason: Schema.String,
+}) {
+	override get message(): string {
+		return `Actor ${this.actor} ${this.actorId} cannot be forked: ${this.reason}`;
+	}
+}
+
 /** Every failure this host adds. */
-export type HostError = NotIdle | ActorGone | EngineUnavailable | ActionFailed | ActorDefect | ForkKeyHeld;
+export type HostError =
+	| NotIdle
+	| ActorGone
+	| EngineUnavailable
+	| ActionFailed
+	| ActorDefect
+	| ForkKeyHeld
+	| ForkTooDeep;
 
 /** What a call to any action can fail with besides the action's own error. */
 export type CallError = ActorGone | EngineUnavailable | ActorDefect;

@@ -1,7 +1,7 @@
 // The agent change of a swarm's forks as it crosses to the thread's actor: plain data, with tools and extensions by
 // name.
 
-import type { Agent } from "@gunta/pi-durable-effect";
+import { type Agent, Registry } from "@gunta/pi-durable-effect";
 import * as Swarm from "@gunta/pi-swarm-effect";
 import { Effect, Schema } from "effect";
 
@@ -34,8 +34,9 @@ const Selection = Schema.Union([
  * `ForkAgent` on the wire, as the action `runSwarm` takes it. As in `Agent.Change`, a given field replaces what the
  * fork inherits from its thread, `null` clears it back to the host's default, and an absent one changes nothing.
  * The names are those of tools and extensions installed in the actor: Pi stores names, and a name that is installed
- * nowhere selects nothing. Whatever the change says of tools, a fork is offered at most what its allowance and its
- * thread's grant leave of them: the fork setup narrows after the change is applied.
+ * nowhere would select nothing, so `runSwarm` refuses one (`requireInstalled`). Whatever the change says of tools, a
+ * fork is offered at most what its allowance and its thread's grant leave of them: the fork setup narrows after the
+ * change is applied.
  */
 export const Wire = Schema.Struct({
 	model: Schema.optionalKey(Schema.NullOr(Schema.Struct({ provider: Schema.String, modelId: Schema.String }))),
@@ -64,3 +65,47 @@ export function toWire(swarmId: string, agent: ForkAgent): Effect.Effect<Wire, S
 }
 
 const decode = Schema.decodeUnknownEffect(Wire);
+
+/**
+ * Succeeds when every tool and extension `agent` names is installed in the registry of the context, the actor's, and
+ * fails with an `InvalidPlan` that lists the names nothing is installed under. Wire input: in the caller's program a
+ * name may stand for something this actor does not have.
+ */
+export function requireInstalled(
+	swarmId: string,
+	agent: Wire,
+): Effect.Effect<void, Swarm.InvalidPlan, Registry.Registry> {
+	return Registry.Registry.use((registry) => {
+		const installed = registry.snapshot();
+		const tools = new Set(installed.tools().map(({ tool }) => tool.name));
+		const missing = [
+			...namesIn(agent.extensions)
+				.filter((name) => installed.extension(name) === undefined)
+				.map((name) => `extension ${name}`),
+			...[...namesIn(agent.tools), ...namesIn(agent.modelTools)]
+				.filter((name) => !tools.has(name))
+				.map((name) => `tool ${name}`),
+		];
+		return missing.length === 0
+			? Effect.void
+			: Effect.fail(
+					new Swarm.InvalidPlan({
+						swarmId,
+						reason: `Nothing is installed under: ${[...new Set(missing)].join(", ")}`,
+					}),
+				);
+	});
+}
+
+type Edit = { readonly add?: ReadonlyArray<string>; readonly remove?: ReadonlyArray<string> };
+
+/** Every name a selection holds, also those an edit takes away. */
+function namesIn(choice: ReadonlyArray<string> | Edit | null | undefined): ReadonlyArray<string> {
+	if (choice === null || choice === undefined) return [];
+	return isList(choice) ? choice : [...(choice.add ?? []), ...(choice.remove ?? [])];
+}
+
+// The two forms of a selection are Pi's own, an array or an object, and carry no tag.
+function isList(choice: ReadonlyArray<string> | Edit): choice is ReadonlyArray<string> {
+	return Array.isArray(choice);
+}
