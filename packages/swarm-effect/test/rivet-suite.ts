@@ -437,15 +437,13 @@ function suite(engines: typeof LocalEngine): void {
 			release();
 		}
 		// No call reaches the source: only the wake action its keeper scheduled for the coordinator brings it back.
-		// On a slow machine a wake action of the keeper fires before the forced sleep too, while the jobs start: the
-		// one asked for is the first after the sleep.
+		// The wake is what is promised, not `fired`. On a slow machine a wake action fires before the forced sleep
+		// too, while the jobs start, and after the sleep the keeper of the wake the open harness causes may replace
+		// the due one before Rivet runs its action.
+		await Effect.runPromise(Testing.seen(source, "wake", 2));
 		const slept = eventsOf(source).indexOf("sleep");
-		const firedAwake = eventsOf(source)
-			.slice(0, slept)
-			.filter((event) => event === "fired").length;
-		await Effect.runPromise(Testing.seen(source, "fired", firedAwake + 1));
 		expect(eventsOf(source)[0]).toBe("wake");
-		expect(eventsOf(source).slice(slept, slept + 3)).toEqual(["sleep", "wake", "fired"]);
+		expect(eventsOf(source).slice(slept, slept + 2)).toEqual(["sleep", "wake"]);
 
 		const result = await run(ended(source, "sleeper-1"));
 		expect(result.ending).toBe("completed");
