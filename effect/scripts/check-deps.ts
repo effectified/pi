@@ -60,7 +60,10 @@ function checkImports(pkg: EffectPackage, file: string, declared: readonly strin
 			}
 			continue;
 		}
-		const name = specifier.split("/").slice(0, specifier.startsWith("@") ? 2 : 1).join("/");
+		const name = specifier
+			.split("/")
+			.slice(0, specifier.startsWith("@") ? 2 : 1)
+			.join("/");
 		if (name === pkg.name || declared.includes(name)) continue;
 		failures.push(`${where}: imports ${specifier}, which ${pkg.name} does not declare`);
 	}

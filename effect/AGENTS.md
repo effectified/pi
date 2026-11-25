@@ -70,6 +70,8 @@ every core.
 | What | Command |
 |---|---|
 | Install | `npm ci --ignore-scripts` |
+| **The gate: every check below and every package's tests on Node and on Bun, one line per step** | `node effect/scripts/gate.ts` |
+| The gate for what you changed: all checks, and the tests of the changed packages and of those that depend on them | `node effect/scripts/gate.ts --changed` |
 | Model data the type check needs (gitignored, fetched) | `npm run hydrate:model-data` |
 | Upstream's check: Biome, dependency checks, `tsc` | `npm run check` |
 | Upstream's build (pi-effect packages resolve Pi's `dist`) | `npm run build` |
@@ -84,9 +86,16 @@ every core.
 | A sync, after `git merge --no-commit --no-ff main` | `node effect/scripts/sync.ts bump` |
 | Every upstream and pi-effect test, offline | `./test.sh` |
 
-- After code changes: `npm run check`, the changed package's tests on Node, the Bun lane, both rule checks and the
-  Effect diagnostics. A change to the names a package imports from Pi changes the surface record: run
-  `node effect/scripts/pi-surface.ts` and commit `effect/pi-surface/` with it (CI runs `--check`).
+- After code changes: `node effect/scripts/gate.ts --changed`, and the whole gate before a commit that others build
+  on. It is what CI's `boundary` and `check` jobs judge, it changes no file, and it prints one line per step, the end
+  of a failed step's output, and where the whole output is. Upstream's `npm run check` also type-checks upstream
+  and rewrites every file Biome would format, another agent's unfinished ones included: run it only when a change
+  could reach upstream's own checks. `--skip=<step>` leaves a step out (`--skip=bun` while a lane has the machine).
+- When several agents share the checkout, a failure in a file you did not touch is theirs: name it in one line and
+  go on. The gate's types step covers every package, so it is red while any lane's work is half-written; your
+  package alone is checked with the temporary `tsconfig.json` described at the end of this file.
+- A change to the names a package imports from Pi changes the surface record: run
+  `node effect/scripts/pi-surface.ts` and commit `effect/pi-surface/` with it (the gate's `sync` step checks it).
 - An Effect diagnostic that must stay is an entry of the plugin block of `effect/tsconfig.json`, with its reason; a
   new unstable Effect module is a line of its `allowedUnstableApis`.
 - A new package: `node effect/scripts/new-package.ts <name>-effect <facade|plugin|host> "<description>" [name@version
