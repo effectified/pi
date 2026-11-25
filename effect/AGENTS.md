@@ -44,7 +44,13 @@ the packages and their state are in `effect/COMPAT.md`; the first consumer's bin
   interrupts the Effect it runs.
 - Time and ids come from services (`Clock`), so `TestClock` drives a test.
 - Casts only where TypeScript cannot express a decided invariant or at a decode boundary, each with a short why.
-- `@effect/vitest` needs Vitest 5; upstream pins Vitest 4. Tests use plain Vitest with `Effect.runPromise`.
+- `@effect/vitest` needs Vitest 5 (upstream pins Vitest 4) and does not load under `bun test`. A test runs its Effect
+  with `runTest` of `@gunta/pi-ai-effect/testing`: a scope, the test clock and the test console, on both lanes.
+  `runLive` is for a test of real processes or files. `schema-effect` and `telemetry-effect`, which do not depend
+  on it, keep `Effect.runPromise`.
+- No test waits on the real clock. Time passes with `TestClock.adjust`; a forked fiber is started with
+  `Effect.forkChild(effect, { startImmediately: true })` or awaited with a `Latch` or a `Deferred`, never with a
+  short sleep.
 - The style model is `packages/schema-effect`: one concept per file, a first-line comment saying what the file is
   for, one doc comment per export, a test file per source file.
 

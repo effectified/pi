@@ -1,4 +1,5 @@
-// Scripted models for tests: a scripted pi-ai provider behind `Models`, and a scripted effect/ai `LanguageModel`.
+// For tests: a scripted pi-ai provider behind `Models`, a scripted effect/ai `LanguageModel`, and the run of a test's
+// Effect on the test clock.
 
 export {
 	type FauxResponseFactory,
@@ -9,6 +10,7 @@ export {
 	fauxToolCall,
 	type RegisterFauxProviderOptions,
 } from "@earendil-works/pi-ai";
+export { runLive, runTest, type TestServices } from "./run-test.ts";
 export {
 	ScriptedLanguageModel,
 	type ScriptedLanguageModelService,
