@@ -63,11 +63,22 @@ jobs:
         id: upstream
         run: npm run build
 
-      # Upstream's build fetches the model catalogs of the day, and upstream's tests name models of them. So this
-      # step fails on a branch whose `main` is behind upstream once a named model leaves a catalog: sync `main`.
-      # The steps below run all the same, so that such a day still says how the pi-effect packages stand.
+      # Upstream's whole check. Upstream's build fetches the model catalogs of the day, and upstream's tests name
+      # models of them, so this step fails once a named model leaves a catalog (within hours of a sync, twice in two
+      # days). It shows, and does not fail the job: the steps below check what is ours.
       - name: Upstream check
+        continue-on-error: true
         run: npm run check
+
+      # The parts of upstream's check that read the pi-effect packages and no catalog: format and lint, pinned
+      # versions, declared runtime dependencies, import style. Their types are the fast type check below.
+      - name: Check the pi-effect packages
+        if: ${{ !cancelled() }}
+        run: |
+          node_modules/.bin/biome check packages/*-effect effect .github/workflows/effect-ci.yml
+          npm run check:pinned-deps
+          npm run check:runtime-deps
+          npm run check:ts-imports
 
       - name: Build the pi-effect packages
         id: packages
