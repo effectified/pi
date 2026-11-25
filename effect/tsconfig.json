@@ -39,7 +39,8 @@
 					"effect/PlatformError",
 					"effect/process/ChildProcess",
 					"effect/process/ChildProcessSpawner",
-					// Used since the packages began: Effect's AI bridges, HTTP client, SQL client and test console.
+					// Effect's AI bridges, HTTP client and test console, used since the packages began; and its SQL client, with
+					// decoded rows, migrations and the connection an actor's database is given as (`ActorSql`, swarm's records).
 					"effect/ai/AiError",
 					"effect/ai/LanguageModel",
 					"effect/ai/Prompt",
@@ -51,8 +52,13 @@
 					"effect/http/HttpClientError",
 					"effect/http/HttpClientRequest",
 					"effect/http/HttpClientResponse",
+					"effect/reactivity/Reactivity",
+					"effect/sql/Migrator",
 					"effect/sql/SqlClient",
+					"effect/sql/SqlConnection",
 					"effect/sql/SqlError",
+					"effect/sql/SqlSchema",
+					"effect/sql/Statement",
 					"effect/testing/TestConsole"
 				],
 				"overrides": [
@@ -111,8 +117,13 @@
 								"effect/http/HttpClientError",
 								"effect/http/HttpClientRequest",
 								"effect/http/HttpClientResponse",
+								"effect/reactivity/Reactivity",
+								"effect/sql/Migrator",
 								"effect/sql/SqlClient",
+								"effect/sql/SqlConnection",
 								"effect/sql/SqlError",
+								"effect/sql/SqlSchema",
+								"effect/sql/Statement",
 								"effect/testing/TestConsole"
 							]
 						}

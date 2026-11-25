@@ -8,11 +8,12 @@
 //                      a change under effect/ or to the lockfile selects all. With =<ref>, also what changed since it.
 //   --skip             leaves steps out by name: biome, pinned-deps, runtime-deps, ts-imports, types, diagnostics,
 //                      sync, boundary, deps, node, bun.
-// The checks all run, so one run names everything that is wrong. The tests run only when the types hold, one package
-// at a time. Exit 1 when a step failed.
+// The checks all run, so one run names everything that is wrong. The tests run one package at a time, and not for a
+// package with a type error, nor for one that depends on a package with a type error in its `src`: another agent's
+// half-written file stops the tests it can break and no others. Exit 1 when a step failed.
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type EffectPackage, effectPackages, ROOT } from "./packages.ts";
@@ -23,6 +24,8 @@ interface Step {
 	readonly label: string;
 	readonly command: readonly [string, ...string[]];
 	readonly cwd: string;
+	/** The package a suite tests. */
+	readonly pkg?: EffectPackage;
 	readonly counts?: (output: string) => Counts | undefined;
 }
 
@@ -114,6 +117,7 @@ const suites: readonly Step[] = [
 			label: `${shortName(pkg)} on Node`,
 			command: [node, join(ROOT, "node_modules/vitest/dist/cli.js"), "--run"],
 			cwd: join(ROOT, pkg.directory),
+			pkg,
 			counts: vitestCounts,
 		}),
 	),
@@ -123,6 +127,7 @@ const suites: readonly Step[] = [
 			label: `${shortName(pkg)} on Bun`,
 			command: [node, "effect/scripts/test-bun.ts", shortName(pkg)],
 			cwd: ROOT,
+			pkg,
 			counts: bunCounts,
 		}),
 	),
@@ -130,12 +135,12 @@ const suites: readonly Step[] = [
 
 const outcomes: Array<readonly [Step, Outcome]> = [];
 for (const step of checks) outcomes.push([step, skipped.has(step.name) ? leftOut : run(step)]);
-const typesFailed = outcomes.some(([step, outcome]) => step.name === "types" && outcome.kind === "failed");
+const untyped = withoutTypes(outcomes.find(([step]) => step.name === "types")?.[1]);
 for (const step of suites) {
 	const outcome: Outcome = skipped.has(step.name)
 		? leftOut
-		: typesFailed
-			? { kind: "not run", why: "the types do not hold" }
+		: step.pkg !== undefined && untyped.packages.has(step.pkg.name)
+			? { kind: "not run", why: untyped.why }
 			: run(step);
 	outcomes.push([step, outcome]);
 }
@@ -156,8 +161,13 @@ for (const lane of ["node", "bun"]) {
 	);
 }
 if (notRun.length > 0) {
-	const names = [...new Set(notRun.map(([step, outcome]) => `${step.name} (${whyOf(outcome)})`))];
-	console.log(`Not run: ${names.join(", ")}.`);
+	// By reason, so that the line says which suites a type error held back.
+	const reasons = new Map<string, string[]>();
+	for (const [step, outcome] of notRun) {
+		const why = whyOf(outcome);
+		reasons.set(why, [...(reasons.get(why) ?? []), step.pkg === undefined ? step.name : step.label]);
+	}
+	for (const [why, names] of reasons) console.log(`Not run, ${why}: ${names.join(", ")}.`);
 }
 if (failed.length > 0) {
 	console.error(`The gate failed (${minutes} min): ${failed.map(([step]) => step.label).join("; ")}.`);
@@ -189,6 +199,28 @@ function run(step: Step): Outcome {
 	console.log(`FAIL  ${step.label} (${seconds.toFixed(1)} s${said}): ${log}`);
 	console.log(indented(lastLines(output)));
 	return { kind: "failed", seconds, counts, log };
+}
+
+/**
+ * The packages whose tests cannot be trusted after the types step, by name, and why in words: those with a type
+ * error, and those that depend on a package with one in its `src` (an error in a test breaks no other package). All
+ * of them when an error is outside the packages or cannot be placed.
+ */
+function withoutTypes(types: Outcome | undefined): { readonly packages: ReadonlySet<string>; readonly why: string } {
+	if (types?.kind !== "failed") return { packages: new Set(), why: "" };
+	const errors = readFileSync(types.log, "utf8")
+		.split("\n")
+		.filter((line) => /\berror TS\d+/.test(line));
+	const broken = packages.filter((pkg) => errors.some((line) => line.startsWith(`${pkg.directory}/`)));
+	const placed = errors.every((line) => packages.some((pkg) => line.startsWith(`${pkg.directory}/`)));
+	if (broken.length === 0 || !placed) {
+		return { packages: new Set(packages.map((pkg) => pkg.name)), why: "the types do not hold" };
+	}
+	const inSource = broken.filter((pkg) => errors.some((line) => line.startsWith(`${pkg.directory}/src/`)));
+	return {
+		packages: new Set([...broken, ...withDependents(inSource)].map((pkg) => pkg.name)),
+		why: `type errors in ${broken.map(shortName).join(", ")}`,
+	};
 }
 
 /** The packages whose tests run, and how that was decided, in words. */
