@@ -21,9 +21,12 @@ import {
 import { Effect, Formatter, Option, Predicate, Record, Schema, Stream } from "effect";
 import * as AiTool from "effect/ai/Tool";
 import type * as Toolkit from "effect/ai/Toolkit";
+import { call } from "./call.ts";
+import type { DurableError } from "./errors.ts";
 import { invoker } from "./invocation.ts";
 import * as Signal from "./signal.ts";
 import * as ToolApi from "./tool-api.ts";
+import * as Wrap from "./wrap.ts";
 
 /** What a handler may use besides its arguments: commits, memos, signals, documents, nested calls, details. */
 export type Api = ToolApi.Api;
@@ -255,6 +258,56 @@ export function fromToolkit<Tools extends Record<string, AiTool.Any>>(
 		const registered = made.registration as FromToolkit<ToolkitServices<Tools>>["registration"];
 		return [{ name: made.name, registration: registered }];
 	});
+}
+
+/** The arguments of a call as Pi gives them to a tool: validated against its JSON Schema, not decoded. */
+export type Args = Parameters<ToolRegistration["execute"]>[0];
+
+/** What Pi's `execute` settles with: a result, or a park. */
+export type Execution = ToolExecutionResult | ToolPark;
+
+/** A tool as a wrapper finds it: Pi's registration, and its execution as an Effect. */
+export interface Wrapped {
+	/** The wrapped tool as Pi holds it: its name, description, parameters and the rest. */
+	readonly tool: ToolRegistration;
+	/** Runs the wrapped tool for this call; it fails as Pi's `execute` rejects. */
+	readonly execute: (args: Args, api: Api) => Effect.Effect<Execution, DurableError>;
+}
+
+/**
+ * What a wrapper makes of a tool: fields of Pi's registration that replace the wrapped tool's (its description, its
+ * parameters, ...), and the execution that replaces it. Left out, a field and the execution are the wrapped tool's.
+ */
+export type Wrapping<E, R> = Partial<StrictOmit<ToolRegistration, "name" | "execute" | "cancel">> & {
+	readonly execute?: (args: Args, api: Api) => Effect.Effect<Execution, E, R>;
+};
+
+/**
+ * Wraps the tool `name` of any extension, wherever the wrapping extension is selected (Pi's `wrapTool`). The wrapper
+ * gets the tool, its execution as an Effect, and gives what replaces it. A wrapper is applied when the registry
+ * composes, so it must be pure. It never parks itself: it passes `api` on to the wrapped execution and returns that
+ * execution's park as it is; a park of its own ends the call `invalid_park`. A failure of the execution it gives
+ * becomes Pi's `tool_error` result, as a rejection of `execute` does.
+ */
+export function wrap<E, R>(name: string, wrapper: (tool: Wrapped) => Wrapping<E, R>): Wrap.Wrap<R> {
+	return Wrap.registered((invoke) => ({
+		kind: "tool",
+		tool: name,
+		wrap: (tool) => {
+			const { execute, ...fields } = wrapper({
+				tool,
+				execute: (args, api) => call((context) => tool.execute(args, api.pi, context)),
+			});
+			return {
+				...tool,
+				...fields,
+				name: tool.name,
+				...(execute === undefined
+					? {}
+					: { execute: (args: Args, api, context) => invoke(execute(args, ToolApi.fromPi(api)), context) }),
+			};
+		},
+	}));
 }
 
 function registration<P extends Schema.Constraint, S extends Schema.Constraint, E, R>(

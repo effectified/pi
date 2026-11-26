@@ -93,7 +93,13 @@ export const REVIEWED = {
 };
 
 /** An extension of hooks that need nothing. */
-export type Hooks = Extension.Extension<readonly [], ReadonlyArray<Hook.Hook<never>>, readonly []>;
+export type Hooks = Extension.Extension<
+	readonly [],
+	ReadonlyArray<Hook.Hook<never>>,
+	readonly [],
+	readonly [],
+	readonly []
+>;
 
 /** What a scene is built from. `R` is what the product's checks need. */
 export interface SceneOptions<R> {

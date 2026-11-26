@@ -88,23 +88,11 @@ export type HarnessOptionsCovered = Assert<
 >;
 
 /**
- * Every method of Pi's harness is a function of `Harness`, or named: the Layer's scope closes it (`close`, `closed`),
- * `commits` is `observeCommits`, `taskGraph` is `watchTaskGraph`, `usageEvents` observes `pi.usage` only, and the
- * other observers stay on the service value, Pi's own harness.
+ * Every method of Pi's harness is a function of `Harness`, or named: the Layer's scope closes it (`close`), `commits`
+ * is `observeCommits`, `taskGraph` is `watchTaskGraph`, and `closing` is `subscribeClose`.
  */
 export type HarnessCovered = Assert<
-	Covers<
-		PiHarness,
-		typeof Harness,
-		| "close"
-		| "closed"
-		| "observeCommits"
-		| "watchTaskGraph"
-		| "observeDoc"
-		| "observeConversation"
-		| "observeTaskGraph"
-		| "subscribeClose"
-	>
+	Covers<PiHarness, typeof Harness, "close" | "observeCommits" | "watchTaskGraph" | "subscribeClose">
 >;
 
 /** Every method of Pi's conversation is wrapped; `watch` is `changes`, a Stream. */
@@ -120,23 +108,20 @@ export type TxCovered = Assert<
 
 /**
  * Every member of Pi's task runtime is in a task's api, or named: its abort `signal` is the fiber's interruption,
- * `sleepUntil` is the step `Task.sleepUntil`, `setTimer` is Effect's `Clock`, and the rest stays on `api.pi`.
+ * `sleepUntil` is the step `Task.sleepUntil`, `setTimer` is `timer`, `hooks` is `eachHook`, and the rest stays on
+ * `api.pi`.
  */
 export type TaskRuntimeCovered = Assert<
 	Covers<
 		TaskRuntime<unknown, { phase: string }, unknown, object>,
 		Task.Api<unknown, unknown, unknown>,
-		"signal" | "sleepUntil" | "setTimer" | "env" | "hooks" | "models" | "registry" | "settings" | "watchDoc"
+		"signal" | "sleepUntil" | "setTimer" | "env" | "hooks" | "models" | "registry" | "settings"
 	>
 >;
 
 /** Every member of Pi's tool api is in a tool's api, or stays on `api.pi`: running output, the environment, models. */
 export type ToolApiCovered = Assert<
-	Covers<
-		ToolExecutionApi,
-		Tool.Api,
-		"output" | "outputWindow" | "retainedOutput" | "env" | "models" | "registry" | "watchDoc"
-	>
+	Covers<ToolExecutionApi, Tool.Api, "output" | "outputWindow" | "retainedOutput" | "env" | "models" | "registry">
 >;
 
 /** Every method of Pi's conversation handle is wrapped. */
@@ -152,8 +137,8 @@ export type HooksCovered = [
 	Assert<Covers<CompactionHooks, typeof Hook>>,
 ];
 
-/** What an extension of this package cannot carry yet. */
-export type ExtensionCovered = Assert<Covers<PiExtension, Extension.Extension, "namespace" | "sections" | "wraps">>;
+/** Every field of a Pi extension is a field of an extension of this package. */
+export type ExtensionCovered = Assert<Covers<PiExtension, Extension.Extension>>;
 
 /** Every option of a conversation's creation is an option of `createConversation`. */
 export type CreateOptionsCovered = Assert<Covers<ConversationCreateOptions, Harness.CreateOptions>>;
@@ -163,7 +148,10 @@ export type ToolCovered = Assert<
 	Covers<ToolRegistration, Tool.Tool<string, never, never, unknown, unknown>, "execute" | "structuredOutputSchema">
 >;
 
-/** Every field of a Pi task definition is an option of `Task.make`, but its `hooks`. */
+/**
+ * Every field of a Pi task definition is an option of `Task.make`, but its `hooks`, which only types Pi's own: a task
+ * of this package types its hooks with `TaskHooks.make`.
+ */
 export type TaskDefinitionCovered = Assert<
 	Covers<
 		TaskDefinition<unknown, { phase: string }, unknown, object>,
@@ -173,8 +161,8 @@ export type TaskDefinitionCovered = Assert<
 >;
 
 /**
- * The document tokens Pi exports: `BuiltinDoc` has the five every conversation has; `NestedCallDoc` is task-scoped,
- * the slots of a tool call's nested calls, and not wrapped.
+ * The document tokens Pi exports: `BuiltinDoc` has the five every conversation has, and `nestedCall`, the task-scoped
+ * slots of a tool call's nested calls.
  */
 export type BuiltinDocsCovered = Assert<
 	Conform<"LiveDoc" | "ProviderDoc" | "UsageDoc" | "InboxDoc" | "AgentDoc" | "NestedCallDoc", keyof DocTokens>

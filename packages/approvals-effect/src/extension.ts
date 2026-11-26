@@ -17,6 +17,6 @@ export type Hooks<R> = readonly [Hook.Hook<R | Inbox>, Hook.Hook<never>];
  */
 export function extension<R = never>(
 	policy: Policy<R>,
-): Extension.Extension<readonly [], Hooks<NoInfer<R>>, readonly []> {
+): Extension.Extension<readonly [], Hooks<NoInfer<R>>, readonly [], readonly [], readonly []> {
 	return { name: "approvals", hooks: [gate(policy), record] };
 }

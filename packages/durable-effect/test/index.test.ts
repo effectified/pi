@@ -72,6 +72,12 @@ describe("the exports", () => {
 			"Conversation",
 			"ConversationBusy",
 			"ConversationIdle",
+			"DEFAULT_COMPACTION_POLICY",
+			"DEFAULT_HARNESS_IDENTITY",
+			"DEFAULT_PROGRESS_POLICY",
+			"DEFAULT_RESTART_LIMIT",
+			"DEFAULT_RETRY_POLICY",
+			"DURABLE_TELEMETRY_SCHEMA",
 			"Doc",
 			"Entry",
 			"Extension",
@@ -88,6 +94,7 @@ describe("the exports", () => {
 			"Scans",
 			"SchemaConversionError",
 			"SchemaDecodeError",
+			"Section",
 			"SessionFailed",
 			"Signal",
 			"Storage",
@@ -95,9 +102,11 @@ describe("the exports", () => {
 			"Submission",
 			"SystemEntry",
 			"Task",
+			"TaskHooks",
 			"Tool",
 			"ToolResultEntry",
 			"ToolTask",
+			"Transcript",
 			"Tx",
 			"UnexpectedError",
 			"UserEntry",
@@ -107,6 +116,8 @@ describe("the exports", () => {
 			"Harness",
 			"abortSubmission",
 			"abortTask",
+			"closed",
+			"closing",
 			"commit",
 			"commits",
 			"conversation",
@@ -118,6 +129,9 @@ describe("the exports", () => {
 			"isConversationIdle",
 			"isIdle",
 			"layer",
+			"observeConversation",
+			"observeDoc",
+			"observeTaskGraph",
 			"reports",
 			"resume",
 			"root",
@@ -142,7 +156,14 @@ describe("the exports", () => {
 	});
 
 	it("hold what products reached around the package for: built-in documents, scans, idle reads, ids, the settlement signal", () => {
-		expect(Object.keys(Package.BuiltinDoc).sort()).toEqual(["agent", "inbox", "live", "provider", "usage"]);
+		expect(Object.keys(Package.BuiltinDoc).sort()).toEqual([
+			"agent",
+			"inbox",
+			"live",
+			"nestedCall",
+			"provider",
+			"usage",
+		]);
 		expect(Object.keys(Package.Scans).sort()).toEqual(["conversations", "tasks"]);
 		expect(Object.keys(Package.Idle).sort()).toEqual(["quiet"]);
 		expect(Object.keys(Package.Signal).sort()).toEqual(["SubmissionSettled", "make", "read", "stateIn", "toPiKey"]);
@@ -163,7 +184,6 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ?
 const offered: Coverage = { kind: "offered" };
 const replaced = (by: string): Coverage => ({ kind: "replaced", by });
 const open = (why: string): Coverage => ({ kind: "open", why });
-const DEFAULT = open("Pi's defaults: not re-exported; `Agent` creation leaves a setting out to get it");
 
 /** What this package does with every value Pi Durable exports: the list of what is left to put in Effect terms. */
 const COVERAGE = {
@@ -203,18 +223,20 @@ const COVERAGE = {
 	SystemEntry: offered,
 	ToolResultEntry: offered,
 	UserEntry: offered,
-	DEFAULT_COMPACTION_POLICY: DEFAULT,
-	DEFAULT_PROGRESS_POLICY: DEFAULT,
-	DEFAULT_RESTART_LIMIT: DEFAULT,
-	DEFAULT_RETRY_POLICY: DEFAULT,
-	DEFAULT_HARNESS_IDENTITY: DEFAULT,
-	section: open("prompt sections: not wrapped (COMPAT.md)"),
-	wrapSection: open("prompt section wrappers: not wrapped (COMPAT.md)"),
-	wrapTool: open("tool wrappers: not wrapped (COMPAT.md)"),
-	registryReader: open("a read-only view of a registry: not wrapped"),
-	NestedCallDoc: open("the nested-call document: not wrapped"),
-	ConversationTranscript: open("the transcript reader: not wrapped"),
-	DURABLE_TELEMETRY_SCHEMA: open("Pi Durable's telemetry schema: not re-exported"),
+	DEFAULT_COMPACTION_POLICY: offered,
+	DEFAULT_PROGRESS_POLICY: offered,
+	DEFAULT_RESTART_LIMIT: offered,
+	DEFAULT_RETRY_POLICY: offered,
+	DEFAULT_HARNESS_IDENTITY: offered,
+	DURABLE_TELEMETRY_SCHEMA: offered,
+	section: replaced("Section.make"),
+	wrapSection: replaced("Section.wrap"),
+	wrapTool: replaced("Tool.wrap"),
+	NestedCallDoc: replaced("BuiltinDoc.nestedCall"),
+	ConversationTranscript: replaced("Transcript"),
+	registryReader: open(
+		"a harness's registry over a Chord app-runtime registry value: @effectified/pi-chord does not offer Chord's app runtime (its own open entries), and Harness.layer takes the Registry service, which an app installs into",
+	),
 } satisfies Record<keyof typeof PiDurable, Coverage>;
 
 describe("the coverage of Pi Durable", () => {

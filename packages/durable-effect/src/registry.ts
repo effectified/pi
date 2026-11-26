@@ -25,7 +25,19 @@ export function layer<const Extensions extends ReadonlyArray<Extension.Extension
 			const tools = yield* Effect.forEach(extension.tools ?? [], (tool) => tool.registration);
 			const hooks = yield* Effect.forEach(extension.hooks ?? [], (hook) => hook.registration);
 			const tasks = yield* Effect.forEach(extension.tasks ?? [], (task) => task.registration);
-			registry.install(defineExtension({ name: extension.name, tools, hooks, tasks }));
+			const sections = yield* Effect.forEach(extension.sections ?? [], (section) => section.registration);
+			const wraps = yield* Effect.forEach(extension.wraps ?? [], (wrap) => wrap.registration);
+			registry.install(
+				defineExtension({
+					name: extension.name,
+					...(extension.namespace === undefined ? {} : { namespace: extension.namespace }),
+					tools,
+					hooks,
+					tasks,
+					sections,
+					wraps,
+				}),
+			);
 		}
 		return registry;
 	});
