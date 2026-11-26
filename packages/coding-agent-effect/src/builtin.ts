@@ -58,53 +58,86 @@ export interface Builtin<D extends { readonly name: string; readonly execute: Ex
 	) => Effect.Effect<Awaited<ReturnType<D["execute"]>>, CodingAgentFailure>;
 }
 
+// Each function's type is written out through Pi's exported factories: inferred, its declaration would name Pi's
+// internal tool types (`TypeBoxAgentTool`, a renderer's state), which no `.d.ts` can import.
+
 /** Pi's `read`: a file's text (or image) in pages of lines. */
-export function read(cwd: string, options?: ToolsOptions["read"]) {
+export function read(
+	cwd: string,
+	options?: ToolsOptions["read"],
+): Builtin<ReturnType<typeof createReadToolDefinition>, ReturnType<typeof createReadTool>> {
 	return builtin(createReadToolDefinition(cwd, options), () => createReadTool(cwd, options));
 }
 
 /** Pi's `write`: creates or replaces a file. */
-export function write(cwd: string, options?: ToolsOptions["write"]) {
+export function write(
+	cwd: string,
+	options?: ToolsOptions["write"],
+): Builtin<ReturnType<typeof createWriteToolDefinition>, ReturnType<typeof createWriteTool>> {
 	return builtin(createWriteToolDefinition(cwd, options), () => createWriteTool(cwd, options));
 }
 
 /** Pi's `edit`: exact text replacements in a file. */
-export function edit(cwd: string, options?: ToolsOptions["edit"]) {
+export function edit(
+	cwd: string,
+	options?: ToolsOptions["edit"],
+): Builtin<ReturnType<typeof createEditToolDefinition>, ReturnType<typeof createEditTool>> {
 	return builtin(createEditToolDefinition(cwd, options), () => createEditTool(cwd, options));
 }
 
 /** Pi's `bash`: a shell command in `cwd`, its output truncated as Pi does. */
-export function bash(cwd: string, options?: ToolsOptions["bash"]) {
+export function bash(
+	cwd: string,
+	options?: ToolsOptions["bash"],
+): Builtin<ReturnType<typeof createBashToolDefinition>, ReturnType<typeof createBashTool>> {
 	return builtin(createBashToolDefinition(cwd, options), () => createBashTool(cwd, options));
 }
 
 /** Pi's `powershell`: a PowerShell command in `cwd`. */
-export function powershell(cwd: string, options?: ToolsOptions["powershell"]) {
+export function powershell(
+	cwd: string,
+	options?: ToolsOptions["powershell"],
+): Builtin<ReturnType<typeof createPowerShellToolDefinition>, ReturnType<typeof createPowerShellTool>> {
 	return builtin(createPowerShellToolDefinition(cwd, options), () => createPowerShellTool(cwd, options));
 }
 
 /** Pi's `grep`: ripgrep over the files of `cwd`. */
-export function grep(cwd: string, options?: ToolsOptions["grep"]) {
+export function grep(
+	cwd: string,
+	options?: ToolsOptions["grep"],
+): Builtin<ReturnType<typeof createGrepToolDefinition>, ReturnType<typeof createGrepTool>> {
 	return builtin(createGrepToolDefinition(cwd, options), () => createGrepTool(cwd, options));
 }
 
 /** Pi's `find`: files of `cwd` by glob. */
-export function find(cwd: string, options?: ToolsOptions["find"]) {
+export function find(
+	cwd: string,
+	options?: ToolsOptions["find"],
+): Builtin<ReturnType<typeof createFindToolDefinition>, ReturnType<typeof createFindTool>> {
 	return builtin(createFindToolDefinition(cwd, options), () => createFindTool(cwd, options));
 }
 
 /** Pi's `ls`: the entries of a directory. */
-export function ls(cwd: string, options?: ToolsOptions["ls"]) {
+export function ls(
+	cwd: string,
+	options?: ToolsOptions["ls"],
+): Builtin<ReturnType<typeof createLsToolDefinition>, ReturnType<typeof createLsTool>> {
 	return builtin(createLsToolDefinition(cwd, options), () => createLsTool(cwd, options));
 }
 
 /** Pi's coding tools, as `createCodingTools` chooses them: read, bash, edit and write. */
-export function coding(cwd: string, options?: ToolsOptions) {
+export function coding(
+	cwd: string,
+	options?: ToolsOptions,
+): [ReturnType<typeof read>, ReturnType<typeof bash>, ReturnType<typeof edit>, ReturnType<typeof write>] {
 	return [read(cwd, options?.read), bash(cwd, options?.bash), edit(cwd, options?.edit), write(cwd, options?.write)];
 }
 
 /** Pi's read-only tools, as `createReadOnlyTools` chooses them: read, grep, find and ls. */
-export function readOnly(cwd: string, options?: ToolsOptions) {
+export function readOnly(
+	cwd: string,
+	options?: ToolsOptions,
+): [ReturnType<typeof read>, ReturnType<typeof grep>, ReturnType<typeof find>, ReturnType<typeof ls>] {
 	return [read(cwd, options?.read), grep(cwd, options?.grep), find(cwd, options?.find), ls(cwd, options?.ls)];
 }
 
