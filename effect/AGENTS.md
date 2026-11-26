@@ -78,6 +78,7 @@ every core.
 | Model data the type check needs (gitignored, fetched) | `npm run hydrate:model-data` |
 | Upstream's check: Biome, dependency checks, `tsc` | `npm run check` |
 | Upstream's build (pi-effect packages resolve Pi's `dist`) | `npm run build` |
+| The pi-effect packages' release build, as CI runs it: their declarations must emit. A type the gate accepts can still name a Pi type no `.d.ts` can import; write such a type out. Run it after `npm run build` whenever a package's public types change | `node effect/scripts/build.ts` |
 | Build the pi-effect packages in dependency order | `node effect/scripts/build.ts` |
 | Fast type check of the pi-effect packages only | `node_modules/.bin/tsc --noEmit -p effect/tsconfig.json` |
 | One package's tests on Node | `cd packages/<name> && node ../../node_modules/vitest/dist/cli.js --run` |
