@@ -161,6 +161,14 @@
 			}
 		]
 	},
-	"include": ["../packages/*-effect/src/**/*", "../packages/*-effect/test/**/*", "./scripts/**/*", "./spikes/**/*"],
+	"include": [
+		"../packages/*-effect/src/**/*",
+		"../packages/*-effect/test/**/*",
+		"./scripts/**/*",
+		"./spikes/**/*",
+		// pi-coding-agent's declarations of the highlight.js modules it imports: the root program has them through its
+		// `include`; this one reaches coding-agent only through imports (evals-effect wraps pi-evals, which runs it).
+		"../packages/coding-agent/src/utils/highlight-js.d.ts"
+	],
 	"exclude": ["../**/dist/**"]
 }

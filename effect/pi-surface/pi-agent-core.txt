@@ -103,7 +103,7 @@ used by: agent-effect via RunToolCallOptions
 type ToolUpdateSink = (partialResult: AgentToolResult<any>) => Promise<void> | void;
 
 ## Agent  agent/src/agent.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /**
  * Stateful wrapper around the low-level agent loop.
  *
@@ -206,14 +206,14 @@ export class Agent {
 }
 
 ## AgentInitialState  agent/src/agent.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /** Initial state for {@link Agent}. `systemPrompt` and `tools` become the leading system message unless `messages` already starts with one. */
 export type AgentInitialState = Partial<
 	Omit<AgentState, "pendingToolCalls" | "isStreaming" | "streamingMessage" | "errorMessage">
 >;
 
 ## AgentOptions  agent/src/agent.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /** Options for constructing an {@link Agent}. */
 export interface AgentOptions {
 	initialState?: AgentInitialState;
@@ -327,7 +327,7 @@ used by: agent-effect
 export function setDefaultStreamFn(streamFn: StreamFn | undefined): void
 
 ## AfterToolCallContext  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /** Context passed to `afterToolCall`. */
 export interface AfterToolCallContext {
 	/** The assistant message that requested the tool call. */
@@ -345,7 +345,7 @@ export interface AfterToolCallContext {
 }
 
 ## AfterToolCallResult  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /**
  * Partial override returned from `afterToolCall`.
  *
@@ -377,7 +377,7 @@ export interface AfterToolCallResult {
 }
 
 ## AgentContext  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /** Context snapshot passed into the low-level agent loop. */
 export interface AgentContext {
 	/** Transcript visible to the model. */
@@ -387,7 +387,7 @@ export interface AgentContext {
 }
 
 ## AgentEvent  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /**
  * Events emitted by the Agent for UI updates.
  *
@@ -574,7 +574,7 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 }
 
 ## AgentLoopTurnUpdate  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /** Replacement runtime state used by the agent loop before starting another provider request. */
 export interface AgentLoopTurnUpdate {
 	/** Context for the next provider request. */
@@ -588,7 +588,7 @@ export interface AgentLoopTurnUpdate {
 }
 
 ## AgentMessage  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /**
  * AgentMessage: Union of LLM messages + custom messages.
  * This abstraction allows apps to add custom message types while maintaining
@@ -597,12 +597,12 @@ used by: agent-effect
 export type AgentMessage = Message | CustomAgentMessages[keyof CustomAgentMessages];
 
 ## AgentRequestUpdate  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /** Replacement runtime state for the provider request being prepared. */
 export type AgentRequestUpdate = Omit<AgentLoopTurnUpdate, "messages">;
 
 ## AgentState  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /**
  * Public agent state.
  *
@@ -651,7 +651,7 @@ export interface AgentState {
 }
 
 ## AgentTool  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /**
  * Tool definition used by the agent runtime. `parameters` is any JSON Schema object; see {@link AgentToolParams} for
  * the type `execute` receives.
@@ -692,12 +692,12 @@ export interface AgentTool<TParameters extends object = object, TDetails = any> 
 }
 
 ## AgentToolCall  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /** A single tool call content block emitted by an assistant message. */
 export type AgentToolCall = Extract<AssistantMessage["content"][number], { type: "toolCall" }>;
 
 ## AgentToolCallOutcome  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessOptions
 /** Final outcome of a tool call after hooks ran. */
 export interface AgentToolCallOutcome {
 	toolCall: AgentToolCall;
@@ -708,7 +708,7 @@ export interface AgentToolCallOutcome {
 }
 
 ## AgentToolParams  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /**
  * The arguments type of a tool with parameter schema `TParameters`: pi-schema's `Static<TParameters>` (the builders'
  * type, TypeBox's for the common TypeBox kinds, else `unknown`), and `any` for `AgentTool<any>`.
@@ -716,7 +716,7 @@ used by: agent-effect
 export type AgentToolParams<TParameters> = IsAny<TParameters> extends true ? any : Static<TParameters>;
 
 ## AgentToolResult  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessOptions
 /** Final or partial result produced by a tool. */
 export interface AgentToolResult<T = JsonValue | undefined> {
 	/** Text or image content returned to the model. */
@@ -743,7 +743,7 @@ export interface AgentToolResult<T = JsonValue | undefined> {
 }
 
 ## AgentToolUpdateCallback  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessOptions
 /**
  * Callback used by tools to stream partial execution updates.
  *
@@ -753,7 +753,7 @@ used by: agent-effect
 export type AgentToolUpdateCallback<T = any> = (partialResult: AgentToolResult<T>) => void;
 
 ## AgentTurnContext  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /** Context passed to completed-turn callbacks. */
 export interface AgentTurnContext {
 	/** The assistant message that completed the turn. */
@@ -767,12 +767,12 @@ export interface AgentTurnContext {
 }
 
 ## AgentTurnDecision  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /** Decision returned by {@link FinishTurn}. Returning undefined preserves normal scheduling. */
 export type AgentTurnDecision = { action: "continue" } | { action: "end" };
 
 ## BeforeToolCallContext  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /** Context passed to `beforeToolCall`. */
 export interface BeforeToolCallContext {
 	/** The assistant message that requested the tool call. */
@@ -786,7 +786,7 @@ export interface BeforeToolCallContext {
 }
 
 ## BeforeToolCallResult  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /**
  * Result returned from `beforeToolCall`.
  *
@@ -804,7 +804,7 @@ export interface BeforeToolCallResult {
 }
 
 ## CustomAgentMessages  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /**
  * Extensible interface for custom app messages.
  * Apps can extend via declaration merging:
@@ -824,7 +824,7 @@ export interface CustomAgentMessages {
 }
 
 ## FinishTurn  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /**
  * Called after a completed assistant turn and all of its tool-result messages, but before `turn_end`.
  * On a normal turn, `{ action: "continue" }` ensures one next provider request. Tool-result, steering, or
@@ -837,15 +837,15 @@ export type FinishTurn = (
 ) => AgentTurnDecision | void | Promise<AgentTurnDecision | undefined> | Promise<void>;
 
 ## IsAny  agent/src/types.ts
-used by: agent-effect via AgentToolParams
+used by: agent-effect via AgentToolParams, evals-effect via PiCodingAgentHarnessWithOutput
 type IsAny<T> = boolean extends (T extends never ? true : false) ? true : false;
 
 ## PrepareNextTurnContext  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 export interface PrepareNextTurnContext extends AgentTurnContext {}
 
 ## PrepareRequest  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /**
  * Called immediately before every conversational provider request, including the first.
  * Pending messages have already been appended and emitted when this callback runs.
@@ -856,7 +856,7 @@ export type PrepareRequest = (
 ) => AgentRequestUpdate | void | Promise<AgentRequestUpdate | undefined> | Promise<void>;
 
 ## PrepareRequestContext  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /** Runtime state available immediately before a conversational provider request. */
 export interface PrepareRequestContext {
 	context: AgentContext;
@@ -865,7 +865,7 @@ export interface PrepareRequestContext {
 }
 
 ## QueueMode  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /**
  * Controls how many queued user messages are injected when the agent loop reaches a queue drain point.
  *
@@ -875,7 +875,7 @@ used by: agent-effect
 export type QueueMode = "all" | "one-at-a-time";
 
 ## StreamFn  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /**
  * Stream function used by the agent loop. `Models.streamSimple` satisfies
  * this shape.
@@ -897,7 +897,7 @@ export type StreamFn = (
 ) => AssistantMessageEventStream | Promise<AssistantMessageEventStream>;
 
 ## ThinkingLevel  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessOptions
 /**
  * Thinking/reasoning level for models that support it.
  * Note: "xhigh" and "max" are only supported by selected model families. Use model
@@ -906,7 +906,7 @@ used by: agent-effect
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 ## ToolExecutionMode  agent/src/types.ts
-used by: agent-effect
+used by: agent-effect; evals-effect via PiCodingAgentHarnessOptions
 /**
  * Configuration for how tool calls from a single assistant message are executed.
  *
