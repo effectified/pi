@@ -21,6 +21,76 @@
 			"types": "./dist/env/node.d.ts",
 			"import": "./dist/env/node.js"
 		},
+		"./codemode": {
+			"source": "./src/codemode.ts",
+			"types": "./dist/codemode.d.ts",
+			"import": "./dist/codemode.js"
+		},
+		"./tool-search": {
+			"source": "./src/tool-search.ts",
+			"types": "./dist/tool-search.d.ts",
+			"import": "./dist/tool-search.js"
+		},
+		"./tools": {
+			"source": "./src/tools.ts",
+			"types": "./dist/tools.d.ts",
+			"import": "./dist/tools.js"
+		},
+		"./images": {
+			"source": "./src/images/index.ts",
+			"types": "./dist/images/index.d.ts",
+			"import": "./dist/images/index.js"
+		},
+		"./images/fit": {
+			"source": "./src/images/fit.ts",
+			"types": "./dist/images/fit.d.ts",
+			"import": "./dist/images/fit.js"
+		},
+		"./images/node": {
+			"source": "./src/images/node.ts",
+			"types": "./dist/images/node.d.ts",
+			"import": "./dist/images/node.js"
+		},
+		"./images/cloudflare": {
+			"source": "./src/images/cloudflare.ts",
+			"types": "./dist/images/cloudflare.d.ts",
+			"import": "./dist/images/cloudflare.js"
+		},
+		"./storage/memory": {
+			"source": "./src/storage/memory.ts",
+			"types": "./dist/storage/memory.d.ts",
+			"import": "./dist/storage/memory.js"
+		},
+		"./storage/indexeddb": {
+			"source": "./src/storage/indexeddb.ts",
+			"types": "./dist/storage/indexeddb.d.ts",
+			"import": "./dist/storage/indexeddb.js"
+		},
+		"./storage/jsonl": {
+			"source": "./src/storage/jsonl/index.ts",
+			"types": "./dist/storage/jsonl/index.d.ts",
+			"import": "./dist/storage/jsonl/index.js"
+		},
+		"./storage/jsonl/node": {
+			"source": "./src/storage/jsonl/node.ts",
+			"types": "./dist/storage/jsonl/node.d.ts",
+			"import": "./dist/storage/jsonl/node.js"
+		},
+		"./storage/sqlite": {
+			"source": "./src/storage/sqlite/index.ts",
+			"types": "./dist/storage/sqlite/index.d.ts",
+			"import": "./dist/storage/sqlite/index.js"
+		},
+		"./storage/sqlite/cloudflare": {
+			"source": "./src/storage/sqlite/cloudflare.ts",
+			"types": "./dist/storage/sqlite/cloudflare.d.ts",
+			"import": "./dist/storage/sqlite/cloudflare.js"
+		},
+		"./storage/sqlite/node": {
+			"source": "./src/storage/sqlite/node.ts",
+			"types": "./dist/storage/sqlite/node.d.ts",
+			"import": "./dist/storage/sqlite/node.js"
+		},
 		"./testing": {
 			"source": "./src/testing/index.ts",
 			"types": "./dist/testing/index.d.ts",
@@ -73,7 +143,11 @@
 		"@earendil-works/pi-schema": "1.6.1",
 		"@effect/sql-sqlite-bun": "4.1.5",
 		"@effect/sql-sqlite-node": "4.1.5",
+		"@effectified/pi-codemode": "0.1.0",
 		"effect": "4.1.5",
+		"esbuild": "0.28.2",
+		"fake-indexeddb": "6.2.6",
+		"miniflare": "5.20261023.2-beta",
 		"vitest": "4.1.12"
 	}
 }

@@ -53,9 +53,12 @@ import type {
 	ToolPark,
 	ToolRegistration,
 } from "@earendil-works/pi-durable";
+import type { ExecutionErrorCode, FileErrorCode } from "@earendil-works/pi-durable/env";
 import type { StrictOmit } from "@effectified/pi-ai";
 import type { Assert, Conform, Covers } from "../../../effect/conformance.ts";
+import type { EXECUTION_ERROR_CODES, FILE_ERROR_CODES } from "../src/env/errors.ts";
 import type * as Errors from "../src/errors.ts";
+import type * as ImagesCloudflare from "../src/images/cloudflare.ts";
 import type {
 	Agent,
 	Conversation,
@@ -413,3 +416,16 @@ export function defineArguments(
 		defineDocFamily(definition.taskFamily),
 	];
 }
+
+// Entries Node cannot load: checked by type.
+
+/** The replacement of Pi's `/images/cloudflare` value is an export of this package's entry (see `test/index.test.ts`). */
+export type ImagesCloudflareReplaced = Assert<"cloudflarePhoton" extends keyof typeof ImagesCloudflare ? true : false>;
+
+// The environment contract (`/env`).
+
+/** `FileFailed.code` takes exactly the codes of Pi's `FileError`. */
+export type FileCodes = Assert<Conform<(typeof FILE_ERROR_CODES)[number], FileErrorCode>>;
+
+/** `ExecFailed.code` takes exactly the codes of Pi's `ExecutionError`. */
+export type ExecutionCodes = Assert<Conform<(typeof EXECUTION_ERROR_CODES)[number], ExecutionErrorCode>>;

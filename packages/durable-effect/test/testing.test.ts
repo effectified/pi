@@ -28,16 +28,23 @@ const Lookup = Tool.make("lookup", {
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
 describe("the testing kit", () => {
-	it("exports the harness Layer, the scripted provider and the response builders", () => {
+	it("exports the harness Layer, the scripted provider, the response builders, Pi's suites and benchmarks", () => {
 		expect(Object.keys(Testing).sort()).toEqual([
+			"Benchmark",
+			"STORAGE_MEMORY_SCALES",
 			"ScriptedModels",
+			"TIMING_SCALE",
 			"TestHarness",
 			"answer",
+			"createExpectAssertions",
+			"envConformance",
 			"fauxAssistantMessage",
 			"fauxText",
 			"fauxThinking",
 			"fauxToolCall",
 			"held",
+			"storageBenchmarkPrimaryRecordCount",
+			"storageConformance",
 			"toolCall",
 		]);
 		expect(Object.keys(TestHarness).sort()).toEqual(["agent", "layer", "layerWith", "root", "sqlStorage"]);

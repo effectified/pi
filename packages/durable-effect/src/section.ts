@@ -59,7 +59,7 @@ export type Services<S> = S extends { readonly registration: Effect.Effect<infer
  * extension order, then the agent's `instructions`. A render that fails is reported (`extension_error`) and the
  * request keeps the text the section showed before; interrupting the request interrupts the render.
  */
-export function make<E, R>(key: string, render: Render<E, R>, options?: Options): Section<R> {
+export function make<E = never, R = never>(key: string, render: Render<E, R>, options?: Options): Section<R> {
 	return {
 		key,
 		registration: Effect.map(Effect.context<R>(), (context) =>
@@ -87,7 +87,7 @@ export interface Wrapping<E, R> {
  * wrapper gets the section, its render as an Effect, and gives the render that replaces it. A wrapper is applied when
  * the registry composes, so it must be pure; its render runs at each request.
  */
-export function wrap<E, R>(key: string, wrapper: (section: Wrapped) => Wrapping<E, R>): Wrap.Wrap<R> {
+export function wrap<E = never, R = never>(key: string, wrapper: (section: Wrapped) => Wrapping<E, R>): Wrap.Wrap<R> {
 	return Wrap.registered((invoke) =>
 		wrapSection(key, (section) => {
 			const wrapping = wrapper(fromPi(section));

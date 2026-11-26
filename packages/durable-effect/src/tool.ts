@@ -289,7 +289,7 @@ export type Wrapping<E, R> = Partial<StrictOmit<ToolRegistration, "name" | "exec
  * execution's park as it is; a park of its own ends the call `invalid_park`. A failure of the execution it gives
  * becomes Pi's `tool_error` result, as a rejection of `execute` does.
  */
-export function wrap<E, R>(name: string, wrapper: (tool: Wrapped) => Wrapping<E, R>): Wrap.Wrap<R> {
+export function wrap<E = never, R = never>(name: string, wrapper: (tool: Wrapped) => Wrapping<E, R>): Wrap.Wrap<R> {
 	return Wrap.registered((invoke) => ({
 		kind: "tool",
 		tool: name,
