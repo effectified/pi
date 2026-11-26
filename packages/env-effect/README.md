@@ -15,7 +15,9 @@ the pi-env daemon, SSH, processes and terminals. For `effect` 4.1.
 - **One closed union of tagged errors.** `FileFailed`, `ExecFailed`, `RemoteFailed`, `HostKeyUnknown`,
   `HostKeyChanged`, `SshFailed` and `UnexpectedError` (`EnvError`); the SSH and host-key ones are `SshError`.
 
-The root (`@effectified/pi-env`) is the environment in Effect terms and the errors. pi-env starts programs with Node's
+The root (`@effectified/pi-env`) is the environment in Effect terms and the errors. The environment contract itself
+(`ExecutionEnv`, its results, `FileFailed` and `ExecFailed`) is Pi Durable's, which
+[`@effectified/pi-durable/env`](../durable-effect/README.md#subpaths) offers; this package re-exports it. pi-env starts programs with Node's
 child processes (Bun runs them too), so its connections, processes, terminals, SSH and environments are in
 `@effectified/pi-env/node`.
 

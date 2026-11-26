@@ -1,5 +1,6 @@
 // Test helper: the suites that need a real SQLite `SqlClient`, registered once per driver by a platform test file:
-// the `SqliteDatabase` adapter (src/sql-database.ts), Pi's storage conformance on `Storage.sql`, a reopen, the
+// the `SqliteDatabase` adapter (src/sql-database.ts), Pi's storage conformance on `Storage.sql` and on
+// `Storage.sqlite`, a reopen, the
 // kill-and-resume suites of a run (kill-resume.ts) and of a task (task-kill-resume.ts), a gate parked across a reopen
 // (parked-gate.ts), a review task across a reopen (review-reopen.ts), a keyed fork across a crash
 // (keyed-fork-crash.ts) and the testing kit's SQLite storage across a reopen (kit-restart.ts).
@@ -57,6 +58,15 @@ export function registerSqliteSuites(runner: StorageConformanceRunner, driver: s
 					Effect.provide(client(filename)),
 				),
 			),
+		),
+	);
+	registerStorageConformance(runner, `Storage.sqlite conformance on a Chord database (${driver})`, (use) =>
+		Effect.runPromise(
+			Effect.flatMap(SqlDatabase.make, (database) =>
+				Storage.HarnessStorage.use((storage) => Effect.promise(() => use(storage))).pipe(
+					Effect.provide(Storage.sqlite(database, { prefix: "chord_" })),
+				),
+			).pipe(Effect.provide(client(":memory:"))),
 		),
 	);
 	registerStorageSuite(runner, driver, client);

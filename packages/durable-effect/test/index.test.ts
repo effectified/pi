@@ -1,10 +1,44 @@
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
-import type * as PiDurable from "@earendil-works/pi-durable";
+import * as PiDurable from "@earendil-works/pi-durable";
+import * as PiCodemode from "@earendil-works/pi-durable/codemode";
+import * as PiEnv from "@earendil-works/pi-durable/env";
+import * as PiEnvNode from "@earendil-works/pi-durable/env/node";
+import * as PiImages from "@earendil-works/pi-durable/images";
+import type * as PiImagesCloudflare from "@earendil-works/pi-durable/images/cloudflare";
+import * as PiImagesFit from "@earendil-works/pi-durable/images/fit";
+import * as PiImagesNode from "@earendil-works/pi-durable/images/node";
+import * as PiIndexedDb from "@earendil-works/pi-durable/storage/indexeddb";
+import * as PiJsonl from "@earendil-works/pi-durable/storage/jsonl";
+import * as PiJsonlNode from "@earendil-works/pi-durable/storage/jsonl/node";
+import * as PiMemory from "@earendil-works/pi-durable/storage/memory";
+import * as PiSqlite from "@earendil-works/pi-durable/storage/sqlite";
+import * as PiSqliteCloudflare from "@earendil-works/pi-durable/storage/sqlite/cloudflare";
+import * as PiSqliteNode from "@earendil-works/pi-durable/storage/sqlite/node";
+import * as PiStore from "@earendil-works/pi-durable/storage/store";
+import * as PiTesting from "@earendil-works/pi-durable/testing";
+import * as PiToolSearch from "@earendil-works/pi-durable/tool-search";
+import * as PiTools from "@earendil-works/pi-durable/tools";
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import type { Coverage } from "../../../effect/conformance.ts";
+import * as Codemode from "../src/codemode.ts";
+import * as Env from "../src/env/index.ts";
+import * as EnvNode from "../src/env/node.ts";
+import * as ImagesFit from "../src/images/fit.ts";
+import * as Images from "../src/images/index.ts";
+import * as ImagesNode from "../src/images/node.ts";
 import * as Package from "../src/index.ts";
 import { type Conversation, Harness, Registry, Storage, Tool } from "../src/index.ts";
+import * as IndexedDb from "../src/storage/indexeddb.ts";
+import * as Jsonl from "../src/storage/jsonl/index.ts";
+import * as JsonlNode from "../src/storage/jsonl/node.ts";
+import * as Memory from "../src/storage/memory.ts";
+import * as SqliteCloudflare from "../src/storage/sqlite/cloudflare.ts";
+import * as Sqlite from "../src/storage/sqlite/index.ts";
+import * as SqliteNode from "../src/storage/sqlite/node.ts";
+import * as Testing from "../src/testing/index.ts";
+import * as ToolSearch from "../src/tool-search.ts";
+import * as Tools from "../src/tools.ts";
 import { AGENT, answer, scriptedModels } from "./scripted.ts";
 
 class Records extends Context.Service<
@@ -72,6 +106,12 @@ describe("the exports", () => {
 			"Conversation",
 			"ConversationBusy",
 			"ConversationIdle",
+			"DEFAULT_COMPACTION_POLICY",
+			"DEFAULT_HARNESS_IDENTITY",
+			"DEFAULT_PROGRESS_POLICY",
+			"DEFAULT_RESTART_LIMIT",
+			"DEFAULT_RETRY_POLICY",
+			"DURABLE_TELEMETRY_SCHEMA",
 			"Doc",
 			"Entry",
 			"Extension",
@@ -88,6 +128,7 @@ describe("the exports", () => {
 			"Scans",
 			"SchemaConversionError",
 			"SchemaDecodeError",
+			"Section",
 			"SessionFailed",
 			"Signal",
 			"Storage",
@@ -95,9 +136,11 @@ describe("the exports", () => {
 			"Submission",
 			"SystemEntry",
 			"Task",
+			"TaskHooks",
 			"Tool",
 			"ToolResultEntry",
 			"ToolTask",
+			"Transcript",
 			"Tx",
 			"UnexpectedError",
 			"UserEntry",
@@ -107,6 +150,8 @@ describe("the exports", () => {
 			"Harness",
 			"abortSubmission",
 			"abortTask",
+			"closed",
+			"closing",
 			"commit",
 			"commits",
 			"conversation",
@@ -118,6 +163,9 @@ describe("the exports", () => {
 			"isConversationIdle",
 			"isIdle",
 			"layer",
+			"observeConversation",
+			"observeDoc",
+			"observeTaskGraph",
 			"reports",
 			"resume",
 			"root",
@@ -142,7 +190,14 @@ describe("the exports", () => {
 	});
 
 	it("hold what products reached around the package for: built-in documents, scans, idle reads, ids, the settlement signal", () => {
-		expect(Object.keys(Package.BuiltinDoc).sort()).toEqual(["agent", "inbox", "live", "provider", "usage"]);
+		expect(Object.keys(Package.BuiltinDoc).sort()).toEqual([
+			"agent",
+			"inbox",
+			"live",
+			"nestedCall",
+			"provider",
+			"usage",
+		]);
 		expect(Object.keys(Package.Scans).sort()).toEqual(["conversations", "tasks"]);
 		expect(Object.keys(Package.Idle).sort()).toEqual(["quiet"]);
 		expect(Object.keys(Package.Signal).sort()).toEqual(["SubmissionSettled", "make", "read", "stateIn", "toPiKey"]);
@@ -163,7 +218,6 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ?
 const offered: Coverage = { kind: "offered" };
 const replaced = (by: string): Coverage => ({ kind: "replaced", by });
 const open = (why: string): Coverage => ({ kind: "open", why });
-const DEFAULT = open("Pi's defaults: not re-exported; `Agent` creation leaves a setting out to get it");
 
 /** What this package does with every value Pi Durable exports: the list of what is left to put in Effect terms. */
 const COVERAGE = {
@@ -175,7 +229,7 @@ const COVERAGE = {
 	defineTask: replaced("Task.make"),
 	defineTool: replaced("Tool.make"),
 	hook: replaced("Hook (beforeRequest, afterResponse, onYield, ...)"),
-	hookTask: replaced("the tasks a Hook handler returns"),
+	hookTask: replaced("Hook.task: the tasks a hook's handler returns"),
 	CompactionTask: offered,
 	GenerationTask: offered,
 	ToolTask: offered,
@@ -203,26 +257,226 @@ const COVERAGE = {
 	SystemEntry: offered,
 	ToolResultEntry: offered,
 	UserEntry: offered,
-	DEFAULT_COMPACTION_POLICY: DEFAULT,
-	DEFAULT_PROGRESS_POLICY: DEFAULT,
-	DEFAULT_RESTART_LIMIT: DEFAULT,
-	DEFAULT_RETRY_POLICY: DEFAULT,
-	DEFAULT_HARNESS_IDENTITY: DEFAULT,
-	section: open("prompt sections: not wrapped (COMPAT.md)"),
-	wrapSection: open("prompt section wrappers: not wrapped (COMPAT.md)"),
-	wrapTool: open("tool wrappers: not wrapped (COMPAT.md)"),
-	registryReader: open("a read-only view of a registry: not wrapped"),
-	NestedCallDoc: open("the nested-call document: not wrapped"),
-	ConversationTranscript: open("the transcript reader: not wrapped"),
-	DURABLE_TELEMETRY_SCHEMA: open("Pi Durable's telemetry schema: not re-exported"),
+	DEFAULT_COMPACTION_POLICY: offered,
+	DEFAULT_PROGRESS_POLICY: offered,
+	DEFAULT_RESTART_LIMIT: offered,
+	DEFAULT_RETRY_POLICY: offered,
+	DEFAULT_HARNESS_IDENTITY: offered,
+	DURABLE_TELEMETRY_SCHEMA: offered,
+	section: replaced("Section.make"),
+	wrapSection: replaced("Section.wrap"),
+	wrapTool: replaced("Tool.wrap"),
+	NestedCallDoc: replaced("BuiltinDoc.nestedCall"),
+	ConversationTranscript: replaced("Transcript"),
+	registryReader: open(
+		"a harness's registry over a Chord app-runtime registry value: @effectified/pi-chord does not offer Chord's app runtime (its own open entries), and Harness.layer takes the Registry service, which an app installs into",
+	),
 } satisfies Record<keyof typeof PiDurable, Coverage>;
 
-describe("the coverage of Pi Durable", () => {
-	it("offers every value it records as offered, so the record stays true", () => {
-		const ours = new Set(Object.keys(Package));
-		const missing = Object.entries(COVERAGE)
-			.filter(([name, coverage]) => coverage === offered && !ours.has(name))
+/** `@earendil-works/pi-durable/env`: the environment contract. */
+const ENV_COVERAGE = {
+	ok: offered,
+	err: offered,
+	getOrUndefined: offered,
+	toError: offered,
+	startsWithBom: offered,
+	FileError: offered,
+	ExecutionError: offered,
+	getOrThrow: replaced("fromResult"),
+	rangeDecoder: replaced("decodeRange"),
+	StreamDecoder: replaced("decodeText"),
+	LineScanner: replaced("scanLines"),
+} satisfies Record<keyof typeof PiEnv, Coverage>;
+
+/** `@earendil-works/pi-durable/env/node`. */
+const ENV_NODE_COVERAGE = {
+	NodeExecutionEnv: replaced("make: the environment, cleaned up with its scope"),
+} satisfies Record<keyof typeof PiEnvNode, Coverage>;
+
+/** `@earendil-works/pi-durable/codemode`. */
+const CODEMODE_COVERAGE = {
+	CODEMODE_MODULE_VERSION: offered,
+	CODEMODE_TOOL_NAME: offered,
+	DEFAULT_CODEMODE_INLINE_BUDGET: offered,
+	namespacesOf: offered,
+	CodemodeStoreDoc: replaced("store"),
+	createCodemodeTool: replaced("tool: on a sandbox of @effectified/pi-codemode"),
+	createCodemodeExtension: replaced("extension: on a sandbox of @effectified/pi-codemode"),
+} satisfies Record<keyof typeof PiCodemode, Coverage>;
+
+/** `@earendil-works/pi-durable/tool-search`. */
+const TOOL_SEARCH_COVERAGE = {
+	DEFAULT_TOOL_SEARCH_LIMIT: offered,
+	TOOL_SEARCH_TOOL_NAME: offered,
+	createToolSearchTool: replaced("tool"),
+	createToolSearchExtension: replaced("extension"),
+} satisfies Record<keyof typeof PiToolSearch, Coverage>;
+
+/** `@earendil-works/pi-durable/tools`. */
+const TOOLS_COVERAGE = {
+	DEFAULT_IMAGE_LIMITS: offered,
+	imageLimits: offered,
+	createReadTool: replaced("read: images prepared by an Effect processor"),
+	createWriteTool: replaced("write"),
+	createEditTool: replaced("edit"),
+	createBashTool: replaced("bash: a command's preparation as an Effect"),
+	createPowerShellTool: replaced("powershell: a command's preparation as an Effect"),
+	createCodingTools: replaced("coding"),
+	CodingTools: replaced("coding"),
+} satisfies Record<keyof typeof PiTools, Coverage>;
+
+/** `@earendil-works/pi-durable/images`. */
+const IMAGES_COVERAGE = {
+	createPhotonImages: replaced("photon"),
+} satisfies Record<keyof typeof PiImages, Coverage>;
+
+/** `@earendil-works/pi-durable/images/fit`. */
+const IMAGES_FIT_COVERAGE = {
+	fitImage: replaced("fitImage"),
+	fitImages: replaced("fitImages"),
+	createFitImagesExtension: replaced("extension"),
+} satisfies Record<keyof typeof PiImagesFit, Coverage>;
+
+/** `@earendil-works/pi-durable/images/node`. */
+const IMAGES_NODE_COVERAGE = {
+	createNodePhotonImages: replaced("nodePhoton"),
+} satisfies Record<keyof typeof PiImagesNode, Coverage>;
+
+/**
+ * `@earendil-works/pi-durable/images/cloudflare`, which imports a module only Wrangler provides: recorded by type here
+ * (`ImagesCloudflareReplaced` of `pi-conformance.ts` checks the replacement), run in workerd by
+ * `test/images/cloudflare.node.test.ts`.
+ */
+const IMAGES_CLOUDFLARE_COVERAGE = {
+	createCloudflarePhotonImages: replaced("cloudflarePhoton"),
+} satisfies Record<keyof typeof PiImagesCloudflare, Coverage>;
+
+/** `@earendil-works/pi-durable/storage/memory`. */
+const MEMORY_COVERAGE = {
+	MemoryStorage: replaced("memory"),
+} satisfies Record<keyof typeof PiMemory, Coverage>;
+
+/** `@earendil-works/pi-durable/storage/indexeddb`. */
+const INDEXEDDB_COVERAGE = {
+	IndexedDbStorage: replaced("indexedDb"),
+} satisfies Record<keyof typeof PiIndexedDb, Coverage>;
+
+/** `@earendil-works/pi-durable/storage/jsonl`. */
+const JSONL_COVERAGE = {
+	JsonlStorage: replaced("jsonl"),
+	JsonlCorruptionError: replaced("JsonlCorrupted"),
+	JsonlStorageReadOnlyError: replaced("JsonlReadOnly"),
+	JsonlStoragePoisonedError: replaced("JsonlPoisoned"),
+} satisfies Record<keyof typeof PiJsonl, Coverage>;
+
+/** `@earendil-works/pi-durable/storage/jsonl/node`. */
+const JSONL_NODE_COVERAGE = {
+	openNodeJsonlStorage: replaced("nodeJsonl"),
+	JsonlStorage: replaced("nodeJsonl"),
+	JsonlStorageReadOnlyError: replaced("JsonlReadOnly"),
+} satisfies Record<keyof typeof PiJsonlNode, Coverage>;
+
+/** `@earendil-works/pi-durable/storage/store`, which has no entry of this package. */
+const STORE_COVERAGE = {
+	StoreStorage: open(
+		"Pi's storage on a Chord store, which only Chord's app runtime makes: @effectified/pi-chord does not offer Chord's app runtime (its own open entries)",
+	),
+} satisfies Record<keyof typeof PiStore, Coverage>;
+
+/** `@earendil-works/pi-durable/storage/sqlite`. */
+const SQLITE_COVERAGE = {
+	CURRENT_SQLITE_SCHEMA_VERSION: offered,
+	SQLITE_MIGRATIONS: offered,
+	SqliteStorage: replaced("sqlite"),
+	applySqliteMigrations: replaced("applyMigrations"),
+} satisfies Record<keyof typeof PiSqlite, Coverage>;
+
+/** `@earendil-works/pi-durable/storage/sqlite/cloudflare`, run in workerd by its test. */
+const SQLITE_CLOUDFLARE_COVERAGE = {
+	openDurableObjectSqliteStorage: replaced("durableObject"),
+	DurableObjectSqliteDatabase: replaced("database"),
+} satisfies Record<keyof typeof PiSqliteCloudflare, Coverage>;
+
+/** `@earendil-works/pi-durable/storage/sqlite/node`. */
+const SQLITE_NODE_COVERAGE = {
+	openNodeSqliteStorage: replaced("nodeSqlite"),
+	openNodeSqliteDatabase: replaced("openNodeSqliteDatabase: @effectified/pi-chord's scoped database"),
+	NodeSqliteDatabase: replaced("openNodeSqliteDatabase"),
+} satisfies Record<keyof typeof PiSqliteNode, Coverage>;
+
+/** `@earendil-works/pi-durable/testing`. */
+const TESTING_COVERAGE = {
+	createExpectAssertions: offered,
+	STORAGE_MEMORY_SCALES: offered,
+	TIMING_SCALE: offered,
+	storageBenchmarkPrimaryRecordCount: offered,
+	commitWrites: replaced("Benchmark.commitWrites"),
+	createStorageConformance: replaced("storageConformance: each case an Effect"),
+	registerStorageConformance: replaced("storageConformance"),
+	createEnvConformance: replaced("envConformance: each case an Effect"),
+	registerEnvConformance: replaced("envConformance"),
+	seedStorageBenchmark: replaced("Benchmark.seed"),
+	seedStorageWriteBenchmark: replaced("Benchmark.seedWrites"),
+	STORAGE_READ_BENCHMARKS: replaced("Benchmark.reads"),
+	STORAGE_WRITE_BENCHMARKS: replaced("Benchmark.writes"),
+} satisfies Record<keyof typeof PiTesting, Coverage>;
+
+/** Each ledger: its Pi entry point, its record, Pi's module and this package's entry (none for `storage/store`). */
+const LEDGERS = [
+	["pi-durable", COVERAGE, PiDurable, Package],
+	["pi-durable/env", ENV_COVERAGE, PiEnv, Env],
+	["pi-durable/env/node", ENV_NODE_COVERAGE, PiEnvNode, EnvNode],
+	["pi-durable/codemode", CODEMODE_COVERAGE, PiCodemode, Codemode],
+	["pi-durable/tool-search", TOOL_SEARCH_COVERAGE, PiToolSearch, ToolSearch],
+	["pi-durable/tools", TOOLS_COVERAGE, PiTools, Tools],
+	["pi-durable/images", IMAGES_COVERAGE, PiImages, Images],
+	["pi-durable/images/fit", IMAGES_FIT_COVERAGE, PiImagesFit, ImagesFit],
+	["pi-durable/images/node", IMAGES_NODE_COVERAGE, PiImagesNode, ImagesNode],
+	["pi-durable/storage/memory", MEMORY_COVERAGE, PiMemory, Memory],
+	["pi-durable/storage/indexeddb", INDEXEDDB_COVERAGE, PiIndexedDb, IndexedDb],
+	["pi-durable/storage/jsonl", JSONL_COVERAGE, PiJsonl, Jsonl],
+	["pi-durable/storage/jsonl/node", JSONL_NODE_COVERAGE, PiJsonlNode, JsonlNode],
+	["pi-durable/storage/store", STORE_COVERAGE, PiStore, {}],
+	["pi-durable/storage/sqlite", SQLITE_COVERAGE, PiSqlite, Sqlite],
+	["pi-durable/storage/sqlite/cloudflare", SQLITE_CLOUDFLARE_COVERAGE, PiSqliteCloudflare, SqliteCloudflare],
+	["pi-durable/storage/sqlite/node", SQLITE_NODE_COVERAGE, PiSqliteNode, SqliteNode],
+	["pi-durable/testing", TESTING_COVERAGE, PiTesting, Testing],
+] as const;
+
+describe.each(LEDGERS)("the coverage of %s", (_name, coverage, pi, ours) => {
+	const entries: ReadonlyArray<readonly [string, Coverage]> = Object.entries(coverage);
+
+	it("offers Pi's own value for every entry it records as offered", () => {
+		const exported: Record<string, unknown> = ours;
+		const piValues: Record<string, unknown> = pi;
+		const wrong = entries
+			.filter(([name, entry]) => entry.kind === "offered" && exported[name] !== piValues[name])
 			.map(([name]) => name);
+		expect(wrong).toEqual([]);
+	});
+
+	it("exports the Effect form every replaced entry names first", () => {
+		const names = new Set(Object.keys(ours));
+		const missing = entries.flatMap(([name, entry]) => {
+			if (entry.kind !== "replaced") return [];
+			const first = /^[A-Za-z_$][\w$]*/.exec(entry.by)?.[0] ?? "";
+			return names.has(first) ? [] : [`${name}: ${entry.by}`];
+		});
 		expect(missing).toEqual([]);
+	});
+});
+
+describe("the open entries", () => {
+	it("are the registry over Chord's app runtime and the storage on a Chord store, both waiting on that runtime", () => {
+		const records: ReadonlyArray<readonly [string, Record<string, Coverage>]> = [
+			...LEDGERS.map(([name, coverage]) => [name, coverage] as const),
+			["pi-durable/images/cloudflare", IMAGES_CLOUDFLARE_COVERAGE],
+		];
+		const opened = records.flatMap(([name, coverage]) =>
+			Object.entries(coverage).flatMap(([entry, record]: readonly [string, Coverage]) =>
+				record.kind === "open" ? [`${name} ${entry}`] : [],
+			),
+		);
+		expect(opened).toEqual(["pi-durable registryReader", "pi-durable/storage/store StoreStorage"]);
 	});
 });

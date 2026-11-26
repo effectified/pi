@@ -270,7 +270,8 @@ each created from a seed.
 
 ## Built-in documents
 
-Every conversation of a harness has Pi's five built-in documents. `BuiltinDoc` gives each as a document of this
+Every conversation of a harness has Pi's five built-in conversation documents, and a tool call that makes nested calls
+has Pi's nested-call family. `BuiltinDoc` gives each as a document of this
 package, over Pi's own token and typed with Pi's own state type, for `Harness.snapshot`, `Harness.watchDoc`,
 `tx.doc`, and the `snapshot` of a hook, a tool or a task. Its kind, version, history and state type are read from
 Pi's token; its `history` is typed as Pi types the token, `"latest" | "rewindable"` for all but `BuiltinDoc.agent`.
@@ -282,6 +283,7 @@ Pi's token; its `history` is typed as Pi types the token, `"latest" | "rewindabl
 | `BuiltinDoc.usage` (`pi.usage`) | Tokens and cost of the conversation, per `provider/model` and per tool | Pi alone |
 | `BuiltinDoc.inbox` (`pi.inbox`) | The submissions queued behind the current run | Pi alone |
 | `BuiltinDoc.agent` (`pi.agent`) | What the conversation runs with, as stored names | Your code: `configure` |
+| `BuiltinDoc.nestedCall` (`pi.tool.nested-call`) | A family in a calling tool task's scope, one member per nested call by its key: the nested task, and its result once it ended | Pi alone |
 
 ```ts
 // Whether a conversation is busy with a run, and why its newest run ended without an answer.
@@ -340,7 +342,12 @@ Pi adds fails to compile there until it is decided.
 |---|---|
 | `Storage.memory` | Pi's `MemoryStorage`, fresh per build of the Layer |
 | `Storage.sql({ prefix })` | Pi's SQLite storage on the `SqlClient` of the context: any Effect client with the SQLite dialect (`@effect/sql-sqlite-node`, `@effect/sql-sqlite-bun`, wasm, Durable Objects). Building it applies Pi's migrations |
+| `Storage.sqlite(database, { prefix })` | Pi's SQLite storage on a Chord `SqliteDatabase` (`@effectified/pi-chord/sqlite`), such as a Rivet actor's. Pi's storage closes the database with itself |
 | `Storage.custom(storage)` | A Pi `Storage` of your own, or an Effect that opens one |
+
+Pi's other storages are Layers of their own subpaths (see [Subpaths](#subpaths)): `indexedDb` in a browser, `jsonl`
+on any environment's file system, `nodeJsonl` and `nodeSqlite` on the local disk, `durableObject` in a Cloudflare
+Durable Object.
 
 ```ts
 import { SqliteClient } from "@effect/sql-sqlite-node";
@@ -478,11 +485,38 @@ that form, to keep a change in stored state or send it to another process and de
 
 ## Extension and Registry
 
-`Extension.make({ name, tools, hooks, tasks })` types a named bundle; a plain object works too.
-`Registry.layer(extensions)` installs them in a fresh Pi registry. The Layer requires the union of what every tool
-handler, hook handler and task phase needs (`Extension.Services`) and captures it when it is built. By default every
+`Extension.make({ name, namespace, tools, hooks, tasks, sections, wraps })` types a named bundle; a plain object works
+too. `Registry.layer(extensions)` installs them in a fresh Pi registry. The Layer requires the union of what every
+tool handler, hook handler, task phase, section and wrapper needs (`Extension.Services`) and captures it when it is
+built. By default every
 conversation selects every installed extension, in order; a task is found by its name whichever conversations select
 its extension. The service value is Pi's own registry, so Pi extensions can be installed in it as well.
+
+### Prompt sections and wrappers
+
+A section is a part of the system prompt an extension renders before each request of a conversation that selects it.
+A wrapper changes a tool or a section of any extension, wherever the wrapping extension is selected.
+
+```ts
+// A section that renders from a service, and a wrapper that audits every call of `lookup`.
+class Policy extends Context.Service<Policy, { readonly text: string }>()("app/Policy") {}
+
+const rules = Section.make("rules", () => Policy.use(({ text }) => Effect.succeedSome(text)));
+
+const audited = Tool.wrap("lookup", (tool) => ({
+	execute: (args, api) => Effect.tap(tool.execute(args, api), () => Effect.logInfo(`lookup ${api.callId}`)),
+}));
+
+const governed = Extension.make({ name: "governed", sections: [rules], wraps: [audited] });
+```
+
+| | |
+|---|---|
+| `Section.make(key, render, { tag? })` | `render` gets the request's input (its agent, environment, committed reads as Effects) and gives `Option` of the text, tagged `<key>` unless `tag` is false. A failing render is reported and the request keeps the text the section showed before |
+| `Section.wrap(key, wrapper)` | The wrapper gets the section, its render as an Effect, and gives the render that replaces it |
+| `Tool.wrap(name, wrapper)` | The wrapper gets Pi's tool and its execution as an Effect, and gives fields that replace the tool's and the execution. It passes `api` on and returns the wrapped execution's park as it is; a failure is Pi's `tool_error` result |
+
+Wrappers are applied when the registry composes, so they must be pure; what they run runs at each call.
 
 ## Hook
 
@@ -823,6 +857,9 @@ The second argument of a handler is Pi's runtime for that invocation, in Effect 
 | `conversation(id)` | A handle to submit to a conversation, or to admit a submission inside the task's commit |
 | `entry`, `entryOf`, `entries`, `context`, `snapshot`, `snapshotAsOf` | Committed reads |
 | `report(error, from?)` | Hands a failure that does not fail the task to the harness's reports |
+| `eachHook(hooks, name, ask)` | Asks the task's own hook `name` of every selected extension that answers it (see [A task's own hooks](#a-tasks-own-hooks)) |
+| `timer(millis)` | Waits on the harness's timer (so its `Clock`), for pacing inside a phase; not durable |
+| `watchDoc(doc, …address)` | A document watch from inside the task, as `Harness.watchDoc`; a tool's api has it too |
 | `pi` | Pi's own runtime: the models (`pi.models`), the settings, the registry snapshot, the environment |
 
 Pi's rules for a task's commit: it rejects when the task ended, the invocation ended, the harness is closing, or,
@@ -870,6 +907,43 @@ const Throttled = Task.make({
 
 A tool's `api.commit`, `Harness.commit` and `Conversation.commit` succeed with their body's value as they are.
 
+### A task's own hooks
+
+A task may ask extension code questions of its own, as Pi's built-in tasks ask theirs. `TaskHooks.make` types them for
+a task kind, `TaskHooks.answer` answers them in an extension, and `api.eachHook` asks every answer, in extension order.
+A failing answer is reported and the next is asked: a hook fails open.
+
+```ts
+const ReviewHooks = TaskHooks.make<{ readonly check: (text: string) => Effect.Effect<boolean> }>({ name: "app.review" });
+
+const Review = Task.make({
+	name: "app.review",
+	version: 1,
+	input: Schema.Struct({ text: Schema.String }),
+	state: Schema.Struct({ phase: Schema.Literal("ask") }),
+	result: Schema.Boolean,
+	initial: () => ({ phase: "ask" as const }),
+	phases: {
+		ask: (task, api) =>
+			Effect.gen(function* () {
+				let passed = true;
+				yield* api.eachHook(ReviewHooks, "check", (check) =>
+					Effect.map(check(task.input.text), (ok) => {
+						passed &&= ok;
+					}),
+				);
+				return Task.complete(passed);
+			}),
+	},
+	abort: () => Effect.succeed(Task.aborted()),
+});
+
+const strict = Extension.make({
+	name: "strict",
+	hooks: [TaskHooks.answer(ReviewHooks, { check: (text) => Effect.succeed(text.length < 280) })],
+});
+```
+
 ## Watches
 
 Pi's watches are Streams. Each starts with the value at attachment, then gives one `Watch.Change` per change:
@@ -892,6 +966,9 @@ const counts = Stream.map(Harness.watchDoc(Todos, root.id), (change) => change.v
 | `Harness.watchDoc(doc, …address)` | Pi's `watchDoc`, decoded. No element when the address holds no document |
 | `Harness.taskGraph` | Pi's `watchTaskGraph`: every live task with its owner and status |
 | `Harness.commits` | Pi's `observeCommits`: every stored commit with what it stored (see [Stored commits](#stored-commits)) |
+| `Harness.observeDoc`, `Harness.observeConversation(id, window?)`, `Harness.observeTaskGraph` | Pi's synchronous observers: every commit one element, unfolded and in order, however slow the consumer (they wait in memory) |
+| `Harness.closing`, `Harness.closed` | Succeed when the harness begins to close, and once it has closed, with why (`closed`, or `failed` with the storage error) |
+| `Transcript.stream(conversation, { window, pageSize })` | A conversation's view kept as the client's whole transcript (Pi's `ConversationTranscript`): each element has the transcript, whose `loadEarlier` and `fillGap` load what the window left out |
 
 Pi delivers one change at a time and folds the commits that land meanwhile into the next, so a slow consumer gets
 fewer, larger changes and always the newest value. A watch is not a log of every commit. A stream ends when the
@@ -1082,6 +1159,21 @@ const test = Effect.gen(function* () {
   to wait for, so a test can act while a run is busy. pi-ai's `fauxAssistantMessage`, `fauxText`, `fauxThinking` and
   `fauxToolCall` are exported too; a response may also be a function of the request.
 
+### Pi's suites and benchmarks
+
+`storageConformance(storage, expect)` and `envConformance(env, expect, options?)` give Pi's conformance cases for a
+storage Layer of your own and for an execution environment, each case an Effect the test runner runs.
+`Benchmark.seed`, `Benchmark.reads`, `Benchmark.writes` and `Benchmark.commitWrites` are Pi's storage benchmarks on the
+storage of the context.
+
+```ts
+describe("my storage", () => {
+	for (const testCase of Effect.runSync(storageConformance(myStorage, expect))) {
+		it(testCase.name, () => Effect.runPromise(testCase.run));
+	}
+});
+```
+
 ### With a registry and models of your own
 
 `TestHarness.layer` builds the registry from your extensions and gives the harness the scripted models. A product
@@ -1151,6 +1243,37 @@ const restart = Effect.gen(function* () {
 
 The test [`test/kit-restart.ts`](test/kit-restart.ts) runs this on both drivers.
 
+## Subpaths
+
+Each subpath of Pi Durable an application uses has one here, with the same name. Node's file system, processes and
+SQLite are behind `node` subpaths.
+
+| Subpath | Gives |
+|---|---|
+| `/env` | Pi's environment contract (`ExecutionEnv`, `Result`, `FileInfo`, ...): its failures as `FileFailed` and `ExecFailed`, `fromResult`, and `decodeText`, `decodeRange` and `scanLines` over Streams of bytes. `@effectified/pi-env` builds on it |
+| `/env/node` | `make({ cwd })`: Pi's local environment, its commands killed when the scope closes |
+| `/tools` | Pi's built-in tools as tools of this package: `read({ images })`, `write`, `edit`, `bash({ prepare })`, `powershell`, where `prepare` is an Effect; `coding()`, Pi's `coding-tools` extension |
+| `/tool-search` | `tool` and `extension`: Pi's `tool_search`, which loads deferred tools |
+| `/codemode` | `extension({ sandbox })` and `tool({ sandbox })` on a `Sandbox` of `@effectified/pi-codemode`; `store`, the document scripts keep values in |
+| `/images` | `Processor` (`prepare` as an Effect), `make` for one of your own, `photon(wasm)` |
+| `/images/fit` | `fitImage`, `fitImages` and `extension(processor)`: images fitted to the model's limits before they are stored |
+| `/images/node`, `/images/cloudflare` | `nodePhoton(options)`, `cloudflarePhoton`: Photon read from the installed package, or Wrangler's module |
+| `/storage/memory`, `/storage/indexeddb` | `memory`; `indexedDb(name, { indexedDB })` |
+| `/storage/jsonl`, `/storage/jsonl/node` | `jsonl(directory, fs, options)` on any environment, `nodeJsonl(directory, options)`; opening fails with `JsonlCorrupted` for a directory recovery cannot repair |
+| `/storage/sqlite`, `/storage/sqlite/node`, `/storage/sqlite/cloudflare` | `sqlite(database)` and `applyMigrations`; `nodeSqlite(path, options)`; `durableObject(ctx.storage, options)` and `database(ctx.storage)` |
+
+```ts
+import * as NodeEnv from "@effectified/pi-durable/env/node";
+import * as Tools from "@effectified/pi-durable/tools";
+
+// A harness whose conversations code in a directory: Pi's coding tools on Pi's local environment.
+const coding = Layer.unwrap(
+	Effect.map(NodeEnv.make({ cwd: "./work" }), (env) =>
+		Harness.layer({ env: () => env }).pipe(Layer.provide(Registry.layer([Tools.coding()]))),
+	),
+);
+```
+
 ## Types
 
 `Memo` (the memo function of a hook's, a tool's and a task's api), `JsonValue` and `JsonObject` (the JSON Pi stores:
@@ -1162,12 +1285,12 @@ without a second import.
 Reach these through Pi's own objects (`Harness.Harness`, `Registry.Registry`, `tx.pi`, the `api.pi` of a hook, a
 tool or a task):
 
-- A task's own hooks (`runtime.hooks`), its `setTimer`, and `abandonOnRestart` beyond passing it on.
-- Synchronous observers (`observeConversation`, `observeTaskGraph`, `observeDoc`), and a document watch from inside
-  a tool or a task.
-- A tool's running output, prompt sections and wrappers.
+- A task's `abandonOnRestart` beyond passing it on.
+- A tool's running output.
 - A signal's `migrate`.
 - Raw submissions (`tx.pi.createSubmission`, `settleSubmission`, `placeSubmission`) and a scan of submissions.
+- `registryReader` and `/storage/store`: a registry over Chord's app runtime and Pi's storage on a Chord store, which
+  `@effectified/pi-chord` does not offer yet.
 
 ## License
 

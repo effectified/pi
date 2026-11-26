@@ -142,7 +142,7 @@ OpenRouter is therefore reachable twice: Pi's `openrouterProvider()` and `@effec
 | `telemetry-effect` | `pi-telemetry` | Pi |
 | `durable-effect` | `pi-durable`, `ai-effect`, `schema-effect`, `chord-effect` (the Chord context of its calls) | Pi |
 | `mcp-effect`, `codemode-effect`, `agent-effect` | the Pi package each wraps, and `durable-effect` where it adds tools | Pi |
-| `env-effect` | `pi-env`, `pi-durable` (Pi's environment contract, `ExecutionEnv` and its results, is declared in `pi-durable/env`), `chord-effect` (the Chord context of its calls, with the calling fiber's span) | Pi |
+| `env-effect` | `pi-env`, `durable-effect` (Pi declares the environment contract, `ExecutionEnv`, its results and its failures, in `pi-durable/env`, which `@effectified/pi-durable/env` offers: a facade on a facade, decided 2026-11-26), `chord-effect` (the Chord context of its calls, with the calling fiber's span) | Pi |
 | `chord-effect` | `chord`, `telemetry-effect` (the calling fiber's current span in the contexts it makes) | Pi |
 | `tui-effect` | `pi-tui` | Pi |
 | `coding-agent-effect` | `pi-coding-agent`, `agent-effect`, `ai-effect`, `mcp-effect` (MCP tools as Pi tools), `env-effect` (where bash runs its commands), `schema-effect`, `tui-effect` (interactive mode and its components) | Pi |
@@ -151,7 +151,7 @@ OpenRouter is therefore reachable twice: Pi's `openrouterProvider()` and `@effec
 | `router-effect` | `ai-effect` only | Its own repository; it is useful without a harness |
 | `search-effect` | `durable-effect` for the tools; the provider port alone needs nothing | Its own repository |
 | `swarm-effect` | `durable-effect`; the Rivet driver is an optional subpath that needs `durable-rivet-effect` | Pi, or Rivet for the actor driver |
-| `durable-rivet-effect` | `durable-effect`, `chord-effect` (Chord's SQLite database type and its prefix rule), `rivetkit`, `@rivetkit/effect` | **Rivet** (`rivet-dev/agents`, next to `@rivet-dev/pi`), or ours |
+| `durable-rivet-effect` | `durable-effect` (and its `Storage.sqlite` on the actor's database), `chord-effect` (Chord's SQLite database type and its prefix rule), `rivetkit`, `@rivetkit/effect` | **Rivet** (`rivet-dev/agents`, next to `@rivet-dev/pi`), or ours |
 | `sandbox-effect` | `durable-effect`; the agentOS adapter is an optional subpath | Rivet for the agentOS adapter |
 
 Rules that keep this true: no cycles; a plugin never imports another plugin, it composes through

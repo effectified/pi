@@ -1,5 +1,5 @@
 import { defineExtension, defineTask, type Report, type TaskId } from "@earendil-works/pi-durable";
-import { Effect, Option, Schema, Stream } from "effect";
+import { Deferred, Effect, Fiber, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { Doc, Entry, Extension, Harness, type JsonValue, Registry, Task } from "../src/index.ts";
@@ -693,6 +693,59 @@ describe("commitReturning", () => {
 			state: { status: "terminal", outcome: { status: "completed", result: "went on" } },
 			entries: 0,
 		});
+	});
+});
+
+describe("timer", () => {
+	it("succeeds once the time passed on the harness clock, which a TestClock drives", async () => {
+		const armed = Deferred.makeUnsafe<void>();
+		const { task, seen } = probe((_running, api) =>
+			Effect.gen(function* () {
+				const start = yield* api.now;
+				yield* Deferred.succeed(armed, undefined);
+				yield* api.timer(60_000);
+				return [(yield* api.now) - start, Task.next({ phase: "after" as const, note: "paced" })] as const;
+			}),
+		);
+		const outcome = await Effect.runPromise(
+			Effect.gen(function* () {
+				const ran = yield* Effect.forkChild(run(task), { startImmediately: true });
+				yield* Deferred.await(armed);
+				// The phase arms the timer right after it signalled: let its fiber reach it.
+				yield* Effect.yieldNow;
+				yield* TestClock.adjust(59_999);
+				const early = ran.pollUnsafe() === undefined;
+				yield* TestClock.adjust(1);
+				return { early, state: (yield* Fiber.join(ran)).state };
+			}).pipe(Effect.provide(harness([task])), Effect.provide(TestClock.layer())),
+		);
+		expect(seen).toEqual([60_000]);
+		expect(outcome).toEqual({
+			early: true,
+			state: { status: "terminal", outcome: { status: "completed", result: "paced" } },
+		});
+	});
+});
+
+describe("watchDoc", () => {
+	it("streams a document's value from inside the task, decoded", async () => {
+		const { task, seen } = probe((running, api) =>
+			Effect.gen(function* () {
+				yield* api.commit((tx) =>
+					Effect.as(
+						Effect.flatMap(tx.doc(Progress, running.conversationId), (progress) => progress.set({ done: ["a"] })),
+						Task.unchanged,
+					),
+				);
+				const first = yield* Stream.runHead(api.watchDoc(Progress, running.conversationId));
+				return [
+					Option.map(first, (change) => change.value),
+					Task.next({ phase: "after" as const, note: "seen" }),
+				] as const;
+			}),
+		);
+		await Effect.runPromise(run(task).pipe(Effect.provide(harness([task]))));
+		expect(seen).toEqual([Option.some({ done: ["a"] })]);
 	});
 });
 

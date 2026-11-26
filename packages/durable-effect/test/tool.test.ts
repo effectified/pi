@@ -4,6 +4,7 @@ import {
 	defineTool,
 	type EntryRecord,
 	type JsonObject,
+	type ToolExecutionResult,
 	type ToolRegistration,
 } from "@earendil-works/pi-durable";
 import { runTest } from "@effectified/pi-ai/testing";
@@ -748,3 +749,84 @@ describe("fromToolkit", () => {
 		});
 	});
 });
+
+describe("wrap", () => {
+	const Echo = Tool.make("echo", {
+		description: "Say it back.",
+		parameters: Schema.Struct({ text: Schema.String }),
+		success: Schema.String,
+		handler: ({ text }) => Effect.succeed(text),
+	});
+
+	it("replaces the execution of another extension's tool, which it runs as an Effect, with the registry's services", async () => {
+		const audit = Extension.make({
+			name: "audit",
+			wraps: [
+				Tool.wrap("echo", (tool) => ({
+					description: `${tool.tool.description} Audited.`,
+					execute: (args, api) =>
+						Effect.flatMap(tool.execute(args, api), (result) =>
+							Records.use((service) =>
+								Effect.map(service.get("42"), ({ title }) => ({
+									// Echo never parks: its execution is a result.
+									...(result as ToolExecutionResult),
+									output: [
+										{ type: "text" as const, text: `${title}: ${readText(result as ToolExecutionResult)}` },
+									],
+								})),
+							),
+						),
+				})),
+			],
+		});
+		const offered: string[] = [];
+		const { results } = await Effect.runPromise(
+			ask.pipe(
+				Effect.provide(
+					harnessLayer({
+						responses: [
+							(context) => {
+								offered.push(...getCurrentTools(context.messages).map((tool) => tool.description));
+								return fauxAssistantMessage([fauxToolCall("echo", { text: "hi" }, { id: "call-1" })], {
+									stopReason: "toolUse",
+								});
+							},
+							answer("Done."),
+						],
+						registry: Registry.layer([Extension.make({ name: "app", tools: [Echo] }), audit]),
+					}),
+				),
+				Effect.provide(records),
+			),
+		);
+		expect(offered).toEqual(["Say it back. Audited."]);
+		expect(results[0]?.model?.[0]).toMatchObject({ isError: false, content: [{ type: "text", text: "Answer: hi" }] });
+	});
+
+	it("turns a failure of the wrapping execution into Pi's tool_error result", async () => {
+		const broken = Extension.make({
+			name: "broken",
+			wraps: [Tool.wrap("echo", () => ({ execute: () => Effect.fail(new Error("wrapper failed")) }))],
+		});
+		const { settled, results } = await Effect.runPromise(
+			ask.pipe(
+				Effect.provide(
+					harnessLayer({
+						responses: [toolCall("echo", { text: "hi" }), answer("Done.")],
+						registry: Registry.layer([Extension.make({ name: "app", tools: [Echo] }), broken]),
+					}),
+				),
+			),
+		);
+		expect(settled.status).toBe("done");
+		expect(results[0]?.data).toMatchObject({
+			diagnostics: [{ severity: "error", code: "tool_error", message: "wrapper failed" }],
+		});
+	});
+});
+
+/** The text of a result's first output item. */
+function readText(result: ToolExecutionResult): string {
+	const first = result.output?.[0];
+	return first?.type === "text" ? first.text : "";
+}

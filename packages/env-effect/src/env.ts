@@ -1,6 +1,7 @@
 // An execution environment in Effect terms: Pi's `ExecutionEnv` (local, remote over pi-env, or any other) with its
 // file operations as Effects, its readers and command output as Streams, and its watcher as a scoped resource.
 
+import { BACKGROUND_CONTEXT, type Context as ChordContext } from "@effectified/pi-chord/context";
 import {
 	type ExecutionEnv,
 	err,
@@ -12,8 +13,7 @@ import {
 	type ShellExecResult,
 	type TextLine,
 	type WatchTarget,
-} from "@earendil-works/pi-durable/env";
-import { BACKGROUND_CONTEXT, type Context as ChordContext } from "@effectified/pi-chord/context";
+} from "@effectified/pi-durable/env";
 import { Context, Effect, Layer, type Scope, type Stream } from "effect";
 import * as Call from "./call.ts";
 import { type ExecFailed, type FileFailed, fromFileError } from "./errors.ts";

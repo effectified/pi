@@ -5,10 +5,17 @@
 // without importing Pi Durable; where this package exports a name of its own, its own wins.
 export type * from "@earendil-works/pi-durable";
 // Pi's built-in entries and task kinds, as Pi's own tokens: an entry's `kind` and a task's kind compare against them.
+// Pi's defaults (what a setting left out gets) and the vocabulary of its telemetry: plain values.
 export {
 	AssistantEntry,
 	CompactionEntry,
 	CompactionTask,
+	DEFAULT_COMPACTION_POLICY,
+	DEFAULT_HARNESS_IDENTITY,
+	DEFAULT_PROGRESS_POLICY,
+	DEFAULT_RESTART_LIMIT,
+	DEFAULT_RETRY_POLICY,
+	DURABLE_TELEMETRY_SCHEMA,
 	GenerationTask,
 	ResetEntry,
 	SystemEntry,
@@ -45,10 +52,14 @@ export * as Idle from "./idle.ts";
 export type { Memo } from "./memo.ts";
 export * as Registry from "./registry.ts";
 export * as Scans from "./scans.ts";
+export * as Section from "./section.ts";
 export * as Signal from "./signal.ts";
 export * as Storage from "./storage.ts";
 export * as Submission from "./submission.ts";
 export * as Task from "./task.ts";
+export * as TaskHooks from "./task-hooks.ts";
 export * as Tool from "./tool.ts";
+export * as Transcript from "./transcript.ts";
 export * as Tx from "./tx.ts";
 export * as Watch from "./watch.ts";
+export type * as Wrap from "./wrap.ts";

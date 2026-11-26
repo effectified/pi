@@ -5,11 +5,14 @@ import {
 	type ConversationId,
 	type ConversationOwnership,
 	type ConversationRecord,
+	type ConversationView,
+	type ConversationWindow,
 	type EntryId,
 	type HarnessInspection,
 	type HarnessOptions,
 	Harness as PiHarness,
 	type Report,
+	type SessionEnd,
 	type SettledTask,
 	type SignalResult,
 	type SubmissionId,
@@ -260,6 +263,69 @@ export function watchDoc<D extends Doc.Any>(
 ): Stream.Stream<Watch.Change<Doc.Value<D>>, Doc.Failure, Harness> {
 	return Stream.unwrap(Harness.use((harness) => Effect.succeed(Doc.watch(harness, doc, ...address))));
 }
+
+/**
+ * Pi's `observeDoc` as a Stream: the document's value now, then every commit that changes it, decoded, one element
+ * each and in commit order however slow the consumer is (they wait in memory, unlike `watchDoc`, which folds them).
+ * Retirements and later documents at the address are elements too; no element at all when the address holds none now.
+ * It ends with the harness's close. Closing the stream's scope detaches the observer.
+ */
+export function observeDoc<D extends Doc.Any>(
+	doc: D,
+	...address: Doc.Address<D>
+): Stream.Stream<Watch.Change<Doc.Value<D>>, Doc.Failure, Harness> {
+	return Stream.unwrap(Harness.use((harness) => Effect.succeed(Doc.observe(harness, doc, ...address))));
+}
+
+/**
+ * Pi's `observeConversation` as a Stream: the conversation's structural view now, then every commit that changes
+ * it, one element each and in commit order (as `observeDoc`). `window` as for a conversation's `changes`. It fails with
+ * `UnexpectedError` for a conversation that does not exist. Closing the stream's scope detaches the observer.
+ */
+export function observeConversation(
+	id: ConversationId,
+	window?: ConversationWindow,
+): Stream.Stream<Watch.Change<ConversationView>, DurableError, Harness> {
+	return Stream.unwrap(
+		Harness.use((harness) =>
+			Effect.succeed(
+				Watch.observed<ConversationView>((observer, context) =>
+					harness.observeConversation(id, observer, context, window),
+				),
+			),
+		),
+	);
+}
+
+/**
+ * Pi's `observeTaskGraph` as a Stream: the task graph now, then every change of it, one element each and in order (as
+ * `observeDoc`), a `blocked` reason that changes without a commit included. Closing the stream's scope detaches the
+ * observer.
+ */
+export const observeTaskGraph: Stream.Stream<Watch.Change<TaskGraph>, DurableError, Harness> = Stream.unwrap(
+	Harness.use((harness) =>
+		Effect.succeed(Watch.observed<TaskGraph>((observer, context) => harness.observeTaskGraph(observer, context))),
+	),
+);
+
+/**
+ * Succeeds when the harness begins to close (Pi's `subscribeClose`): its Layer's scope closes, or a failed storage
+ * call closes it. Interrupting it unsubscribes.
+ */
+export const closing: Effect.Effect<void, never, Harness> = Harness.use((harness) =>
+	Effect.callback<void>((resume) => {
+		const unsubscribe = harness.subscribeClose(() => resume(Effect.void));
+		return Effect.sync(unsubscribe);
+	}),
+);
+
+/**
+ * Succeeds once the harness has closed, its storage included, with why (Pi's `closed`): `closed` after its Layer's
+ * scope closed it, `failed` with the error of the first storage call that failed, which closes it too.
+ */
+export const closed: Effect.Effect<SessionEnd, never, Harness> = Harness.use((harness) =>
+	Effect.promise(() => harness.closed),
+);
 
 /**
  * Pi's `watchTaskGraph` as a Stream: every live task with its owner, status and owned conversations, now and at each

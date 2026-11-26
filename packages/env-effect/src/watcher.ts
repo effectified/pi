@@ -1,7 +1,7 @@
 // A Pi file watcher as a scoped resource: its changes as a Stream, stopped when its scope closes.
 
-import type { FileChange, FileWatcher } from "@earendil-works/pi-durable/env";
 import { BACKGROUND_CONTEXT } from "@effectified/pi-chord/context";
+import type { FileChange, FileWatcher } from "@effectified/pi-durable/env";
 import { Cause, Effect, Queue, type Scope, Stream } from "effect";
 import { type FileFailed, fromFileError } from "./errors.ts";
 

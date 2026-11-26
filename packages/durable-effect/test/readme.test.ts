@@ -10,6 +10,7 @@ import { Context, Effect, Fiber, Latch, Layer, Option, Queue, Schedule, Schema, 
 import { Tool as AiTool, Toolkit } from "effect/ai";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
+import * as NodeEnv from "../src/env/node.ts";
 import type { ConversationId, EntryId, Report, TaskId, Wake } from "../src/index.ts";
 import {
 	BuiltinDoc,
@@ -22,12 +23,15 @@ import {
 	Hook,
 	ParentContext,
 	Registry,
+	Section,
 	Signal,
 	Storage,
 	Task,
+	TaskHooks,
 	Tool,
 } from "../src/index.ts";
-import { answer, held, ScriptedModels, TestHarness, toolCall } from "../src/testing/index.ts";
+import { answer, held, ScriptedModels, storageConformance, TestHarness, toolCall } from "../src/testing/index.ts";
+import * as Tools from "../src/tools.ts";
 
 // A service of your program. Handlers reach it through the Layer you provide.
 class Records extends Context.Service<
@@ -1111,5 +1115,127 @@ describe("the testing example of the README with a product's own layers", () => 
 		expect(result.settled.status).toBe("done");
 		expect(result.reached).toBe(2);
 		expect(result.metered).toBeGreaterThanOrEqual(2);
+	});
+});
+
+describe("the sections and wrappers of the README", () => {
+	it("renders the section from its service and runs the audited tool", async () => {
+		// README: Prompt sections and wrappers.
+		class Policy extends Context.Service<Policy, { readonly text: string }>()("app/Policy") {}
+
+		const rules = Section.make("rules", () => Policy.use(({ text }) => Effect.succeedSome(text)));
+
+		const audited = Tool.wrap("lookup", (tool) => ({
+			execute: (args, api) => Effect.tap(tool.execute(args, api), () => Effect.logInfo(`lookup ${api.callId}`)),
+		}));
+
+		const governed = Extension.make({ name: "governed", sections: [rules], wraps: [audited] });
+		// README: end
+		const settled = await Effect.runPromise(
+			Effect.gen(function* () {
+				const root = yield* TestHarness.root;
+				return yield* root.prompt("What is record 42 called?");
+			}).pipe(
+				Effect.provide(
+					TestHarness.layer({
+						extensions: [App, governed],
+						responses: [toolCall("lookup", { id: "42" }), answer("Answer.")],
+					}),
+				),
+				Effect.provide(Layer.succeed(Records, { get: () => Effect.succeed({ title: "Answer" }) })),
+				Effect.provide(Layer.succeed(Policy, { text: "Be brief." })),
+			),
+		);
+		expect(settled.status).toBe("done");
+	});
+});
+
+describe("the task hooks of the README", () => {
+	it("asks every answer of the selected extensions", async () => {
+		// README: A task's own hooks.
+		const ReviewHooks = TaskHooks.make<{ readonly check: (text: string) => Effect.Effect<boolean> }>({
+			name: "app.review",
+		});
+
+		const Review = Task.make({
+			name: "app.review",
+			version: 1,
+			input: Schema.Struct({ text: Schema.String }),
+			state: Schema.Struct({ phase: Schema.Literal("ask") }),
+			result: Schema.Boolean,
+			initial: () => ({ phase: "ask" as const }),
+			phases: {
+				ask: (task, api) =>
+					Effect.gen(function* () {
+						let passed = true;
+						yield* api.eachHook(ReviewHooks, "check", (check) =>
+							Effect.map(check(task.input.text), (ok) => {
+								passed &&= ok;
+							}),
+						);
+						return Task.complete(passed);
+					}),
+			},
+			abort: () => Effect.succeed(Task.aborted()),
+		});
+
+		const strict = Extension.make({
+			name: "strict",
+			hooks: [TaskHooks.answer(ReviewHooks, { check: (text) => Effect.succeed(text.length < 280) })],
+		});
+		// README: end
+		const outcome = await Effect.runPromise(
+			Effect.gen(function* () {
+				const root = yield* TestHarness.root;
+				const id = yield* root.commit((tx) =>
+					tx.createTask(Review, { text: "Short." }, { ownership: { kind: "conversation" } }),
+				);
+				return (yield* Harness.waitForTaskOf(Review, id)).state.outcome;
+			}).pipe(
+				Effect.provide(
+					TestHarness.layer({ extensions: [Extension.make({ name: "app", tasks: [Review] }), strict] }),
+				),
+			),
+		);
+		expect(outcome).toEqual({ status: "completed", result: true });
+	});
+});
+
+describe("the conformance example of the README", () => {
+	const myStorage = Storage.memory;
+	// README: Pi's suites and benchmarks.
+	describe("my storage", () => {
+		for (const testCase of Effect.runSync(storageConformance(myStorage, expect))) {
+			it(testCase.name, () => Effect.runPromise(testCase.run));
+		}
+	});
+	// README: end
+});
+
+describe("the subpaths example of the README", () => {
+	it("opens a harness with Pi's coding tools on Pi's local environment", async () => {
+		// README: Subpaths.
+		// A harness whose conversations code in a directory: Pi's coding tools on Pi's local environment.
+		const coding = Layer.unwrap(
+			Effect.map(NodeEnv.make({ cwd: "./work" }), (env) =>
+				Harness.layer({ env: () => env }).pipe(Layer.provide(Registry.layer([Tools.coding()]))),
+			),
+		);
+		// README: end
+		const tools = await Effect.runPromise(
+			Registry.Registry.use((registry) =>
+				Effect.sync(() =>
+					registry
+						.snapshot()
+						.tools()
+						.map(({ tool }) => tool.name),
+				),
+			).pipe(
+				Effect.provide(Layer.provideMerge(coding, Registry.layer([Tools.coding()]))),
+				Effect.provide(Storage.memory),
+				Effect.provide(Models.layer([])),
+			),
+		);
+		expect(tools).toEqual(["read", "write", "edit", "bash"]);
 	});
 });

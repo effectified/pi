@@ -7,6 +7,8 @@
 				"\"@effectified/pi-chord/delta\": [\"./packages/chord-effect/src/delta.ts\"],",
 				"\"@effectified/pi-chord/json\": [\"./packages/chord-effect/src/json.ts\"],",
 				"\"@effectified/pi-chord/sqlite\": [\"./packages/chord-effect/src/sqlite.ts\"],",
+				"\"@effectified/pi-chord/sqlite/node\": [\"./packages/chord-effect/src/node/sqlite.ts\"],",
+				"\"@effectified/pi-durable/env\": [\"./packages/durable-effect/src/env/index.ts\"],",
 				"\"@effectified/pi-durable-rivet/bun\": [\"./packages/durable-rivet-effect/src/bun.ts\"],",
 				"\"@effectified/pi-durable-rivet/node\": [\"./packages/durable-rivet-effect/src/node.ts\"],",
 				"\"@effectified/pi-search/exa\": [\"./packages/search-effect/src/exa.ts\"],",

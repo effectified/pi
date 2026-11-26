@@ -19,13 +19,14 @@ import {
 	Exit,
 	Fiber,
 	Latch,
-	type Layer,
+	Layer,
 	Logger,
 	Option,
 	Queue,
 	References,
 	Schedule,
 	Schema,
+	Scope,
 	Stream,
 } from "effect";
 import { TestClock } from "effect/testing";
@@ -914,5 +915,97 @@ describe("signalState", () => {
 			true,
 			true,
 		]);
+	});
+});
+
+describe("synchronous observers", () => {
+	const Progress = Doc.make({
+		kind: "test.progress",
+		version: 1,
+		scope: "conversation",
+		history: "latest",
+		fork: "initial",
+		schema: Schema.Struct({ done: Schema.Array(Schema.String) }),
+		initial: () => ({ done: [] }),
+		checkpointWhen: () => false,
+	});
+
+	it("observeDoc gives the document now, then every commit that changed it, unfolded", async () => {
+		const changes = await runTest(
+			Effect.gen(function* () {
+				const root = yield* Harness.rootWith({ agent: AGENT });
+				// An address without a document has nothing to observe: the first commit creates it.
+				yield* root.commit((tx) =>
+					Effect.flatMap(tx.doc(Progress, root.id), (progress) => progress.set({ done: [] })),
+				);
+				const attached = yield* Latch.make();
+				const collecting = yield* Effect.forkChild(
+					Stream.runCollect(
+						Stream.take(
+							Stream.tap(Harness.observeDoc(Progress, root.id), () => attached.open),
+							3,
+						),
+					),
+				);
+				yield* attached.await;
+				for (const done of [["a"], ["a", "b"]]) {
+					yield* root.commit((tx) =>
+						Effect.flatMap(tx.doc(Progress, root.id), (progress) => progress.set({ done })),
+					);
+				}
+				return yield* Fiber.join(collecting);
+			}).pipe(Effect.provide(harnessLayer({ registry: Registry.layer([]) }))),
+		);
+		expect(changes.map((change) => change.value)).toEqual([{ done: [] }, { done: ["a"] }, { done: ["a", "b"] }]);
+	});
+
+	it("observeConversation gives the view now and each change; observeTaskGraph the task graph", async () => {
+		const seen = await runTest(
+			Effect.gen(function* () {
+				const root = yield* Harness.rootWith({ agent: AGENT });
+				const attached = yield* Latch.make();
+				const views = yield* Effect.forkChild(
+					Stream.runCollect(
+						Stream.takeUntil(
+							Stream.tap(Harness.observeConversation(root.id), () => attached.open),
+							(change) => change.value.entries.some((entry) => entry.kind === "pi.assistant"),
+						),
+					),
+				);
+				yield* attached.await;
+				const graph = yield* Stream.runHead(Harness.observeTaskGraph);
+				yield* root.prompt("Hi.");
+				return { views: yield* Fiber.join(views), graph };
+			}).pipe(Effect.provide(harnessLayer({ responses: [answer("Hello.")] }))),
+		);
+		expect(seen.views[0]?.value.entries).toEqual([]);
+		expect(seen.views.at(-1)?.value.entries.map((entry) => entry.kind)).toEqual(["pi.user", "pi.assistant"]);
+		expect(Option.map(seen.graph, (change) => change.value)).toEqual(Option.some({ tasks: {} }));
+	});
+
+	it("observeConversation fails for a conversation that does not exist, as Pi rejects", async () => {
+		const failure = await Effect.runPromise(
+			Effect.flip(Stream.runCollect(Harness.observeConversation(MISSING_CONVERSATION))).pipe(
+				Effect.provide(harnessLayer({})),
+			),
+		);
+		expect([failure._tag, failure.message]).toEqual(["UnexpectedError", "Conversation 999 does not exist"]);
+	});
+
+	it("closing and closed succeed when the Layer's scope closes the harness", async () => {
+		const seen = await runTest(
+			Effect.gen(function* () {
+				const scope = yield* Scope.make();
+				const context = yield* Layer.buildWithScope(harnessLayer({}), scope);
+				const closing = yield* Effect.forkChild(Effect.provide(Harness.closing, context), {
+					startImmediately: true,
+				});
+				const closed = yield* Effect.forkChild(Effect.provide(Harness.closed, context), { startImmediately: true });
+				const before = closing.pollUnsafe() === undefined && closed.pollUnsafe() === undefined;
+				yield* Scope.close(scope, Exit.void);
+				return { before, closing: yield* Fiber.join(closing), closed: yield* Fiber.join(closed) };
+			}),
+		);
+		expect(seen).toEqual({ before: true, closing: undefined, closed: { kind: "closed" } });
 	});
 });

@@ -1,8 +1,10 @@
-// The storage a harness runs on, as a service: memory, SQLite over any Effect `SqlClient`, or a Pi storage of your own.
+// The storage a harness runs on, as a service: memory, SQLite over any Effect `SqlClient` or a Chord SQLite database,
+// or a Pi storage of your own.
 
 import { MemoryStorage, type Storage as PiStorage } from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import type { StrictOmit } from "@effectified/pi-ai";
+import type { SqliteDatabase } from "@effectified/pi-chord/sqlite";
 import { Context, Effect, Layer, type Scope } from "effect";
 import type { SqlClient } from "effect/sql/SqlClient";
 import { call } from "./call.ts";
@@ -40,6 +42,15 @@ export function sql(options?: SqlOptions): Layer.Layer<HarnessStorage, DurableEr
 			scoped(call(() => SqliteStorage.open(database, { prefix: options?.prefix }))),
 		),
 	);
+}
+
+/**
+ * Pi's SQLite storage on a Chord `SqliteDatabase` (`@effectified/pi-chord/sqlite`), such as a Rivet actor's database
+ * or one of `@effectified/pi-chord/sqlite/node`. Building the Layer applies Pi's migrations. Pi's storage closes the
+ * database when it closes: hand it a database the storage may own.
+ */
+export function sqlite(database: SqliteDatabase, options?: SqlOptions): Layer.Layer<HarnessStorage, DurableError> {
+	return Layer.effect(HarnessStorage, scoped(call(() => SqliteStorage.open(database, { prefix: options?.prefix }))));
 }
 
 /** A Pi `Storage` of your own, or an Effect that opens one, such as a custom backend or Pi's JSONL storage. */

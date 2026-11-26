@@ -30,6 +30,7 @@ import { type DurableError, UnexpectedError } from "./errors.ts";
 import * as Ids from "./id.ts";
 import { type Init as Created, creating } from "./init.ts";
 import * as Submission from "./submission.ts";
+import * as Transcript from "./transcript.ts";
 import * as Tx from "./tx.ts";
 import * as Watch from "./watch.ts";
 
@@ -124,6 +125,12 @@ export interface Conversation {
 	 * bounds the entries the view holds: the newest 50 by default, up to 100.
 	 */
 	readonly changes: (window?: ConversationWindow) => Stream.Stream<Watch.Change<ConversationView>, DurableError>;
+	/**
+	 * A new, empty client transcript of this conversation (Pi's `ConversationTranscript`): merge each value of `changes`
+	 * into it, or use `Transcript.stream`. Fails with `UnexpectedError` for a `pageSize` that is not an integer `1` or
+	 * more.
+	 */
+	readonly transcript: (options?: Transcript.Options) => Effect.Effect<Transcript.Transcript, DurableError>;
 }
 
 /** The fork source of a conversation: Pi's `ConversationRecord.parent`. */
@@ -176,5 +183,6 @@ export function fromPi(conversation: PiConversation): Conversation {
 		),
 		entries: (query) => Entries.stream((...page) => conversation.entries(...page), query),
 		changes: (window) => Watch.stream((context) => conversation.watch(context, window)),
+		transcript: (options) => Transcript.fromPi(conversation, options),
 	};
 }

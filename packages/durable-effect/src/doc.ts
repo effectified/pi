@@ -10,7 +10,9 @@ import {
 	defineDocFamily,
 	type EntryId,
 	type JsonObject,
+	type Observation,
 	type Tx as PiTx,
+	type Session,
 	type TaskId,
 	type WatchHandle,
 } from "@earendil-works/pi-durable";
@@ -266,6 +268,29 @@ export function watch<D extends Any>(
 		Watch.stream((context) => (pi as unknown as Watches).watchDoc(doc.token, ...address, context)),
 		(change) => Effect.map(coded(doc).decode(change.value), (value) => ({ ...change, value })),
 	);
+}
+
+/**
+ * Pi's `observeDoc` as a Stream of decoded values: see `Watch.observed`, every commit that changes the document one
+ * element, retirements and later documents at the address included. No element when the address holds none now.
+ */
+export function observe<D extends Any>(
+	pi: Pick<Session, "observeDoc">,
+	doc: D,
+	...address: Address<D>
+): Stream.Stream<Watch.Change<Value<D>>, Failure> {
+	return Stream.mapEffect(
+		// As in `reader`: `Address` checks what Pi's overloads would.
+		Watch.observed((observer, context) =>
+			(pi as unknown as Observes).observeDoc(doc.token, ...address, observer, context),
+		),
+		(change) => Effect.map(coded(doc).decode(change.value), (value) => ({ ...change, value })),
+	);
+}
+
+/** Pi's overloaded document observer, in the same way as `Reads`. */
+interface Observes {
+	observeDoc(token: Token, ...rest: ReadonlyArray<unknown>): Promise<Observation<Readonly<JsonObject>> | undefined>;
 }
 
 /** Pi's overloaded document reads, by what every overload has in common: the token, the address, the context. */

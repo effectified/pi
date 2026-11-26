@@ -119,7 +119,7 @@ used by: codemode-effect
 export function toCodemodeIdentifier(name: string): string
 
 ## CodemodeSandboxBase  codemode/src/runtime/execution.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 /**
  * Tool table, defaults, and in-flight executions; the behavior every sandbox shares. Subclasses
  * only choose where the VM runs by passing a {@link VmLauncher}.
@@ -159,7 +159,7 @@ export class CodemodeSandboxBase {
 }
 
 ## VmChannel  codemode/src/runtime/execution.ts
-used by: codemode-effect via CodemodeSandboxBase
+used by: codemode-effect via CodemodeSandboxBase, durable-effect via CodemodeToolOptions
 /** The host's handle on a running VM. */
 export interface VmChannel {
 	post(message: HostToWorkerMessage): void;
@@ -168,7 +168,7 @@ export interface VmChannel {
 }
 
 ## VmEvents  codemode/src/runtime/execution.ts
-used by: codemode-effect via CodemodeSandboxBase
+used by: codemode-effect via CodemodeSandboxBase, durable-effect via CodemodeToolOptions
 /** Callbacks a launcher uses to report what its VM does. */
 export interface VmEvents {
 	/** A message from the VM. Validated here, so launchers can pass through anything they receive. */
@@ -178,7 +178,7 @@ export interface VmEvents {
 }
 
 ## VmLauncher  codemode/src/runtime/execution.ts
-used by: codemode-effect via CodemodeSandboxBase
+used by: codemode-effect via CodemodeSandboxBase, durable-effect via CodemodeToolOptions
 /**
  * Starts a VM for one execution. Rejections become `sandbox` errors with the rejection's message.
  * The VM may start reporting messages before the returned promise settles.
@@ -286,7 +286,7 @@ used by: codemode-effect
 export const MAX_STORE_VALUE_CHARS: number
 
 ## HostToWorkerMessage  codemode/src/runtime/protocol.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 export type HostToWorkerMessage =
 	/**
 	 * `payload` is the JSON result when `ok`, otherwise the error message. Deterministic mode: `seq` numbers the
@@ -309,7 +309,7 @@ used by: codemode-effect via WorkerToHostMessage
 export type ScriptErrorJson = string;
 
 ## VmStartData  codemode/src/runtime/protocol.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 /**
  * Messages between the host (main thread) and the worker. Tool arguments,
  * results, and values cross as JSON strings: the worker passes them into and
@@ -495,7 +495,7 @@ export interface ParsedCodemodeSource {
 }
 
 ## CodemodeCall  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 export interface CodemodeCall {
 	name: string;
 	status: CodemodeCallStatus;
@@ -503,11 +503,11 @@ export interface CodemodeCall {
 }
 
 ## CodemodeCallStatus  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 export type CodemodeCallStatus = "ok" | "error" | "cancelled";
 
 ## CodemodeDeclaredGlobal  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 /** A global as a {@link CodemodeSandboxBase.start} run's script sees it; the same names as `globals` allow. */
 export interface CodemodeDeclaredGlobal {
 	name: string;
@@ -515,7 +515,7 @@ export interface CodemodeDeclaredGlobal {
 }
 
 ## CodemodeDeclaredTool  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 /** A tool as a {@link CodemodeSandboxBase.start} run's script sees it: `tools.<name>` and its `ALL_TOOLS` entry. */
 export interface CodemodeDeclaredTool {
 	name: string;
@@ -528,7 +528,7 @@ export interface CodemodeDeclaredTool {
 }
 
 ## CodemodeDuring  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 /** In a {@link CodemodeSandboxBase.start} run: the result the VM was processing when the script finished, 0 for its first run, and the calls issued by then. */
 export interface CodemodeDuring {
 	seq: number;
@@ -536,7 +536,7 @@ export interface CodemodeDuring {
 }
 
 ## CodemodeError  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 export interface CodemodeError {
 	kind: CodemodeErrorKind;
 	name?: string;
@@ -545,7 +545,7 @@ export interface CodemodeError {
 }
 
 ## CodemodeErrorKind  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 export type CodemodeErrorKind =
 	/** The script threw or failed to parse. `name` and `stack` come from the script's error. */
 	| "script"
@@ -563,7 +563,7 @@ export type CodemodeErrorKind =
 	| "sandbox";
 
 ## CodemodeExecuteOptions  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 export interface CodemodeExecuteOptions {
 	signal?: AbortSignal;
 	/** Overrides the sandbox default for this execution. */
@@ -576,7 +576,7 @@ export interface CodemodeExecuteOptions {
 }
 
 ## CodemodeHostCall  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 /** A call the script made in a {@link CodemodeSandboxBase.start} run, answered with `CodemodeRun.deliver()`. */
 export interface CodemodeHostCall {
 	/** The VM's own number for the call, `1`, `2`, ... in the order the script made its calls (tools and globals). */
@@ -588,12 +588,12 @@ export interface CodemodeHostCall {
 }
 
 ## CodemodeJsonSchema  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 /** A JSON Schema document. Only used to render declarations; values are not validated against it. */
 export type CodemodeJsonSchema = { [key: string]: unknown } | boolean;
 
 ## CodemodeOutcome  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 /**
  * A call's answer. A rejection becomes an `Error` with `message` in the script, carrying the own properties of
  * `properties` (JSON values; `name`, `message`, and `stack` are ignored), for example `{ structuredOutput }`.
@@ -603,7 +603,7 @@ export type CodemodeOutcome =
 	| { ok: false; message: string; properties?: Record<string, unknown> };
 
 ## CodemodeOutputItem  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 /**
  * One item of the script's output, in the order the script produced it: `text()` and `console.*`
  * produce text items, with `console: true` for `console.*`, and `image()` image items. `data` is base64.
@@ -613,7 +613,7 @@ export type CodemodeOutputItem =
 	| { type: "image"; data: string; mimeType: string };
 
 ## CodemodeResult  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 /**
  * `output` is kept for failed executions too, up to the failure. `exit()` completes with `value: undefined`.
  * `during`: in a {@link CodemodeSandboxBase.start} run that the script itself ended (it returned, threw, or exited),
@@ -637,7 +637,7 @@ export type CodemodeResult =
 	  };
 
 ## CodemodeRun  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 /** A running {@link CodemodeSandboxBase.start} execution. */
 export interface CodemodeRun {
 	readonly result: Promise<CodemodeResult>;
@@ -656,7 +656,7 @@ export interface CodemodeRun {
 }
 
 ## CodemodeRunOptions  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 export interface CodemodeRunOptions {
 	/** The VM clock's start, in ms since the epoch: `Date.now()` until the first result arrives. */
 	startedAt: number;
@@ -680,7 +680,7 @@ export interface CodemodeRunOptions {
 }
 
 ## CodemodeSandboxBaseOptions  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 /** Options every sandbox accepts, wherever its VM runs. */
 export interface CodemodeSandboxBaseOptions {
 	tools?: CodemodeTool[];
@@ -738,7 +738,7 @@ export interface CodemodeSandboxOptions extends CodemodeSandboxBaseOptions {
 }
 
 ## CodemodeStoreWrites  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 /** Keys the script changed with `store()`. Only successful executions report writes. */
 export interface CodemodeStoreWrites {
 	set: Record<string, unknown>;
@@ -747,7 +747,7 @@ export interface CodemodeStoreWrites {
 }
 
 ## CodemodeTool  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 export interface CodemodeTool {
 	/**
 	 * The script calls tools as `tools.<id>(args)`, where `<id>` is the name with characters that
@@ -778,7 +778,7 @@ export interface CodemodeTool {
 }
 
 ## CodemodeToolContext  codemode/src/types.ts
-used by: codemode-effect
+used by: codemode-effect; durable-effect via CodemodeToolOptions
 export interface CodemodeToolContext {
 	/**
 	 * Aborted when the script finishes (including unawaited calls), the

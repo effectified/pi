@@ -24,7 +24,9 @@ export interface Options<Checks extends ReadonlyArray<Check.Any> = readonly []> 
 export type Review<R> = Extension.Extension<
 	readonly [],
 	readonly [Hook.Hook<never>],
-	readonly [ReviewTask.ReviewTask<R>]
+	readonly [ReviewTask.ReviewTask<R>],
+	readonly [],
+	readonly []
 >;
 
 /**

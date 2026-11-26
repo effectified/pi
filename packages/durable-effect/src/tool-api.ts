@@ -22,7 +22,7 @@ import type { StrictOmit } from "@effectified/pi-ai";
 import type { Context as ChordContext } from "@effectified/pi-chord/context";
 import type { JsonValue } from "@effectified/pi-chord/json";
 import type { SchemaDecodeError } from "@effectified/pi-schema";
-import { Effect, Option, type Schema } from "effect";
+import { Effect, Option, type Schema, type Stream } from "effect";
 import { call } from "./call.ts";
 import * as Doc from "./doc.ts";
 import type { DurableError } from "./errors.ts";
@@ -31,6 +31,7 @@ import * as Signal from "./signal.ts";
 import * as Submission from "./submission.ts";
 import type * as Task from "./task.ts";
 import * as Tx from "./tx.ts";
+import type * as Watch from "./watch.ts";
 
 /**
  * What a handler may use besides its arguments, for one run of one call. Every operation fails once the handler
@@ -113,8 +114,16 @@ export interface Api extends Doc.Reader {
 	 */
 	readonly details: (value: Schema.Json) => Effect.Effect<void, DurableError>;
 	/**
-	 * Pi's own api, for what this package does not wrap: running output (`output`, `retainedOutput`), document
-	 * watches, the environment and the models.
+	 * Pi's `watchDoc` from inside the call, as a Stream of decoded values (see `Harness.watchDoc`). It stops when the
+	 * handler returns, and when the stream's scope closes.
+	 */
+	readonly watchDoc: <D extends Doc.Any>(
+		doc: D,
+		...address: Doc.Address<D>
+	) => Stream.Stream<Watch.Change<Doc.Value<D>>, Doc.Failure>;
+	/**
+	 * Pi's own api, for what this package does not wrap: running output (`output`, `retainedOutput`), the environment
+	 * and the models.
 	 */
 	readonly pi: PiToolExecutionApi;
 }
@@ -197,6 +206,7 @@ export function fromPi(api: PiToolExecutionApi): Api {
 		diagnostic: (diagnostic) => Effect.sync(() => api.diagnostic(diagnostic)),
 		// A decode boundary: Effect types JSON read-only, Chord types the same values mutable.
 		details: (value) => call((context) => api.details(value as JsonValue, context)),
+		watchDoc: (doc, ...address) => Doc.watch(api, doc, ...address),
 		pi: api,
 	};
 }

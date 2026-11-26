@@ -14,7 +14,7 @@ used by: chord-effect
 export const BACKGROUND_CONTEXT: Context
 
 ## Context  chord/src/context/index.ts
-used by: chord-effect; durable-effect via WatchHandle, durable-rivet-effect via SqliteStorage, env-effect via BinaryReader
+used by: chord-effect; durable-effect via WatchHandle, env-effect via LocalExecutionEnv
 /** Immutable invocation-scoped values passed explicitly through operations. */
 export interface Context {
 	readonly abortSignal: AbortSignal | undefined;
@@ -24,7 +24,7 @@ export interface Context {
 }
 
 ## ContextKey  chord/src/context/index.ts
-used by: chord-effect; durable-effect via WatchHandle, durable-rivet-effect via SqliteStorage, env-effect via BinaryReader
+used by: chord-effect; durable-effect via WatchHandle, env-effect via LocalExecutionEnv
 /** Typed identity for one value carried by a {@link Context}. */
 export interface ContextKey<T> {
 	readonly token: symbol;
@@ -1498,11 +1498,11 @@ used by: chord-effect
 export const isReplace = (op: Op | WireOp): boolean =>
 
 ## NonEmptyPath  chord/src/delta/index.ts
-used by: chord-effect; durable-effect via WatchCall, durable-rivet-effect via SqliteStorage
+used by: chord-effect; durable-effect via WatchCall
 export type NonEmptyPath = readonly [Seg, ...Seg[]];
 
 ## Op  chord/src/delta/index.ts
-used by: chord-effect; durable-effect via WatchCall, durable-rivet-effect via SqliteStorage
+used by: chord-effect; durable-effect via WatchCall
 /**
  * Tuples are the form — in memory, on the wire, on disk.
  *
@@ -1548,7 +1548,7 @@ used by: chord-effect
 export function ownedSlice(text: string, start: number, end = text.length): string
 
 ## Path  chord/src/delta/index.ts
-used by: chord-effect; durable-effect via WatchCall, durable-rivet-effect via SqliteStorage
+used by: chord-effect; durable-effect via WatchCall
 export type Path = readonly Seg[];
 
 ## PathError  chord/src/delta/index.ts
@@ -1581,7 +1581,7 @@ used by: chord-effect
 export const RESERVED_SEGMENTS: ReadonlySet<string>
 
 ## Seg  chord/src/delta/index.ts
-used by: chord-effect; durable-effect via WatchCall, durable-rivet-effect via SqliteStorage
+used by: chord-effect; durable-effect via WatchCall
 export type Seg = string | number;
 
 ## UnsafePathError  chord/src/delta/index.ts
@@ -3282,7 +3282,7 @@ export type JsonRepresentation<T> = IsAny<T> extends true
 					: never;
 
 ## JsonValue  chord/src/json.ts
-used by: chord-effect; durable-effect via defineDocFamily, durable-rivet-effect via SqliteStorage
+used by: chord-effect; durable-effect via CodemodeGlobal
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 ## binaryCodec  chord/src/link/binary.ts
@@ -3726,8 +3726,66 @@ export interface RegistryValue<V> extends NativeWatchable<V> {
 	observe(observer: NativeObserver<V>, context: Context): NativeObservation<V>;
 }
 
+## DurableObjectSqliteDatabase  chord/src/sqlite/cloudflare.ts
+used by: durable-effect
+/**
+ * `SqliteDatabase` adapter for the SQLite storage of a Cloudflare Durable Object. Adapters given the same storage
+ * object share a queue; direct calls to the underlying storage bypass it. Integers are JavaScript numbers; binding a
+ * `bigint` outside the safe integer range throws.
+ */
+export class DurableObjectSqliteDatabase extends DurableObjectSqliteExecutor implements SqliteDatabase {
+	constructor(storage: DurableObjectSqliteStorage)
+	override exec(sql: string): Promise<void>
+	override run(sql: string, ...params: SqliteValue[]): Promise<void>
+	override runCounted(sql: string, ...params: SqliteValue[]): Promise<number>
+	override get<T extends object>(sql: string, ...params: SqliteValue[]): Promise<T | undefined>
+	override all<T extends object>(sql: string, ...params: SqliteValue[]): Promise<T[]>
+	/** `ctx.storage.transaction()` commits when the callback resolves and rolls back when it rejects. */
+	transaction<T>(callback: (transaction: SqliteExecutor) => Promise<T>): Promise<T>
+	/** Waits for queued work. The Durable Object owns its storage, so nothing else closes. */
+	close(): Promise<void>
+}
+
+## DurableObjectSqliteExecutor  chord/src/sqlite/cloudflare.ts
+used by: durable-effect via DurableObjectSqliteDatabase
+/** Executes SQL through `ctx.storage.sql`, which has no separate prepare step. */
+class DurableObjectSqliteExecutor implements SqliteExecutor {
+	constructor(storage: DurableObjectSqliteStorage)
+	async exec(sql: string): Promise<void>
+	async run(sql: string, ...params: SqliteValue[]): Promise<void>
+	async runCounted(sql: string, ...params: SqliteValue[]): Promise<number>
+	async get<T extends object>(sql: string, ...params: SqliteValue[]): Promise<T | undefined>
+	async all<T extends object>(sql: string, ...params: SqliteValue[]): Promise<T[]>
+}
+
+## DurableObjectSqliteStorage  chord/src/sqlite/cloudflare.ts
+used by: durable-effect
+/**
+ * The parts of a SQLite-backed Durable Object's `ctx.storage` this adapter uses, typed structurally so the package
+ * needs no Workers type dependency.
+ */
+export type DurableObjectSqliteStorage = {
+	readonly sql: {
+		exec(
+			query: string,
+			...bindings: DurableObjectSqlValue[]
+		): {
+			next():
+				| { readonly done?: false; readonly value: Record<string, DurableObjectSqlValue> }
+				| { readonly done: true; readonly value?: undefined };
+			toArray(): Record<string, DurableObjectSqlValue>[];
+		};
+	};
+	transaction<T>(closure: () => Promise<T>): Promise<T>;
+};
+
+## DurableObjectSqlValue  chord/src/sqlite/cloudflare.ts
+used by: durable-effect via DurableObjectSqliteStorage
+/** Values a Durable Object SQL binding accepts and returns. */
+type DurableObjectSqlValue = ArrayBuffer | string | number | null;
+
 ## SqliteDatabase  chord/src/sqlite/database.ts
-used by: chord-effect; durable-effect via SqliteStorage, durable-rivet-effect via SqliteStorage
+used by: chord-effect; durable-effect via DurableObjectSqliteDatabase
 /**
  * Minimal portable SQLite database facade.
  *
@@ -3751,7 +3809,7 @@ export interface SqliteDatabase extends SqliteExecutor {
 }
 
 ## SqliteExecutor  chord/src/sqlite/database.ts
-used by: chord-effect; durable-effect via SqliteStorage, durable-rivet-effect via SqliteStorage
+used by: chord-effect; durable-effect via DurableObjectSqliteDatabase
 /**
  * Asynchronous SQL operations shared by a database and its transaction handles.
  *
@@ -3770,7 +3828,7 @@ export interface SqliteExecutor {
 }
 
 ## SqliteValue  chord/src/sqlite/database.ts
-used by: chord-effect; durable-effect via SqliteStorage, durable-rivet-effect via SqliteStorage
+used by: chord-effect; durable-effect via DurableObjectSqliteDatabase
 /** Values supported by the portable SQLite drivers. */
 export type SqliteValue = null | number | bigint | string | Uint8Array;
 
@@ -3784,7 +3842,7 @@ export async function applySqliteMigrations(
 ): Promise<void>
 
 ## SqliteMigration  chord/src/sqlite/migrations.ts
-used by: chord-effect
+used by: chord-effect, durable-effect
 export type SqliteMigration = {
 	readonly version: number;
 	readonly statements: readonly string[];
@@ -3800,7 +3858,7 @@ export class NodeSqliteDatabase extends NodeSqliteExecutor implements SqliteData
 }
 
 ## NodeSqliteDatabaseOptions  chord/src/sqlite/node.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via NodeSqliteStorageOptions
 /** Node SQLite connection settings for a database file. */
 export type NodeSqliteDatabaseOptions = {
 	/**
@@ -3832,7 +3890,7 @@ abstract class NodeSqliteExecutor implements SqliteExecutor {
 }
 
 ## NodeSqliteMode  chord/src/sqlite/node.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via NodeSqliteStorageOptions
 /** How a connection opens its file. */
 export type NodeSqliteMode = "read-write" | "read-only";
 

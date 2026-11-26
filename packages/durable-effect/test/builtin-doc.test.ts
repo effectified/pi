@@ -8,8 +8,11 @@ import {
 	type InboxState,
 	LiveDoc,
 	type LiveState,
+	NestedCallDoc,
+	type NestedCallState,
 	ProviderDoc,
 	type ProviderState,
+	type TaskId,
 	UsageDoc,
 	type UsageState,
 } from "@earendil-works/pi-durable";
@@ -74,6 +77,66 @@ describe("the built-in documents", () => {
 		const stored = { run: { taskId: 7, inputs: [], turns: 0 }, added: "by a later Pi" };
 		const decoded = await Effect.runPromise(BuiltinDoc.live.decode(stored));
 		expect(decoded).toBe(stored);
+	});
+});
+
+describe("the nested-call documents", () => {
+	it("are Pi's task-scoped family, written by Pi alone and addressed by the calling task and the call's key", () => {
+		const doc = BuiltinDoc.nestedCall;
+		expect([doc.kind, doc.version, doc.scope, doc.history, doc.family, doc.writer, doc.token]).toEqual([
+			"pi.tool.nested-call",
+			NestedCallDoc.definition.version,
+			"task",
+			undefined,
+			true,
+			"pi",
+			NestedCallDoc,
+		]);
+		const value: Equal<Doc.Value<typeof doc>, Readonly<NestedCallState>> = true;
+		const address: Equal<Doc.Address<typeof doc>, [taskId: TaskId, key: string]> = true;
+		expect([value, address]).toEqual([true, true]);
+	});
+
+	it("hold a nested call's task and result, which the calling tool reads", async () => {
+		const Double = Tool.make("double", {
+			description: "Double it.",
+			parameters: Schema.Struct({ n: Schema.Number }),
+			success: Schema.Number,
+			callers: ["tools"],
+			handler: ({ n }) => Effect.succeed(n * 2),
+		});
+		const read: Array<Option.Option<Readonly<NestedCallState>>> = [];
+		const Caller = Tool.make("caller", {
+			description: "Call double.",
+			parameters: Schema.Struct({}),
+			success: Schema.Null,
+			handler: (_params, api) =>
+				Effect.gen(function* () {
+					yield* api.executeTool("double", { n: 2 }, { key: "twice" });
+					read.push(yield* api.snapshot(BuiltinDoc.nestedCall, api.taskId, "twice"));
+					return null;
+				}),
+		});
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const root = yield* TestHarness.root;
+				yield* root.prompt("Go.");
+			}).pipe(
+				Effect.provide(
+					TestHarness.layer({
+						extensions: [Extension.make({ name: "app", tools: [Double, Caller] })],
+						responses: [toolCall("caller", {}), answer("Done.")],
+					}),
+				),
+			),
+		);
+		expect(read).toEqual([
+			Option.some({
+				kind: "nested",
+				taskId: expect.any(Number),
+				result: expect.objectContaining({ isError: false }),
+			}),
+		]);
 	});
 });
 

@@ -29,7 +29,7 @@ export function make<R>(
 	policy: Policy,
 	rules: ReadonlyArray<Rule.Rule<R>>,
 	refusals: PubSub.PubSub<Refusal>,
-): Extension.Extension<readonly [], readonly [Hook.Hook<R>, Hook.Hook<never>]> {
+): Extension.Extension<readonly [], readonly [Hook.Hook<R>, Hook.Hook<never>], readonly [], readonly [], readonly []> {
 	// What the first hook refused, for the second to record. Pi blocks, asks `afterTool` and stores the result in one
 	// run of the call, and gives both hooks that run's api object: after a crash it asks the first hook again, so
 	// the record is always of the decision that blocked. Held weakly, so a run that ends otherwise leaves nothing.

@@ -1811,11 +1811,11 @@ used by: agent-effect via streamProxy, ai-effect via ModelPromptCache, coding-ag
 export const ModelPromptCacheSchema: Schema<{ short?: number | undefined; long?: number | undefined; }>
 
 ## ModelThinkingLevel  ai/src/providers/model-schema.ts
-used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ModelRuntime, durable-effect via SummaryRequest, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ModelRuntime, durable-effect via SummaryRequest, evals-effect via PiCodingAgentHarnessOptions
 export type ModelThinkingLevel = Static<typeof ModelThinkingLevelSchema>;
 
 ## ModelThinkingLevelSchema  ai/src/providers/model-schema.ts
-used by: agent-effect via RunToolCallOptions, ai-effect via ModelThinkingLevel, coding-agent-effect via ModelRuntime, durable-effect via SummaryRequest, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: agent-effect via RunToolCallOptions, ai-effect via ModelThinkingLevel, coding-agent-effect via ModelRuntime, durable-effect via SummaryRequest, evals-effect via PiCodingAgentHarnessOptions
 export const ModelThinkingLevelSchema: Schema<"high" | "low" | "max" | "medium" | "minimal" | "off" | "xhigh">
 
 ## ThinkingLevel  ai/src/providers/model-schema.ts
@@ -1966,7 +1966,7 @@ used by: ai-effect; coding-agent-effect via ModelRuntime, durable-effect via Har
 export type AnyModel = ModelTypeMap[ModelType];
 
 ## Api  ai/src/types.ts
-used by: ai-effect; agent-effect via StreamFn, coding-agent-effect via ProviderConfig, durable-effect via GenerationHooks, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via StreamFn, coding-agent-effect via ProviderConfig, durable-effect via GenerationHooks, evals-effect via PiCodingAgentHarnessOptions
 export type Api = KnownApi | (string & {});
 
 ## ApiOptionsMap  ai/src/types.ts
@@ -2014,7 +2014,7 @@ export interface AssistantImages {
 }
 
 ## AssistantMessage  ai/src/types.ts
-used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ModelRegistry, durable-effect via LiveState, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ModelRegistry, durable-effect via LiveState, evals-effect via PiCodingAgentHarnessOptions
 export interface AssistantMessage {
 	role: "assistant";
 	content: (TextContent | ThinkingContent | ToolCall)[];
@@ -2225,7 +2225,7 @@ used by: ai-effect; coding-agent-effect via ModelRegistry, durable-effect via Ha
 export type ClassifierStopReason = "stop" | "error" | "aborted";
 
 ## ConstrainedSamplingConfig  ai/src/types.ts
-used by: ai-effect; agent-effect via AgentTool, coding-agent-effect via ToolDefinition, durable-effect via ToolRegistration, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via AgentTool, coding-agent-effect via ToolDefinition, durable-effect via ToolRegistration, evals-effect via PiCodingAgentHarnessOptions
 /**
  * Optional provider-side constrained sampling configs for a tool.
  *
@@ -2273,7 +2273,7 @@ export interface DeferredFetchOptions extends ProviderRequestOptions<Model<Api>>
 }
 
 ## DeferredHandle  ai/src/types.ts
-used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ModelRuntime, durable-effect via GenerationCheckpoint, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ModelRuntime, durable-effect via GenerationCheckpoint, evals-effect via PiCodingAgentHarnessOptions
 export interface DeferredHandle {
 	provider: string;
 	modelId: string;
@@ -2291,12 +2291,12 @@ used by: ai-effect; agent-effect via Agent, coding-agent-effect via ExtensionRun
 export type FetchFunction = typeof globalThis.fetch;
 
 ## GrammarFormat  ai/src/types.ts
-used by: ai-effect; agent-effect via AgentTool, coding-agent-effect via ToolDefinition, durable-effect via ToolRegistration, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via AgentTool, coding-agent-effect via ToolDefinition, durable-effect via ToolRegistration, evals-effect via PiCodingAgentHarnessOptions
 /** OpenAI grammar variants for constrained sampling. */
 export type GrammarFormat = "openai_lark" | "openai_regex";
 
 ## GrammarVariants  ai/src/types.ts
-used by: ai-effect; agent-effect via AgentTool, coding-agent-effect via ToolDefinition, durable-effect via ToolRegistration, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via AgentTool, coding-agent-effect via ToolDefinition, durable-effect via ToolRegistration, evals-effect via PiCodingAgentHarnessOptions
 export type GrammarVariants = Partial<Record<GrammarFormat, string>>;
 
 ## ImageApi  ai/src/types.ts
@@ -2304,7 +2304,7 @@ used by: ai-effect; coding-agent-effect via ProviderConfig, durable-effect via H
 export type ImageApi = KnownImageApi | (string & {});
 
 ## ImageContent  ai/src/types.ts
-used by: ai-effect; agent-effect via Agent, coding-agent-effect via AgentToolResult, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessWithOutput
+used by: ai-effect; agent-effect via Agent, coding-agent-effect via AgentToolResult, durable-effect via FittedImage, evals-effect via PiCodingAgentHarnessWithOutput
 export interface ImageContent {
 	type: "image";
 	data: string; // base64 encoded image data
@@ -2357,21 +2357,21 @@ used by: ai-effect; coding-agent-effect via ModelRegistry, durable-effect via Ha
 export type ImagesStopReason = "stop" | "error" | "aborted";
 
 ## InvalidJsonKeys  ai/src/types.ts
-used by: agent-effect via AgentEvent, ai-effect via ToolResultMessage, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: agent-effect via AgentEvent, ai-effect via ToolResultMessage, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, evals-effect via PiCodingAgentHarnessOptions
 type InvalidJsonKeys<T extends object> = {
 	[TKey in keyof T]-?: TKey extends string | number ? (IsJsonProperty<T[TKey]> extends true ? never : TKey) : TKey;
 }[keyof T];
 
 ## IsAny  ai/src/types.ts
-used by: agent-effect via AgentEvent, ai-effect via JsonRepresentation, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: agent-effect via AgentEvent, ai-effect via JsonRepresentation, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, evals-effect via PiCodingAgentHarnessOptions
 type IsAny<T> = 0 extends 1 & T ? true : false;
 
 ## IsExactlyJsonValue  ai/src/types.ts
-used by: agent-effect via AgentEvent, ai-effect via ToolResultMessage, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: agent-effect via AgentEvent, ai-effect via ToolResultMessage, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, evals-effect via PiCodingAgentHarnessOptions
 type IsExactlyJsonValue<T> = [T] extends [JsonValue] ? ([JsonValue] extends [T] ? true : false) : false;
 
 ## IsJsonCompatible  ai/src/types.ts
-used by: agent-effect via AgentEvent, ai-effect via ToolResultMessage, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: agent-effect via AgentEvent, ai-effect via ToolResultMessage, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, evals-effect via PiCodingAgentHarnessOptions
 type IsJsonCompatible<T> = IsAny<T> extends true
 	? false
 	: unknown extends T
@@ -2393,7 +2393,7 @@ type IsJsonCompatible<T> = IsAny<T> extends true
 								: false;
 
 ## IsJsonProperty  ai/src/types.ts
-used by: agent-effect via AgentEvent, ai-effect via ToolResultMessage, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: agent-effect via AgentEvent, ai-effect via ToolResultMessage, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, evals-effect via PiCodingAgentHarnessOptions
 type IsJsonProperty<T> = IsAny<T> extends true
 	? false
 	: unknown extends T
@@ -2403,11 +2403,11 @@ type IsJsonProperty<T> = IsAny<T> extends true
 			: IsJsonCompatible<Exclude<T, undefined>>;
 
 ## JsonObject  ai/src/types.ts
-used by: ai-effect; agent-effect via ProxyAssistantMessageEvent, coding-agent-effect via AgentToolResult, durable-effect via ToolTaskInput, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via ProxyAssistantMessageEvent, coding-agent-effect via AgentToolResult, durable-effect via ToolTaskInput, evals-effect via PiCodingAgentHarnessOptions
 export type JsonObject = { [key: string]: JsonValue };
 
 ## JsonRepresentation  ai/src/types.ts
-used by: ai-effect; agent-effect via AgentEvent, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via AgentEvent, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, evals-effect via PiCodingAgentHarnessOptions
 /** The JSON representation of a typed in-memory value. Optional object properties remain optional. */
 export type JsonRepresentation<T> = IsAny<T> extends true
 	? JsonValue
@@ -2422,11 +2422,11 @@ export type JsonRepresentation<T> = IsAny<T> extends true
 					: never;
 
 ## JsonValue  ai/src/types.ts
-used by: ai-effect; agent-effect via AfterToolCallResult, coding-agent-effect via AgentToolResult, durable-effect via GenerationCheckpoint, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via AfterToolCallResult, coding-agent-effect via AgentToolResult, durable-effect via GenerationCheckpoint, evals-effect via PiCodingAgentHarnessOptions
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | JsonObject;
 
 ## KnownApi  ai/src/types.ts
-used by: ai-effect; agent-effect via StreamFn, coding-agent-effect via ProviderConfig, durable-effect via GenerationHooks, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via StreamFn, coding-agent-effect via ProviderConfig, durable-effect via GenerationHooks, evals-effect via PiCodingAgentHarnessOptions
 export type KnownApi =
 	| "openai-completions"
 	| "mistral-conversations"
@@ -2453,7 +2453,7 @@ used by: ai-effect; coding-agent-effect via ProviderConfig, durable-effect via H
 export type KnownImageApi = "openrouter-images";
 
 ## KnownProvider  ai/src/types.ts
-used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ProviderStreamEvent, durable-effect via LiveState, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ProviderStreamEvent, durable-effect via LiveState, evals-effect via PiCodingAgentHarnessOptions
 export type KnownProvider =
 	| "amazon-bedrock"
 	| "ant-ling"
@@ -2500,7 +2500,7 @@ export type KnownProvider =
 	| "xiaomi-token-plan-sgp";
 
 ## Message  ai/src/types.ts
-used by: ai-effect; agent-effect via Agent, coding-agent-effect via serializeConversation, durable-effect via CompactionHooks, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via Agent, coding-agent-effect via serializeConversation, durable-effect via CompactionHooks, evals-effect via PiCodingAgentHarnessOptions
 export type Message = SystemMessage | UserMessage | AssistantMessage | ToolResultMessage;
 
 ## Model  ai/src/types.ts
@@ -2558,7 +2558,7 @@ export interface ModelTypeMap {
 }
 
 ## NestedToolCallRecord  ai/src/types.ts
-used by: ai-effect; agent-effect via AgentEvent, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via AgentEvent, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, evals-effect via PiCodingAgentHarnessOptions
 /** A tool call that another tool made while it ran, for example from a codemode script. */
 export interface NestedToolCallRecord {
 	id: string;
@@ -2575,7 +2575,7 @@ export interface NestedToolCallRecord {
 }
 
 ## NestedToolCalls  ai/src/types.ts
-used by: ai-effect; agent-effect via AgentEvent, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via AgentEvent, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, evals-effect via PiCodingAgentHarnessOptions
 /** Bounded record of the nested calls a tool made. Results are not recorded. */
 export interface NestedToolCalls {
 	calls: NestedToolCallRecord[];
@@ -2604,7 +2604,7 @@ used by: ai-effect; agent-effect via Agent, coding-agent-effect via ExtensionRun
 export type ProviderHeaders = Record<string, string | null>;
 
 ## ProviderId  ai/src/types.ts
-used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ProviderStreamEvent, durable-effect via LiveState, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ProviderStreamEvent, durable-effect via LiveState, evals-effect via PiCodingAgentHarnessOptions
 export type ProviderId = KnownProvider | string;
 
 ## ProviderImages  ai/src/types.ts
@@ -2749,7 +2749,7 @@ export interface SimpleStreamOptions extends StreamOptions {
 }
 
 ## StopReason  ai/src/types.ts
-used by: ai-effect; agent-effect via ProxyAssistantMessageEvent, coding-agent-effect via MessageUpdateEvent, durable-effect via LiveState, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via ProxyAssistantMessageEvent, coding-agent-effect via MessageUpdateEvent, durable-effect via LiveState, evals-effect via PiCodingAgentHarnessOptions
 export type StopReason = "pending" | "stop" | "length" | "toolUse" | "error" | "aborted" | "deferred";
 
 ## StreamFunction  ai/src/types.ts
@@ -2823,7 +2823,7 @@ export interface StreamOptions extends ProviderRequestOptions<Model<Api>> {
 }
 
 ## SystemMessage  ai/src/types.ts
-used by: ai-effect; agent-effect via Agent, coding-agent-effect via CompactionEntry, durable-effect via CompactionHooks, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via Agent, coding-agent-effect via CompactionEntry, durable-effect via CompactionHooks, evals-effect via PiCodingAgentHarnessOptions
 /**
  * System instructions and tool declarations at one point in the transcript.
  *
@@ -2853,7 +2853,7 @@ export interface SystemMessage {
 }
 
 ## TextContent  ai/src/types.ts
-used by: ai-effect; agent-effect via AfterToolCallResult, coding-agent-effect via AgentToolResult, durable-effect via LiveState, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessWithOutput
+used by: ai-effect; agent-effect via AfterToolCallResult, coding-agent-effect via AgentToolResult, durable-effect via FittedImages, evals-effect via PiCodingAgentHarnessWithOutput
 export interface TextContent {
 	type: "text";
 	text: string;
@@ -2879,7 +2879,7 @@ export interface ThinkingBudgets {
 }
 
 ## ThinkingContent  ai/src/types.ts
-used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ModelRegistry, durable-effect via LiveState, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ModelRegistry, durable-effect via LiveState, evals-effect via PiCodingAgentHarnessOptions
 export interface ThinkingContent {
 	type: "thinking";
 	thinking: string;
@@ -2891,7 +2891,7 @@ export interface ThinkingContent {
 }
 
 ## Tool  ai/src/types.ts
-used by: ai-effect; agent-effect via AgentTool, coding-agent-effect via AgentSessionConfig, durable-effect via ToolRegistration, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via AgentTool, coding-agent-effect via AgentSessionConfig, durable-effect via ToolRegistration, evals-effect via PiCodingAgentHarnessOptions
 /**
  * A tool the model may call. `parameters` is the JSON Schema of its arguments: pi-schema's builders (which also type
  * the arguments, see `Static` in `@earendil-works/pi-schema`), TypeBox schemas, or any JSON Schema object.
@@ -2904,7 +2904,7 @@ export interface Tool<TParameters extends object = object> {
 }
 
 ## ToolCall  ai/src/types.ts
-used by: ai-effect; agent-effect via ProxyAssistantMessageEvent, coding-agent-effect via MessageUpdateEvent, durable-effect via ToolTaskInput, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via ProxyAssistantMessageEvent, coding-agent-effect via MessageUpdateEvent, durable-effect via ToolTaskInput, evals-effect via PiCodingAgentHarnessOptions
 export interface ToolCall {
 	type: "toolCall";
 	id: string;
@@ -2925,13 +2925,13 @@ used by: ai-effect; agent-effect via Agent, coding-agent-effect via ProviderConf
 export type ToolChoice = "auto" | "none";
 
 ## ToolReference  ai/src/types.ts
-used by: ai-effect; agent-effect via Agent, coding-agent-effect via CompactionEntry, durable-effect via CompactionHooks, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via Agent, coding-agent-effect via CompactionEntry, durable-effect via CompactionHooks, evals-effect via PiCodingAgentHarnessOptions
 export interface ToolReference {
 	name: string;
 }
 
 ## ToolResultMessage  ai/src/types.ts
-used by: ai-effect; agent-effect via AgentEvent, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via AgentEvent, coding-agent-effect via TurnEndEvent, durable-effect via ToolExecutionResult, evals-effect via PiCodingAgentHarnessOptions
 export type ToolResultMessage<TDetails = JsonValue> = IsJsonCompatible<TDetails> extends true
 	? {
 			role: "toolResult";
@@ -2969,7 +2969,7 @@ used by: ai-effect; agent-effect via Agent, coding-agent-effect via SettingsCall
 export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 
 ## Usage  ai/src/types.ts
-used by: ai-effect; agent-effect via AfterToolCallResult, coding-agent-effect via AgentToolResult, durable-effect via NestedToolSummary, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via AfterToolCallResult, coding-agent-effect via AgentToolResult, durable-effect via NestedToolSummary, evals-effect via PiCodingAgentHarnessOptions
 export interface Usage {
 	input: number;
 	output: number;
@@ -3001,7 +3001,7 @@ export interface Usage {
 }
 
 ## UserMessage  ai/src/types.ts
-used by: ai-effect; agent-effect via Agent, coding-agent-effect via ContextEditableContent, durable-effect via UserInput, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via Agent, coding-agent-effect via ContextEditableContent, durable-effect via UserInput, evals-effect via PiCodingAgentHarnessOptions
 export interface UserMessage {
 	role: "user";
 	content: string | (TextContent | ImageContent)[];
@@ -3016,7 +3016,7 @@ export function appendAssistantMessageDiagnostic<T extends { diagnostics?: Assis
 ): void
 
 ## AssistantMessageDiagnostic  ai/src/utils/diagnostics.ts
-used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ModelRegistry, durable-effect via LiveState, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ModelRegistry, durable-effect via LiveState, evals-effect via PiCodingAgentHarnessOptions
 export interface AssistantMessageDiagnostic {
 	type: string;
 	timestamp: number;
@@ -3033,7 +3033,7 @@ export function createAssistantMessageDiagnostic(
 ): AssistantMessageDiagnostic
 
 ## DiagnosticErrorInfo  ai/src/utils/diagnostics.ts
-used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ModelRegistry, durable-effect via LiveState, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: ai-effect; agent-effect via RunToolCallOptions, coding-agent-effect via ModelRegistry, durable-effect via LiveState, evals-effect via PiCodingAgentHarnessOptions
 export interface DiagnosticErrorInfo {
 	name?: string;
 	message: string;

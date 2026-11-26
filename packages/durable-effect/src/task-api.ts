@@ -6,6 +6,7 @@ import type {
 	ConversationId,
 	EntryId,
 	EntryRecord,
+	HookRunner,
 	Agent as PiAgent,
 	ReportFrom,
 	RunningTask,
@@ -24,12 +25,15 @@ import * as Doc from "./doc.ts";
 import * as Entries from "./entries.ts";
 import * as Entry from "./entry.ts";
 import type { DurableError } from "./errors.ts";
+import { invoker } from "./invocation.ts";
 import * as Memo from "./memo.ts";
 import * as Signal from "./signal.ts";
 import type * as Task from "./task.ts";
+import type * as TaskHooks from "./task-hooks.ts";
 import * as Step from "./task-step.ts";
 import * as ToolApi from "./tool-api.ts";
 import * as Tx from "./tx.ts";
+import type * as Watch from "./watch.ts";
 
 /** The task a handler runs for, as its phase finds it: the input and the state decoded. */
 export interface Running<I, S> {
@@ -140,8 +144,32 @@ export interface Api<I, S, A> extends Doc.Reader {
 	/** Hands a failure that does not fail the task to the harness's reports (`task_error`, or as `from` says). */
 	readonly report: (error: unknown, from?: ReportFrom) => Effect.Effect<void>;
 	/**
+	 * Asks this task's own hook `name` of every extension the conversation selects that answers `hooks` (made for this
+	 * task's kind), in extension order: `ask` runs with each answer. A failure of `ask` is reported and the next answer
+	 * is asked, so a hook fails open; the Effect fails only when the invocation is aborted.
+	 */
+	readonly eachHook: <H extends TaskHooks.Handlers, K extends keyof H & string, E, R>(
+		hooks: TaskHooks.TaskHooks<H>,
+		name: K,
+		ask: (handler: H[K]) => Effect.Effect<void, E, R>,
+	) => Effect.Effect<void, DurableError, R>;
+	/**
+	 * Succeeds once about `millis` passed on the harness's timer (Pi's `setTimer`, so the harness's `Clock`), for pacing
+	 * work inside a phase, such as throttled progress commits. Not durable: interrupting it disarms the timer, and so
+	 * does the end of the invocation. To wait between phases without a process, end the phase with a sleep.
+	 */
+	readonly timer: (millis: number) => Effect.Effect<void>;
+	/**
+	 * Pi's `watchDoc` from inside the task, as a Stream of decoded values (see `Harness.watchDoc`). It stops at the end
+	 * of the invocation, and when the stream's scope closes.
+	 */
+	readonly watchDoc: <D extends Doc.Any>(
+		doc: D,
+		...address: Doc.Address<D>
+	) => Stream.Stream<Watch.Change<Doc.Value<D>>, Doc.Failure>;
+	/**
 	 * Pi's own runtime, for what this package does not wrap: the models (`models`), the settings, the registry
-	 * snapshot, the environment, the task's own hooks, `setTimer`, document watches and `signal`, its abort signal.
+	 * snapshot, the environment, `signal`, its abort signal.
 	 */
 	readonly pi: Runtime;
 }
@@ -251,6 +279,24 @@ export function fromPi<I, S, A>(runtime: Runtime, codec: Codec<I, S, A>): Api<I,
 		entries: (query) => Entries.stream((...page) => runtime.entries(...page), query),
 		context: (conversationId, options) => call((context) => runtime.context(conversationId, context, options)),
 		report: (error, from) => Effect.sync(() => runtime.report(error, from)),
+		eachHook: <H extends TaskHooks.Handlers, K extends keyof H & string, E, R>(
+			_hooks: TaskHooks.TaskHooks<H>,
+			name: K,
+			ask: (handler: H[K]) => Effect.Effect<void, E, R>,
+		) =>
+			Effect.flatMap(Effect.context<R>(), (context) => {
+				const invoke = invoker(context);
+				// Pi types a task's own hooks by its definition, which this package leaves open (`object`): `hooks`, made
+				// for this task's kind, types the answers the registry holds for it.
+				const runner = runtime.hooks as unknown as HookRunner<H>;
+				return call((invocation) => runner.each(name, (handler) => invoke(ask(handler), invocation)));
+			}),
+		timer: (millis) =>
+			Effect.callback<void>((resume) => {
+				const disarm = runtime.setTimer(() => resume(Effect.void), millis);
+				return Effect.sync(disarm);
+			}),
+		watchDoc: (doc, ...address) => Doc.watch(runtime, doc, ...address),
 		pi: runtime,
 	};
 }

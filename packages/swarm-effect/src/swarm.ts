@@ -56,7 +56,8 @@ export interface Plan<I> {
 }
 
 /** The extension that installs the coordinators of these definitions. It has no tool and no hook. */
-export interface SwarmExtension extends Extension.Extension<readonly [], readonly [], ReadonlyArray<Coordinator>> {}
+export interface SwarmExtension
+	extends Extension.Extension<readonly [], readonly [], ReadonlyArray<Coordinator>, readonly [], readonly []> {}
 
 /**
  * The extension to give `Registry.layer`: one coordinator task per definition. It makes the registry require a
