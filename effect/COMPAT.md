@@ -12,7 +12,9 @@ Also installed and run outside this repository beside the published `@earendil-w
 `durable-rivet-effect`; its engine tests run on macOS and, since 2026-11-26, on Linux in CI (x64) on Node and on Bun. Node 22.19.0 is the lowest version the packages declare:
 all fifteen suites passed on it on Pi 1.6.0 (1,747 tests, 2026-11-25). On Pi 1.6.1 they pass on Node 26.13.1 (1,950
 tests, 2026-11-26, by `node effect/scripts/gate.ts`) and on Bun (2026-11-26); between the two versions Pi Durable changed only its Node environment (shell lookup,
-line reader). Not yet run against a real model provider.
+line reader). Not yet run against a real model provider. Under the names `@effectified/pi-<x>` (2026-11-26), the
+fifteen tarballs of `effect/scripts/pack.ts` installed into an empty project beside the published `@earendil-works/*`
+1.6.1 and `effect` 4.1.5, and every package and `@effectified/pi-ai/testing` imported on Node 26.
 
 CI (`effect-ci.yml`, Node 22, Linux) first ran on 2026-11-25 and was red in upstream's own check and tests, not in
 these packages: upstream's build fetches the model catalogs of the day, and the tests at `f8149d1ab` named models

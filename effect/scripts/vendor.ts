@@ -10,6 +10,7 @@
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { withoutSource } from "./manifest.ts";
 import { buildOrder, effectPackages, ROOT } from "./packages.ts";
 import { productPins, sourceRecord } from "./pins.ts";
 
@@ -100,16 +101,6 @@ function workspaceManifest(manifest: Record<string, unknown>): Record<string, un
 		dependencies: workspaceSpecs(manifest.dependencies),
 		peerDependencies: workspaceSpecs(manifest.peerDependencies),
 	};
-}
-
-/** `exports` without the `source` condition of each entry. */
-function withoutSource(exports: unknown): unknown {
-	if (typeof exports !== "object" || exports === null) return exports;
-	return Object.fromEntries(
-		Object.entries(exports)
-			.filter(([condition]) => condition !== "source")
-			.map(([key, value]) => [key, withoutSource(value)]),
-	);
 }
 
 /**
