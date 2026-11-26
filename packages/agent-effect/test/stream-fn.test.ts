@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@effectified/pi-agent";
+import type { Message } from "@effectified/pi-ai";
 import { fauxAssistantMessage, fauxProvider, runTest, ScriptedModels } from "@effectified/pi-ai/testing";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
@@ -9,7 +10,11 @@ import { model, scripted } from "./scripted.ts";
 
 const user = (text: string): AgentMessage => ({ role: "user", content: [{ type: "text", text }], timestamp: 0 });
 
-const convertToLlm = (messages: AgentMessage[]) => Effect.succeed(messages);
+const LLM_ROLES: ReadonlyArray<string> = ["system", "user", "assistant", "toolResult"];
+
+// What Pi's agent sends a model by default: its own messages, not the ones an app adds (coding-agent's, say).
+const convertToLlm = (messages: AgentMessage[]) =>
+	Effect.succeed(messages.filter((message): message is Message => LLM_ROLES.includes(message.role)));
 
 describe("StreamFn.models", () => {
 	it("sends the requests to the providers of Models", async () => {

@@ -1,6 +1,7 @@
 // The examples of README.md as tests. The code under each "README:" comment is the README's, line for line; only the
 // imports differ (the README names the packages, this file the sources), and the provider is scripted.
 
+import type { Message } from "@effectified/pi-ai";
 import { fauxAssistantMessage, fauxToolCall, runTest, ScriptedModels } from "@effectified/pi-ai/testing";
 import { Context, Effect, Fiber, Latch, Layer, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
@@ -175,7 +176,13 @@ const added = Effect.gen(function* () {
 		{ messages: [], tools: [Lookup] },
 		{
 			model,
-			convertToLlm: (messages) => Effect.succeed(messages),
+			// What a model takes: Pi's own messages, not those an app adds (coding-agent's, say).
+			convertToLlm: (messages) =>
+				Effect.succeed(
+					messages.filter((message): message is Message =>
+						["system", "user", "assistant", "toolResult"].includes(message.role),
+					),
+				),
 			getSteeringMessages: Effect.succeed([]),
 		},
 	);

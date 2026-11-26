@@ -179,13 +179,16 @@ ends the run normally, with that message in the transcript.
 
 ```ts
 import { AgentLoop } from "@effectified/pi-agent";
+import type { Message } from "@effectified/pi-ai";
 
 const added = Effect.gen(function* () {
 	const model = (yield* ScriptedModels).model;
 	const prompt = { role: "user" as const, content: [{ type: "text" as const, text: "Hi." }], timestamp: 0 };
 	return yield* AgentLoop.run([prompt], { messages: [], tools: [Lookup] }, {
 		model,
-		convertToLlm: (messages) => Effect.succeed(messages),
+		// What a model takes: Pi's own messages, not those an app adds (coding-agent's, say).
+		convertToLlm: (messages) =>
+			Effect.succeed(messages.filter((message): message is Message => ["system", "user", "assistant", "toolResult"].includes(message.role))),
 		getSteeringMessages: Effect.succeed([]),
 	});
 });

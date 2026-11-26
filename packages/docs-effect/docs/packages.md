@@ -13,6 +13,7 @@ tests. [How pi-effect Works](how-it-works.md) says how the kinds layer.
 | A short-lived agent: a prompt as an Effect, its events as a Stream, tools and hooks as Effects; the low-level loop | `@effectified/pi-agent` | facade | `Agent.make`, `Tool`, `AgentLoop`, `runToolCall`, `StreamFn`, `AgentBusy`, `CannotContinue` | [agent](../../agent-effect/README.md) |
 | Local and remote execution environments: commands, files, output streams, SSH, processes, terminals | `@effectified/pi-env` | facade | `Env`, `FileFailed`, `ExecFailed`, `RemoteFailed`; `/node`: `Connection`, `Local`, `Remote`, `Ssh`, `HostKey`, `Process`, `Terminal`, `RemoteWatch` | [env](../../env-effect/README.md) |
 | Code mode: model-written JavaScript that calls your Effect tools in a QuickJS sandbox, on Node, Bun or Cloudflare | `@effectified/pi-codemode` | facade | `WorkerSandbox`, `InlineSandbox`, `RemoteSandbox`, `Sandbox`, `ScriptTool`, `Source`, `Wasm`; `/portable`, `/cloudflare`, `/declarations`, `/source`, `/worker` | [codemode](../../codemode-effect/README.md) |
+| Evals of Pi's coding agent: a run as an Effect, its output scored by Effects, a documentation comparison's runs as a Stream | `@effectified/pi-evals` | facade | `Harness`, `Docker`, `Plan`, `Report`, `Environment`, `SystemPrompt`, `RunFailed`, `InvalidSetting`, `InvalidPlan` | [evals](../../evals-effect/README.md) |
 | Effect `Schema` to and from the JSON Schema of tool parameters | `@effectified/pi-schema` | facade | `toJsonSchema`, `fromJsonSchema`, `decodeUnknown`, `encode`, `validator` | [schema](../../schema-effect/README.md) |
 | Pi's spans, metrics and events on Effect's tracer, metrics and logger | `@effectified/pi-telemetry` | facade | `PiTelemetry` | [telemetry](../../telemetry-effect/README.md) |
 | The Chord context of a Pi call from the calling fiber; Chord's JSON, SQLite, delta and output values | `@effectified/pi-chord` | facade | Chord's declaration vocabulary; `/context`: `ChordContext`; `/json`, `/sqlite`, `/sqlite/node`, `/delta`, `/output` | [chord](../../chord-effect/README.md) |
@@ -34,7 +35,7 @@ Modules are namespaces: `import { Harness, Tool } from "@effectified/pi-durable"
 `import * as Review from "@effectified/pi-review"`, `import * as Swarm from "@effectified/pi-swarm"`. Copy the
 import lines of the README example you start from.
 
-Being built: the facades of pi-coding-agent and pi-evals. Not built: fixed-step
+Being built: the facade of pi-coding-agent. Not built: fixed-step
 workflows, a sandbox. Reach what a facade does not wrap through Pi's own objects (each README ends with "Not wrapped yet").
 
 ## Installing in a product

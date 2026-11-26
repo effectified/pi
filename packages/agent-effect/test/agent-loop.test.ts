@@ -1,4 +1,5 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@effectified/pi-agent";
+import type { Message } from "@effectified/pi-ai";
 import { fauxAssistantMessage, fauxToolCall, runTest, ScriptedModels } from "@effectified/pi-ai/testing";
 import { Effect, Fiber, Latch, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
@@ -16,7 +17,11 @@ const Add = Tool.make("add", {
 const user = (text: string): AgentMessage => ({ role: "user", content: [{ type: "text", text }], timestamp: 0 });
 
 /** Pi's own conversion: the messages a model understands, unchanged. */
-const convertToLlm = (messages: AgentMessage[]) => Effect.succeed(messages);
+const LLM_ROLES: ReadonlyArray<string> = ["system", "user", "assistant", "toolResult"];
+
+// What Pi's agent sends a model by default: its own messages, not the ones an app adds (coding-agent's, say).
+const convertToLlm = (messages: AgentMessage[]) =>
+	Effect.succeed(messages.filter((message): message is Message => LLM_ROLES.includes(message.role)));
 
 describe("AgentLoop.stream", () => {
 	it("emits Pi's events of a run with a tool call, agent_start first and agent_end last", async () => {

@@ -119,7 +119,7 @@ used by: mcp-effect
 export function isMcpServerOverride(entry: Record<string, unknown>): boolean
 
 ## McpHttpServerConfig  mcp/src/config.ts
-used by: mcp-effect
+used by: mcp-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /** A server reached over Streamable HTTP. */
 export interface McpHttpServerConfig extends McpServerConfigBase {
 	type?: "http";
@@ -130,7 +130,7 @@ export interface McpHttpServerConfig extends McpServerConfigBase {
 }
 
 ## McpOAuthConfig  mcp/src/config.ts
-used by: mcp-effect
+used by: mcp-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /** OAuth client settings for servers that do not support dynamic client registration. */
 export interface McpOAuthConfig {
 	/** Pre-registered client id. Without it, the application registers a client with the authorization server. */
@@ -173,7 +173,7 @@ used by: mcp-effect
 export type McpServerConfig = McpStdioServerConfig | McpHttpServerConfig;
 
 ## McpServerConfigBase  mcp/src/config.ts
-used by: mcp-effect via McpHttpServerConfig
+used by: evals-effect via PiCodingAgentHarnessWithOutput, mcp-effect via McpHttpServerConfig
 /**
  * The `mcpServers` configuration shape that MCP clients share, so configurations can be copied between
  * them: stdio servers (`command`, `args`, `env`, `cwd`), Streamable HTTP servers (`url`, `headers`,
@@ -226,7 +226,7 @@ export type McpServerConfigResult =
 	| { kind: "invalid"; error: string };
 
 ## McpStdioServerConfig  mcp/src/config.ts
-used by: mcp-effect
+used by: mcp-effect; evals-effect via PiCodingAgentHarnessWithOutput
 /** A server started as a local program that speaks MCP over stdin and stdout. */
 export interface McpStdioServerConfig extends McpServerConfigBase {
 	type?: "stdio";

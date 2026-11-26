@@ -48,6 +48,8 @@ export const ROLES: Readonly<Record<string, string>> = {
 		"The terminal UI as a scoped service: renders, focus and overlays as Effects, keys, keybindings and component callbacks as Streams.",
 	"codemode-effect":
 		"Model-written JavaScript in a QuickJS sandbox whose only capability is your Effect tools: sandboxes as scoped resources, an execution as an Effect, a deterministic run's events as a Stream.",
+	"evals-effect":
+		"Pi's evals in Effect: a coding-agent run is an Effect scored by Effects with your services, a documentation comparison's runs a Stream of Pi's observations.",
 	"durable-effect":
 		"The durable harness as Layers: conversations, tools, hooks, tasks, documents and commits, with tagged errors and interruption that cancels.",
 	"mcp-effect":
