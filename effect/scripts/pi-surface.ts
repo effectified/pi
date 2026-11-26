@@ -65,6 +65,7 @@ import {
 	type Symbol as PiSymbol,
 	type Project,
 	SymbolFlags,
+	type Type,
 } from "typescript/unstable/sync";
 import { ROOT } from "./packages.ts";
 import { PI_SCOPE, workspacePiPackages } from "./pins.ts";
@@ -357,6 +358,17 @@ class Graph {
 		return files.length > 0 && files.every((name) => name?.split(/[\\/]/).includes("node_modules") === true);
 	}
 
+	/**
+	 * A type as text, untruncated. A type that names an unexported declaration prints its module as an absolute path
+	 * (`import("/home/runner/work/pi/pi/packages/...")`): the path is made relative to the repository, so the record
+	 * is the same on every machine.
+	 */
+	#typeText(type: Type): string {
+		return this.#checker
+			.typeToString(type, undefined, NodeBuilderFlags.NoTruncation)
+			.replaceAll(`import("${ROOT}/`, 'import("');
+	}
+
 	#target(symbol: PiSymbol): PiSymbol {
 		// `getAliasedSymbol` panics in the server on a symbol that is not an alias.
 		return (symbol.flags & SymbolFlags.Alias) === 0 ? symbol : this.#checker.getAliasedSymbol(symbol);
@@ -415,8 +427,7 @@ class Graph {
 			if (member.type !== undefined) return { text: file.text.slice(start, member.type.end), parts: [member.type] };
 			if (member.initializer === undefined) return { text: file.text.slice(start, member.end), parts: [] };
 			const type = this.#checker.getTypeAtLocation(member.name);
-			const typeText =
-				type === undefined ? "unknown" : this.#checker.typeToString(type, undefined, NodeBuilderFlags.NoTruncation);
+			const typeText = type === undefined ? "unknown" : this.#typeText(type);
 			return { text: `${file.text.slice(start, member.name.end)}: ${typeText}`, parts: [] };
 		}
 		if (
@@ -455,7 +466,7 @@ class Graph {
 		}
 		const type = this.#checker.getTypeOfSymbol(symbol);
 		const named = type?.getAliasSymbol() ?? type?.getSymbol();
-		const text = `${head}: ${type === undefined ? "unknown" : this.#checker.typeToString(type, undefined, NodeBuilderFlags.NoTruncation)}`;
+		const text = `${head}: ${type === undefined ? "unknown" : this.#typeText(type)}`;
 		return { text, parts: [], symbols: named === undefined ? [] : [named] };
 	}
 }
