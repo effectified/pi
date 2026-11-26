@@ -55,6 +55,7 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@effectified/pi-chord` | facade | `@earendil-works/chord`: its context from the fiber, JSON, SQLite, delta, output | 42 | Chord's runtime (hosts, facets, links, store, clients, plugins, app kit, surfaces, sync); `Progress`; `/sqlite/cloudflare` |
 | `@effectified/pi-agent` | facade | `@earendil-works/pi-agent-core` | 54 | Changing the agent's settings and hooks after `make`; `Clock` for the timestamps Pi stamps itself |
 | `@effectified/pi-durable` | facade | `@earendil-works/pi-durable` | 442 | A task's own hooks, `setTimer`, prompt sections and wrappers, synchronous observers |
+| `@effectified/pi-env` | facade | `@earendil-works/pi-env` | 84 | A real remote machine (runs with `PI_ENV_SSH_HOST`); the daemon tests need a daemon built from `packages/env` |
 | `@effectified/pi-durable-rivet` | host | A harness in a Rivet actor: storage, wake-ups, forks; a local engine in a kept directory; `ActorSql` | 239 | Several machines; an engine that dies |
 | `@effectified/pi-router` | plugin | Routes, fallback, limiter, prices, constraints | 181 | A real provider; image and classifier routing |
 | `@effectified/pi-budget` | plugin | Lease at the model boundary, shares | 92 | |
@@ -68,8 +69,8 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@effectified/pi-thread` | composition | An agent thread made of all of them, in process and as a Rivet actor | 141 | See its README, "Gaps" |
 | `@effectified/pi-docs` | docs | The documentation of all of them, as Pi keeps its own (`docs/`, `docs.json`), a site built from it, and skills that lead agents to its pages | 38 | |
 
-Not built: `mcp-effect`, `codemode-effect`, `agent-effect`, `env-effect`, `workflow-effect`, `sandbox-effect`
-(PRD priorities P2 and P3).
+Being built: `mcp-effect`, `codemode-effect`, `tui-effect`, `coding-agent-effect`, `evals-effect`. Not built:
+`workflow-effect`, `sandbox-effect` (PRD priority P3).
 
 ## What an application imports
 

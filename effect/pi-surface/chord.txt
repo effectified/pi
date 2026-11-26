@@ -10,11 +10,11 @@ used by: chord-effect
 export function awaitWithContext<T>(promise: Promise<T>, context: Context): Promise<T>
 
 ## BACKGROUND_CONTEXT  chord/src/context/index.ts
-used by: chord-effect, durable-effect
+used by: chord-effect, durable-effect, env-effect
 export const BACKGROUND_CONTEXT: Context
 
 ## Context  chord/src/context/index.ts
-used by: chord-effect, durable-effect; durable-rivet-effect via SqliteStorage
+used by: chord-effect, durable-effect, env-effect; durable-rivet-effect via SqliteStorage
 /** Immutable invocation-scoped values passed explicitly through operations. */
 export interface Context {
 	readonly abortSignal: AbortSignal | undefined;
@@ -24,7 +24,7 @@ export interface Context {
 }
 
 ## ContextKey  chord/src/context/index.ts
-used by: chord-effect; durable-effect via Context, durable-rivet-effect via SqliteStorage
+used by: chord-effect; durable-effect via Context, durable-rivet-effect via SqliteStorage, env-effect via Context
 /** Typed identity for one value carried by a {@link Context}. */
 export interface ContextKey<T> {
 	readonly token: symbol;
@@ -50,7 +50,7 @@ export function traceIn<T>(
 ): Promise<T>
 
 ## withAbortSignal  chord/src/context/index.ts
-used by: chord-effect, durable-effect
+used by: chord-effect, durable-effect, env-effect
 /**
  * Derive a context cancelled by either the parent signal or the supplied signal.
  * The parent context remains unchanged.
