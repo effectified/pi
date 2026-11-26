@@ -57,7 +57,7 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@effectified/pi-mcp` | facade | `@earendil-works/pi-mcp`, its `oauth` and `testing` subpaths | 80 | Timers inside pi-mcp's transports and OAuth code run on the real clock |
 | `@effectified/pi-tui` | facade | `@earendil-works/pi-tui`: a running TUI as a scoped service, input, keybindings and component callbacks as Streams, clipboard and autocomplete as Effects | 65 | pi-tui's own timers (render throttle, spinners, input timeouts) do not follow `Clock`; an `AutocompleteProvider` or `SlashCommand` written in Effect |
 | `@effectified/pi-evals` | facade | `@earendil-works/pi-evals`; private like it, so not in the release | 43 | A real model (runs with `EVALS_EFFECT_REAL_MODEL`); the documentation harness inside its container; a harness's `customTools` |
-| `@effectified/pi-coding-agent` | facade | `@earendil-works/pi-coding-agent`: extensions written in Effect, sessions and their runtime, the built-in and MCP tools, models, resources, print and RPC modes | 89 | Interactive mode (its components, theme and editor wait for `@effectified/pi-tui`); OAuth login; the model runtime's own requests |
+| `@effectified/pi-coding-agent` | facade | `@earendil-works/pi-coding-agent`: extensions written in Effect, sessions and their runtime, the built-in and MCP tools, models, resources, print, RPC and interactive modes, interactive mode's components and theme | 117 | The parts of the extension API that hand Pi components or factories (renderers, custom UI, headers, footers, editors); Pi's and pi-tui's timers in interactive mode do not follow `Clock`; OAuth login; the model runtime's own requests |
 | `@effectified/pi-durable` | facade | `@earendil-works/pi-durable` | 442 | A task's own hooks, `setTimer`, prompt sections and wrappers, synchronous observers |
 | `@effectified/pi-env` | facade | `@earendil-works/pi-env` | 84 | A real remote machine (runs with `PI_ENV_SSH_HOST`); the daemon tests need a daemon built from `packages/env` |
 | `@effectified/pi-codemode` | facade | `@earendil-works/pi-codemode`: sandboxes in worker threads, on the calling thread and on a remote; deterministic runs; Effect tools; the Cloudflare entry in workerd | 52 | Pi's deadline (`timeoutMs`) and call durations run on Pi's timers, not `Clock` |
@@ -106,7 +106,7 @@ An application imports `@effectified/pi-*` and `effect`, never `@earendil-works/
   | pi-chord | 167 (37 of Chord's app runtime at its root, `Progress`, and 129 in the 19 subpaths of its app runtime, which the facade does not export) |
   | pi-mcp | 0 |
   | pi-tui | 0 |
-  | pi-coding-agent | 37 (interactive mode: `InteractiveMode`, its 25 components, `CustomEditor`, `Theme` and 9 theme helpers, which wait for `@effectified/pi-tui`) |
+  | pi-coding-agent | 0 |
 
 - `check-deps.ts` enforces this rule: only the facade of a Pi package imports that package, in `src`. Plugins, hosts
   and the composition are written the way an application is, and a facade reaches another Pi package through that
