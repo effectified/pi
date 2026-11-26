@@ -6440,8 +6440,35 @@ used by: chord-effect
 /** The names of Chord's spans. */
 export type ChordSpanName = TelemetrySchemaSpanName<typeof CHORD_TELEMETRY_SCHEMA>;
 
+## FailedCall  chord/src/watch.ts
+used by: chord-effect via NativeWatch
+/** A failure call, as both call types have it. */
+type FailedCall = { readonly kind: "failed"; readonly error: unknown };
+
+## Listener  chord/src/watch.ts
+used by: chord-effect via NativeWatch
+type Listener<C> = (call: C, context: Context) => Promise<void>;
+
+## NativeWatch  chord/src/watch.ts
+used by: chord-effect
+/**
+ * The watch handle of a native source: every value in order, one call each; past 100 pending values they collapse to
+ * one, `replace()` or by default the newest value. A failure (`fail()`) drops the pending values and waits as one
+ * `failed` call; a value after it replaces it. `detach` and `report` as for `Watch`.
+ */
+export class NativeWatch<T> extends WatchLifecycle<T, NativeWatchCall<T>> implements NativeWatchHandle<T> {
+	constructor(value: T, detach: () => void, report: (error: unknown) => void, replace?: () => T)
+	/** Queue `value`, the source's new value; it replaces a pending failure. */
+	advance(value: T, context: Context): void
+	/**
+	 * Queue a failure the source may recover from: the pending values are dropped (`value` keeps the last delivered
+	 * value), and the listener gets `{ kind: "failed", error }`.
+	 */
+	fail(error: unknown, context: Context): void
+}
+
 ## NativeWatchable  chord/src/watch.ts
-used by: chord-effect via Self, durable-effect via registryReader
+used by: chord-effect; durable-effect via registryReader
 /**
  * An in-process value that changes and can be watched (it may hold anything, errors and functions included): a change
  * is a new value by identity, delivered without ops.
@@ -6454,14 +6481,14 @@ export interface NativeWatchable<T> {
 }
 
 ## NativeWatchCall  chord/src/watch.ts
-used by: durable-effect; chord-effect via NativeObserver
+used by: chord-effect, durable-effect
 /** One call of a native watch's listener: the new value, or a failure its source may recover from, as in `WatchCall`. */
 export type NativeWatchCall<T> =
 	| { readonly kind: "value"; readonly value: T }
 	| { readonly kind: "failed"; readonly error: unknown };
 
 ## NativeWatchHandle  chord/src/watch.ts
-used by: chord-effect via Self, durable-effect via registryReader
+used by: chord-effect; durable-effect via registryReader
 /**
  * Serialized observation of an in-process value: as `WatchHandle`, but each new value is its own call, in order, without
  * ops.
@@ -6475,6 +6502,30 @@ export interface NativeWatchHandle<T> {
 	stop(): Promise<WatchEnd>;
 	/** Settle when the watch terminates; an already-running callback remains caller-owned. */
 	readonly closed: Promise<WatchEnd>;
+}
+
+## Watch  chord/src/watch.ts
+used by: chord-effect
+/**
+ * The watch handle of a JSON source. Frames that arrive before `start()` or while the listener runs wait in one
+ * `PendingOps` queue; the next call gets the newest value, the folded ops of every frame since the previous call (or
+ * `[["r", newest]]` after the queue overflowed), `retired` when any of them was a retirement, and the newest frame's
+ * context. A frame delivered alone is passed on as the source made it. A failure (`fail()`) drops the pending frames and
+ * waits as one `failed` call; a value after it replaces it, and the first value call after a failure is `[["r",
+ * value]]`. `detach` unsubscribes it from its source on termination; `report` gets a listener's throw, which also ends
+ * the watch.
+ */
+export class Watch<T> extends WatchLifecycle<T, WatchCall<T>> implements WatchHandle<T> {
+	/**
+	 * Queue the frame `call`. A value's ops turn the previous value into it, and `retired` says the document the watch
+	 * follows was retired, which the next value call reports however many frames it folds; a failure is `fail()`.
+	 */
+	advance(call: WatchCall<T>, context: Context): void
+	/**
+	 * Queue a failure the source may recover from: the pending frames are dropped (`value` keeps the last delivered
+	 * value), the listener gets `{ kind: "failed", error }`, and the next value arrives as `[["r", value]]`.
+	 */
+	fail(error: unknown, context: Context): void
 }
 
 ## Watchable  chord/src/watch.ts
@@ -6492,7 +6543,7 @@ export interface Watchable<T> {
 }
 
 ## WatchCall  chord/src/watch.ts
-used by: durable-effect; chord-effect via FollowObserver
+used by: chord-effect, durable-effect
 /**
  * One call of a JSON watch's listener, and one frame a source hands its watch, tagged by `kind`:
  *
@@ -6510,7 +6561,7 @@ export type WatchCall<T> =
 	| { readonly kind: "failed"; readonly error: unknown };
 
 ## WatchEnd  chord/src/watch.ts
-used by: durable-effect; chord-effect via FollowObserver
+used by: chord-effect, durable-effect
 /**
  * Terminal result of one watch, tagged by `kind`. A watch ends only for good; a failure its source recovers from is a
  * `failed` call (`WatchCall`), and the watch stays open.
@@ -6527,7 +6578,7 @@ export type WatchEnd =
 	| { readonly kind: "failed"; readonly error: unknown };
 
 ## WatchHandle  chord/src/watch.ts
-used by: durable-effect; chord-effect via KeyedWatchable
+used by: chord-effect, durable-effect
 /**
  * Serialized observation of an immutable value: one listener call at a time; changes made meanwhile arrive folded into
  * the next call.
@@ -6541,4 +6592,36 @@ export interface WatchHandle<T> {
 	stop(): Promise<WatchEnd>;
 	/** Settle when the watch terminates; an already-running callback remains caller-owned. */
 	readonly closed: Promise<WatchEnd>;
+}
+
+## WatchLifecycle  chord/src/watch.ts
+used by: chord-effect via NativeWatch
+/**
+ * The lifecycle both handles share: serialized delivery and termination. A source feeds it and ends it explicitly;
+ * termination drops every reference the watch holds into its source, so a stopped watch that is still referenced keeps
+ * nothing but its last value alive. Subclasses keep what is pending, each call apart from its frame's context, so the
+ * call a listener gets carries nothing but its data.
+ */
+abstract class WatchLifecycle<T, C extends { readonly kind: "value"; readonly value: T } | FailedCall> {
+	constructor(value: T, detach: () => void, report: (error: unknown) => void)
+	get value(): T
+	get closed(): Promise<WatchEnd>
+	start(listener: Listener<C>): void
+	stop(): Promise<WatchEnd>
+	/** End the watch `aborted` when `signal` aborts; installed once. */
+	observeAbort(signal: AbortSignal): void
+	/** End the watch `aborted`: its acquisition context was aborted. */
+	abort(): void
+	/**
+	 * End the watch with `end` at once, dropping what is pending: the source closed (`ended`), or failed for good
+	 * (`failed`). A failure the source may recover from is a `failed` call instead (`fail()`).
+	 */
+	end(end: WatchEnd): void
+	/**
+	 * The source sends nothing more after its last frames, such as a retirement: take no more frames, deliver what is
+	 * pending, then end `ended`, after the running call returns, if one runs. Until then the watch stays attached, so
+	 * `end()`, `stop()`, an abort, and a throwing listener still end it first; a watch never started keeps what is
+	 * pending until one of them or `start()`.
+	 */
+	endAfterDelivery(): void
 }

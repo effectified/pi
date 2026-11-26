@@ -52,7 +52,7 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@effectified/pi-schema` | facade | `@earendil-works/pi-schema` | 28 | |
 | `@effectified/pi-ai` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges, credentials and login as services and Effects, its helpers, the key of a request, `runTest`, the forms the plugins share | 119 | Images, classifiers, deferred responses; timers inside pi-ai's OAuth flows run on the real clock |
 | `@effectified/pi-telemetry` | facade | `@earendil-works/pi-telemetry`, its telemetry schemas as typed Effect spans and metrics | 67 | `TelemetryStore`; histogram exemplars |
-| `@effectified/pi-chord` | facade | `@earendil-works/chord`: its context from the fiber, JSON, SQLite, delta, output, the store | 70 | Chord's runtime (hosts, facets, links, clients, plugins, app kit, surfaces, sync); `Progress`; `/sqlite/cloudflare` |
+| `@effectified/pi-chord` | facade | `@earendil-works/chord`: its context from the fiber, JSON, SQLite, delta, output, the store, hosts and facets with Effect handlers, links, clients, watches | 107 | Chord's app kit (plugins, app server, HTTP, workers, surfaces, sync); `Progress`; `/sqlite/cloudflare` |
 | `@effectified/pi-agent` | facade | `@earendil-works/pi-agent-core` | 54 | Changing the agent's settings and hooks after `make`; `Clock` for the timestamps Pi stamps itself |
 | `@effectified/pi-mcp` | facade | `@earendil-works/pi-mcp`, its `oauth` and `testing` subpaths | 80 | Timers inside pi-mcp's transports and OAuth code run on the real clock |
 | `@effectified/pi-tui` | facade | `@earendil-works/pi-tui`: a running TUI as a scoped service, input, keybindings and component callbacks as Streams, clipboard and autocomplete as Effects | 65 | pi-tui's own timers (render throttle, spinners, input timeouts) do not follow `Clock`; an `AutocompleteProvider` or `SlashCommand` written in Effect |
@@ -103,7 +103,7 @@ An application imports `@effectified/pi-*` and `effect`, never `@earendil-works/
   | pi-schema | 0 |
   | pi-codemode | 0 |
   | pi-evals | 0 (pi-evals has no entry point: one record per module, `plan`, `report`, `harness`, `docker`, and the empty one of its `cli` script) |
-  | pi-chord | 161 (31 at its root: Chord's host, link and client runtime, and the store's surface for adapters, which Chord marks internal; `Progress`; and 129 in the 19 subpaths of its app runtime, which the facade does not export) |
+  | pi-chord | 142 (14 at its root: the store's surface for adapters, which Chord marks internal; `Progress`; and 127 in the 18 subpaths of its app kit, which the facade does not export) |
   | pi-mcp | 0 |
   | pi-tui | 0 |
   | pi-coding-agent | 0 |

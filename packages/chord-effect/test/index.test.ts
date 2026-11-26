@@ -15,7 +15,6 @@ import type * as PiTelemetrySqlite from "@earendil-works/chord/telemetry-sqlite"
 import type * as PiTelemetrySqliteNode from "@earendil-works/chord/telemetry-sqlite/node";
 import type * as PiTui from "@earendil-works/chord/tui";
 import type * as PiTuiLauncher from "@earendil-works/chord/tui/launcher";
-import type * as PiWatch from "@earendil-works/chord/watch";
 import type * as PiWeb from "@earendil-works/chord/web";
 import type * as PiWorkers from "@earendil-works/chord/workers";
 import type * as PiWorkersChild from "@earendil-works/chord/workers/child";
@@ -27,14 +26,6 @@ const offered: Coverage = { kind: "offered" };
 const replaced = (by: string): Coverage => ({ kind: "replaced", by });
 const open = (why: string): Coverage => ({ kind: "open", why });
 
-const HOST = open(
-	"Chord's host runtime: hosts and facets run promise-returning callbacks and hold long-lived state; an Effect form " +
-		"of the host is a design of its own and is not written",
-);
-const LINK = open(
-	"a transport between Chord processes with its own lifecycle and callbacks, for the host and client runtimes",
-);
-const CLIENT = open("Chord's client and surface runtime: it follows a host with callbacks and promises");
 const INTERNAL = open(
 	"marked internal by Chord: the store's surface for adapters, which Pi Durable's StoreStorage uses and an " +
 		"application never calls; an application reaches it as Storage.store of @effectified/pi-durable/storage/store",
@@ -75,7 +66,7 @@ const COVERAGE = {
 	broken: offered,
 	// State, registries, admission, jobs.
 	mapShared: offered,
-	constant: open("a Watchable, the subscription of Chord's state runtime, which is not wrapped"),
+	constant: offered,
 	keyedEntries: offered,
 	orderedEntries: offered,
 	defineRegistry: offered,
@@ -87,18 +78,19 @@ const COVERAGE = {
 	binaryCodec: offered,
 	textCodec: offered,
 	describeMessage: offered,
-	ipcLink: LINK,
-	memoryLinkPair: LINK,
-	webSocketLink: LINK,
+	ipcLink: replaced("Link.ipc: scoped"),
+	memoryLinkPair: replaced("Link.memoryPair: scoped"),
+	webSocketLink: replaced("Link.webSocket: scoped"),
 	// Hosts and facets.
-	defineFacet: HOST,
-	createHost: HOST,
-	LoadedFacets: HOST,
-	evaluateRegistered: HOST,
-	localeChoiceFacet: HOST,
-	themeChoiceFacet: HOST,
-	themesFacet: HOST,
-	translationsFacet: HOST,
+	// A facet with Effect handlers is Facet.make; defineFacet stays for one without them.
+	defineFacet: offered,
+	createHost: replaced("Host.make: scoped, its calls Effects, its errors a Stream"),
+	LoadedFacets: replaced("Facet.loadSet"),
+	evaluateRegistered: replaced("Facet.evaluate: fails with ScriptFailed"),
+	localeChoiceFacet: offered,
+	themeChoiceFacet: offered,
+	themesFacet: offered,
+	translationsFacet: offered,
 	sleep: replaced("Effect.sleep on the Clock, raced with ChordContext.aborted of @effectified/pi-chord/context"),
 	untilAborted: replaced("ChordContext.aborted of @effectified/pi-chord/context"),
 	// Tables, queries and the store.
@@ -140,11 +132,11 @@ const COVERAGE = {
 	decodeJsonl: replaced("Store.decodeJsonl: Stream to Stream"),
 	encodeJsonl: replaced("Store.encodeJsonl: Stream to Stream"),
 	// Surfaces: clients, languages, themes, messages, scripts.
-	startClient: CLIENT,
-	keepConnected: CLIENT,
-	followActiveLanguage: CLIENT,
-	followActiveTheme: CLIENT,
-	hostLanguage: CLIENT,
+	startClient: replaced("Client.start: scoped, its callbacks Effects, its connection and errors Streams"),
+	keepConnected: replaced("Client.keepConnected: scoped, on the Clock, its states a Stream"),
+	followActiveLanguage: replaced("Client.activeLanguage: a Stream"),
+	followActiveTheme: replaced("Client.activeTheme: a Stream"),
+	hostLanguage: replaced("Client.hostLanguage, a Stream, and Client.setHostLanguage"),
 	formatNumber: offered,
 	formatTime: offered,
 	createLanguage: offered,
@@ -183,14 +175,8 @@ const COVERAGE = {
 } satisfies Record<keyof typeof PiChord, Coverage>;
 
 // The subpaths this package does not export. Each is recorded value by value, so a value Chord adds to one fails the
-// type check until it is decided; the reason is the subpath's. `/context`, `/delta`, `/json`, `/output`, `/sqlite`
-// and `/sqlite/node` are this package's subpaths, recorded in their own test files.
-
-const WATCH = open(
-	"the lifecycle a watch source builds its handles on (Chord's hosts, Pi Durable's documents); an application meets " +
-		"watches as Streams of @effectified/pi-durable, and Chord's own sources are in its host runtime",
-);
-const WATCH_COVERAGE = { Watch: WATCH, NativeWatch: WATCH } satisfies Record<keyof typeof PiWatch, Coverage>;
+// type check until it is decided; the reason is the subpath's. `/context`, `/delta`, `/json`, `/output`, `/sqlite`,
+// `/sqlite/node` and `/watch` are this package's subpaths, recorded in their own test files.
 
 const HTTP = open(
 	"the HTTP component of a Chord app server: a fetch handler made of what plugins contribute to a host",
@@ -386,7 +372,6 @@ const TELEMETRY_INGEST_COVERAGE = {
 
 /** Every subpath this package does not export, by its name in Chord's `exports`. */
 const SUBPATHS: Record<string, Record<string, Coverage>> = {
-	"./watch": WATCH_COVERAGE,
 	"./http": HTTP_COVERAGE,
 	"./compression": COMPRESSION_COVERAGE,
 	"./workers": WORKERS_COVERAGE,
@@ -408,7 +393,7 @@ const SUBPATHS: Record<string, Record<string, Coverage>> = {
 };
 
 /** The subpaths this package exports, each recorded in the test file of its source. */
-const WRAPPED = ["./context", "./delta", "./json", "./output", "./sqlite", "./sqlite/node"];
+const WRAPPED = ["./context", "./delta", "./json", "./output", "./sqlite", "./sqlite/node", "./watch"];
 
 describe("the coverage of Chord", () => {
 	it("offers every value of Chord's root it records as offered, Chord's own and not copies", () => {

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { attempt, chordCall, chordSync, storeRejection } from "../src/call.ts";
 import { createContextKey } from "../src/context.ts";
 import { ChordFailed, SqliteError } from "../src/errors.ts";
+import { ParentContext } from "../src/parent-context.ts";
 import { run } from "./run.ts";
 
 describe("chordCall", () => {
@@ -28,10 +29,14 @@ describe("chordCall", () => {
 		expect(Exit.isFailure(exit) && exit.cause.reasons[0]?._tag).toBe("Die");
 	});
 
-	it("keeps the parent context's values", async () => {
+	it("keeps the values of the fiber's ParentContext", async () => {
 		const key = createContextKey<string>("example.tenant");
 		const tenant = await run(
-			chordCall(async (context) => context.value(key), withContextValue(key, "acme", BACKGROUND_CONTEXT)),
+			Effect.provideService(
+				chordCall(async (context) => context.value(key)),
+				ParentContext,
+				withContextValue(key, "acme", BACKGROUND_CONTEXT),
+			),
 		);
 		expect(tenant).toBe("acme");
 	});

@@ -5,9 +5,9 @@
 // without importing Chord. The subpaths (`/context`, `/delta`, `/json`, ...) give theirs.
 export type * from "@earendil-works/chord";
 // Chord's declaration vocabulary: contracts and their schemas, errors a method declares, registries, job, state,
-// table and query declarations, codecs, themes, messages and formats. Synchronous and free of I/O; a builder throws
-// only for a declaration it refuses (a bad name or version), which is a defect of the program. Chord's runtime (hosts,
-// facets, clients, links, the store) is not wrapped: see `test/index.test.ts`.
+// table and query declarations, codecs, themes, messages and formats, constants and Chord's own facets (themes,
+// translations, the user's picks). Synchronous and free of I/O; a builder throws only for a declaration it refuses (a
+// bad name or version), which is a defect of the program. Chord's runtime is the namespaces below.
 export {
 	activeTheme,
 	add,
@@ -25,8 +25,10 @@ export {
 	compareText,
 	compile,
 	concat,
+	constant,
 	createLanguage,
 	defineColumns,
+	defineFacet,
 	defineJob,
 	defineMessages,
 	defineRegistry,
@@ -59,6 +61,7 @@ export {
 	LocaleChoice,
 	lit,
 	local,
+	localeChoiceFacet,
 	lt,
 	lte,
 	MessageSchema,
@@ -95,12 +98,16 @@ export {
 	TuiScripts,
 	terminalColor,
 	textCodec,
+	themeChoiceFacet,
+	themesFacet,
 	themeVariables,
+	translationsFacet,
 	union,
 	unknown,
 	WebScripts,
 	when,
 } from "@earendil-works/chord";
+export * as Client from "./client.ts";
 export {
 	type ChordCallError,
 	ChordFailed,
@@ -114,4 +121,10 @@ export {
 	SqliteError,
 	UnsafePathError,
 } from "./errors.ts";
+export * as Facet from "./facet.ts";
+export { ScriptFailed } from "./facet.ts";
+export * as Host from "./host.ts";
+export * as Link from "./link.ts";
+export * as Reference from "./reference.ts";
 export * as Store from "./store.ts";
+export { WatchFailed } from "./watch.ts";

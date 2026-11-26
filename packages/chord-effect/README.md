@@ -12,6 +12,10 @@ Pi call takes, and Chord's JSON, SQLite, delta and output values. For `effect` 4
 
 - **Chord's store.** `Store.open` and `Store.importArchive` give a store for the life of a scope; its commits and
   archives are Streams.
+- **Chord's runtime.** A host (`Host.make`) is a scoped resource whose calls are Effects. A facet (`Facet.make`) has
+  Effect handlers that run with the services of where it was made. Links (`Link`) and clients (`Client`) are scoped,
+  and what they report (messages, connection states, the active theme and language) are Streams, as are Chord's
+  watchables (`@effectified/pi-chord/watch`).
 
 The package adds no behaviour of its own. `test/index.test.ts` records what it does with every value Chord exports,
 and why a value is not wrapped yet.
@@ -228,11 +232,82 @@ const copy = Effect.scoped(
   tagged error (`code`, `reason`, `message`, `details`). The database's own errors fail with `SqliteError`. When the
   Stream of parts fails, the import fails with that failure.
 
+## Hosts and facets
+
+A Chord app is made of objects served by facets on hosts. `Host.make(options)` is Chord's `createHost` for the life of
+a scope. `Facet.make(setup)` is Chord's `defineFacet` with Effect handlers: wrap each one with `lift`.
+
+```typescript
+import { Context, Effect } from "effect";
+import { constant, Facet, Host, local, method, obj, Reference, str } from "@effectified/pi-chord";
+
+class Greetings extends Context.Service<Greetings, { readonly hello: (name: string) => Effect.Effect<string> }>()(
+	"app/Greetings",
+) {}
+
+const Greeter = local("example.greeter", {
+	version: 1,
+	params: { language: str() },
+	members: { language: str(), greet: method(obj({ name: str() }), str()) },
+});
+
+// The app's principal: who a host acts for.
+type User = { readonly kind: "user"; readonly name: string };
+
+const greet = Effect.scoped(
+	Effect.gen(function* () {
+		// The handlers run with the `Greetings` of this Effect's context.
+		const facet = yield* Facet.make<User, Greetings>((host, _self, lift) => {
+			host.serve(Greeter, ({ language }) => ({
+				language: constant(language),
+				greet: lift(({ name }, _ctx) => Greetings.use((greetings) => greetings.hello(name))),
+			}));
+		});
+		const host = yield* Host.make<User>({ principal: { kind: "user", name: "owner" } });
+		yield* host.load([{ name: "@example/greeter", facet }]);
+		// Released when the scope closes; so is the host.
+		const english = yield* host.get(Greeter, { language: "en" });
+		return yield* Reference.call(english.greet, { name: "Ada" });
+	}),
+);
+```
+
+- `lift(handler)` turns an Effect handler into the function Chord calls (a method, an `on` routine, a job's run).
+  Its last argument is the call's `ctx`: the Effect runs with it as `ParentContext` (of
+  `@effectified/pi-chord/context`), so the calls it makes act for the caller, and it is interrupted when Chord cancels
+  the call. Failing with `ChordFailed` or `PluginFailed` reaches the caller with that code (`invalid`, `forbidden`, a
+  plugin's own); any other failure is an internal error.
+- A host's calls are Effects: `load`, `reload`, `registry`, `revoke`, `accept` and `connect` (a link), `route` (its
+  `resolve` an Effect), `root` (a body that is an Effect, its failure the Effect's), and the host data calls.
+  `get` and `hold` give references released when the scope closes.
+- `references(Type)` and `activity` are Streams. `errors` is a Stream of Chord's `onError`, and each error is also
+  logged on the Effect logger. `Host.of(host, errors)` gives this API for a host Chord made itself.
+- `Reference.call(reference.method, args)` calls a method under the fiber's `ParentContext`, interrupting the fiber
+  cancels it; `Reference.state(reference)` is a Stream of its state. Every call fails with `ChordCallError`.
+- `defineFacet` is offered for a facet without Effect handlers, and so are Chord's own facets (`themesFacet()`,
+  `translationsFacet()`, `themeChoiceFacet()`, `localeChoiceFacet()`) and `constant`. `Facet.evaluate` runs a
+  registered plugin script and `Facet.loadSet` loads a set of them, as a client does.
+
+## Links, clients and watches
+
+- `Link.memoryPair`, `Link.ipc(port)` and `Link.webSocket(socket)` give Chord's links for the life of a scope.
+  `Link.messages(link)` is a Stream of what arrives on a link no host took; `Link.send` and `Link.close` are Effects.
+- `Client.start(options)` is Chord's `startClient` for the life of a scope: its callbacks (`open`, `fetchScript`,
+  `serverBase`, `outdated`, `canRetry`) are Effects, its `connection` and `errors` are Streams, and its `host` is a
+  `Host`. `Client.keepConnected(options)` is Chord's connection loop alone. Both run their timers on the `Clock`
+  (`Client.environment`), so `TestClock` drives them.
+- `Client.activeTheme(host, mode, modes?)`, `Client.activeLanguage(host, preferred, devices?)` and
+  `Client.hostLanguage(host)` are Chord's followers as Streams; they stop when their scope closes.
+- `changes(watchable)` and `values(watchable)` of `@effectified/pi-chord/watch` are Streams of a Chord watchable (a
+  document, a derive, a reference's member, a registry's value): the value now, then its changes, folded while the
+  consumer is busy. A failure of the source fails the Stream with `WatchFailed`.
+
 ## Errors
 
 One closed union, `ChordFailure`: `PathError`, `UnsafePathError`, `InvalidOp`, `NotJson`, `InvalidSchemaPrefix`,
 `SqliteError`, and `ChordCallError` of Chord's runtime: `ChordFailed` (Chord's `ChordError`) and `PluginFailed` (a
-plugin's `PluginError`). Chord's error classes map to their tags through records keyed by Chord's exports, so a
+plugin's `PluginError`). `ScriptFailed` (a plugin script that would not evaluate) and `WatchFailed` (a watch that
+failed) are their modules' own. Chord's error classes map to their tags through records keyed by Chord's exports, so a
 class Chord adds fails to compile until it has one.
 
 ## The root
@@ -243,8 +318,11 @@ state, job, table and query declarations, codecs, themes, messages and formats. 
 
 ## Not covered
 
-- **Chord's runtime.** Hosts and facets, links, clients, plugins, the app kit, HTTP, workers, the web,
+- **Chord's app kit.** Plugins, the app kit, HTTP, workers, the web,
   terminal and React surfaces, session sync and Chord's own telemetry store. Each subpath's values are recorded `open`
   in `test/index.test.ts` with the reason.
 - **`Progress`** of `/output`: it paces promise-returning writes on its own timers.
 - **`/sqlite/cloudflare`**: it needs a Durable Object's storage, which only workerd provides.
+- **The store's surface for adapters** (`findDocument`, `applyBatch`, ...): Chord marks it internal. Pi Durable's
+  storage uses it; an application reaches it as `store` of `@effectified/pi-durable/storage/store`.
+- **A client page's stylesheets and telemetry** (`ClientOptions.styles`, `telemetry`): passed to Chord as they are.

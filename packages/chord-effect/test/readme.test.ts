@@ -5,12 +5,18 @@
 import { sleep } from "@earendil-works/chord";
 import { traceIn } from "@earendil-works/chord/context";
 import { PiTelemetry } from "@effectified/pi-telemetry";
-import { Duration, Effect, Fiber, Option, Stream, Tracer } from "effect";
+import { Context, Duration, Effect, Fiber, Option, Stream, Tracer } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-import { BACKGROUND_CONTEXT, ChordContext, type Context, createContextKey, withContextValue } from "../src/context.ts";
+import {
+	BACKGROUND_CONTEXT,
+	type Context as CallContext,
+	ChordContext,
+	createContextKey,
+	withContextValue,
+} from "../src/context.ts";
 import { apply, decoder, encoder, type Op } from "../src/delta.ts";
-import { Store, sqliteBackend } from "../src/index.ts";
+import { constant, Facet, Host, local, method, obj, Reference, Store, sqliteBackend, str } from "../src/index.ts";
 import { copyJson, isJsonValue, NotJson } from "../src/json.ts";
 import { openNodeSqliteDatabase } from "../src/node/sqlite.ts";
 import { applySqliteMigrations, validateSqliteSchemaPrefix } from "../src/sqlite.ts";
@@ -21,9 +27,9 @@ import { run } from "./run.ts";
  * waits on Chord's own `sleep` under that context.
  */
 function conversation(ms: number) {
-	const contexts: Context[] = [];
+	const contexts: CallContext[] = [];
 	const root = {
-		submit: (_input: { readonly type: "input"; readonly content: string }, context: Context) => {
+		submit: (_input: { readonly type: "input"; readonly content: string }, context: CallContext) => {
 			contexts.push(context);
 			return traceIn({ name: "pi.durable.submit" }, (traced) => sleep(ms, traced), context).then(() => "submitted");
 		},
@@ -203,5 +209,45 @@ describe("README: The store", () => {
 		);
 
 		expect(await run(copy)).toBe(0);
+	});
+});
+
+class Greetings extends Context.Service<Greetings, { readonly hello: (name: string) => Effect.Effect<string> }>()(
+	"app/Greetings",
+) {}
+
+const Greeter = local("example.greeter", {
+	version: 1,
+	params: { language: str() },
+	members: { language: str(), greet: method(obj({ name: str() }), str()) },
+});
+
+// The app's principal: who a host acts for.
+type User = { readonly kind: "user"; readonly name: string };
+
+describe("README: Hosts and facets", () => {
+	it("serves a facet whose handlers are Effects", async () => {
+		// README: hosts.
+		const greet = Effect.scoped(
+			Effect.gen(function* () {
+				// The handlers run with the `Greetings` of this Effect's context.
+				const facet = yield* Facet.make<User, Greetings>((host, _self, lift) => {
+					host.serve(Greeter, ({ language }) => ({
+						language: constant(language),
+						greet: lift(({ name }, _ctx) => Greetings.use((greetings) => greetings.hello(name))),
+					}));
+				});
+				const host = yield* Host.make<User>({ principal: { kind: "user", name: "owner" } });
+				yield* host.load([{ name: "@example/greeter", facet }]);
+				// Released when the scope closes; so is the host.
+				const english = yield* host.get(Greeter, { language: "en" });
+				return yield* Reference.call(english.greet, { name: "Ada" });
+			}),
+		);
+
+		const greeted = await run(
+			Effect.provideService(greet, Greetings, { hello: (name) => Effect.succeed(`Hello ${name}`) }),
+		);
+		expect(greeted).toBe("Hello Ada");
 	});
 });

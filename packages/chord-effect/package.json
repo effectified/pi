@@ -41,6 +41,11 @@
 			"types": "./dist/node/sqlite.d.ts",
 			"import": "./dist/node/sqlite.js"
 		},
+		"./watch": {
+			"source": "./src/watch.ts",
+			"types": "./dist/watch.d.ts",
+			"import": "./dist/watch.js"
+		},
 		"./package.json": "./package.json"
 	},
 	"sideEffects": false,

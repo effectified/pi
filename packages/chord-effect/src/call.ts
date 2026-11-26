@@ -1,30 +1,28 @@
 // The bridge from Effect to Chord's runtime: one Chord call under a Chord context of the calling fiber, what it
 // rejects with as a tagged error.
 
-import { BACKGROUND_CONTEXT, type Context, withAbortSignal } from "@earendil-works/chord/context";
+import { type Context, withAbortSignal } from "@earendil-works/chord/context";
 import { Effect } from "effect";
 import { type ChordCallError, fromChord, SqliteError } from "./errors.ts";
+import { ParentContext } from "./parent-context.ts";
 import { traced } from "./traced.ts";
 
 /** `attempt` with Chord's runtime rejections: its error classes as `ChordCallError`, anything else a defect. */
-export function chordCall<A>(
-	run: (context: Context) => Promise<A>,
-	parent: Context = BACKGROUND_CONTEXT,
-): Effect.Effect<A, ChordCallError> {
-	return attempt(run, rejection, parent);
+export function chordCall<A>(run: (context: Context) => Promise<A>): Effect.Effect<A, ChordCallError> {
+	return attempt(run, rejection);
 }
 
 /**
- * Runs `run` with a child of `parent` under the fiber's current span (`ChordContext`'s telemetry rule), cancelled when
- * the fiber is interrupted; what it rejects with goes to `rejected`. An interrupted fiber waits until Chord settled the
- * call, so nothing of it is still running when the interruption completes; what Chord answers then is dropped.
+ * Runs `run` with a child of the fiber's `ParentContext` under its current span (`ChordContext`'s telemetry rule),
+ * cancelled when the fiber is interrupted; what it rejects with goes to `rejected`. An interrupted fiber waits until
+ * Chord settled the call, so nothing of it is still running when the interruption completes; what Chord answers then
+ * is dropped.
  */
 export function attempt<A, E>(
 	run: (context: Context) => Promise<A>,
 	rejected: (thrown: unknown) => Effect.Effect<never, E>,
-	parent: Context = BACKGROUND_CONTEXT,
 ): Effect.Effect<A, E> {
-	return Effect.flatMap(traced(parent), (under) =>
+	return Effect.flatMap(currentContext, (under) =>
 		Effect.callback<A, E>((resume, signal) => {
 			// A promise executor turns a synchronous throw of `run` into a rejection too.
 			const done = new Promise<A>((resolve) => resolve(run(withAbortSignal(signal, under)))).then(
@@ -35,6 +33,12 @@ export function attempt<A, E>(
 		}),
 	);
 }
+
+/**
+ * The context a Chord call of the fiber is made under: its `ParentContext` under its current span. Chord's synchronous
+ * runtime calls that keep a context (a hold, a link's work) take this one.
+ */
+export const currentContext: Effect.Effect<Context> = Effect.flatMap(Effect.service(ParentContext), traced);
 
 /** `run` as an Effect for Chord's synchronous runtime calls, which throw what the async ones reject with. */
 export function chordSync<A>(run: () => A): Effect.Effect<A, ChordCallError> {
