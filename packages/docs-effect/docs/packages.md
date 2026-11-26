@@ -16,6 +16,7 @@ tests. [How pi-effect Works](how-it-works.md) says how the kinds layer.
 | Pi's spans, metrics and events on Effect's tracer, metrics and logger | `@effectified/pi-telemetry` | facade | `PiTelemetry` | [telemetry](../../telemetry-effect/README.md) |
 | The Chord context of a Pi call from the calling fiber; Chord's JSON, SQLite, delta and output values | `@effectified/pi-chord` | facade | Chord's declaration vocabulary; `/context`: `ChordContext`; `/json`, `/sqlite`, `/sqlite/node`, `/delta`, `/output` | [chord](../../chord-effect/README.md) |
 | MCP servers over stdio, Streamable HTTP or a pipe: calls as Effects, notifications as Streams, OAuth sign-in | `@effectified/pi-mcp` | facade | `McpClient`, `stdioTransport`, `streamableHttpTransport`, `pipeTransport`, `toMcpModelContent`, `McpFailure`; `/oauth`: `startMcpSignIn`, `completeMcpSignIn`, `listenForLoopbackSignIn`, `createMcpAuthProvider`; `/testing`: `inMemoryTransportPair` | [mcp](../../mcp-effect/README.md) |
+| The terminal UI: a running TUI as a scoped service, input and keybindings as Streams, components as pi-tui has them | `@effectified/pi-tui` | facade | `Tui` (`layer`, `regular`, `fullscreen`, `presses`, `input`, `showOverlay`, `render`), `events`, `splitInput`, `loader`, `settingsList`, `nativeClipboard`, `getSuggestions`, pi-tui's components | [tui](../../tui-effect/README.md) |
 | A harness inside a Rivet actor: actor SQLite as storage, schedules as wake-ups, actor forks | `@effectified/pi-durable-rivet` | host | `Actor`, `Action`, `Client`, `Host`, `Self`, `ActorSql`, `ActorInfo`; `/node` and `/bun`: `serve`; `/testing` | [rivet host](../../durable-rivet-effect/README.md) |
 | An exact tool allow-list per conversation, denied verbs, argument rules, classification ceilings | `@effectified/pi-guard` | plugin | `Guard`, `Conversations`, `Policy`, `Matcher`, `Rule`, `Refused` | [guard](../../guard-effect/README.md) |
 | Money reserved and settled for every provider request under the product's lease | `@effectified/pi-budget` | plugin | `BudgetedModels`, `Lease`, `Estimator`, `Prices`, `Shares`, `Spend`, `stopOf`, `continueStopped` | [budget](../../budget-effect/README.md) |
@@ -32,7 +33,7 @@ Modules are namespaces: `import { Harness, Tool } from "@effectified/pi-durable"
 `import * as Review from "@effectified/pi-review"`, `import * as Swarm from "@effectified/pi-swarm"`. Copy the
 import lines of the README example you start from.
 
-Being built: the facades of pi-codemode, pi-tui, pi-coding-agent and pi-evals. Not built: fixed-step
+Being built: the facades of pi-codemode, pi-coding-agent and pi-evals. Not built: fixed-step
 workflows, a sandbox. Reach what a facade does not wrap through Pi's own objects (each README ends with "Not wrapped yet").
 
 ## Installing in a product

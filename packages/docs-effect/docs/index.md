@@ -18,7 +18,7 @@ If the packages are already in your product, choose what you want to do:
 
 ## Find a package
 
-[Packages](packages.md) lists all fifteen with what each is for and its entry points. Each package's README is its reference, and the examples in it are run by the package's own tests.
+[Packages](packages.md) lists every package with what each is for and its entry points. Each package's README is its reference, and the examples in it are run by the package's own tests.
 
 ## Work with coding agents
 

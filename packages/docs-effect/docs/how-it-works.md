@@ -4,8 +4,8 @@
 
 - Pi Durable (`@earendil-works/pi-durable`) is a durable agent harness: conversations, tools, hooks, tasks and forks
   whose state is stored, so a later process continues the work. It is promise-based and experimental.
-- pi-effect is fifteen packages that give it, and Pi's model library, in Effect 4.1 terms, plus the behaviour every
-  product needs (guards, budgets, approvals, review, records, routing, subagents, swarms, search, a Rivet host).
+- pi-effect gives it, and every other package of Pi (models, agents, MCP, environments, the terminal UI, the coding
+  agent and its extensions), in Effect 4.1 terms, plus the behaviour every product needs (guards, budgets, approvals, review, records, routing, subagents, swarms, search, a Rivet host).
 - Every public function returns an `Effect`, a `Stream` or a `Layer`. No promise and no callback option in a signature.
 - Nothing in it knows a product. Tools, names, prices, labels and rules come from the product as data and as ports.
 - Built for Pi 1.6.1, `effect` 4.1.5 (peer `~4.1.5`), `rivetkit` 3.1.1 (peer `~3.1.1`), Node 22.19 or later, Bun.
