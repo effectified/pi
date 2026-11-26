@@ -61,7 +61,8 @@ export interface Shortcut<R> {
 
 /**
  * The extension's API: every member of Pi's `ExtensionAPI` an extension acts through, as an Effect under its name.
- * Drawing (message, entry and tool renderers) waits for `@effectified/pi-tui`; handlers are given to `Extension.make`.
+ * Drawing (message, entry and tool renderers, factories Pi calls while it renders) is not wrapped yet; handlers are
+ * given to `Extension.make`.
  */
 export interface ExtensionApiHandle
 	extends Reads<ExtensionAPI, (typeof READS)[number]>,

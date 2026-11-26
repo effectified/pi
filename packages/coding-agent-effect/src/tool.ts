@@ -26,8 +26,8 @@ export type Contexts = ExtensionContext | ToolContext;
 /**
  * What `make` takes besides the tool's name: `@effectified/pi-agent`'s tool options, whose handler may use the
  * contexts of the call, and the session fields of Pi's tool definition. A durable host's `replay` has no meaning in a
- * coding agent's session, and drawing a call (`renderCall`, `renderResult`, `renderShell`) waits for
- * `@effectified/pi-tui`.
+ * coding agent's session, and drawing a call (`renderCall`, `renderResult`, `renderShell`, factories Pi calls while
+ * it renders) is not wrapped yet.
  */
 export interface Options<P extends Schema.Constraint, S extends Schema.Constraint, E, R>
 	extends Omit<AgentTool.Options<P, S, E, R>, "replay">,
