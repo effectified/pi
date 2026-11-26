@@ -51,7 +51,7 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 |---|---|---|---|---|
 | `@effectified/pi-schema` | facade | `@earendil-works/pi-schema` | 28 | |
 | `@effectified/pi-ai` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges, credentials and login as services and Effects, its helpers, the key of a request, `runTest`, the forms the plugins share | 119 | Images, classifiers, deferred responses; timers inside pi-ai's OAuth flows run on the real clock |
-| `@effectified/pi-telemetry` | facade | `@earendil-works/pi-telemetry` | 59 | `TelemetryStore`; histogram exemplars |
+| `@effectified/pi-telemetry` | facade | `@earendil-works/pi-telemetry`, its telemetry schemas as typed Effect spans and metrics | 67 | `TelemetryStore`; histogram exemplars |
 | `@effectified/pi-chord` | facade | `@earendil-works/chord`: its context from the fiber, JSON, SQLite, delta, output | 42 | Chord's runtime (hosts, facets, links, store, clients, plugins, app kit, surfaces, sync); `Progress`; `/sqlite/cloudflare` |
 | `@effectified/pi-agent` | facade | `@earendil-works/pi-agent-core` | 54 | Changing the agent's settings and hooks after `make`; `Clock` for the timestamps Pi stamps itself |
 | `@effectified/pi-mcp` | facade | `@earendil-works/pi-mcp`, its `oauth` and `testing` subpaths | 80 | Timers inside pi-mcp's transports and OAuth code run on the real clock |
@@ -99,7 +99,7 @@ An application imports `@effectified/pi-*` and `effect`, never `@earendil-works/
   |---|---|
   | pi-ai | 0 (and its `utils/estimate` subpath, 0) |
   | pi-durable | 2 (`registryReader`, and `StoreStorage` of `/storage/store`: both need Chord's app runtime, which pi-chord does not offer; one record per subpath, 18 in all) |
-  | pi-telemetry | 3 |
+  | pi-telemetry | 0 |
   | pi-schema | 0 |
   | pi-codemode | 0 |
   | pi-evals | 0 (pi-evals has no entry point: one record per module, `plan`, `report`, `harness`, `docker`, and the empty one of its `cli` script) |

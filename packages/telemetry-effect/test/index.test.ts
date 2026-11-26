@@ -5,7 +5,6 @@ import * as Package from "../src/index.ts";
 
 const offered: Coverage = { kind: "offered" };
 const replaced = (by: string): Coverage => ({ kind: "replaced", by });
-const open = (why: string): Coverage => ({ kind: "open", why });
 
 /** What this package does with every value pi-telemetry exports: the list of what is left to put in Effect terms. */
 const COVERAGE = {
@@ -14,9 +13,11 @@ const COVERAGE = {
 	NOOP_TELEMETRY_METRICS: replaced("PiTelemetry: Pi metrics are Effect metrics"),
 	NOOP_TELEMETRY_PROPAGATION: replaced("makeTelemetryContext: the carriers of Effect's current span"),
 	telemetryNow: replaced("Effect's Clock"),
-	createTypedMetrics: open("typed metric definitions of a telemetry schema: not wrapped"),
-	createTypedSpanStarter: open("typed span starters of a telemetry schema: not wrapped"),
-	defineTelemetrySchema: open("telemetry schemas: not wrapped"),
+	createTypedMetrics: replaced(
+		"TypedMetrics.make: the schema's instruments on PiTelemetry, each measurement an Effect",
+	),
+	createTypedSpanStarter: replaced("TypedSpans.make: withSpan runs an Effect in an Effect span of the schema's names"),
+	defineTelemetrySchema: offered,
 } satisfies Record<keyof typeof PiTelemetry, Coverage>;
 
 describe("the coverage of pi-telemetry", () => {
