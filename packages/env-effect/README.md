@@ -178,7 +178,10 @@ shared connections (`Ssh.args` gives its arguments).
   stops waiting at once, and the `ssh` run ends on its own, within pi-env's timeouts (60 s, 300 s for an upload).
 - Output of a process, a terminal or a watcher is buffered until read, without a bound: read it, or close its scope.
 - A connection's `logs` delivers what the daemon writes from when the stream runs; earlier lines are dropped.
-- Operations run under Chord's background context and the fiber's cancellation: no telemetry span of a calling Pi
-  invocation reaches them.
+- Operations run under the Chord context that `ChordContext.scoped()` of
+  [`@effectified/pi-chord`](../chord-effect/README.md#telemetry-and-values) makes for the calling fiber, with the
+  fiber's cancellation: when the program provides `PiTelemetry`, the spans Pi starts for an operation are children of the
+  Effect span that runs it. Closing a reader, stopping a watcher and `cleanup` run under Chord's background context,
+  outside any caller's cancellation.
 - Not covered by the default tests: a real remote machine. Set `PI_ENV_SSH_HOST` (and `PI_ENV_SSH_USER`,
   `PI_ENV_SSH_PORT`, `PI_ENV_SSH_KEY`, `PI_ENV_SSH_PROGRAM` as for pi-env's own test) to run one over SSH.

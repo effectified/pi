@@ -1,8 +1,6 @@
 // Pi Durable in Effect: the harness as a scoped Layer, conversations, commits and submissions as Effects and Streams,
 // and tools, hooks, gates, signals, documents and entries as Effect definitions.
 
-// The JSON Pi stores (a memo, a checkpoint, tool details), so a caller needs no second import to name it.
-export type { JsonValue } from "@earendil-works/chord/json";
 // Every type Pi Durable declares (`ConversationId`, `Entry`, `JsonObject`, ...), so an application names them
 // without importing Pi Durable; where this package exports a name of its own, its own wins.
 export type * from "@earendil-works/pi-durable";
@@ -18,6 +16,8 @@ export {
 	ToolTask,
 	UserEntry,
 } from "@earendil-works/pi-durable";
+// The JSON Pi stores (a memo, a checkpoint, tool details), so a caller needs no second import to name it.
+export type { JsonValue } from "@effectified/pi-chord/json";
 // The schema failures this package's functions can fail with, so a caller needs no second import to name them.
 export { SchemaConversionError, SchemaDecodeError } from "@effectified/pi-schema";
 export * as Agent from "./agent.ts";

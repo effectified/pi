@@ -1,6 +1,6 @@
 // The durable record that a fork's hygiene ran, and for which fork: a table of this host in the actor's database.
 
-import { validateSqliteSchemaPrefix } from "@earendil-works/chord/sqlite";
+import { validateSqliteSchemaPrefix } from "@effectified/pi-chord/sqlite";
 import { type DurableError, UnexpectedError } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import type * as SqlClient from "effect/sql/SqlClient";
@@ -23,7 +23,7 @@ export interface ForkRecord {
 export function record(sql: SqlClient.SqlClient, prefix: string): Effect.Effect<ForkRecord, DurableError> {
 	return Effect.gen(function* () {
 		// The prefix becomes part of a table name: Chord's rule for an identifier, the one Pi's storage applies too.
-		yield* Effect.try({ try: () => validateSqliteSchemaPrefix(prefix), catch: unexpected });
+		yield* Effect.mapError(validateSqliteSchemaPrefix(prefix), unexpected);
 		const table = sql(`${prefix}rivet_fork`);
 		yield* Effect.mapError(
 			sql`CREATE TABLE IF NOT EXISTS ${table} (

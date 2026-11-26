@@ -1,6 +1,6 @@
 // The invocation bridge: an Effect run as the promise Pi Durable awaits from extension code (a tool, a hook, a commit).
 
-import type { Context as ChordContext } from "@earendil-works/chord/context";
+import type { Context as ChordContext } from "@effectified/pi-chord/context";
 import { Cause, type Context, Effect, Exit } from "effect";
 import { ParentContext } from "./call.ts";
 

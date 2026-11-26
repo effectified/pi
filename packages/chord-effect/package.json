@@ -72,7 +72,8 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@earendil-works/chord": "1.6.1"
+		"@earendil-works/chord": "1.6.1",
+		"@effectified/pi-telemetry": "0.1.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5"

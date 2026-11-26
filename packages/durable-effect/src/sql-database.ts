@@ -1,6 +1,6 @@
 // Chord's `SqliteDatabase` over an Effect `SqlClient`, so Pi's SQLite storage runs on any Effect SQLite driver.
 
-import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "@earendil-works/chord/sqlite";
+import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "@effectified/pi-chord/sqlite";
 import { Cause, type Context, Effect, Exit } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";

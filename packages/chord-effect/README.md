@@ -6,7 +6,7 @@ Pi call takes, and Chord's JSON, SQLite, delta and output values. For `effect` 4
 - **A Chord context from the fiber.** Pi Durable, Chord and the Pi packages built on them take a Chord `Context`: a
   cancellation signal, a telemetry span and values. `ChordContext.scoped` gives one that is cancelled when the
   fiber's scope closes, so interrupting the fiber cancels the Pi call; `ChordContext.timeout` one that is cancelled
-  after a span of the `Clock`.
+  after a span of the `Clock`. Both carry the fiber's current Effect span, so Pi's spans nest under it.
 - **Chord's values.** The JSON type of Chord's documents, the SQLite database Pi's storages open, the delta ops of a
   changing document and bounded output, each from its own subpath. What throws in Chord fails with a tagged error here.
 
@@ -42,12 +42,15 @@ const submit = Effect.scoped(
 
 - **`ChordContext.scoped(parent?)`** is a child of `parent` (default: `BACKGROUND_CONTEXT`) that is cancelled when
   the current scope closes, whatever its exit: the context lives as long as its scope. Interrupting the fiber closes
-  its scope. The parent's telemetry span, values and cancellation are kept.
+  its scope. Its telemetry is the fiber's current span ([Telemetry and values](#telemetry-and-values)); the parent's
+  values and cancellation are kept.
 - **`ChordContext.timeout(duration, parent?)`** is cancelled after `duration` of the `Clock`, with the reason
   `AbortSignal.timeout` gives (a `DOMException` named `TimeoutError`), or when its scope closes. `TestClock.adjust`
   moves it in a test.
 - **`ChordContext.aborted(context)`** completes with the abort reason once `context` is cancelled; it never completes
   for a context that cannot be. Race a wait against it, as Chord's `awaitWithContext` does.
+- **Chord's derivations** (`withContextValue`, `withTelemetry`, `withAbortSignal`, `withoutAbortSignal`) are offered
+  as they are. `withAbortSignal` is for a signal the caller already has, such as the one `Effect.callback` gives.
 
 ```typescript
 import { Duration, Effect } from "effect";
@@ -64,36 +67,47 @@ const bounded = Effect.scoped(
 
 ### Telemetry and values
 
-A context carries the span Pi's calls start their spans under, and values keyed by a `ContextKey`. Both are set with
-Chord's own derivations, which this subpath offers as they are:
+A context carries the span Pi's calls start their spans under, and values keyed by a `ContextKey`.
+
+`ChordContext.scoped` and `ChordContext.timeout` put the fiber's current Effect span into the context they make,
+through the `PiTelemetry` adapter of [`@effectified/pi-telemetry`](../telemetry-effect/README.md): the spans Pi
+starts under the context are children of the Effect span that made it. Provide `PiTelemetry.layer` once, and no Pi
+call needs its span passed by hand:
 
 ```typescript
 import { Effect } from "effect";
-import {
-	BACKGROUND_CONTEXT,
-	ChordContext,
-	createContextKey,
-	withContextValue,
-	withTelemetry,
-} from "@effectified/pi-chord/context";
+import { ChordContext } from "@effectified/pi-chord/context";
+import { PiTelemetry } from "@effectified/pi-telemetry";
+
+// root: a conversation of a Pi Durable harness (`harness.root()`).
+const turn = Effect.scoped(
+	Effect.gen(function* () {
+		const context = yield* ChordContext.scoped();
+		return yield* Effect.promise(() => root.submit({ type: "input", content: "Hello" }, context));
+	}),
+).pipe(Effect.withSpan("chat.turn"), Effect.provide(PiTelemetry.layer));
+// The trace: chat.turn > the spans Pi starts for the submission
+```
+
+When the fiber is in a span, its span replaces the parent's. In a fiber with no span, or in a program without
+`PiTelemetry`, the context keeps its parent's telemetry. Chord's `withTelemetry`, offered as it is, sets a span handle
+from elsewhere (a Pi invocation's) on a context.
+
+Values are set with Chord's `withContextValue`, which this subpath offers as it is:
+
+```typescript
+import { Effect } from "effect";
+import { BACKGROUND_CONTEXT, ChordContext, createContextKey, withContextValue } from "@effectified/pi-chord/context";
 
 const Tenant = createContextKey<string>("app.tenant");
 
-// span: `PiTelemetry.currentSpan` of `@effectified/pi-telemetry`, read in the Effect span to continue.
-const traced = Effect.scoped(
+const tenant = Effect.scoped(
 	Effect.gen(function* () {
-		const context = yield* ChordContext.scoped(
-			withContextValue(Tenant, "acme", withTelemetry(span, BACKGROUND_CONTEXT)),
-		);
-		context.value(Tenant); // "acme"
-		return context.telemetry; // span: Pi's spans under this context are children of the Effect span
+		const context = yield* ChordContext.scoped(withContextValue(Tenant, "acme", BACKGROUND_CONTEXT));
+		return context.value(Tenant); // "acme"
 	}),
 );
 ```
-
-This package does not read Effect's current span itself: PRD section 5.4 lets it depend on Chord only, and the
-adapter from Effect's tracer to Pi's span handle is `@effectified/pi-telemetry`'s. A program that has both passes
-the handle, as above.
 
 ## JSON
 
@@ -195,4 +209,3 @@ state, job, table and query declarations, codecs, themes, messages and formats. 
   in `test/index.test.ts` with the reason.
 - **`Progress`** of `/output`: it paces promise-returning writes on its own timers.
 - **`/sqlite/cloudflare`**: it needs a Durable Object's storage, which only workerd provides.
-- **Effect's current span.** See [Telemetry and values](#telemetry-and-values).

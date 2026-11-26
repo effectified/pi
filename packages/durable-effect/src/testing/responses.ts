@@ -1,6 +1,6 @@
 // Scripted model responses for tests: the turns a scripted provider answers with.
 
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage } from "@effectified/pi-ai";
 import { type FauxResponseFactory, fauxAssistantMessage, fauxText, fauxToolCall } from "@effectified/pi-ai/testing";
 import { Effect } from "effect";
 

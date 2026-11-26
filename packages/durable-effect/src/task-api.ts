@@ -1,6 +1,5 @@
 // The api a task's handlers get: an Effect view of what Pi Durable gives one invocation of one task.
 
-import type { JsonValue } from "@earendil-works/chord/json";
 import type {
 	CommitOptions,
 	ContextView,
@@ -17,6 +16,7 @@ import type {
 	TaskRuntime,
 	WakeReason,
 } from "@earendil-works/pi-durable";
+import type { JsonValue } from "@effectified/pi-chord/json";
 import type { SchemaConversionError, SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, Option, type Schema, type Stream } from "effect";
 import { call } from "./call.ts";

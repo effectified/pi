@@ -87,21 +87,10 @@ const ask = Effect.gen(function* () {
 // The trace: chat.turn > pi.ai.request
 ```
 
-For a Pi call that takes a Chord `Context`, the host puts the handle into the context with
-[`@effectified/pi-chord/context`](../chord-effect/README.md#telemetry-and-values). This package does not depend on
-the Chord facade, so this step is host code:
-
-```typescript
-// Host code: it imports the Chord facade, which this package does not depend on.
-import { BACKGROUND_CONTEXT, withTelemetry } from "@effectified/pi-chord/context";
-
-const submit = Effect.gen(function* () {
-	const span = yield* PiTelemetry.currentSpan;
-	const context = withTelemetry(span, BACKGROUND_CONTEXT);
-	// root: what `harness.root()` of a Pi Durable harness gives.
-	return yield* Effect.promise(() => root.submit({ type: "input", content: "Hello" }, context));
-}).pipe(Effect.withSpan("chat.turn"));
-```
+For a Pi call that takes a Chord `Context`, nothing is passed by hand: `ChordContext.scoped` and
+`ChordContext.timeout` of [`@effectified/pi-chord/context`](../chord-effect/README.md#telemetry-and-values) read this
+handle for the fiber's current span when the program provides `PiTelemetry`, so the spans Pi starts under the context
+are children of the Effect span that made it. The Chord facade depends on this package, not the other way round.
 
 Read the handle where the Pi call is made: it belongs to the span that is current at that point. While that span is
 open, Pi's `addEvent()`, `setAttributes()` and `addLink()` on the handle are recorded on it. `setStatus()` on the

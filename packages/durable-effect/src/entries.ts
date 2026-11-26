@@ -1,8 +1,8 @@
 // Stored history as a Stream: Pi Durable's paged entry reads, pulled page by page.
 
-import type { Context } from "@earendil-works/chord/context";
 import type { Cursor, EntryQuery, EntryRecord, Page } from "@earendil-works/pi-durable";
 import type { StrictOmit } from "@effectified/pi-ai";
+import type { Context } from "@effectified/pi-chord/context";
 import { Effect, Option, Stream } from "effect";
 import { call } from "./call.ts";
 import type { DurableError } from "./errors.ts";

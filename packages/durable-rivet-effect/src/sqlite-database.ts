@@ -1,6 +1,6 @@
 // Chord's `SqliteDatabase` over a Rivet actor's raw database, so Pi's SQLite storage runs on the actor's SQLite.
 
-import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "@earendil-works/chord/sqlite";
+import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "@effectified/pi-chord/sqlite";
 import { Effect, Semaphore } from "effect";
 import * as Refusal from "./refusal.ts";
 

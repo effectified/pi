@@ -1,6 +1,5 @@
 // Pi Durable's watches and observers as Streams: the state at attachment, then its changes, released with the scope.
 
-import type { Context as ChordContext } from "@earendil-works/chord/context";
 import type {
 	CommitObservation,
 	CommitObserver,
@@ -12,6 +11,7 @@ import type {
 	WatchHandle,
 } from "@earendil-works/pi-durable";
 import type { StrictOmit } from "@effectified/pi-ai";
+import type { Context as ChordContext } from "@effectified/pi-chord/context";
 import { Cause, Effect, Queue, Stream } from "effect";
 import { absurd } from "effect/Function";
 import { call } from "./call.ts";

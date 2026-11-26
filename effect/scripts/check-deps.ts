@@ -1,5 +1,5 @@
 // Fails when a pi-effect package breaks the dependency rules of PRD sections 5.4 and 8, so every package stays
-// installable alone and movable to another home; and when code an application would write imports Pi itself.
+// installable alone and movable to another home; and when a package imports a Pi package that is not its own to wrap.
 // Usage: node effect/scripts/check-deps.ts
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -20,6 +20,22 @@ const IMPORT = /(?:^|\n)\s*(?:import|export)\s+(?:type\s+)?(?:[^;'"]*?\sfrom\s*)
  */
 const DOCUMENTED_PI_IMPORTS: ReadonlyMap<string, string> = new Map<string, string>([]);
 
+/**
+ * Imports of a Pi package that a package's `src` has although that package is not its own to wrap, each with why: what
+ * no facade offers yet. Keyed by the importing package and the specifier.
+ */
+const PI_IMPORTS_NOT_OFFERED: ReadonlyMap<string, string> = new Map<string, string>([
+	[
+		"@effectified/pi-durable-rivet @earendil-works/pi-durable/storage/sqlite",
+		"Pi Durable's own SqliteStorage on the actor's Chord SqliteDatabase; @effectified/pi-durable offers Storage.sql over an Effect SqlClient, not this one",
+	],
+	[
+		"@effectified/pi-env @earendil-works/pi-durable/env",
+		"Pi declares the environment contract pi-env implements (ExecutionEnv, Result, FileError, ...) in pi-durable; @effectified/pi-durable does not offer /env, and env-effect does not depend on it (PRD 5.4)",
+	],
+]);
+const notOfferedUsed = new Set<string>();
+
 for (const pkg of packages) {
 	const testDependencies = [...runtimeDependencies(pkg), ...Object.keys(pkg.devDependencies)];
 	// A docs package ships built pages and no code: what its generator imports is a development dependency.
@@ -27,7 +43,10 @@ for (const pkg of packages) {
 	for (const file of sourceFiles(join(ROOT, pkg.directory, "src"))) checkImports(pkg, file, sourceDependencies);
 	for (const file of sourceFiles(join(ROOT, pkg.directory, "test"))) checkImports(pkg, file, testDependencies);
 	checkKinds(pkg);
-	checkWrittenOnFacades(pkg);
+	checkPiThroughItsFacade(pkg);
+}
+for (const key of PI_IMPORTS_NOT_OFFERED.keys()) {
+	if (!notOfferedUsed.has(key)) failures.push(`PI_IMPORTS_NOT_OFFERED lists ${key}, which no source imports any more`);
 }
 checkDocumentation();
 checkSingleVersion("effect peer range", (pkg) => (pkg.kind === "docs" ? [] : [pkg.peerDependencies.effect]));
@@ -70,10 +89,7 @@ function checkImports(pkg: EffectPackage, file: string, declared: readonly strin
 			}
 			continue;
 		}
-		const name = specifier
-			.split("/")
-			.slice(0, specifier.startsWith("@") ? 2 : 1)
-			.join("/");
+		const name = packageName(specifier);
 		if (name === pkg.name || declared.includes(name)) continue;
 		failures.push(`${where}: imports ${specifier}, which ${pkg.name} does not declare`);
 	}
@@ -105,18 +121,47 @@ function checkKinds(pkg: EffectPackage): void {
 	}
 }
 
+/** The package a specifier names: `@scope/name` of `@scope/name/subpath`, `name` of `name/subpath`. */
+function packageName(specifier: string): string {
+	return specifier
+		.split("/")
+		.slice(0, specifier.startsWith("@") ? 2 : 1)
+		.join("/");
+}
+
 /**
- * Plugins and the composition are written as an application is, on the facades alone: an import of Pi in them is
- * something the facades do not offer yet, so it belongs in the facade (offered, or wrapped), not here.
+ * Only the facade of a Pi package imports that package. A facade wraps exactly its own, the one in the directory its
+ * own directory names without `-effect` (`packages/durable-effect` wraps `packages/durable`); every other package,
+ * another facade too, reaches a Pi package through that package's facade, so an application imports `effect` and
+ * `@effectified/*` only. Checked in `src`, what a package ships: tests may import Pi to make fixtures and to compare
+ * with it.
  */
-function checkWrittenOnFacades(pkg: EffectPackage): void {
-	if (pkg.kind !== "plugin" && pkg.kind !== "composition") return;
+function checkPiThroughItsFacade(pkg: EffectPackage): void {
+	const own = pkg.kind === "facade" ? wrappedPiPackage(pkg) : undefined;
 	for (const file of sourceFiles(join(ROOT, pkg.directory, "src"))) {
 		for (const match of readFileSync(file, "utf8").matchAll(IMPORT)) {
-			if (match[1].startsWith("@earendil-works/"))
-				failures.push(`${relative(ROOT, file)}: imports ${match[1]}; import it from a facade`);
+			const specifier = match[1];
+			if (!specifier.startsWith("@earendil-works/") || packageName(specifier) === own) continue;
+			const key = `${pkg.name} ${specifier}`;
+			if (PI_IMPORTS_NOT_OFFERED.has(key)) notOfferedUsed.add(key);
+			else
+				failures.push(
+					`${relative(ROOT, file)}: imports ${specifier}; import it from the facade of ${packageName(specifier)}`,
+				);
 		}
 	}
+}
+
+/** The name of the Pi package a facade wraps; a failure, and `undefined`, when there is none to wrap. */
+function wrappedPiPackage(pkg: EffectPackage): string | undefined {
+	const manifest = join(ROOT, pkg.directory.slice(0, -"-effect".length), "package.json");
+	if (!existsSync(manifest)) {
+		failures.push(`${pkg.name}: a facade, but ${relative(ROOT, manifest)} has no Pi package to wrap`);
+		return undefined;
+	}
+	// Trust boundary: a manifest is a file, read as untyped JSON.
+	const name: unknown = JSON.parse(readFileSync(manifest, "utf8")).name;
+	return typeof name === "string" ? name : undefined;
 }
 
 /** The code in every README and documentation page imports effectified packages only, but for the listed imports. */

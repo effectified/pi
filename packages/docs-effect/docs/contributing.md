@@ -38,7 +38,7 @@ half-written ones included.
 | Effect diagnostics | A dropped Effect, `Date` or a timer where `Clock` belongs, a `node:` import in a package core, or an unstable Effect module nobody allowed | Fix the code. A new unstable module is one line of `allowedUnstableApis` in `effect/tsconfig.json`, with its reason |
 | Pi pins, release and surface record | The names a package imports from Pi changed, or a README opens with another Pi version than the pins | `node effect/scripts/pi-surface.ts`, read what it prints, commit `effect/pi-surface/` with the change |
 | fork boundary | A changed file outside the boundary | Move the change into a package or `effect/` |
-| dependency rules | A plugin imports a plugin, a facade imports a plugin, or a platform import sits outside a `node` or `bun` file | Move the code. Plugins meet only in a product's composition |
+| dependency rules | A plugin imports a plugin, a facade imports a plugin, a platform import sits outside a `node` or `bun` file, or a package's `src` imports a Pi package that is not its own to wrap | Move the code. Plugins meet only in a product's composition. Import a Pi name from its package's facade; if the facade lacks it, offer it there |
 | docs-effect tests | A page quotes a README example that changed, a page names something that is gone, a page is missing from `docs.json`, or a package has no role on the landing page | Update the page in `packages/docs-effect/docs/`, or add the role in `packages/docs-effect/src/content.ts` |
 
 ## Rules that are easy to break

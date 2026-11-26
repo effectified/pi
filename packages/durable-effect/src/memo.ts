@@ -1,8 +1,8 @@
 // Task memos in Effect: small first-writer-wins values of the task a hook or a tool call runs for.
 
-import type { Context as ChordContext } from "@earendil-works/chord/context";
-import type { JsonValue } from "@earendil-works/chord/json";
 import type { HookApi } from "@earendil-works/pi-durable";
+import type { Context as ChordContext } from "@effectified/pi-chord/context";
+import type { JsonValue } from "@effectified/pi-chord/json";
 import { Effect, Option } from "effect";
 import { call } from "./call.ts";
 import type { DurableError } from "./errors.ts";

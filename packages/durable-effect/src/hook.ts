@@ -1,6 +1,5 @@
 // Hooks in Effect: the questions Pi's built-in tasks ask extension code, each answered by an Effect.
 
-import type { Context as ChordContext } from "@earendil-works/chord/context";
 import {
 	type CompactionHooks,
 	CompactionTask,
@@ -16,6 +15,7 @@ import {
 	type ToolHooks,
 	ToolTask,
 } from "@earendil-works/pi-durable";
+import type { Context as ChordContext } from "@effectified/pi-chord/context";
 import type { SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, Option, type Schema, type Stream } from "effect";
 import { call } from "./call.ts";

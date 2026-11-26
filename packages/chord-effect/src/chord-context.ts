@@ -1,13 +1,17 @@
-// A Chord context made from Effect: cancelled when its scope closes or after a span of the Clock, awaited as an Effect.
+// A Chord context made from Effect: cancelled when its scope closes or after a span of the Clock, under the fiber's
+// current span, awaited as an Effect.
 
-import { BACKGROUND_CONTEXT, type Context, withAbortSignal } from "@earendil-works/chord/context";
-import { type Duration, Effect, type Scope } from "effect";
+import { BACKGROUND_CONTEXT, type Context, withAbortSignal, withTelemetry } from "@earendil-works/chord/context";
+import { PiTelemetry } from "@effectified/pi-telemetry";
+import { type Duration, Effect, Option, type Scope, Tracer } from "effect";
 
 /**
  * A child of `parent` (default: Chord's background context) that is cancelled when the current scope closes, so the
  * Pi calls made with it end with the fiber that owns the scope: interrupting the fiber closes its scope and aborts
  * the context. A scope that closes after a success or a failure aborts it too: the context lives as long as its
- * scope. The parent's telemetry span, values and cancellation are kept.
+ * scope. Its telemetry is the fiber's current Effect span when the program provides `PiTelemetry`, so the spans Pi
+ * starts under it are children of that span; outside any span, or without `PiTelemetry`, it is the parent's. The
+ * parent's values and cancellation are kept.
  */
 export function scoped(parent: Context = BACKGROUND_CONTEXT): Effect.Effect<Context, never, Scope.Scope> {
 	return Effect.map(controlled(parent), ({ context }) => context);
@@ -16,7 +20,7 @@ export function scoped(parent: Context = BACKGROUND_CONTEXT): Effect.Effect<Cont
 /**
  * A child of `parent` that is cancelled after `duration` of the `Clock`, with the reason `AbortSignal.timeout` gives
  * (a `DOMException` named `TimeoutError`), or when the current scope closes, whichever comes first. A test moves the
- * deadline with `TestClock.adjust`.
+ * deadline with `TestClock.adjust`. Its telemetry is the fiber's current span, as for `scoped`.
  */
 export function timeout(
 	duration: Duration.Input,
@@ -50,15 +54,31 @@ export function aborted(context: Context): Effect.Effect<unknown> {
 	});
 }
 
-/** A child of `parent` with a signal of its own, aborted when the current scope closes. */
+/** A child of `parent` under the fiber's current span, with a signal of its own, aborted when the current scope closes. */
 function controlled(
 	parent: Context,
 ): Effect.Effect<{ readonly context: Context; readonly controller: AbortController }, never, Scope.Scope> {
-	return Effect.acquireRelease(
-		Effect.sync(() => {
-			const controller = new AbortController();
-			return { context: withAbortSignal(controller.signal, parent), controller };
-		}),
-		({ controller }) => Effect.sync(() => controller.abort()),
+	return Effect.flatMap(traced(parent), (under) =>
+		Effect.acquireRelease(
+			Effect.sync(() => {
+				const controller = new AbortController();
+				return { context: withAbortSignal(controller.signal, under), controller };
+			}),
+			({ controller }) => Effect.sync(() => controller.abort()),
+		),
 	);
+}
+
+/**
+ * `parent` with the Pi handle of the fiber's current Effect span (`PiTelemetry.currentSpan`) as its telemetry; `parent`
+ * itself when the fiber is in no span or the program has no `PiTelemetry`. `PiTelemetry` is read as an option, so a
+ * program without telemetry needs to provide nothing.
+ */
+function traced(parent: Context): Effect.Effect<Context> {
+	return Effect.gen(function* () {
+		const telemetry = yield* Effect.serviceOption(PiTelemetry);
+		if (Option.isNone(telemetry) || Option.isNone(yield* Effect.serviceOption(Tracer.ParentSpan))) return parent;
+		const span = yield* Effect.provideService(PiTelemetry.currentSpan, PiTelemetry, telemetry.value);
+		return withTelemetry(span, parent);
+	});
 }

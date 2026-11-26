@@ -1,7 +1,5 @@
 // The api a tool handler gets: an Effect view of what Pi Durable gives one tool call.
 
-import type { Context as ChordContext } from "@earendil-works/chord/context";
-import type { JsonValue } from "@earendil-works/chord/json";
 import type {
 	CommitOptions,
 	ConversationAbortOptions,
@@ -21,6 +19,8 @@ import type {
 	WakeReason,
 } from "@earendil-works/pi-durable";
 import type { StrictOmit } from "@effectified/pi-ai";
+import type { Context as ChordContext } from "@effectified/pi-chord/context";
+import type { JsonValue } from "@effectified/pi-chord/json";
 import type { SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, Option, type Schema } from "effect";
 import { call } from "./call.ts";

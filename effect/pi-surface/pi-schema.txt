@@ -159,7 +159,7 @@ used by: schema-effect
 export function recursive<T>(id: string, build: (self: Schema<T>) => Schema<T>): Schema<T>
 
 ## Schema  schema/src/builders.ts
-used by: chord-effect, schema-effect; agent-effect via RunToolCallOptions, ai-effect via StringEnum, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: chord-effect, schema-effect; agent-effect via RunToolCallOptions, ai-effect via StringEnum, durable-effect via SummaryRequest, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
 /** A JSON Schema object whose valid values have type `T` (a type-level brand; nothing extra exists at run time). */
 export type Schema<T = unknown> = { readonly [keyword: string]: unknown } & { readonly [STATIC]?: T };
 

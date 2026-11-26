@@ -1,6 +1,5 @@
 // Tools in Effect: parameters and result as Schemas, the handler as an Effect, built into a Pi Durable tool.
 
-import type { JsonValue } from "@earendil-works/chord/json";
 import {
 	defineTool,
 	type ToolControl,
@@ -11,6 +10,7 @@ import {
 	type ToolRegistration,
 } from "@earendil-works/pi-durable";
 import type { StrictOmit } from "@effectified/pi-ai";
+import type { JsonValue } from "@effectified/pi-chord/json";
 import {
 	decodeUnknown,
 	encode,

@@ -14,13 +14,12 @@ const COVERAGE = {
 	withContextValue: offered,
 	withoutAbortSignal: offered,
 	withTelemetry: offered,
-	withAbortSignal: replaced(
-		"ChordContext.scoped (cancelled when the fiber's scope closes) and ChordContext.timeout (by the Clock)",
-	),
+	// Offered for a signal the caller has; ChordContext.scoped and ChordContext.timeout make the usual one.
+	withAbortSignal: offered,
 	withCancel: replaced("ChordContext.scoped: closing its scope is the cancel"),
 	awaitWithContext: replaced("ChordContext.aborted, raced with the Effect that awaits"),
 	traceIn: replaced(
-		"Effect.withSpan, with withTelemetry of the handle @effectified/pi-telemetry's PiTelemetry.currentSpan gives",
+		"Effect.withSpan: ChordContext.scoped and ChordContext.timeout carry the fiber's current span (with PiTelemetry)",
 	),
 } satisfies Record<keyof typeof PiContext, Coverage>;
 
