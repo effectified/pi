@@ -34,12 +34,10 @@ const HOST = open(
 const LINK = open(
 	"a transport between Chord processes with its own lifecycle and callbacks, for the host and client runtimes",
 );
-const STORE = open(
-	"Chord's store: opening, importing and exporting resolve promises and the Store's methods are promises",
-);
 const CLIENT = open("Chord's client and surface runtime: it follows a host with callbacks and promises");
 const INTERNAL = open(
-	"internal to Chord: the store's surface for adapters (Pi Durable's StoreStorage), not for applications",
+	"marked internal by Chord: the store's surface for adapters, which Pi Durable's StoreStorage uses and an " +
+		"application never calls; an application reaches it as Storage.store of @effectified/pi-durable/storage/store",
 );
 
 /** What this package does with every value Chord's root exports: the list of what is left to put in Effect terms. */
@@ -135,12 +133,12 @@ const COVERAGE = {
 	replacePrefix: offered,
 	sub: offered,
 	when: offered,
-	openStore: STORE,
-	importStore: STORE,
-	exportHostData: STORE,
-	readHostArchive: STORE,
-	decodeJsonl: STORE,
-	encodeJsonl: STORE,
+	openStore: replaced("Store.open: scoped, closed with its scope"),
+	importStore: replaced("Store.importArchive: scoped, its parts a Stream"),
+	exportHostData: replaced("Store.hostArchive: a Stream of archive parts"),
+	readHostArchive: replaced("Store.readHostArchive: its parts a Stream"),
+	decodeJsonl: replaced("Store.decodeJsonl: Stream to Stream"),
+	encodeJsonl: replaced("Store.encodeJsonl: Stream to Stream"),
 	// Surfaces: clients, languages, themes, messages, scripts.
 	startClient: CLIENT,
 	keepConnected: CLIENT,

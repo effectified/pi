@@ -3,6 +3,7 @@ import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai";
 import {
 	type CommitPublication,
 	type ConversationId,
+	createRegistry,
 	type HarnessInspection,
 	Harness as PiHarness,
 	type Report,
@@ -49,7 +50,7 @@ import {
 import { toolCall } from "../src/testing/index.ts";
 import { reopenWithPendingSubmission } from "./lifecycle.ts";
 import { runBoth } from "./parity.ts";
-import { AGENT, answer, harnessLayer, heldAnswer, KeptStorage } from "./scripted.ts";
+import { AGENT, answer, harnessLayer, heldAnswer, KeptStorage, scriptedModels } from "./scripted.ts";
 
 const MISSING_CONVERSATION = 999 as ConversationId;
 const MISSING_SUBMISSION = 999 as SubmissionId;
@@ -625,6 +626,24 @@ describe("host options", () => {
 	};
 
 	type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
+	it("layerOn opens on a registry given as a value, without the Registry service", async () => {
+		const registry = createRegistry();
+		const live = Harness.layerOn(registry);
+		const requires: Equal<
+			typeof live,
+			Layer.Layer<Harness.Harness, DurableError, Storage.HarnessStorage | Models>
+		> = true;
+		expect(requires).toBe(true);
+		const root = await Effect.runPromise(
+			Effect.map(Harness.rootWith({ agent: AGENT }), (conversation) => conversation.id).pipe(
+				Effect.provide(live),
+				Effect.provide(Storage.memory),
+				Effect.provide(scriptedModels([]).layer),
+			),
+		);
+		expect(root).toBeDefined();
+	});
 
 	it("conversationCreated runs as an Effect in every creating commit, with a service the Layer requires", async () => {
 		const live = Harness.layer(created);

@@ -10,8 +10,11 @@ Pi call takes, and Chord's JSON, SQLite, delta and output values. For `effect` 4
 - **Chord's values.** The JSON type of Chord's documents, the SQLite database Pi's storages open, the delta ops of a
   changing document and bounded output, each from its own subpath. What throws in Chord fails with a tagged error here.
 
-The package adds no behaviour of its own. Chord's runtime (hosts, facets, clients, the store, plugins, the app kit and
-the surfaces) is not wrapped; `test/index.test.ts` records why, value by value.
+- **Chord's store.** `Store.open` and `Store.importArchive` give a store for the life of a scope; its commits and
+  archives are Streams.
+
+The package adds no behaviour of its own. `test/index.test.ts` records what it does with every value Chord exports,
+and why a value is not wrapped yet.
 
 ## Installation
 
@@ -190,11 +193,47 @@ encoder, the tracker (`track`, `appendText`), `diffRevisions`, `PendingOps` and 
 `@effectified/pi-chord/output` offers Chord's `OutputBuffer` (the head or tail window of a long stream), `boundOutput`,
 `sanitizeOutput` and the byte helpers as they are: synchronous and free of I/O.
 
+## The store
+
+`Store` is Chord's store: the SQLite tables and documents a Chord host persists, and where Pi Durable's storage can
+live (`store` of `@effectified/pi-durable/storage/store`).
+
+```typescript
+import { Effect, Stream } from "effect";
+import { sqliteBackend, Store } from "@effectified/pi-chord";
+import { openNodeSqliteDatabase } from "@effectified/pi-chord/sqlite/node";
+
+const copy = Effect.scoped(
+	Effect.gen(function* () {
+		// Open for the scope; the store owns the database and closes it with itself.
+		const store = yield* Store.open(sqliteBackend(yield* openNodeSqliteDatabase(":memory:")));
+		// Its state as archive parts, written as JSONL bytes and read back into a second store.
+		const bytes = yield* Stream.runCollect(Store.encodeJsonl(Store.archive(store)));
+		const backup = sqliteBackend(yield* openNodeSqliteDatabase(":memory:"));
+		const restored = yield* Store.importArchive(backup, Store.decodeJsonl(Stream.fromIterable(bytes)));
+		return yield* Store.lastSeq(restored);
+	}),
+);
+```
+
+- `Store.open(backend, options?)` and `Store.importArchive(backend, parts, options?)` give Chord's own `Store`, so
+  it goes where Chord takes one (a host's `store`, Pi Durable's storage). The store closes when the scope closes.
+  A failure closes the backend.
+- `Store.committed(store)` is a Stream of the store's `lastSeq` after each publication of commits.
+- `Store.archive(store)` and `Store.hostArchive(store, address)` are Streams of archive parts. Reading one holds the
+  store's commit queue until the Stream ends or its scope closes.
+- `Store.encodeJsonl` and `Store.decodeJsonl` turn parts into JSONL bytes and back. `Store.readHostArchive(parts)`
+  checks a host's data archive.
+- A refused archive, a closed store or a line that is no JSON fails with `ChordFailed`, Chord's `ChordError` as a
+  tagged error (`code`, `reason`, `message`, `details`). The database's own errors fail with `SqliteError`. When the
+  Stream of parts fails, the import fails with that failure.
+
 ## Errors
 
 One closed union, `ChordFailure`: `PathError`, `UnsafePathError`, `InvalidOp`, `NotJson`, `InvalidSchemaPrefix`,
-`SqliteError`. Chord's delta error classes map to their tags through a record keyed by Chord's exports, so a class
-Chord adds there fails to compile until it has one.
+`SqliteError`, and `ChordCallError` of Chord's runtime: `ChordFailed` (Chord's `ChordError`) and `PluginFailed` (a
+plugin's `PluginError`). Chord's error classes map to their tags through records keyed by Chord's exports, so a
+class Chord adds fails to compile until it has one.
 
 ## The root
 
@@ -204,7 +243,7 @@ state, job, table and query declarations, codecs, themes, messages and formats. 
 
 ## Not covered
 
-- **Chord's runtime.** Hosts and facets, links, the store, clients, plugins, the app kit, HTTP, workers, the web,
+- **Chord's runtime.** Hosts and facets, links, clients, plugins, the app kit, HTTP, workers, the web,
   terminal and React surfaces, session sync and Chord's own telemetry store. Each subpath's values are recorded `open`
   in `test/index.test.ts` with the reason.
 - **`Progress`** of `/output`: it paces promise-returning writes on its own timers.

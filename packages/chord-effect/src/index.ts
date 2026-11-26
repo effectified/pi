@@ -102,12 +102,16 @@ export {
 	when,
 } from "@earendil-works/chord";
 export {
+	type ChordCallError,
+	ChordFailed,
 	type ChordFailure,
 	type DeltaError,
 	InvalidOp,
 	InvalidSchemaPrefix,
 	NotJson,
 	PathError,
+	PluginFailed,
 	SqliteError,
 	UnsafePathError,
 } from "./errors.ts";
+export * as Store from "./store.ts";

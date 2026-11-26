@@ -11,6 +11,7 @@ import {
 	type HarnessInspection,
 	type HarnessOptions,
 	Harness as PiHarness,
+	type RegistryReader,
 	type Report,
 	type SessionEnd,
 	type SettledTask,
@@ -27,7 +28,19 @@ import { Models } from "@effectified/pi-ai";
 import { BACKGROUND_CONTEXT, type Context as ChordContext } from "@effectified/pi-chord/context";
 import type { JsonValue } from "@effectified/pi-chord/json";
 import type { SchemaDecodeError } from "@effectified/pi-schema";
-import { type Cause, Context, Effect, FiberSet, Layer, Option, PubSub, Queue, type Schema, Stream } from "effect";
+import {
+	type Cause,
+	Context,
+	Effect,
+	FiberSet,
+	Layer,
+	Option,
+	PubSub,
+	Queue,
+	type Schema,
+	type Scope,
+	Stream,
+} from "effect";
 import * as Agent from "./agent.ts";
 import { call } from "./call.ts";
 import * as Conversation from "./conversation.ts";
@@ -100,61 +113,79 @@ export function layer<R = never>(
 ): Layer.Layer<Harness, DurableError, HarnessStorage | Models | Registry | R> {
 	return Layer.effect(
 		Harness,
-		Effect.gen(function* () {
-			const storage = yield* HarnessStorage;
-			const models = yield* Models;
-			const registry = yield* Registry;
-			// Pi's timers and the report log lines are fibers of this scope, made before the harness opens: they are
-			// interrupted after it closed, so none outlives the Layer, nor reaches a closed harness.
-			const clock = yield* clockOptions;
-			const fork = yield* FiberSet.makeRuntime();
-			const services = yield* Effect.context<R>();
-			const invoke = invoker(services);
-			const seams = yield* Effect.acquireRelease(
-				Effect.all({ reports: PubSub.unbounded<Report>(), wakes: Queue.unbounded<Wake, Cause.Done>() }),
-				// Both end their streams; what a consumer has not taken yet is still its to take.
-				({ reports, wakes }) => Effect.andThen(PubSub.shutdown(reports), Queue.end(wakes)),
-			);
-			const created = options.conversationCreated;
-			const harness = yield* Effect.acquireRelease(
-				call((context) =>
-					PiHarness.open(
-						storage,
-						{
-							models,
-							registry,
-							settings: options.settings,
-							readOnly: options.readOnly,
-							telemetry: options.telemetry,
-							identity: options.identity,
-							env: options.env,
-							...clock,
-							// Both run where Pi must not be held up or failed: they only hand the value on.
-							onReport: (report) => {
-								PubSub.publishUnsafe(seams.reports, report);
-								fork(Reports.log(report));
-							},
-							...(options.hostWakes === true
-								? { onWake: (wake) => void Queue.offerUnsafe(seams.wakes, wake) }
-								: {}),
-							...(created === undefined
-								? {}
-								: {
-										// Pi gives this callback no context: the creating commit is its scope.
-										conversationCreated: (tx, conversation) =>
-											invoke(created(Tx.fromPi(tx), conversation), BACKGROUND_CONTEXT),
-									}),
-						},
-						context,
-					),
-				),
-				(opened) => Effect.orDie(call((context) => opened.close(context))),
-			);
-			hostSeams.set(harness, seams);
-			if (options.readOnly !== true && options.resume !== false) yield* Effect.sync(() => harness.resume());
-			return harness;
-		}),
+		Effect.flatMap(Effect.service(Registry), (registry) => opened(registry, options)),
 	);
+}
+
+/**
+ * `layer` on `registry` instead of the `Registry` service: a registry Pi reads but this program does not install into,
+ * such as a Chord app's composed registry (`Registry.reader`).
+ */
+export function layerOn<R = never>(
+	registry: RegistryReader,
+	options: Options<R> = {},
+): Layer.Layer<Harness, DurableError, HarnessStorage | Models | R> {
+	return Layer.effect(Harness, opened(registry, options));
+}
+
+/** Opens a harness on `registry` and the storage and models of the context, closed when the scope closes. */
+function opened<R>(
+	registry: RegistryReader,
+	options: Options<R>,
+): Effect.Effect<Open, DurableError, HarnessStorage | Models | R | Scope.Scope> {
+	return Effect.gen(function* () {
+		const storage = yield* HarnessStorage;
+		const models = yield* Models;
+		// Pi's timers and the report log lines are fibers of this scope, made before the harness opens: they are
+		// interrupted after it closed, so none outlives the Layer, nor reaches a closed harness.
+		const clock = yield* clockOptions;
+		const fork = yield* FiberSet.makeRuntime();
+		const services = yield* Effect.context<R>();
+		const invoke = invoker(services);
+		const seams = yield* Effect.acquireRelease(
+			Effect.all({ reports: PubSub.unbounded<Report>(), wakes: Queue.unbounded<Wake, Cause.Done>() }),
+			// Both end their streams; what a consumer has not taken yet is still its to take.
+			({ reports, wakes }) => Effect.andThen(PubSub.shutdown(reports), Queue.end(wakes)),
+		);
+		const created = options.conversationCreated;
+		const harness = yield* Effect.acquireRelease(
+			call((context) =>
+				PiHarness.open(
+					storage,
+					{
+						models,
+						registry,
+						settings: options.settings,
+						readOnly: options.readOnly,
+						telemetry: options.telemetry,
+						identity: options.identity,
+						env: options.env,
+						...clock,
+						// Both run where Pi must not be held up or failed: they only hand the value on.
+						onReport: (report) => {
+							PubSub.publishUnsafe(seams.reports, report);
+							fork(Reports.log(report));
+						},
+						...(options.hostWakes === true
+							? { onWake: (wake) => void Queue.offerUnsafe(seams.wakes, wake) }
+							: {}),
+						...(created === undefined
+							? {}
+							: {
+									// Pi gives this callback no context: the creating commit is its scope.
+									conversationCreated: (tx, conversation) =>
+										invoke(created(Tx.fromPi(tx), conversation), BACKGROUND_CONTEXT),
+								}),
+					},
+					context,
+				),
+			),
+			(opened) => Effect.orDie(call((context) => opened.close(context))),
+		);
+		hostSeams.set(harness, seams);
+		if (options.readOnly !== true && options.resume !== false) yield* Effect.sync(() => harness.resume());
+		return harness;
+	});
 }
 
 /** What `layer` keeps beside a harness it opened: where Pi's host callbacks hand their values on. */

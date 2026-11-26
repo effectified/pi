@@ -36,6 +36,7 @@ import * as Memory from "../src/storage/memory.ts";
 import * as SqliteCloudflare from "../src/storage/sqlite/cloudflare.ts";
 import * as Sqlite from "../src/storage/sqlite/index.ts";
 import * as SqliteNode from "../src/storage/sqlite/node.ts";
+import * as StoreSubpath from "../src/storage/store.ts";
 import * as Testing from "../src/testing/index.ts";
 import * as ToolSearch from "../src/tool-search.ts";
 import * as Tools from "../src/tools.ts";
@@ -163,6 +164,7 @@ describe("the exports", () => {
 			"isConversationIdle",
 			"isIdle",
 			"layer",
+			"layerOn",
 			"observeConversation",
 			"observeDoc",
 			"observeTaskGraph",
@@ -217,7 +219,6 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ?
 
 const offered: Coverage = { kind: "offered" };
 const replaced = (by: string): Coverage => ({ kind: "replaced", by });
-const open = (why: string): Coverage => ({ kind: "open", why });
 
 /** What this package does with every value Pi Durable exports: the list of what is left to put in Effect terms. */
 const COVERAGE = {
@@ -268,9 +269,7 @@ const COVERAGE = {
 	wrapTool: replaced("Tool.wrap"),
 	NestedCallDoc: replaced("BuiltinDoc.nestedCall"),
 	ConversationTranscript: replaced("Transcript"),
-	registryReader: open(
-		"a harness's registry over a Chord app-runtime registry value: @effectified/pi-chord does not offer Chord's app runtime (its own open entries), and Harness.layer takes the Registry service, which an app installs into",
-	),
+	registryReader: replaced("Registry.reader, which Harness.layerOn opens on"),
 } satisfies Record<keyof typeof PiDurable, Coverage>;
 
 /** `@earendil-works/pi-durable/env`: the environment contract. */
@@ -376,11 +375,9 @@ const JSONL_NODE_COVERAGE = {
 	JsonlStorageReadOnlyError: replaced("JsonlReadOnly"),
 } satisfies Record<keyof typeof PiJsonlNode, Coverage>;
 
-/** `@earendil-works/pi-durable/storage/store`, which has no entry of this package. */
+/** `@earendil-works/pi-durable/storage/store`. */
 const STORE_COVERAGE = {
-	StoreStorage: open(
-		"Pi's storage on a Chord store, which only Chord's app runtime makes: @effectified/pi-chord does not offer Chord's app runtime (its own open entries)",
-	),
+	StoreStorage: replaced("store: on a store of @effectified/pi-chord's Store.open"),
 } satisfies Record<keyof typeof PiStore, Coverage>;
 
 /** `@earendil-works/pi-durable/storage/sqlite`. */
@@ -421,7 +418,7 @@ const TESTING_COVERAGE = {
 	STORAGE_WRITE_BENCHMARKS: replaced("Benchmark.writes"),
 } satisfies Record<keyof typeof PiTesting, Coverage>;
 
-/** Each ledger: its Pi entry point, its record, Pi's module and this package's entry (none for `storage/store`). */
+/** Each ledger: its Pi entry point, its record, Pi's module and this package's entry. */
 const LEDGERS = [
 	["pi-durable", COVERAGE, PiDurable, Package],
 	["pi-durable/env", ENV_COVERAGE, PiEnv, Env],
@@ -436,7 +433,7 @@ const LEDGERS = [
 	["pi-durable/storage/indexeddb", INDEXEDDB_COVERAGE, PiIndexedDb, IndexedDb],
 	["pi-durable/storage/jsonl", JSONL_COVERAGE, PiJsonl, Jsonl],
 	["pi-durable/storage/jsonl/node", JSONL_NODE_COVERAGE, PiJsonlNode, JsonlNode],
-	["pi-durable/storage/store", STORE_COVERAGE, PiStore, {}],
+	["pi-durable/storage/store", STORE_COVERAGE, PiStore, StoreSubpath],
 	["pi-durable/storage/sqlite", SQLITE_COVERAGE, PiSqlite, Sqlite],
 	["pi-durable/storage/sqlite/cloudflare", SQLITE_CLOUDFLARE_COVERAGE, PiSqliteCloudflare, SqliteCloudflare],
 	["pi-durable/storage/sqlite/node", SQLITE_NODE_COVERAGE, PiSqliteNode, SqliteNode],
@@ -467,7 +464,7 @@ describe.each(LEDGERS)("the coverage of %s", (_name, coverage, pi, ours) => {
 });
 
 describe("the open entries", () => {
-	it("are the registry over Chord's app runtime and the storage on a Chord store, both waiting on that runtime", () => {
+	it("are none", () => {
 		const records: ReadonlyArray<readonly [string, Record<string, Coverage>]> = [
 			...LEDGERS.map(([name, coverage]) => [name, coverage] as const),
 			["pi-durable/images/cloudflare", IMAGES_CLOUDFLARE_COVERAGE],
@@ -477,6 +474,6 @@ describe("the open entries", () => {
 				record.kind === "open" ? [`${name} ${entry}`] : [],
 			),
 		);
-		expect(opened).toEqual(["pi-durable registryReader", "pi-durable/storage/store StoreStorage"]);
+		expect(opened).toEqual([]);
 	});
 });

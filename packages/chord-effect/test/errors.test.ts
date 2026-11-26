@@ -1,6 +1,16 @@
+import { ChordError, PluginError } from "@earendil-works/chord";
 import { PathError as PiPathError, UnsafePathError as PiUnsafePathError } from "@earendil-works/chord/delta";
 import { describe, expect, it } from "vitest";
-import { fromDelta, InvalidOp, PathError, SqliteError, UnsafePathError } from "../src/errors.ts";
+import {
+	ChordFailed,
+	fromChord,
+	fromDelta,
+	InvalidOp,
+	PathError,
+	PluginFailed,
+	SqliteError,
+	UnsafePathError,
+} from "../src/errors.ts";
 
 describe("fromDelta", () => {
 	it("maps each error class of Chord's delta to its tag, keeping what it names", () => {
@@ -24,5 +34,23 @@ describe("SqliteError", () => {
 	it("takes its message from its cause", () => {
 		expect(new SqliteError({ cause: new Error("database is locked") }).message).toBe("database is locked");
 		expect(new SqliteError({ cause: "busy" }).message).toBe("busy");
+	});
+});
+
+describe("fromChord", () => {
+	it("maps each error class of Chord's root to its tag, keeping code, reason and details", () => {
+		expect(
+			fromChord(new ChordError({ code: "invalid", reason: "args", message: "bad", details: { at: 1 } })),
+		).toEqual(new ChordFailed({ code: "invalid", reason: "args", message: "bad", details: { at: 1 } }));
+		expect(fromChord(new ChordError({ code: "not_ready", message: "later" }))).toEqual(
+			new ChordFailed({ code: "not_ready", message: "later" }),
+		);
+		expect(fromChord(new PluginError("quota", "over", ["a"]))).toEqual(
+			new PluginFailed({ code: "quota", message: "over", details: ["a"] }),
+		);
+	});
+
+	it("leaves anything else to its caller", () => {
+		expect(fromChord(new Error("database is locked"))).toBeUndefined();
 	});
 });

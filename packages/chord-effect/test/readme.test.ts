@@ -5,11 +5,12 @@
 import { sleep } from "@earendil-works/chord";
 import { traceIn } from "@earendil-works/chord/context";
 import { PiTelemetry } from "@effectified/pi-telemetry";
-import { Duration, Effect, Fiber, Option, Tracer } from "effect";
+import { Duration, Effect, Fiber, Option, Stream, Tracer } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { BACKGROUND_CONTEXT, ChordContext, type Context, createContextKey, withContextValue } from "../src/context.ts";
 import { apply, decoder, encoder, type Op } from "../src/delta.ts";
+import { Store, sqliteBackend } from "../src/index.ts";
 import { copyJson, isJsonValue, NotJson } from "../src/json.ts";
 import { openNodeSqliteDatabase } from "../src/node/sqlite.ts";
 import { applySqliteMigrations, validateSqliteSchemaPrefix } from "../src/sqlite.ts";
@@ -183,5 +184,24 @@ describe("README: Deltas", () => {
 		);
 		expect(seen.value).toEqual({ title: "Draft 2", tags: ["a", "b"] });
 		expect(seen.decoded).toEqual(seen.ops);
+	});
+});
+
+describe("README: The store", () => {
+	it("copies a store through JSONL bytes", async () => {
+		// README: store.
+		const copy = Effect.scoped(
+			Effect.gen(function* () {
+				// Open for the scope; the store owns the database and closes it with itself.
+				const store = yield* Store.open(sqliteBackend(yield* openNodeSqliteDatabase(":memory:")));
+				// Its state as archive parts, written as JSONL bytes and read back into a second store.
+				const bytes = yield* Stream.runCollect(Store.encodeJsonl(Store.archive(store)));
+				const backup = sqliteBackend(yield* openNodeSqliteDatabase(":memory:"));
+				const restored = yield* Store.importArchive(backup, Store.decodeJsonl(Stream.fromIterable(bytes)));
+				return yield* Store.lastSeq(restored);
+			}),
+		);
+
+		expect(await run(copy)).toBe(0);
 	});
 });

@@ -3908,7 +3908,7 @@ used by: chord-effect
 export function validateSqliteSchemaPrefix(prefix: string): void
 
 ## Batch  chord/src/state/batch.ts
-used by: chord-effect via ChordStore
+used by: chord-effect via ChordStore, durable-effect via StoreStorage
 /** A host's batch: the reentrancy flag, the watched sources a commit changed, and where background errors go. */
 export class Batch {
 	/** Reports a throwing watch listener's error (to the host's `onError`); what watches get as their `report`. */
@@ -3965,14 +3965,14 @@ export class Batch {
 }
 
 ## BatchError  chord/src/state/batch.ts
-used by: chord-effect via HostError
+used by: chord-effect via HostError, durable-effect via StoreStorage
 /** What a batch reports: a watch listener that threw, or a frame delivery that threw (a derive's value is no JSON). */
 export type BatchError =
 	| { readonly kind: "listener_error"; readonly error: unknown }
 	| { readonly kind: "delivery_failed"; readonly error: unknown };
 
 ## Delivered  chord/src/state/batch.ts
-used by: chord-effect via ChordStore
+used by: chord-effect via ChordStore, durable-effect via StoreStorage
 /** What a commit lists to get its frame delivered: a watched source it changed (JSON or native). */
 export interface Delivered {
 	/** Delivers this batch's frame to its watches and subscribers; called once per batch that listed it. */
@@ -4096,7 +4096,7 @@ export class StoreOwnerTables {
 }
 
 ## IdAllocator  chord/src/store/allocator.ts
-used by: chord-effect via Step
+used by: chord-effect via Step, durable-effect via StoreStorage
 /**
  * The allocator: `value` is the next id it gives. An id raised to `Number.MAX_SAFE_INTEGER` is accepted, the value
  * stays there, and every later `mint` throws: no id past the safe range (it would stop counting exactly and repeat).
@@ -4123,7 +4123,7 @@ used by: chord-effect
 export function applyBatch(store: ChordStore, commits: readonly OutboxCommit[], context: Context): Promise<void>
 
 ## ArchiveManifest  chord/src/store/archive.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /**
  * The first part: the format, the store's schema version, its `lastSeq` and the allocator's next id (rule 24, D3);
  * `host` in a host's data archive (`exportHostData`): the address key whose records and rows it holds.
@@ -4138,7 +4138,7 @@ export type ArchiveManifest = {
 };
 
 ## ArchivePart  chord/src/store/archive.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /**
  * One part of an archive, in this order: the manifest; per table (by SQL name) its `table` write, its `put`s and its
  * `index` writes; per document record (by id, live and retired) its `document.create` without a base, then its kept
@@ -4165,7 +4165,7 @@ used by: chord-effect
 export function sqliteBackend(db: SqliteDatabase): Backend
 
 ## TableRecord  chord/src/store/catalog.ts
-used by: chord-effect via Step
+used by: chord-effect via Step, durable-effect via StoreStorage
 /** A table as the store records it, by its SQL name. */
 export type TableRecord = {
 	readonly table: string;
@@ -4240,7 +4240,7 @@ export type Column =
 	| { readonly name: string; readonly type: "json"; readonly optional: boolean; readonly json: JsonColumn };
 
 ## ColumnRecord  chord/src/store/columns.ts
-used by: chord-effect via TableDefinition
+used by: chord-effect via TableDefinition, durable-effect via StoreStorage
 /** A column as the `table` write records it (slice 6a §5): what a replica needs without the plugin's code. */
 export type ColumnRecord = {
 	readonly type: ColumnType;
@@ -4268,7 +4268,7 @@ export type ColumnSchema =
 	| Optional<ScalarSchema | JsonColumnSchema<unknown>>;
 
 ## ColumnType  chord/src/store/columns.ts
-used by: chord-effect via ColumnRef
+used by: chord-effect via ColumnRef, durable-effect via StoreStorage
 /** A column's type in the store. */
 export type ColumnType = "str" | "int" | "num" | "bool" | "json";
 
@@ -4347,7 +4347,7 @@ used by: chord-effect via PutRowOf
 export type ValueOf<S> = S extends Optional<infer I> ? ValueOf<I> : S extends Schema ? Static<S> : never;
 
 ## DocumentAddress  chord/src/store/engine.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /**
  * A document's address: the owner name, the adapter's namespace (claimed with the owner: Chord's `chord`, `chord.jobs`,
  * `chord.job-states`; Durable's scopes), the kind and, for a keyed document, its key; a singleton has none. The column
@@ -4361,12 +4361,12 @@ export type DocumentAddress = {
 };
 
 ## DocumentBase  chord/src/store/engine.ts
-used by: chord-effect via DocumentContent
+used by: chord-effect via DocumentContent, durable-effect via StoreStorage
 /** A base: a whole value at a version. */
 export type DocumentBase = { readonly version: number; readonly fingerprint: string; readonly value: JsonValue };
 
 ## DocumentContent  chord/src/store/engine.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** A change's content: a new base, or a delta on the current base's version. */
 export type DocumentContent =
 	| ({ readonly kind: "base" } & DocumentBase)
@@ -4381,7 +4381,7 @@ used by: chord-effect
 export type DocumentEntry = { readonly meta: string | null; readonly retired_at?: number | null };
 
 ## DocumentHistory  chord/src/store/engine.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /**
  * What a record keeps (R1), applied at a new base and at retirement: `none` (Chord) drops older revisions at a new base
  * and the row and its revisions at retirement; `latest` drops older revisions at a new base and its revisions at
@@ -4395,7 +4395,7 @@ used by: chord-effect
 export type DocumentPoint = number | "current";
 
 ## DocumentRecord  chord/src/store/engine.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** A stored record: one incarnation of an address, live from `createdAt` until `retiredAt` (half-open). */
 export type DocumentRecord = DocumentAddress & {
 	readonly id: number;
@@ -4416,7 +4416,7 @@ export type DocumentRecord = DocumentAddress & {
 };
 
 ## DocumentRevision  chord/src/store/engine.ts
-used by: chord-effect via ArchivePart
+used by: chord-effect via ArchivePart, durable-effect via StoreStorage
 /** One stored revision as archives carry it: its document, its seq, its content. */
 export type DocumentRevision = { readonly id: number; readonly seq: number; readonly content: RevisionContent };
 
@@ -4426,7 +4426,7 @@ used by: chord-effect
 export type DocumentScope = { readonly owner: string; readonly namespace: string; readonly kind?: string };
 
 ## DocumentWrite  chord/src/store/engine.ts
-used by: chord-effect via ArchivePart
+used by: chord-effect via ArchivePart, durable-effect via StoreStorage
 /**
  * The engine's writes as the outbox and archives record them. A creation carries its base in a commit (stored at
  * `createdAt`); in an archive it has none and its `document.revision`s follow it.
@@ -4546,7 +4546,7 @@ used by: chord-effect
 export async function retireRecord(step: Step, record: DocumentRecord): Promise<void>
 
 ## RevisionContent  chord/src/store/engine.ts
-used by: chord-effect via ArchivePart
+used by: chord-effect via ArchivePart, durable-effect via StoreStorage
 /** A stored revision's content: a base's value or a delta's ops, at a version (a revision keeps no fingerprint). */
 export type RevisionContent =
 	| { readonly kind: "base"; readonly version: number; readonly value: JsonValue }
@@ -4662,7 +4662,7 @@ used by: chord-effect
 export function existsNode<C extends Columns>(set: ColumnSet<C>, match: Match<C>, inner: unknown): Condition
 
 ## ExistsNode  chord/src/store/expression.ts
-used by: chord-effect via WhereNode
+used by: chord-effect via WhereNode, durable-effect via StoreStorage
 /** The data of an `exists`: the set's name, the matched pairs (set column, enclosing column), the inner condition. */
 export type ExistsNode = readonly [string, readonly (readonly [string, string])[], WhereNode | null];
 
@@ -4679,7 +4679,7 @@ export class Expression<T = unknown, K extends ColumnType = ColumnType> {
 }
 
 ## ExprNode  chord/src/store/expression.ts
-used by: chord-effect via OwnerTable
+used by: chord-effect via OwnerTable, durable-effect via StoreStorage
 /**
  * A compiled value expression: a literal (`null` clears), a column, a `json(...)` cell, or an operation. Untagged on
  * purpose, as `WhereNode`: the stored format.
@@ -4786,7 +4786,7 @@ used by: chord-effect via coalesce
 type ScalarType = Exclude<ColumnType, "json">;
 
 ## SetNode  chord/src/store/expression.ts
-used by: chord-effect via OwnerTable
+used by: chord-effect via OwnerTable, durable-effect via StoreStorage
 /** A compiled `set`: the new value of each changed column, every right side evaluated against the row before. */
 export type SetNode = { readonly [column: string]: ExprNode };
 
@@ -4817,7 +4817,7 @@ export function when<T, K extends ScalarType>(
 ): Expression<T, K>
 
 ## WhereNode  chord/src/store/expression.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /**
  * A compiled condition: column comparisons with checked operands, combined by `and`, `or`, `not`. A query's
  * condition may also test `exists` (slice 14 §5): `[set, [[setColumn, column], …], inner]`, true for a row when the
@@ -4995,7 +4995,7 @@ used by: chord-effect
 export async function* encodeJsonl(parts: AsyncIterable<ArchivePart>): AsyncIterable<Uint8Array>
 
 ## Outbox  chord/src/store/outbox.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** A store's outbox: its commits after the floor (the seq it was turned on at, advanced by `trim`). */
 export class Outbox {
 	constructor(store: ChordStore, floor: number)
@@ -5011,7 +5011,7 @@ export class Outbox {
 }
 
 ## OutboxCommit  chord/src/store/outbox.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** One commit as the outbox gives it: its seq, the allocator's value it persisted (D3) and its writes in applied order. */
 export type OutboxCommit = { readonly seq: number; readonly nextId: number; readonly writes: readonly StoreWrite[] };
 
@@ -5146,17 +5146,17 @@ export class RowCodec {
 }
 
 ## Scalar  chord/src/store/rows.ts
-used by: chord-effect via WhereNode
+used by: chord-effect via WhereNode, durable-effect via StoreStorage
 /** A scalar cell as the store keeps it in rows, writes and operands: a well-formed string, a number or a boolean. */
 export type Scalar = string | number | boolean;
 
 ## StoredRow  chord/src/store/rows.ts
-used by: chord-effect via EncodedRow
+used by: chord-effect via EncodedRow, durable-effect via StoreStorage
 /** A row as the outbox records it: the stored values, `opt(...)` columns absent when `NULL`. */
 export type StoredRow = { readonly [column: string]: Scalar | JsonValue };
 
 ## MetaRow  chord/src/store/schema.ts
-used by: chord-effect via ChordStore
+used by: chord-effect via ChordStore, durable-effect via StoreStorage
 /** The store's metadata row, as `openStore` reads it once. */
 export type MetaRow = {
 	readonly last_seq: number;
@@ -5217,7 +5217,7 @@ export class TableSql {
 }
 
 ## StagedWrite  chord/src/store/step.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** A write staged for the commit step: its order and what it does there, returning the writes as recorded. */
 export type StagedWrite = {
 	readonly order: WriteOrder;
@@ -5229,7 +5229,7 @@ export type StagedWrite = {
 };
 
 ## Step  chord/src/store/step.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /**
  * One commit step: its backend transaction, its seq, the store's id allocator (D3: ids are taken from it as the
  * writes apply, never copied), the ids of the documents it created, the table records it changed (the store's catalog
@@ -5263,7 +5263,7 @@ export class Step {
 }
 
 ## WriteOrder  chord/src/store/step.ts
-used by: chord-effect via StagedWrite
+used by: chord-effect via StagedWrite, durable-effect via StoreStorage
 /**
  * Where a staged write goes in its commit: retirements, creations, then everything else, each phase in staging order.
  * A retirement frees a live address before a creation takes it (the partial unique index); an adapter's composite
@@ -5272,7 +5272,7 @@ used by: chord-effect via StagedWrite
 export type WriteOrder = "retire" | "create" | "write";
 
 ## Attachment  chord/src/store/store.ts
-used by: chord-effect via ChordStore
+used by: chord-effect via ChordStore, durable-effect via StoreStorage
 /** What the open host gives the store: its `storage_failed` listener and its batch, in which adapters publish (§1.3). */
 export type Attachment = {
 	readonly failed: (error: unknown) => void;
@@ -5280,7 +5280,7 @@ export type Attachment = {
 };
 
 ## ChordStore  chord/src/store/store.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** The store behind `Store`, with what Chord's layers use: commits, guarded reads, the host's failure listener. */
 export class ChordStore implements Store {
 	/** The claims of its tables and documents (slice 6b). */
@@ -5394,7 +5394,7 @@ export class ChordStore implements Store {
 }
 
 ## CommitFence  chord/src/store/store.ts
-used by: chord-effect via ChordStore
+used by: chord-effect via ChordStore, durable-effect via StoreStorage
 /** The seal fence's two checks of a commit (§1.3), as the commit step calls them. */
 export type CommitFence = {
 	/** At the step's entry: `false` rejects the commit `released` and writes nothing. */
@@ -5415,7 +5415,7 @@ used by: chord-effect
 export async function openStore(backend: Backend, context: Context, options: StoreOptions = {}): Promise<Store>
 
 ## Replayed  chord/src/store/store.ts
-used by: chord-effect via ChordStore
+used by: chord-effect via ChordStore, durable-effect via StoreStorage
 /** Where a replayed batch leaves the store: its last commit's seq and allocator value, the tables it changed. */
 export type Replayed = {
 	readonly lastSeq: number;
@@ -5424,7 +5424,7 @@ export type Replayed = {
 };
 
 ## SeriesCommit  chord/src/store/store.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /**
  * One commit of a series (`ChordStore.commitSeries`): its own checks, which write nothing, and its writes. The checks
  * read through the commit's step, which sees what the series' earlier commits wrote.
@@ -5436,14 +5436,14 @@ export type SeriesCommit = {
 };
 
 ## SeriesResult  chord/src/store/store.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** What a series stored: how many of its commits (`stored`: all of them), and, when one was refused (`refused`), why. */
 export type SeriesResult =
 	| { readonly kind: "stored"; readonly stored: number }
 	| { readonly kind: "refused"; readonly stored: number; readonly refused: unknown };
 
 ## Store  chord/src/store/store.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** A store as apps hold it: opened by `openStore`, owned and closed by the app. */
 export interface Store {
 	/** The seq of the store's last commit (0 for a new store). */
@@ -5632,7 +5632,7 @@ used by: chord-effect
 export type TableOf<D> = D extends TableDefinition<infer C, infer K> ? Table<C, K> : never;
 
 ## AlterEdit  chord/src/store/table-history.ts
-used by: chord-effect via OwnerTable
+used by: chord-effect via OwnerTable, durable-effect via StoreStorage
 /** The column edits an `alter` write records. */
 export type AlterEdit = Extract<TableEdit, { readonly kind: "rename" | "add" | "drop" | "json" }>;
 
@@ -5665,7 +5665,7 @@ export type Migration = {
 };
 
 ## TableEdit  chord/src/store/table-history.ts
-used by: chord-effect via OwnerTable
+used by: chord-effect via OwnerTable, durable-effect via StoreStorage
 /** One edit of a migration as its writes record it (`alter`, `index`, `dropIndex`); the table is named when applied. */
 export type TableEdit =
 	| { readonly kind: "rename"; readonly from: string; readonly to: string }
@@ -5676,17 +5676,17 @@ export type TableEdit =
 	| { readonly kind: "dropIndex"; readonly name: string };
 
 ## ColumnVersions  chord/src/store/table-writes.ts
-used by: chord-effect via OwnerTable
+used by: chord-effect via OwnerTable, durable-effect via StoreStorage
 /** `json(...)` columns' versions written by a write, by column. */
 export type ColumnVersions = { readonly [column: string]: number };
 
 ## StoredKey  chord/src/store/table-writes.ts
-used by: chord-effect via OwnerTable
+used by: chord-effect via OwnerTable, durable-effect via StoreStorage
 /** A key as writes record it: the key columns' stored values. */
 export type StoredKey = { readonly [column: string]: Scalar };
 
 ## TableWrite  chord/src/store/table-writes.ts
-used by: chord-effect via OwnerTable
+used by: chord-effect via OwnerTable, durable-effect via StoreStorage
 /** The table writes as the outbox and archives record them. */
 export type TableWrite =
 	| {
@@ -5824,7 +5824,7 @@ used by: chord-effect
 export function compareText(a: string, b: string): number
 
 ## StoreWrite  chord/src/store/writes.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** One change of the store, tagged by `kind`. */
 export type StoreWrite = DocumentWrite | TableWrite;
 

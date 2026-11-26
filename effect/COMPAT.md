@@ -52,13 +52,13 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@effectified/pi-schema` | facade | `@earendil-works/pi-schema` | 28 | |
 | `@effectified/pi-ai` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges, credentials and login as services and Effects, its helpers, the key of a request, `runTest`, the forms the plugins share | 119 | Images, classifiers, deferred responses; timers inside pi-ai's OAuth flows run on the real clock |
 | `@effectified/pi-telemetry` | facade | `@earendil-works/pi-telemetry`, its telemetry schemas as typed Effect spans and metrics | 67 | `TelemetryStore`; histogram exemplars |
-| `@effectified/pi-chord` | facade | `@earendil-works/chord`: its context from the fiber, JSON, SQLite, delta, output | 42 | Chord's runtime (hosts, facets, links, store, clients, plugins, app kit, surfaces, sync); `Progress`; `/sqlite/cloudflare` |
+| `@effectified/pi-chord` | facade | `@earendil-works/chord`: its context from the fiber, JSON, SQLite, delta, output, the store | 70 | Chord's runtime (hosts, facets, links, clients, plugins, app kit, surfaces, sync); `Progress`; `/sqlite/cloudflare` |
 | `@effectified/pi-agent` | facade | `@earendil-works/pi-agent-core` | 54 | Changing the agent's settings and hooks after `make`; `Clock` for the timestamps Pi stamps itself |
 | `@effectified/pi-mcp` | facade | `@earendil-works/pi-mcp`, its `oauth` and `testing` subpaths | 80 | Timers inside pi-mcp's transports and OAuth code run on the real clock |
 | `@effectified/pi-tui` | facade | `@earendil-works/pi-tui`: a running TUI as a scoped service, input, keybindings and component callbacks as Streams, clipboard and autocomplete as Effects | 65 | pi-tui's own timers (render throttle, spinners, input timeouts) do not follow `Clock`; an `AutocompleteProvider` or `SlashCommand` written in Effect |
 | `@effectified/pi-evals` | facade | `@earendil-works/pi-evals`; private like it, so not in the release | 43 | A real model (runs with `EVALS_EFFECT_REAL_MODEL`); the documentation harness inside its container; a harness's `customTools` |
 | `@effectified/pi-coding-agent` | facade | `@earendil-works/pi-coding-agent`: extensions written in Effect, sessions and their runtime, the built-in and MCP tools, models, resources, print, RPC and interactive modes, interactive mode's components and theme | 117 | The parts of the extension API that hand Pi components or factories (renderers, custom UI, headers, footers, editors); Pi's and pi-tui's timers in interactive mode do not follow `Clock`; OAuth login; the model runtime's own requests |
-| `@effectified/pi-durable` | facade | `@earendil-works/pi-durable`, its environment contract, storages, built-in tools, tool search, code mode, images and testing subpaths | 764 | A registry over Chord's app runtime (`registryReader`) and Pi's storage on a Chord store (`/storage/store`), which need Chord's app runtime |
+| `@effectified/pi-durable` | facade | `@earendil-works/pi-durable`, its environment contract, storages (a Chord store's among them), a registry over a Chord registry, built-in tools, tool search, code mode, images and testing subpaths | 802 | |
 | `@effectified/pi-env` | facade | `@earendil-works/pi-env`, on the environment contract of `@effectified/pi-durable/env` | 84 | A real remote machine (runs with `PI_ENV_SSH_HOST`); the daemon tests need a daemon built from `packages/env` |
 | `@effectified/pi-codemode` | facade | `@earendil-works/pi-codemode`: sandboxes in worker threads, on the calling thread and on a remote; deterministic runs; Effect tools; the Cloudflare entry in workerd | 52 | Pi's deadline (`timeoutMs`) and call durations run on Pi's timers, not `Clock` |
 | `@effectified/pi-durable-rivet` | host | A harness in a Rivet actor: storage, wake-ups, forks; a local engine in a kept directory; `ActorSql` | 239 | Several machines; an engine that dies |
@@ -98,12 +98,12 @@ An application imports `@effectified/pi-*` and `effect`, never `@earendil-works/
   | Facade | Open entries |
   |---|---|
   | pi-ai | 0 (and its `utils/estimate` subpath, 0) |
-  | pi-durable | 2 (`registryReader`, and `StoreStorage` of `/storage/store`: both need Chord's app runtime, which pi-chord does not offer; one record per subpath, 18 in all) |
+  | pi-durable | 0 (one record per subpath, 18 in all) |
   | pi-telemetry | 0 |
   | pi-schema | 0 |
   | pi-codemode | 0 |
   | pi-evals | 0 (pi-evals has no entry point: one record per module, `plan`, `report`, `harness`, `docker`, and the empty one of its `cli` script) |
-  | pi-chord | 167 (37 of Chord's app runtime at its root, `Progress`, and 129 in the 19 subpaths of its app runtime, which the facade does not export) |
+  | pi-chord | 161 (31 at its root: Chord's host, link and client runtime, and the store's surface for adapters, which Chord marks internal; `Progress`; and 129 in the 19 subpaths of its app runtime, which the facade does not export) |
   | pi-mcp | 0 |
   | pi-tui | 0 |
   | pi-coding-agent | 0 |
