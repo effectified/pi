@@ -93,7 +93,7 @@ Directory names mirror upstream (`packages/durable` gives `packages/durable-effe
 | P0 | `packages/ai-effect` | `pi-ai-effect` | `pi-ai` | `Models` as a service and Layer; `stream` and `complete` as `Stream` and `Effect`; both bridges to `effect/ai` (5.3); scripted models for tests |
 | P0 | `packages/durable-effect` | `pi-durable-effect` | `pi-durable` | The harness in Effect: section 6 |
 | P1 | `packages/telemetry-effect` | `pi-telemetry-effect` | `pi-telemetry` | Pi telemetry as Effect spans, metrics and logs; Effect trace context carried into Pi calls |
-| P2 | `packages/mcp-effect` | `pi-mcp-effect` | `pi-mcp` | MCP servers as Pi tools from an `effect/ai` `McpClient`, and the reverse |
+| P2 | `packages/mcp-effect` | `pi-mcp-effect` | `pi-mcp` | MCP clients and transports as scoped resources, requests as Effects, notifications as Streams, OAuth sign-in; MCP tools as Pi tools come with `coding-agent-effect`, as in Pi |
 | P2 | `packages/codemode-effect` | `pi-codemode-effect` | `pi-codemode` | Code mode over Effect-defined tools |
 | P3 | `packages/agent-effect` | `pi-agent-core-effect` | `pi-agent-core` | The non-durable agent loop in Effect, for short-lived uses |
 | P3 | `packages/env-effect` | `pi-env-effect` | `pi-env` | Remote execution environments as scoped resources |
