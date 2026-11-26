@@ -67,6 +67,10 @@ jobs:
         id: upstream
         run: npm run build
 
+      # The pi-env daemon, which env-effect's daemon tests run (they skip without it). The runner ships Rust.
+      - name: Build the pi-env daemon
+        run: npm run build:daemon --workspace packages/env
+
       # Upstream's whole check. Upstream's build fetches the model catalogs of the day, and upstream's tests name
       # models of them, so this step fails once a named model leaves a catalog (within hours of a sync, twice in two
       # days). It shows, and does not fail the job: the steps below check what is ours.
