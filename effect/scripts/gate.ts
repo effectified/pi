@@ -7,7 +7,7 @@
 //   --changed          tests of the packages with uncommitted changes and of every package that depends on one;
 //                      a change under effect/ or to the lockfile selects all. With =<ref>, also what changed since it.
 //   --skip             leaves steps out by name: biome, pinned-deps, runtime-deps, ts-imports, types, diagnostics,
-//                      sync, boundary, deps, node, bun.
+//                      sync, boundary, deps, providers, node, bun.
 // The checks all run, so one run names everything that is wrong. The tests run one package at a time, and not for a
 // package with a type error, nor for one that depends on a package with a type error in its `src`: another agent's
 // half-written file stops the tests it can break and no others. Exit 1 when a step failed.
@@ -109,6 +109,7 @@ const checks: readonly Step[] = [
 	check("sync", "Pi pins, release and surface record", node, "effect/scripts/sync.ts", "check"),
 	check("boundary", "fork boundary", node, "effect/scripts/check-boundary.ts"),
 	check("deps", "dependency rules", node, "effect/scripts/check-deps.ts"),
+	check("providers", "pi-ai providers offered", node, "effect/scripts/providers.ts", "check"),
 ];
 const suites: readonly Step[] = [
 	...tested.packages.map(

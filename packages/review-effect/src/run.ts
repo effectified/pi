@@ -1,6 +1,6 @@
 // The run under review, as Pi stores it in its built-in live document: what a review reads of it.
 
-import type { EntryId, LiveState, SubmissionId } from "@earendil-works/pi-durable";
+import type { EntryId, LiveState, SubmissionId } from "@effectified/pi-durable";
 import { Option } from "effect";
 
 /** What Pi's live document says of a conversation's run, as far as a review needs it. */

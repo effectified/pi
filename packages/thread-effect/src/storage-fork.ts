@@ -1,7 +1,7 @@
 // A copied storage counts no swarm of the storage it was copied from, and tells of none of its outcomes: the
 // composition's own step on a copy of a whole harness storage, beside the plugins'.
 
-import type { TaskId } from "@earendil-works/pi-durable";
+import type { TaskId } from "@effectified/pi-durable";
 import { Doc, Harness } from "@effectified/pi-durable";
 import { Effect, Option, Schema, Stream } from "effect";
 import * as Courier from "./outcome-courier.ts";

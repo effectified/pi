@@ -1,7 +1,7 @@
 // The examples of README.md, each as it is written there, run on scripted models.
 
-import { type FauxResponseStep, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import { Models } from "@effectified/pi-ai";
+import { type FauxResponseStep, fauxAssistantMessage, fauxProvider } from "@effectified/pi-ai/testing";
 import { Harness, Registry, Storage } from "@effectified/pi-durable";
 import { answer, TestHarness } from "@effectified/pi-durable/testing";
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect";

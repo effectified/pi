@@ -1,7 +1,7 @@
 // What a request tells the router about itself: the classification of its content, the regions that may serve it, and
 // the labels a route must carry.
 
-import type { JsonObject } from "@earendil-works/pi-ai";
+import type { JsonObject } from "@effectified/pi-ai";
 import { Effect, Schema } from "effect";
 import { InvalidConstraints } from "./errors.ts";
 

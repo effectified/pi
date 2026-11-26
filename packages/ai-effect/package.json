@@ -11,6 +11,11 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
+		"./providers/*": {
+			"source": "./src/providers/*.ts",
+			"types": "./dist/providers/*.d.ts",
+			"import": "./dist/providers/*.js"
+		},
 		"./testing": {
 			"source": "./src/testing/index.ts",
 			"types": "./dist/testing/index.d.ts",

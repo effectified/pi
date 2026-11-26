@@ -5,14 +5,13 @@ import * as Port from "../src/driver.ts";
 import { fake } from "./fake-driver.ts";
 
 describe("the driver port", () => {
-	it("imports nothing but effect, Pi's id types, the durable facade and the type of the fork setup", () => {
+	it("imports nothing but effect, the durable facade and the type of the fork setup", () => {
 		const source = readFileSync(new URL("../src/driver.ts", import.meta.url), "utf8");
 		const imports = [...source.matchAll(/^import (type )?.* from "([^"]+)";$/gm)].map((match) => [
 			match[2],
 			match[1] ?? "",
 		]);
 		expect(imports).toEqual([
-			["@earendil-works/pi-durable", "type "],
 			["@effectified/pi-durable", ""],
 			["effect", ""],
 			["./fork-setup.ts", "type "],

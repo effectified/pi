@@ -7,16 +7,18 @@ import {
 	type AssistantMessageEventStream,
 	createAssistantMessageEventStream,
 	createProvider,
+	type ErrorReason,
+	emptyUsage,
 	getSupportedThinkingLevels,
+	MODEL_THINKING_LEVELS,
 	type Model,
 	type Provider,
 	type ProviderAuth,
+	type ResponseEvent,
 	type SimpleStreamOptions,
 	type ThinkingLevelMap,
 	type TranscriptContext,
-} from "@earendil-works/pi-ai";
-import { MODEL_THINKING_LEVELS } from "@earendil-works/pi-ai/providers/model-schema";
-import { type ErrorReason, emptyUsage, type ResponseEvent } from "@effectified/pi-ai";
+} from "@effectified/pi-ai";
 import { Cause, Clock, Effect, Exit, FiberSet, Option, type Scope } from "effect";
 import type { RouterError } from "./errors.ts";
 import type { Alias, ValidRouteTable } from "./route-table.ts";

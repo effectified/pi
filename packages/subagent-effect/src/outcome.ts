@@ -1,6 +1,6 @@
 // How a child ended, as the parent's model reads it: the state its settled submission gives, and that state in words.
 
-import type { EntryId, EntryRecord, RunFailureReason, SettledSubmissionRecord } from "@earendil-works/pi-durable";
+import type { EntryId, EntryRecord, RunFailureReason, SettledSubmissionRecord } from "@effectified/pi-durable";
 import { Option } from "effect";
 import type * as Child from "./child.ts";
 import type * as Copy from "./copy.ts";

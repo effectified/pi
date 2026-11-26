@@ -1,6 +1,6 @@
 // The `subagent.copy` document: the mark of a storage that was copied, which ends every run the copy inherited.
 
-import type { TaskId } from "@earendil-works/pi-durable";
+import type { TaskId } from "@effectified/pi-durable";
 import { Doc } from "@effectified/pi-durable";
 import { Option, Schema } from "effect";
 

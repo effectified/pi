@@ -1,6 +1,6 @@
 // A forked storage starts clean: what a host runs on a copy of a whole harness storage before its first call.
 
-import type { ConversationId } from "@earendil-works/pi-durable";
+import type { ConversationId } from "@effectified/pi-durable";
 import { type DurableError, Harness } from "@effectified/pi-durable";
 import { Effect, Option, Stream } from "effect";
 import { Cursor } from "./cursor.ts";

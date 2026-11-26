@@ -1,6 +1,6 @@
 // Argument rules: what the product decides about one call of one tool, from its decoded arguments, as an Effect.
 
-import type { ConversationId, JsonObject } from "@earendil-works/pi-durable";
+import type { ConversationId, JsonObject } from "@effectified/pi-durable";
 import { Effect, Predicate, Schema } from "effect";
 import type { Grant } from "./grant.ts";
 

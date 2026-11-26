@@ -1,8 +1,7 @@
 // The fork setup port: what the product does to the conversation of a swarm's fork as it is created, such as a grant
 // and a budget cap.
 
-import type { ConversationId } from "@earendil-works/pi-durable";
-import type { Tx } from "@effectified/pi-durable";
+import type { ConversationId, Tx } from "@effectified/pi-durable";
 import { Context, Effect, Layer } from "effect";
 import type { ForkSetupFailed } from "./errors.ts";
 

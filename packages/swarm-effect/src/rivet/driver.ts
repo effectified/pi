@@ -1,7 +1,7 @@
 // The Rivet fork driver: a swarm's forks are actor forks of the actor that holds the primed harness, each a
 // copy-on-write copy of its storage with a harness of its own.
 
-import type { ConversationId } from "@earendil-works/pi-durable";
+import type { ConversationId } from "@effectified/pi-durable";
 import {
 	type ActorDefect,
 	type ActorGone,

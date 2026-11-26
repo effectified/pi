@@ -1,7 +1,6 @@
 // The driver port: what a swarm's coordinator needs from a place where forks live, as plain data and Effects.
 
-import type { ConversationId, EntryId, TaskId } from "@earendil-works/pi-durable";
-import { type Agent, Conversation } from "@effectified/pi-durable";
+import { type Agent, Conversation, type ConversationId, type EntryId, type TaskId } from "@effectified/pi-durable";
 import { Context, type Effect, type Option, Schema } from "effect";
 import type { ForkSetupService } from "./fork-setup.ts";
 

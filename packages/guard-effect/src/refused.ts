@@ -1,6 +1,6 @@
 // The record of a refusal on the call's result: what the guard decided, kept with the tool result for the host.
 
-import { type EntryRecord, ToolResultEntry } from "@earendil-works/pi-durable";
+import { type EntryRecord, ToolResultEntry } from "@effectified/pi-durable";
 import { Effect, type Option, Predicate, Schema } from "effect";
 import { MalformedRefusal } from "./errors.ts";
 import { Reason } from "./refusal.ts";

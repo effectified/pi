@@ -1,6 +1,6 @@
 // A conversation the budget stopped: reading why from what Pi stored, and continuing it under a new lease.
 
-import type { ConversationId, SubmissionId } from "@earendil-works/pi-durable";
+import type { ConversationId, SubmissionId } from "@effectified/pi-durable";
 import {
 	BuiltinDoc,
 	type Conversation,

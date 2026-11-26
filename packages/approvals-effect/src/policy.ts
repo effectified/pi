@@ -1,6 +1,6 @@
 // The policy a product supplies: which tool calls need a person's approval, and how long a request stays open.
 
-import type { ConversationId } from "@earendil-works/pi-durable";
+import type { ConversationId } from "@effectified/pi-durable";
 import { Cause, type Duration, Effect, type Schema } from "effect";
 
 /** The tool call a rule judges. */

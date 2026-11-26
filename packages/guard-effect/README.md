@@ -19,7 +19,7 @@ Nothing here knows your tools, verbs or labels: all of it is data and rules you 
 ```sh
 # the pi-effect packages come from their GitHub release, not npm
 R=https://github.com/effectified/pi/releases/download/v0.1.0
-npm install --allow-remote=all $R/effectified-pi-guard-0.1.0.tgz $R/effectified-pi-durable-0.1.0.tgz @earendil-works/pi-durable effect
+npm install --allow-remote=all $R/effectified-pi-guard-0.1.0.tgz $R/effectified-pi-durable-0.1.0.tgz effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`). Built for Pi Durable 1.6.1.
@@ -109,7 +109,7 @@ alone, the port would need the `Guard` that only the registry gives, and the reg
 there is no cycle, and no `Deferred`:
 
 ```ts
-import type { ConversationId } from "@earendil-works/pi-durable";
+import type { ConversationId } from "@effectified/pi-durable";
 import type { Tx } from "@effectified/pi-durable";
 import { Context } from "effect";
 

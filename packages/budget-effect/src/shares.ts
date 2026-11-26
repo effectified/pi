@@ -1,6 +1,6 @@
 // Shares: what one conversation has settled of the harness's lease, and a cap of its own, kept in the harness storage.
 
-import type { ConversationId } from "@earendil-works/pi-durable";
+import type { ConversationId } from "@effectified/pi-durable";
 import { BuiltinDoc, Doc, Harness, type Tx } from "@effectified/pi-durable";
 import { Context, Deferred, Effect, Layer, Option, Schema } from "effect";
 

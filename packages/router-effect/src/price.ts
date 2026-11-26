@@ -1,6 +1,6 @@
 // The cost of one response at a route's price, in integer micro units, with no float arithmetic: pi-ai's rule.
 
-import type { Usage } from "@earendil-works/pi-ai";
+import type { Usage } from "@effectified/pi-ai";
 import { TOKEN_KINDS, type TokenKind } from "@effectified/pi-ai";
 import { Effect, Schema } from "effect";
 import type { Price, Route } from "./route-table.ts";

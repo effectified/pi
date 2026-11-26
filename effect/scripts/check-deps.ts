@@ -1,5 +1,5 @@
 // Fails when a pi-effect package breaks the dependency rules of PRD sections 5.4 and 8, so every package stays
-// installable alone and movable to another home.
+// installable alone and movable to another home; and when code an application would write imports Pi itself.
 // Usage: node effect/scripts/check-deps.ts
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -14,6 +14,21 @@ const failures: string[] = [];
 // Type-only imports count too: a published `.d.ts` keeps them, so the package they name must be installable.
 const IMPORT = /(?:^|\n)\s*(?:import|export)\s+(?:type\s+)?(?:[^;'"]*?\sfrom\s*)?["']([^"']+)["']/g;
 
+/**
+ * Imports of Pi that a README or a documentation page may still show, each with why: what the facades do not offer
+ * yet. Each entry is an open entry of a facade's coverage (`test/index.test.ts`).
+ */
+const DOCUMENTED_PI_IMPORTS: ReadonlyMap<string, string> = new Map([
+	[
+		"packages/durable-effect/README.md @earendil-works/chord/context",
+		"a Chord context for ParentContext: Chord has no facade yet",
+	],
+	[
+		"packages/telemetry-effect/README.md @earendil-works/chord/context",
+		"host code giving Pi a Chord context: Chord has no facade yet",
+	],
+]);
+
 for (const pkg of packages) {
 	const testDependencies = [...runtimeDependencies(pkg), ...Object.keys(pkg.devDependencies)];
 	// A docs package ships built pages and no code: what its generator imports is a development dependency.
@@ -21,7 +36,9 @@ for (const pkg of packages) {
 	for (const file of sourceFiles(join(ROOT, pkg.directory, "src"))) checkImports(pkg, file, sourceDependencies);
 	for (const file of sourceFiles(join(ROOT, pkg.directory, "test"))) checkImports(pkg, file, testDependencies);
 	checkKinds(pkg);
+	checkWrittenOnFacades(pkg);
 }
+checkDocumentation();
 checkSingleVersion("effect peer range", (pkg) => (pkg.kind === "docs" ? [] : [pkg.peerDependencies.effect]));
 checkSingleVersion("upstream Pi version", (pkg) =>
 	Object.entries(pkg.dependencies)
@@ -95,6 +112,51 @@ function checkKinds(pkg: EffectPackage): void {
 			failures.push(`${pkg.name}: the host ${name} must be an optional peer, used from a subpath named for it`);
 		}
 	}
+}
+
+/**
+ * Plugins and the composition are written as an application is, on the facades alone: an import of Pi in them is
+ * something the facades do not offer yet, so it belongs in the facade (offered, or wrapped), not here.
+ */
+function checkWrittenOnFacades(pkg: EffectPackage): void {
+	if (pkg.kind !== "plugin" && pkg.kind !== "composition") return;
+	for (const file of sourceFiles(join(ROOT, pkg.directory, "src"))) {
+		for (const match of readFileSync(file, "utf8").matchAll(IMPORT)) {
+			if (match[1].startsWith("@earendil-works/"))
+				failures.push(`${relative(ROOT, file)}: imports ${match[1]}; import it from a facade`);
+		}
+	}
+}
+
+/** The code in every README and documentation page imports effectified packages only, but for the listed imports. */
+function checkDocumentation(): void {
+	const pages = [
+		...packages.map((pkg) => join(ROOT, pkg.directory, "README.md")),
+		...markdownFiles(join(ROOT, "packages/docs-effect/docs")),
+	].filter((page) => existsSync(page));
+	const used = new Set<string>();
+	for (const page of pages) {
+		for (const match of readFileSync(page, "utf8").matchAll(IMPORT)) {
+			if (!match[1].startsWith("@earendil-works/")) continue;
+			const key = `${relative(ROOT, page)} ${match[1]}`;
+			used.add(key);
+			if (!DOCUMENTED_PI_IMPORTS.has(key))
+				failures.push(`${relative(ROOT, page)}: shows an import of ${match[1]}; show the facade's`);
+		}
+	}
+	for (const key of DOCUMENTED_PI_IMPORTS.keys()) {
+		if (!used.has(key)) failures.push(`DOCUMENTED_PI_IMPORTS lists ${key}, which no page shows any more`);
+	}
+}
+
+/** Every `.md` file below `directory`; none when it does not exist. */
+function markdownFiles(directory: string): string[] {
+	if (!existsSync(directory)) return [];
+	return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+		const path = join(directory, entry.name);
+		if (entry.isDirectory()) return markdownFiles(path);
+		return entry.name.endsWith(".md") ? [path] : [];
+	});
 }
 
 /** A package's manifest as it is written. */

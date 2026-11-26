@@ -1,6 +1,8 @@
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
+import type * as PiDurable from "@earendil-works/pi-durable";
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
+import type { Coverage } from "../../../effect/conformance.ts";
 import * as Package from "../src/index.ts";
 import { type Conversation, Harness, Registry, Storage, Tool } from "../src/index.ts";
 import { AGENT, answer, scriptedModels } from "./scripted.ts";
@@ -59,11 +61,14 @@ describe("the target shape of the PRD (section 6.2)", () => {
 });
 
 describe("the exports", () => {
-	it("are the modules and errors of slices one to four", () => {
+	it("are the modules and errors of slices one to four, and Pi's built-in entry and task tokens", () => {
 		expect(Object.keys(Package).sort()).toEqual([
 			"Agent",
+			"AssistantEntry",
 			"BuiltinDoc",
 			"Cancelled",
+			"CompactionEntry",
+			"CompactionTask",
 			"Conversation",
 			"ConversationBusy",
 			"ConversationIdle",
@@ -71,6 +76,7 @@ describe("the exports", () => {
 			"Entry",
 			"Extension",
 			"Gate",
+			"GenerationTask",
 			"Harness",
 			"Hook",
 			"Idle",
@@ -78,6 +84,7 @@ describe("the exports", () => {
 			"ReadAfterWrite",
 			"ReadOnlySession",
 			"Registry",
+			"ResetEntry",
 			"Scans",
 			"SchemaConversionError",
 			"SchemaDecodeError",
@@ -86,10 +93,14 @@ describe("the exports", () => {
 			"Storage",
 			"StorageRequestError",
 			"Submission",
+			"SystemEntry",
 			"Task",
 			"Tool",
+			"ToolResultEntry",
+			"ToolTask",
 			"Tx",
 			"UnexpectedError",
+			"UserEntry",
 			"Watch",
 		]);
 		expect(Object.keys(Package.Harness).sort()).toEqual([
@@ -148,3 +159,70 @@ describe("the exports", () => {
 });
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
+const offered: Coverage = { kind: "offered" };
+const replaced = (by: string): Coverage => ({ kind: "replaced", by });
+const open = (why: string): Coverage => ({ kind: "open", why });
+const DEFAULT = open("Pi's defaults: not re-exported; `Agent` creation leaves a setting out to get it");
+
+/** What this package does with every value Pi Durable exports: the list of what is left to put in Effect terms. */
+const COVERAGE = {
+	defineDoc: replaced("Doc.make"),
+	defineDocFamily: replaced("Doc.family"),
+	defineEntry: replaced("Entry.make"),
+	defineExtension: replaced("Extension.make"),
+	defineSignal: replaced("Signal.make"),
+	defineTask: replaced("Task.make"),
+	defineTool: replaced("Tool.make"),
+	hook: replaced("Hook (beforeRequest, afterResponse, onYield, ...)"),
+	hookTask: replaced("the tasks a Hook handler returns"),
+	CompactionTask: offered,
+	GenerationTask: offered,
+	ToolTask: offered,
+	createRegistry: replaced("Registry.layer"),
+	createSession: replaced("Harness.layer"),
+	MemoryStorage: replaced("Storage.memory"),
+	configure: replaced("Conversation.configure and tx.configure"),
+	SubmissionSettled: replaced("Signal.SubmissionSettled"),
+	ROOT_CONVERSATION_ID: replaced("Harness.root"),
+	AgentDoc: replaced("BuiltinDoc.agent"),
+	InboxDoc: replaced("BuiltinDoc.inbox"),
+	LiveDoc: replaced("BuiltinDoc.live"),
+	ProviderDoc: replaced("BuiltinDoc.provider"),
+	UsageDoc: replaced("BuiltinDoc.usage"),
+	Harness: replaced("Harness"),
+	ConversationBusy: replaced("ConversationBusy"),
+	ConversationIdle: replaced("ConversationIdle"),
+	ReadAfterWrite: replaced("ReadAfterWrite"),
+	ReadOnlySession: replaced("ReadOnlySession"),
+	SessionFailed: replaced("SessionFailed"),
+	StorageRequestError: replaced("StorageRequestError"),
+	AssistantEntry: offered,
+	CompactionEntry: offered,
+	ResetEntry: offered,
+	SystemEntry: offered,
+	ToolResultEntry: offered,
+	UserEntry: offered,
+	DEFAULT_COMPACTION_POLICY: DEFAULT,
+	DEFAULT_PROGRESS_POLICY: DEFAULT,
+	DEFAULT_RESTART_LIMIT: DEFAULT,
+	DEFAULT_RETRY_POLICY: DEFAULT,
+	DEFAULT_HARNESS_IDENTITY: DEFAULT,
+	section: open("prompt sections: not wrapped (COMPAT.md)"),
+	wrapSection: open("prompt section wrappers: not wrapped (COMPAT.md)"),
+	wrapTool: open("tool wrappers: not wrapped (COMPAT.md)"),
+	registryReader: open("a read-only view of a registry: not wrapped"),
+	NestedCallDoc: open("the nested-call document: not wrapped"),
+	ConversationTranscript: open("the transcript reader: not wrapped"),
+	DURABLE_TELEMETRY_SCHEMA: open("Pi Durable's telemetry schema: not re-exported"),
+} satisfies Record<keyof typeof PiDurable, Coverage>;
+
+describe("the coverage of Pi Durable", () => {
+	it("offers every value it records as offered, so the record stays true", () => {
+		const ours = new Set(Object.keys(Package));
+		const missing = Object.entries(COVERAGE)
+			.filter(([name, coverage]) => coverage === offered && !ours.has(name))
+			.map(([name]) => name);
+		expect(missing).toEqual([]);
+	});
+});

@@ -3,7 +3,21 @@
 
 // The JSON Pi stores (a memo, a checkpoint, tool details), so a caller needs no second import to name it.
 export type { JsonValue } from "@earendil-works/chord/json";
-export type { JsonObject } from "@earendil-works/pi-durable";
+// Every type Pi Durable declares (`ConversationId`, `Entry`, `JsonObject`, ...), so an application names them
+// without importing Pi Durable; where this package exports a name of its own, its own wins.
+export type * from "@earendil-works/pi-durable";
+// Pi's built-in entries and task kinds, as Pi's own tokens: an entry's `kind` and a task's kind compare against them.
+export {
+	AssistantEntry,
+	CompactionEntry,
+	CompactionTask,
+	GenerationTask,
+	ResetEntry,
+	SystemEntry,
+	ToolResultEntry,
+	ToolTask,
+	UserEntry,
+} from "@earendil-works/pi-durable";
 // The schema failures this package's functions can fail with, so a caller needs no second import to name them.
 export { SchemaConversionError, SchemaDecodeError } from "@effectified/pi-schema";
 export * as Agent from "./agent.ts";

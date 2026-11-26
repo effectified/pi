@@ -22,7 +22,7 @@ verifier are yours.
 ```sh
 # the pi-effect packages come from their GitHub release, not npm
 R=https://github.com/effectified/pi/releases/download/v0.1.0
-npm install --allow-remote=all $R/effectified-pi-review-0.1.0.tgz $R/effectified-pi-durable-0.1.0.tgz @earendil-works/pi-durable @earendil-works/pi-ai effect
+npm install --allow-remote=all $R/effectified-pi-review-0.1.0.tgz $R/effectified-pi-durable-0.1.0.tgz effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`).
@@ -33,8 +33,8 @@ It runs as it stands, because both models are scripted; the same code is the tes
 [`test/readme.test.ts`](test/readme.test.ts).
 
 ```ts
-import { fauxProvider } from "@earendil-works/pi-ai";
 import { Models } from "@effectified/pi-ai";
+import { fauxProvider } from "@effectified/pi-ai/testing";
 import { answer, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Stream } from "effect";
 import * as Review from "@effectified/pi-review";

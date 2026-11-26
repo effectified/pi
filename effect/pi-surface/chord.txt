@@ -6,7 +6,7 @@ used by: durable-effect
 export const BACKGROUND_CONTEXT: Context
 
 ## Context  chord/src/context/index.ts
-used by: durable-effect; approvals-effect via ToolTask, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: durable-effect; durable-rivet-effect via SqliteStorage
 /** Immutable invocation-scoped values passed explicitly through operations. */
 export interface Context {
 	readonly abortSignal: AbortSignal | undefined;
@@ -16,7 +16,7 @@ export interface Context {
 }
 
 ## ContextKey  chord/src/context/index.ts
-used by: approvals-effect via ToolTask, durable-effect via Context, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: durable-effect via Context, durable-rivet-effect via SqliteStorage
 /** Typed identity for one value carried by a {@link Context}. */
 export interface ContextKey<T> {
 	readonly token: symbol;
@@ -33,7 +33,7 @@ used by: durable-effect
 export function withAbortSignal(signal: AbortSignal, context: Context): Context
 
 ## Draft  chord/src/delta/draft.ts
-used by: durable-effect; approvals-effect via ToolTask, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: durable-effect; durable-rivet-effect via CompactionTask
 /** A mutable transaction-scoped view of a JSON value, preserving tuple positions. */
 export type Draft<T, Depth extends readonly unknown[] = []> = Depth["length"] extends 8
 	? T
@@ -46,11 +46,11 @@ export type Draft<T, Depth extends readonly unknown[] = []> = Depth["length"] ex
 				: T;
 
 ## NonEmptyPath  chord/src/delta/index.ts
-used by: approvals-effect via ToolTask, durable-effect via WatchCall, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: durable-effect via WatchCall, durable-rivet-effect via SqliteStorage
 export type NonEmptyPath = readonly [Seg, ...Seg[]];
 
 ## Op  chord/src/delta/index.ts
-used by: approvals-effect via ToolTask, durable-effect via WatchCall, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: durable-effect via WatchCall, durable-rivet-effect via SqliteStorage
 /**
  * Tuples are the form — in memory, on the wire, on disk.
  *
@@ -73,19 +73,19 @@ export type Op =
 	| readonly ["m", Path, number[]];
 
 ## Path  chord/src/delta/index.ts
-used by: approvals-effect via ToolTask, durable-effect via WatchCall, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: durable-effect via WatchCall, durable-rivet-effect via SqliteStorage
 export type Path = readonly Seg[];
 
 ## Seg  chord/src/delta/index.ts
-used by: approvals-effect via ToolTask, durable-effect via WatchCall, durable-rivet-effect via SqliteStorage, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: durable-effect via WatchCall, durable-rivet-effect via SqliteStorage
 export type Seg = string | number;
 
 ## IsAny  chord/src/json.ts
-used by: durable-effect via UsageState, review-effect via LiveState
+used by: durable-effect via InboxItem
 type IsAny<T> = 0 extends 1 & T ? true : false;
 
 ## JsonRepresentation  chord/src/json.ts
-used by: durable-effect via UsageState, review-effect via LiveState
+used by: durable-effect via InboxItem
 /** Strict-JSON representation of an application data type. Unknown payloads become JsonValue. */
 export type JsonRepresentation<T> = IsAny<T> extends true
 	? JsonValue
@@ -100,8 +100,22 @@ export type JsonRepresentation<T> = IsAny<T> extends true
 					: never;
 
 ## JsonValue  chord/src/json.ts
-used by: durable-effect; approvals-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage, guard-effect via ToolExecutionResult, recorder-effect via Cursor, review-effect via JsonObject, subagent-effect via SettledTask, swarm-effect via EntryRecord, thread-effect via EntryRecord
+used by: durable-effect; durable-rivet-effect via SqliteStorage
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+
+## RegistryValue  chord/src/registries/registry.ts
+used by: durable-effect via registryReader
+/**
+ * A registry's composed value as a reader of one version sees it (`self.registry`, `host.registry`): a native
+ * watchable; `.value` is the last good composition (a later throwing `compose` keeps it), a watch gets each new one.
+ */
+export interface RegistryValue<V> extends NativeWatchable<V> {
+	/**
+	 * A synchronous observer of its compositions (as Durable's `observeXXX`): `advance` runs inside the batch that
+	 * composed, so it only records; an attached observer counts as watching, so the composition runs for it.
+	 */
+	observe(observer: NativeObserver<V>, context: Context): NativeObservation<V>;
+}
 
 ## SqliteDatabase  chord/src/sqlite/database.ts
 used by: durable-effect, durable-rivet-effect
@@ -156,8 +170,64 @@ used by: durable-rivet-effect
 /** Validate a prefix before using it as part of a SQLite identifier. */
 export function validateSqliteSchemaPrefix(prefix: string): void
 
+## NativeObservation  chord/src/state/native-source.ts
+used by: durable-effect via registryReader
+/** What `observe` gives: the value the observer starts at, and how to detach it (Durable's `Observation`). */
+export type NativeObservation<T> = { readonly value: T; detach(): void };
+
+## NativeObserver  chord/src/state/native-source.ts
+used by: durable-effect via registryReader
+/**
+ * A synchronous observer of a native source (Durable's observer shape): `advance` is called inside the batch that
+ * changed the source, so it only records; `end` once, when the source ended (`ended`) or the observer's context was
+ * aborted (`aborted`).
+ */
+export interface NativeObserver<T> {
+	/** The source's call of this batch: its new value, or a failure it may recover from. */
+	advance(call: NativeWatchCall<T>, context: Context): void;
+	/** The observer is detached for good with `end`. */
+	end(end: WatchEnd): void;
+}
+
+## NativeWatchable  chord/src/watch.ts
+used by: durable-effect via registryReader
+/**
+ * An in-process value that changes and can be watched (it may hold anything, errors and functions included): a change
+ * is a new value by identity, delivered without ops.
+ */
+export interface NativeWatchable<T> {
+	/** The current value. */
+	readonly value: T;
+	/** A watch holding the current value, then one frame per new value; aborting the context ends it. */
+	watch(context: Context): Promise<NativeWatchHandle<T>>;
+}
+
+## NativeWatchCall  chord/src/watch.ts
+used by: durable-effect
+/** One call of a native watch's listener: the new value, or a failure its source may recover from, as in `WatchCall`. */
+export type NativeWatchCall<T> =
+	| { readonly kind: "value"; readonly value: T }
+	| { readonly kind: "failed"; readonly error: unknown };
+
+## NativeWatchHandle  chord/src/watch.ts
+used by: durable-effect via registryReader
+/**
+ * Serialized observation of an in-process value: as `WatchHandle`, but each new value is its own call, in order, without
+ * ops.
+ */
+export interface NativeWatchHandle<T> {
+	/** Acquisition value before start; latest delivered value afterward (a `failed` call keeps it). */
+	readonly value: T;
+	/** Install the sole asynchronous listener. Never invokes it inline. */
+	start(listener: (call: NativeWatchCall<T>, context: Context) => Promise<void>): void;
+	/** Idempotently stop future callbacks and return this watch's terminal result. */
+	stop(): Promise<WatchEnd>;
+	/** Settle when the watch terminates; an already-running callback remains caller-owned. */
+	readonly closed: Promise<WatchEnd>;
+}
+
 ## WatchCall  chord/src/watch.ts
-used by: durable-effect; approvals-effect via ToolTask, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: durable-effect; durable-rivet-effect via CompactionTask
 /**
  * One call of a JSON watch's listener, and one frame a source hands its watch, tagged by `kind`:
  *
@@ -175,7 +245,7 @@ export type WatchCall<T> =
 	| { readonly kind: "failed"; readonly error: unknown };
 
 ## WatchEnd  chord/src/watch.ts
-used by: durable-effect; approvals-effect via ToolTask, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: durable-effect; durable-rivet-effect via CompactionTask
 /**
  * Terminal result of one watch, tagged by `kind`. A watch ends only for good; a failure its source recovers from is a
  * `failed` call (`WatchCall`), and the watch stays open.
@@ -192,7 +262,7 @@ export type WatchEnd =
 	| { readonly kind: "failed"; readonly error: unknown };
 
 ## WatchHandle  chord/src/watch.ts
-used by: durable-effect; approvals-effect via ToolTask, durable-rivet-effect via CompactionTask, guard-effect via ToolRegistration, subagent-effect via ToolRegistration, thread-effect via HarnessSettings
+used by: durable-effect; durable-rivet-effect via CompactionTask
 /**
  * Serialized observation of an immutable value: one listener call at a time; changes made meanwhile arrive folded into
  * the next call.

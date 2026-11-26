@@ -1,7 +1,6 @@
 // Each example of the README, run: against a canned HttpClient or a scripted provider, never the network.
 
-import type { EntryRecord } from "@earendil-works/pi-durable";
-import { Harness, Registry } from "@effectified/pi-durable";
+import { type EntryRecord, Harness, Registry } from "@effectified/pi-durable";
 import { answer, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Config, ConfigProvider, DateTime, Effect, Fiber, Layer, Option, Redacted, Stream } from "effect";
 import { FetchHttpClient, HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http";

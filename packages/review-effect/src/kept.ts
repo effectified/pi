@@ -1,7 +1,6 @@
 // A value kept in a memo of the review task: made once, and read back when Pi runs the phase again.
 
-import type { JsonObject } from "@earendil-works/pi-durable";
-import type { DurableError, Task } from "@effectified/pi-durable";
+import type { DurableError, JsonObject, Task } from "@effectified/pi-durable";
 import { Effect, Option } from "effect";
 
 /** The memos of the review task: Pi keeps them while the task can run, and the first writer of a name wins. */

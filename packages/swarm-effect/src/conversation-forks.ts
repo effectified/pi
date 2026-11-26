@@ -1,7 +1,6 @@
 // The in-storage driver: a swarm's forks are conversation forks of the source, in the harness its coordinator runs in.
 
-import { type ConversationId, SubmissionSettled } from "@earendil-works/pi-durable";
-import { Conversation, Doc, Entry, Harness, type Tx } from "@effectified/pi-durable";
+import { Conversation, type ConversationId, Doc, Entry, Harness, Signal, type Tx } from "@effectified/pi-durable";
 import { Deferred, Effect, Layer, Option, Schema, Stream } from "effect";
 import {
 	type Destroyed,
@@ -105,7 +104,7 @@ function make(harness: Deferred.Deferred<Harness.Open>): ForkDriverService {
 							// runs in the fork's conversation, in the storage of the swarm itself.
 							{
 								_tag: "Signal" as const,
-								signal: SubmissionSettled.name,
+								signal: Signal.SubmissionSettled.name,
 								place: { conversationId: conversation.id, actorId: null },
 							},
 						),

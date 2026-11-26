@@ -1,7 +1,7 @@
 // A check: one piece of work that reads a finished answer and reports findings. Products add their own.
 
-import type { Message } from "@earendil-works/pi-ai";
-import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
+import type { Message } from "@effectified/pi-ai";
+import type { ConversationId, EntryId } from "@effectified/pi-durable";
 import type { Effect } from "effect";
 import type { Finding } from "./finding.ts";
 import type { Party } from "./verdict.ts";

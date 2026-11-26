@@ -1,6 +1,6 @@
 // The delivery cursors: one document that says, per conversation, through which entry its records are delivered.
 
-import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
+import type { ConversationId, EntryId } from "@effectified/pi-durable";
 import { Doc, type DurableError, Entry, Harness } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 

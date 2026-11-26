@@ -1,7 +1,6 @@
 // Starting a child: the limits, and the one commit that creates its run task, its conversation and its documents.
 
-import type { TaskOptions } from "@earendil-works/pi-durable";
-import type { DurableError, SchemaDecodeError, Tool } from "@effectified/pi-durable";
+import type { DurableError, SchemaDecodeError, TaskOptions, Tool } from "@effectified/pi-durable";
 import { Effect, Option } from "effect";
 import * as Child from "./child.ts";
 import * as ChildSetup from "./child-setup.ts";

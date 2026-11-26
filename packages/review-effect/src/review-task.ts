@@ -2,8 +2,8 @@
 // in its own commit, and decides: the answer stands, the run continues with a correction, the task waits for a
 // person, or it waits to ask a reviewer again whose request failed.
 
-import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
-import type { EntryId, SubmissionId, TaskId } from "@earendil-works/pi-durable";
+import type { AssistantMessage, Message } from "@effectified/pi-ai";
+import type { EntryId, SubmissionId, TaskId } from "@effectified/pi-durable";
 import { BuiltinDoc, Entry, Hook, Task } from "@effectified/pi-durable";
 import { Effect, Option, Schema, Stream } from "effect";
 import type * as Check from "./check.ts";

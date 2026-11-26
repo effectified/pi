@@ -25,7 +25,7 @@ for pi-ai 1.6.1. It needs no harness: it depends on `@effectified/pi-ai` only.
 ```sh
 # the pi-effect packages come from their GitHub release, not npm
 R=https://github.com/effectified/pi/releases/download/v0.1.0
-npm install --allow-remote=all $R/effectified-pi-router-0.1.0.tgz $R/effectified-pi-ai-0.1.0.tgz @earendil-works/pi-ai effect
+npm install --allow-remote=all $R/effectified-pi-router-0.1.0.tgz $R/effectified-pi-ai-0.1.0.tgz effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`), so the application has one copy.
@@ -472,8 +472,8 @@ pi-ai 1.6.0 ships an OpenRouter provider, and `@effectified/pi-ai` can make a pr
 such as `@effect/ai-openrouter`. A table can route to both side by side:
 
 ```ts
-import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { EffectProvider, Models } from "@effectified/pi-ai";
+import { openrouterProvider } from "@effectified/pi-ai/providers/openrouter";
 
 const viaEffect = yield* EffectProvider.make({
 	id: "effect-openrouter",

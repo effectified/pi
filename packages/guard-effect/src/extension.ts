@@ -1,7 +1,7 @@
 // The guard's own extension: the hook that decides every tool call before it runs, and the one that records what was
 // refused in the call's result.
 
-import type { JsonObject, ToolExecutionResult } from "@earendil-works/pi-durable";
+import type { JsonObject, ToolExecutionResult } from "@effectified/pi-durable";
 import { Extension, Gate, Hook } from "@effectified/pi-durable";
 import { Cause, Effect, Option, PubSub } from "effect";
 import * as Check from "./check.ts";

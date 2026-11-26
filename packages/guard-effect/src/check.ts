@@ -1,6 +1,6 @@
 // The decision about one tool call: the denied names, the conversation's grant, the tool's ceiling, then the rules.
 
-import type { JsonObject } from "@earendil-works/pi-durable";
+import type { JsonObject } from "@effectified/pi-durable";
 import { Cause, Effect, Option } from "effect";
 import * as Classification from "./classification.ts";
 import * as Policy from "./policy.ts";

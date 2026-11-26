@@ -1,6 +1,6 @@
 // Granting: a conversation's grant written in the commit that creates or configures it, with Pi's offer made to match.
 
-import type { ConversationId, ConversationOwnership, ConversationRecord } from "@earendil-works/pi-durable";
+import type { ConversationId, ConversationOwnership, ConversationRecord } from "@effectified/pi-durable";
 import { BuiltinDoc, type Conversation, type Doc, type DurableError, Harness, type Tx } from "@effectified/pi-durable";
 import { Effect, Option } from "effect";
 import * as Classification from "./classification.ts";

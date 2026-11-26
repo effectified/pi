@@ -1,11 +1,6 @@
 // The router as a service: resolution and requests by alias in Effect terms, and the Layer that builds it.
 
-import type {
-	AssistantMessage,
-	ModelsSimpleStreamOptions,
-	Context as PiContext,
-	Provider,
-} from "@earendil-works/pi-ai";
+import type { AssistantMessage, ModelsSimpleStreamOptions, Context as PiContext, Provider } from "@effectified/pi-ai";
 import { Models, type RequestOptions, type ResponseEvent, requestKey } from "@effectified/pi-ai";
 import { Clock, Context, Effect, Layer, Queue, Random, Stream } from "effect";
 import { AttemptSettlement } from "./attempt-settlement.ts";

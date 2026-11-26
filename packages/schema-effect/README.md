@@ -8,7 +8,7 @@ Effect `Schema` to and from the JSON Schema that Pi tool parameters are written 
 ```bash
 # the pi-effect packages come from their GitHub release, not npm
 R=https://github.com/effectified/pi/releases/download/v0.1.0
-npm install --allow-remote=all $R/effectified-pi-schema-0.1.0.tgz @earendil-works/pi-schema effect
+npm install --allow-remote=all $R/effectified-pi-schema-0.1.0.tgz effect
 ```
 
 ## Effect Schema to tool parameters
@@ -52,8 +52,7 @@ those of the member the value comes closest to.
 ## Tool parameters to Effect Schema
 
 ```typescript
-import { obj, str } from "@earendil-works/pi-schema";
-import { fromJsonSchema } from "@effectified/pi-schema";
+import { fromJsonSchema, obj, str } from "@effectified/pi-schema";
 
 const schema = await Effect.runPromise(fromJsonSchema(obj({ path: str({ minLength: 1 }) })));
 ```

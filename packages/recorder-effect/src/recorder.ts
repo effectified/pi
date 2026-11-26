@@ -1,6 +1,6 @@
 // The recorder: a pump that delivers the records of committed entries to the sink, in order, at least once.
 
-import type { ConversationId, Cursor as ScanCursor } from "@earendil-works/pi-durable";
+import type { ConversationId, Cursor as ScanCursor } from "@effectified/pi-durable";
 import { type Doc, type DurableError, Entry, Harness } from "@effectified/pi-durable";
 import { Context, Effect, Layer, Option, Queue, Schedule, Semaphore, Stream } from "effect";
 import * as Cursor from "./cursor.ts";

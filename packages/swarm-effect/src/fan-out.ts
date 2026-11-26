@@ -1,7 +1,6 @@
 // Fan-out: one job moved forward through the driver, with every answer of the driver folded into the job's state.
 
-import type { ConversationId, EntryId, TaskId } from "@earendil-works/pi-durable";
-import type { Agent } from "@effectified/pi-durable";
+import type { Agent, ConversationId, EntryId, TaskId } from "@effectified/pi-durable";
 import { Effect, type Option, type Schema } from "effect";
 import type { Fork, ForkDriverService, ForkGone, ForkRetryLater, Notice, Place } from "./driver.ts";
 import type { InvalidValue } from "./errors.ts";

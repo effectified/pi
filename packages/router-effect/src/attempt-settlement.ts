@@ -1,6 +1,6 @@
 // The settlement port: what a product does with a failed attempt before another route takes it over, awaited.
 
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage } from "@effectified/pi-ai";
 import { Cause, Context, Effect, Option } from "effect";
 import { AttemptUnsettled } from "./errors.ts";
 import type { RouteEvent } from "./route-events.ts";

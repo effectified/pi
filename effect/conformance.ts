@@ -65,3 +65,14 @@ export type Covers<Pi, Ours, Skipped extends PropertyKey = never> = [
 
 /** Compiles only when `T` is `true`; otherwise the error shows `T`, which is the difference. */
 export type Assert<T extends true> = T;
+
+/**
+ * What a facade does with one value its Pi package exports, recorded for every export in the facade's
+ * `test/index.test.ts` with `satisfies Record<keyof typeof Pi, Coverage>`, so a value Pi adds fails the type check
+ * until it is decided. `offered`: exported by the facade as it is (a pure value). `replaced`: the facade has an
+ * Effect form of it, named in `by`. `open`: not in Effect terms yet, so an application needs Pi itself for it.
+ */
+export type Coverage =
+	| { readonly kind: "offered" }
+	| { readonly kind: "replaced"; readonly by: string }
+	| { readonly kind: "open"; readonly why: string };

@@ -221,11 +221,28 @@ class Graph {
 			const file = match === null ? undefined : this.#project.program.getSourceFile(fileName);
 			if (match === null || file === undefined) continue;
 			const names: Node[] = [];
-			for (const statement of file.statements) names.push(...this.#importedNames(statement, where));
-			if (names.length === 0) continue;
-			this.rootCount += names.length;
+			const everyType: Node[] = [];
+			for (const statement of file.statements) {
+				names.push(...this.#importedNames(statement, where));
+				const module = this.#typeStarModule(statement);
+				if (module !== undefined) everyType.push(module);
+			}
+			if (names.length === 0 && everyType.length === 0) continue;
 			const roots = this.#roots.get(match[1]) ?? new Set<string>();
 			this.#roots.set(match[1], roots);
+			// `export type * from` a Pi package: every declaration it exports is a root of the package that re-exports it.
+			for (const module of everyType) {
+				const moduleSymbol = this.#checker.getSymbolAtLocation(module);
+				const exported =
+					moduleSymbol === undefined ? [] : this.#checker.getExportsOfModule(this.#target(moduleSymbol));
+				this.rootCount += exported.length;
+				for (const symbol of exported) {
+					const key = this.#enqueue(this.#target(symbol));
+					if (key !== undefined) roots.add(key);
+				}
+			}
+			if (names.length === 0) continue;
+			this.rootCount += names.length;
 			const symbols = this.#checker.getSymbolAtLocation(names);
 			for (const [index, symbol] of symbols.entries()) {
 				const key = symbol === undefined ? undefined : this.#enqueue(this.#target(symbol));
@@ -314,11 +331,22 @@ class Graph {
 		if (!isExportDeclaration(statement) || statement.moduleSpecifier === undefined) return [];
 		const specifier = isStringLiteral(statement.moduleSpecifier) ? statement.moduleSpecifier.text : "";
 		if (!specifier.startsWith(PI_SCOPE)) return [];
+		// `export type * from`: every type, recorded by `#typeStarModule`.
+		if (statement.exportClause === undefined && statement.isTypeOnly) return [];
 		if (statement.exportClause === undefined || !isNamedExports(statement.exportClause)) {
 			this.failures.push(`${where}: \`export *\` from ${specifier}; re-export names, so they are recorded`);
 			return [];
 		}
 		return statement.exportClause.elements.map((element) => element.name);
+	}
+
+	/** The module specifier of an `export type * from` a Pi package, whose every declaration is then a root. */
+	#typeStarModule(statement: Node): Node | undefined {
+		if (!isExportDeclaration(statement) || statement.moduleSpecifier === undefined) return undefined;
+		const specifier = isStringLiteral(statement.moduleSpecifier) ? statement.moduleSpecifier.text : "";
+		return specifier.startsWith(PI_SCOPE) && statement.exportClause === undefined && statement.isTypeOnly
+			? statement.moduleSpecifier
+			: undefined;
 	}
 
 	#target(symbol: PiSymbol): PiSymbol {

@@ -1,6 +1,6 @@
 // The host operations of a swarm: start it, read its status, cancel it, read its result, and release a kept fork.
 
-import type { TaskId } from "@earendil-works/pi-durable";
+import type { TaskId } from "@effectified/pi-durable";
 import { Agent, type Doc, type DurableError, Harness, type SchemaDecodeError } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import { Input, State } from "./coordinator.ts";

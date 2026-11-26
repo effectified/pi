@@ -1,7 +1,7 @@
 // A job in its fork actor: the conversation it runs in, forked at the swarm's entry inside the copied storage, and
 // what the actor does with a request of the job.
 
-import type { ConversationId } from "@earendil-works/pi-durable";
+import type { ConversationId } from "@effectified/pi-durable";
 import { Conversation, Doc, Harness, type Tx } from "@effectified/pi-durable";
 import type { ActorInfo, ActorSql } from "@effectified/pi-durable-rivet";
 import { Effect, Option, Schema } from "effect";

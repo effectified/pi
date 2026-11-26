@@ -15,7 +15,7 @@ It adds no behaviour of its own: what pi-ai does is what happens. Built for pi-a
 ```sh
 # the pi-effect packages come from their GitHub release, not npm
 R=https://github.com/effectified/pi/releases/download/v0.1.0
-npm install --allow-remote=all $R/effectified-pi-ai-0.1.0.tgz @earendil-works/pi-ai effect
+npm install --allow-remote=all $R/effectified-pi-ai-0.1.0.tgz effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`), so the application has one copy.
@@ -26,9 +26,9 @@ npm install --allow-remote=all $R/effectified-pi-ai-0.1.0.tgz @earendil-works/pi
 handed to anything that takes one, and providers can be added while the program runs.
 
 ```ts
-import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { Effect } from "effect";
 import { getModel, Models } from "@effectified/pi-ai";
+import { anthropicProvider } from "@effectified/pi-ai/providers/anthropic";
 
 const program = Effect.gen(function* () {
 	// Fails with ModelNotFound when no registered provider lists the model.

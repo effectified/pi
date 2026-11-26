@@ -1,6 +1,6 @@
 // The examples of README.md, run as they stand on the scripted model.
 
-import type { ConversationId } from "@earendil-works/pi-durable";
+import type { ConversationId } from "@effectified/pi-durable";
 import { Extension, Harness, Storage, Tool, type Tx } from "@effectified/pi-durable";
 import { answer, ScriptedModels, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect";

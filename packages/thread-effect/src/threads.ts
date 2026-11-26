@@ -1,8 +1,8 @@
 // The thread service: admit a thread's task and work it to its end, take a stopped thread on, deliver a person's
 // decision, cancel it and probe it, on the composed harness.
 
-import type { ConversationId, SubmissionId } from "@earendil-works/pi-durable";
 import { continueStopped, Shares } from "@effectified/pi-budget";
+import type { ConversationId, SubmissionId } from "@effectified/pi-durable";
 import {
 	Agent,
 	type Conversation,

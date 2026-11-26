@@ -1,6 +1,6 @@
 // A swarm: the definition a product installs in its registry, and the plan of one swarm as data.
 
-import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
+import type { ConversationId, EntryId } from "@effectified/pi-durable";
 import { Agent, type Extension, type Task } from "@effectified/pi-durable";
 import { type Coordinator, coordinator } from "./coordinator.ts";
 import { compile, type Definition, type Work } from "./work.ts";

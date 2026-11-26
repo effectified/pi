@@ -7,7 +7,7 @@ import type {
 	SettledSubmissionRecord,
 	SubmissionDraft,
 	TaskId,
-} from "@earendil-works/pi-durable";
+} from "@effectified/pi-durable";
 import {
 	type DurableError,
 	type SchemaConversionError,

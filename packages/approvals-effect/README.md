@@ -18,7 +18,7 @@ The package authenticates nobody and knows no product: it parks, binds and recor
 ```sh
 # the pi-effect packages come from their GitHub release, not npm
 R=https://github.com/effectified/pi/releases/download/v0.1.0
-npm install --allow-remote=all $R/effectified-pi-approvals-0.1.0.tgz $R/effectified-pi-durable-0.1.0.tgz @earendil-works/pi-durable effect
+npm install --allow-remote=all $R/effectified-pi-approvals-0.1.0.tgz $R/effectified-pi-durable-0.1.0.tgz effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`).

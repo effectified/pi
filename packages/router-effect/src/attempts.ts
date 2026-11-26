@@ -4,20 +4,18 @@ import {
 	type Api,
 	type AssistantMessage,
 	appendAssistantMessageDiagnostic,
+	emptyUsage,
 	type Model,
+	type ModelRequestError,
+	Models,
 	type ModelsSimpleStreamOptions,
 	type MutableModels,
 	type Context as PiContext,
 	type ProviderResponse,
-	type Usage,
-} from "@earendil-works/pi-ai";
-import {
-	emptyUsage,
-	type ModelRequestError,
-	Models,
 	type RequestOptions,
 	type ResponseEvent,
 	streamSimple,
+	type Usage,
 } from "@effectified/pi-ai";
 import { Clock, Effect, Result, Stream } from "effect";
 import { AttemptSettlement, settledBy } from "./attempt-settlement.ts";

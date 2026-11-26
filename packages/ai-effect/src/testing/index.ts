@@ -10,6 +10,8 @@ export {
 	fauxToolCall,
 	type RegisterFauxProviderOptions,
 } from "@earendil-works/pi-ai";
+// pi-ai's scripted provider, for `Models.layer` in a test: its responses are set with `faux.setResponses`.
+export { type FauxProviderHandle, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 export { type Conditions, conditions } from "./conditions.ts";
 export { runLive, runTest, type TestServices } from "./run-test.ts";
 export {

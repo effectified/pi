@@ -1,7 +1,6 @@
 // The reference composition: every pi-effect plugin installed on one harness, in the order their READMEs require.
 
-import type { Provider } from "@earendil-works/pi-ai";
-import type { ConversationRecord, HarnessSettings } from "@earendil-works/pi-durable";
+import type { Provider } from "@effectified/pi-ai";
 import { Models } from "@effectified/pi-ai";
 import * as Approvals from "@effectified/pi-approvals";
 import {
@@ -13,6 +12,7 @@ import {
 	Shares,
 	type Spend,
 } from "@effectified/pi-budget";
+import type { ConversationRecord, HarnessSettings } from "@effectified/pi-durable";
 import {
 	type DurableError,
 	type Extension,

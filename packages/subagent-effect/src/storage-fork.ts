@@ -1,7 +1,7 @@
 // A copied storage runs no subagent of the storage it was copied from: what a host runs on a copy of a whole harness
 // storage before its first call.
 
-import type { TaskId } from "@earendil-works/pi-durable";
+import type { TaskId } from "@effectified/pi-durable";
 import { type Doc, Harness, type Tx } from "@effectified/pi-durable";
 import { Effect, Stream } from "effect";
 import * as Copy from "./copy.ts";

@@ -1,7 +1,7 @@
 // The model review: the policy's reviewer reads the task, the transcript of the run and the answer, and reports its
 // findings as one JSON object. What its one request came to is kept in a memo of the review task.
 
-import type { Api, AssistantMessage, Message, Model, Models } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Message, Model, PiModels } from "@effectified/pi-ai";
 import { ANSWERED } from "@effectified/pi-ai";
 import type { DurableError } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
@@ -38,7 +38,7 @@ export type Reply = typeof Reply.Type;
 /** What one request to the reviewer is made with. */
 export interface Request {
 	/** The harness's models (a task's `api.pi.models`): what wraps them, such as a budget, sees the request. */
-	readonly models: Models;
+	readonly models: PiModels;
 	/** The reviewer, resolved from those models. */
 	readonly model: Model<Api>;
 	/** The reviewed conversation's provider session, sent as pi-ai's `sessionId`: a cap per conversation counts it. */

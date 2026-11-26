@@ -1,8 +1,8 @@
 // The delivery of outcome events on the open harness: what a thread's courier does at each wake, what wakes it, and
 // what an earlier process left undelivered.
 
-import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
 import type { Shares } from "@effectified/pi-budget";
+import type { ConversationId, EntryId } from "@effectified/pi-durable";
 import {
 	type Conversation,
 	type Doc,

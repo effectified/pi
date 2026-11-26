@@ -1,6 +1,6 @@
 // The `subagent.child` document: one per child conversation, linking it to its parent and holding how it ended.
 
-import type { ConversationId, TaskId } from "@earendil-works/pi-durable";
+import type { ConversationId, TaskId } from "@effectified/pi-durable";
 import { Conversation, Doc, Entry, Task } from "@effectified/pi-durable";
 import { Schema } from "effect";
 

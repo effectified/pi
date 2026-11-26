@@ -1,16 +1,18 @@
 // The review state of a conversation: what the verdict on its newest answer, a person's decision about it and Pi's
 // live run say together. Read from the harness storage, so it is the same after a restart.
 
-import { AssistantEntry, type EntryId, type TaskId } from "@earendil-works/pi-durable";
 import {
+	AssistantEntry,
 	BuiltinDoc,
 	type Conversation,
 	type DurableError,
 	type Entry,
+	type EntryId,
 	Harness,
 	type SchemaDecodeError,
 	Signal,
 	Task,
+	type TaskId,
 } from "@effectified/pi-durable";
 import { Effect, Option, Schema, Stream } from "effect";
 import * as Deferral from "./deferral.ts";

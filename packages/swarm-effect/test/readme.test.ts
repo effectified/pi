@@ -2,8 +2,7 @@
 // comment are the README's, line for line; only the imports differ (the README names the package, this file its
 // sources).
 
-import type { ModelRef } from "@earendil-works/pi-durable";
-import { Harness, Registry, Storage } from "@effectified/pi-durable";
+import { Harness, type ModelRef, Registry, Storage } from "@effectified/pi-durable";
 import { answer, type FauxResponseFactory, ScriptedModels, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";

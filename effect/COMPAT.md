@@ -69,6 +69,35 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 Not built: `mcp-effect`, `codemode-effect`, `agent-effect`, `env-effect`, `workflow-effect`, `sandbox-effect`
 (PRD priorities P2 and P3).
 
+## What an application imports
+
+An application imports `@effectified/pi-*` and `effect`, never `@earendil-works/*`:
+
+- Each facade re-exports every type of its Pi package (`export type *`). Where a facade has a name of its own, its
+  own wins. Pi's type of that name is re-exported as `Pi<Name>` when a plugin needs it, for example `PiModels`.
+- `@effectified/pi-ai/providers/<name>` exists for each of pi-ai's 43 providers, and offers its constructor
+  (`anthropicProvider`). `node effect/scripts/providers.ts` writes these modules, and the gate's `providers` step
+  fails when they differ from pi-ai's list.
+- `@effectified/pi-ai/testing` offers pi-ai's faux provider and its helpers.
+- Each facade's `test/index.test.ts` records what it does with every value its Pi package exports:
+  - `offered`: exported as it is, a pure value;
+  - `replaced`: exported as an Effect form of ours, named in the entry;
+  - `open`: not in Effect terms yet, with the reason.
+
+  The record is a `satisfies Record<keyof typeof Pi, Coverage>`, so a value Pi adds fails `npm run check` until it
+  is decided. The `open` entries are the work left. On 2026-11-26 they number:
+
+  | Facade | Open entries |
+  |---|---|
+  | pi-ai | 70 |
+  | pi-durable | 12 |
+  | pi-telemetry | 3 |
+  | pi-schema | 0 |
+
+- `check-deps.ts` enforces this rule. Plugins and the composition are written the way an application is, so they
+  import no `@earendil-works/*`. Every README and documentation page shows only effectified imports, except those
+  listed in its `DOCUMENTED_PI_IMPORTS`: two Chord contexts, until Chord has a facade.
+
 ## Bumping upstream
 
 1. Fast-forward `main` to upstream, with upstream's tags, and push it with the release tag
@@ -78,7 +107,9 @@ Not built: `mcp-effect`, `codemode-effect`, `agent-effect`, `env-effect`, `workf
    rewrites `effect/pi-surface/` and prints which Pi declarations the packages use changed (old and new text, and
    which packages use each), then runs the gate one command at a time and stops at the first failure. Upstream's own
    `npm run check` only shows, as in CI. It ends with the new row for the table above, from measured values.
-3. Read the surface changes; the parity tests of `durable-effect` show what moved in Pi Durable. Add the row, run
+3. Run `node effect/scripts/providers.ts` for pi-ai's provider list. Decide each new Pi export in its facade's
+   `test/index.test.ts`; `npm run check` names them.
+4. Read the surface changes; the parity tests of `durable-effect` show what moved in Pi Durable. Add the row, run
    `node effect/scripts/sync.ts check`, and commit with `PI_ALLOW_LOCKFILE_CHANGE=1`. PatentOS's own Pi pins move
    with its vendored packages (`effect/PATENTOS.md`).
 

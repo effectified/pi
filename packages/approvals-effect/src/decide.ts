@@ -1,7 +1,6 @@
 // Delivering a decision: what a host calls once a person it authenticated has decided a request.
 
-import { ToolTask } from "@earendil-works/pi-durable";
-import { type DurableError, Harness, type Signal, Task } from "@effectified/pi-durable";
+import { type DurableError, Harness, type Signal, Task, ToolTask } from "@effectified/pi-durable";
 import { Effect, Option } from "effect";
 import * as Asks from "./asks.ts";
 import type { Decision } from "./decision.ts";

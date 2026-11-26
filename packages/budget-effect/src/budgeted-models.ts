@@ -9,13 +9,16 @@ import {
 	type AssistantMessageEventStream,
 	type ClassifierResult,
 	createAssistantMessageEventStream,
+	type ErrorReason,
+	emptyUsage,
 	type Model,
+	Models,
 	type MutableModels,
 	type Context as PiContext,
+	requestKey,
 	type StreamOptions,
 	type Usage,
-} from "@earendil-works/pi-ai";
-import { type ErrorReason, emptyUsage, Models, requestKey } from "@effectified/pi-ai";
+} from "@effectified/pi-ai";
 import { Cause, Clock, Context, Effect, Exit, FiberSet, Layer, Option, Stream } from "effect";
 import { type Budget, gather, payerOf, refuse, reserve, settle } from "./budget.ts";
 import { BudgetEvents } from "./budget-events.ts";

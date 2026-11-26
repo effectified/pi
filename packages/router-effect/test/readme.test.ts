@@ -2,8 +2,8 @@
 // line for line; only the imports differ (the README names the packages, this file the sources and stand-ins), and
 // the providers are scripted.
 
-import { type AssistantMessage, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
-import { complete, getModel, Models } from "@effectified/pi-ai";
+import { type AssistantMessage, complete, getModel, Models } from "@effectified/pi-ai";
+import { fauxAssistantMessage, fauxProvider } from "@effectified/pi-ai/testing";
 import { Context, Effect, Layer, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {

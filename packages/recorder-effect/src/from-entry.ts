@@ -9,9 +9,9 @@ import type {
 	ToolResultMessage,
 	Usage,
 	UserMessage,
-} from "@earendil-works/pi-ai";
-import { contentText } from "@earendil-works/pi-ai/utils/text";
-import { type EntryRecord, type ToolDiagnostic, ToolResultEntry } from "@earendil-works/pi-durable";
+} from "@effectified/pi-ai";
+import { contentText } from "@effectified/pi-ai";
+import { type EntryRecord, type ToolDiagnostic, ToolResultEntry } from "@effectified/pi-durable";
 import { absurd } from "effect/Function";
 import type * as Records from "./record.ts";
 

@@ -1,8 +1,7 @@
 // Where a thread stands: at work, or ended with an outcome, read from what the harness stored and nothing else.
 
-import type { RunFailureReason, SubmissionRecord } from "@earendil-works/pi-durable";
 import { refusalOf } from "@effectified/pi-budget";
-import type { Conversation, Doc, Harness } from "@effectified/pi-durable";
+import type { Conversation, Doc, Harness, RunFailureReason, SubmissionRecord } from "@effectified/pi-durable";
 import * as Review from "@effectified/pi-review";
 import { Effect, Option } from "effect";
 import type { Outcome } from "./outcome.ts";

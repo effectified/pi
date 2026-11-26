@@ -1,6 +1,6 @@
 // The tools a parent's model delegates with: one that waits for the child, one that does not, and a status.
 
-import type { ConversationId, ToolRegistration } from "@earendil-works/pi-durable";
+import type { ConversationId, ToolRegistration } from "@effectified/pi-durable";
 import {
 	type DurableError,
 	type SchemaConversionError,

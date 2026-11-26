@@ -3,13 +3,12 @@
 // sources).
 
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
-import { type AssistantMessage, fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai";
-import type { ConversationId, EntryId, Report, TaskId, Wake } from "@earendil-works/pi-durable";
-import { Models } from "@effectified/pi-ai";
-import { runTest } from "@effectified/pi-ai/testing";
+import { type AssistantMessage, Models } from "@effectified/pi-ai";
+import { fauxAssistantMessage, fauxText, runTest } from "@effectified/pi-ai/testing";
 import { Context, Effect, Fiber, Latch, Layer, Option, Queue, Schedule, Schema, Stream } from "effect";
 import { Tool as AiTool, Toolkit } from "effect/ai";
 import { describe, expect, it } from "vitest";
+import type { ConversationId, EntryId, Report, TaskId, Wake } from "../src/index.ts";
 import {
 	BuiltinDoc,
 	type Conversation,

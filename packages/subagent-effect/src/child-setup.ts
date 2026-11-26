@@ -1,7 +1,6 @@
 // The child setup port: what the product does to a child conversation as it is created, such as grants and budgets.
 
-import type { ConversationId } from "@earendil-works/pi-durable";
-import type { Tx } from "@effectified/pi-durable";
+import type { ConversationId, Tx } from "@effectified/pi-durable";
 import { Context, Effect, Layer } from "effect";
 import type { ChildSetupFailed } from "./errors.ts";
 

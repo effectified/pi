@@ -5,7 +5,7 @@ import {
 	isContextOverflow,
 	isRetryableAssistantError,
 	type ProviderResponse,
-} from "@earendil-works/pi-ai";
+} from "@effectified/pi-ai";
 
 /** What a failed response means for routing. */
 export type FailureKind =

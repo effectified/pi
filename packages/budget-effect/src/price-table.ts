@@ -1,6 +1,6 @@
 // The price table: what each model charges per million tokens, as data, and the exact cost of one response.
 
-import type { Usage } from "@earendil-works/pi-ai";
+import type { Usage } from "@effectified/pi-ai";
 import { TOKEN_KINDS, type TokenKind } from "@effectified/pi-ai";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 
