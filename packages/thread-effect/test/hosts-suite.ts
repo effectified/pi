@@ -362,9 +362,17 @@ function suite(engines: typeof LocalEngine): void {
 			world.of("closed").some((ask) => ask.host === frozen.name && ask.actor === actor),
 		);
 		await new Promise((resolve) => setTimeout(resolve, 3_000));
-		// What it did between: at most it settled the request it had sent. No tool, no request, no outcome, no record.
-		const late = world.asks.slice(thawedAt).filter(({ ask }) => ask.host === frozen.name && ask.kind !== "beat");
-		expect(late.map(({ ask }) => ask.kind).filter((kind) => kind !== "settle" && kind !== "closed")).toEqual([]);
+		// What it did between for this thread: at most it settled the request it had sent, and its wake beat until it
+		// closed. No tool, no request, no outcome, no record. Thawed, it is a host of the engine again, so an actor an
+		// earlier test left with a wake scheduled may wake in it: only this thread's asks are counted, and a failure
+		// names each whole.
+		const ofThread = (ask: Ask): boolean =>
+			ask.kind === "ready" ? false : ask.kind === "model" ? ask.prompt === prompt : ask.actor === actor;
+		const late = world.asks
+			.slice(thawedAt)
+			.map(({ ask }) => ask)
+			.filter((ask) => ask.host === frozen.name && ofThread(ask));
+		expect(late.filter((ask) => ask.kind !== "beat" && ask.kind !== "settle" && ask.kind !== "closed")).toEqual([]);
 		expect(toolRuns(prompt).map((ask) => ask.host)).toEqual([second.name]);
 		expect(authorAsks(prompt).map((ask) => ask.host)).toEqual([frozen.name, second.name, second.name]);
 		expectOutcomes("frozen");

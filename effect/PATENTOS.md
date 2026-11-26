@@ -12,7 +12,7 @@ The goal of the PRD (section 4): PatentOS deletes its hand-written agent loop
 | | Where | State |
 |---|---|---|
 | The packages | This repository, branch `effect`, pushed to `origin` | Synced with upstream Pi 1.6.1. `npm run check` passes; the suites pass on Node and on Bun (versions and counts in `COMPAT.md`) |
-| The binding | PatentOS, branches `build/s0-foundations` and `main`, from commit `15c7a11` on | Merged and pushed. PatentOS's gate `bun run check:all` passed on `1b40bfc` (4,847 tests), which holds the packages at `49b6f04dd` |
+| The binding | PatentOS, branches `build/s0-foundations` and `main`, from commit `15c7a11` on | Merged and pushed. PatentOS's gate `bun run check:all` passed on `6843495` (4,871 tests), which holds the packages and their documentation at `56b774e55` |
 | The worktree to change it in | `/Volumes/Banana/GitHub/gunta/patentos-build-run/pi-effect-wt2`, branch `pi-effect/agent-thread-on-56fd828` | Kept level with the build's tip |
 
 PatentOS's shared checkout (`/Volumes/Banana/GitHub/gunta/patentos`) is never edited for this work: other
