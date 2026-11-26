@@ -11,6 +11,11 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
+		"./estimate": {
+			"source": "./src/estimate.ts",
+			"types": "./dist/estimate.d.ts",
+			"import": "./dist/estimate.js"
+		},
 		"./providers/*": {
 			"source": "./src/providers/*.ts",
 			"types": "./dist/providers/*.d.ts",
