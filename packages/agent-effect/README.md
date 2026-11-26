@@ -178,14 +178,19 @@ ends the run normally, with that message in the transcript.
 `runContinue` the messages the run added. `convertToLlm` is required, as in Pi.
 
 ```ts
-import { AgentLoop } from "@effectified/pi-agent";
+import { type AgentMessage, AgentLoop } from "@effectified/pi-agent";
+import type { Message } from "@effectified/pi-ai";
+
+// The messages a model reads; other roles (pi-coding-agent adds some to AgentMessage) stay out.
+const isLlmMessage = (message: AgentMessage): message is Message =>
+	message.role === "system" || message.role === "user" || message.role === "assistant" || message.role === "toolResult";
 
 const added = Effect.gen(function* () {
 	const model = (yield* ScriptedModels).model;
 	const prompt = { role: "user" as const, content: [{ type: "text" as const, text: "Hi." }], timestamp: 0 };
 	return yield* AgentLoop.run([prompt], { messages: [], tools: [Lookup] }, {
 		model,
-		convertToLlm: (messages) => Effect.succeed(messages),
+		convertToLlm: (messages) => Effect.succeed(messages.filter(isLlmMessage)),
 		getSteeringMessages: Effect.succeed([]),
 	});
 });

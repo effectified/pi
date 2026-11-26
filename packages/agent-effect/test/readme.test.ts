@@ -1,11 +1,12 @@
 // The examples of README.md as tests. The code under each "README:" comment is the README's, line for line; only the
 // imports differ (the README names the packages, this file the sources), and the provider is scripted.
 
+import type { Message } from "@effectified/pi-ai";
 import { fauxAssistantMessage, fauxToolCall, runTest, ScriptedModels } from "@effectified/pi-ai/testing";
 import { Context, Effect, Fiber, Latch, Layer, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-import { Agent, AgentLoop, StreamFn, Tool } from "../src/index.ts";
+import { Agent, AgentLoop, type AgentMessage, StreamFn, Tool } from "../src/index.ts";
 import { held } from "./scripted.ts";
 
 // README: quick start
@@ -167,6 +168,13 @@ describe("the hooks of the README", () => {
 });
 
 // README: the low-level loop
+// The messages a model reads; other roles (pi-coding-agent adds some to AgentMessage) stay out.
+const isLlmMessage = (message: AgentMessage): message is Message =>
+	message.role === "system" ||
+	message.role === "user" ||
+	message.role === "assistant" ||
+	message.role === "toolResult";
+
 const added = Effect.gen(function* () {
 	const model = (yield* ScriptedModels).model;
 	const prompt = { role: "user" as const, content: [{ type: "text" as const, text: "Hi." }], timestamp: 0 };
@@ -175,7 +183,7 @@ const added = Effect.gen(function* () {
 		{ messages: [], tools: [Lookup] },
 		{
 			model,
-			convertToLlm: (messages) => Effect.succeed(messages),
+			convertToLlm: (messages) => Effect.succeed(messages.filter(isLlmMessage)),
 			getSteeringMessages: Effect.succeed([]),
 		},
 	);

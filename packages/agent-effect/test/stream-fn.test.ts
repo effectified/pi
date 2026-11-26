@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Message } from "@effectified/pi-ai";
 import { fauxAssistantMessage, fauxProvider, runTest, ScriptedModels } from "@effectified/pi-ai/testing";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
@@ -9,7 +10,14 @@ import { model, scripted } from "./scripted.ts";
 
 const user = (text: string): AgentMessage => ({ role: "user", content: [{ type: "text", text }], timestamp: 0 });
 
-const convertToLlm = (messages: AgentMessage[]) => Effect.succeed(messages);
+// The messages a model reads; other roles (pi-coding-agent adds some to AgentMessage) stay out.
+const isLlmMessage = (message: AgentMessage): message is Message =>
+	message.role === "system" ||
+	message.role === "user" ||
+	message.role === "assistant" ||
+	message.role === "toolResult";
+
+const convertToLlm = (messages: AgentMessage[]) => Effect.succeed(messages.filter(isLlmMessage));
 
 describe("StreamFn.models", () => {
 	it("sends the requests to the providers of Models", async () => {
