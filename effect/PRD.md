@@ -77,7 +77,6 @@ either way.
 **Non-goals**
 
 - Changing or reimplementing Pi's loop, storage, compaction or scheduling.
-- A coding agent, a terminal UI, or anything of `coding-agent` and `tui` beyond what a later facade wraps.
 - A second system of record. The harness store is working state; the product's record stays the record.
 - Supporting Effect 3.
 
@@ -98,6 +97,14 @@ Directory names mirror upstream (`packages/durable` gives `packages/durable-effe
 | P2 | `packages/codemode-effect` | `pi-codemode-effect` | `pi-codemode` | Code mode over Effect-defined tools |
 | P3 | `packages/agent-effect` | `pi-agent-core-effect` | `pi-agent-core` | The non-durable agent loop in Effect, for short-lived uses |
 | P3 | `packages/env-effect` | `pi-env-effect` | `pi-env` | Remote execution environments as scoped resources |
+| P2 | `packages/chord-effect` | `pi-chord` | `chord` | Chord's context (cancellation, telemetry, values) from the fiber that makes a call, its JSON and SQLite types, so no product imports Chord |
+| P2 | `packages/tui-effect` | `pi-tui` | `pi-tui` | The terminal UI's components and renderer as scoped resources, input as `Stream`s |
+| P2 | `packages/coding-agent-effect` | `pi-coding-agent` | `pi-coding-agent` | Sessions, tools, settings and the extension API in Effect: a Pi extension written as an Effect program |
+| P3 | `packages/evals-effect` | `pi-evals` | `pi-evals` | Evaluations whose cases and scorers are Effects |
+
+Every Pi package has a facade (owner, 2026-11-26): an application imports `@effectified/pi-*` only. Each facade
+records what it does with every value its Pi package exports (`test/index.test.ts`), and `effect/COMPAT.md` counts
+what is still open.
 
 ### 5.2 Plugins and hosts
 
@@ -135,6 +142,10 @@ OpenRouter is therefore reachable twice: Pi's `openrouterProvider()` and `@effec
 | `telemetry-effect` | `pi-telemetry` | Pi |
 | `durable-effect` | `pi-durable`, `ai-effect`, `schema-effect` | Pi |
 | `mcp-effect`, `codemode-effect`, `agent-effect`, `env-effect` | the Pi package each wraps, and `durable-effect` where it adds tools | Pi |
+| `chord-effect` | `chord` | Pi |
+| `tui-effect` | `pi-tui` | Pi |
+| `coding-agent-effect` | `pi-coding-agent`, `agent-effect`, `ai-effect`, `tui-effect`, `durable-effect` where it adds tools | Pi |
+| `evals-effect` | `pi-evals`, `ai-effect` | Pi |
 | `recorder-effect`, `guard-effect`, `budget-effect`, `approvals-effect`, `subagent-effect`, `review-effect`, `workflow-effect` | `durable-effect` only | Pi, as extensions, or their own repository |
 | `router-effect` | `ai-effect` only | Its own repository; it is useful without a harness |
 | `search-effect` | `durable-effect` for the tools; the provider port alone needs nothing | Its own repository |
