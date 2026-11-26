@@ -37,7 +37,9 @@ for (const pkg of order.packages) {
 	const directory = join(ROOT, pkg.directory);
 	// Trust boundary: a manifest is a file, read as untyped JSON.
 	const manifest = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
-	if (manifest.private === true) continue;
+	// A private package is not a product's to install. The docs package is the exception: it is private because it
+	// is never published, and a product keeps its pages and its skills beside the packages they explain.
+	if (manifest.private === true && pkg.kind !== "docs") continue;
 	const result = spawnSync("npm", ["run", "build"], { cwd: directory, stdio: ["ignore", "ignore", "inherit"] });
 	if (result.status !== 0) {
 		console.error(`${pkg.name}: npm run build failed`);
@@ -51,6 +53,11 @@ for (const pkg of order.packages) {
 	});
 	dropSourceMapComments(join(out, "dist"));
 	cpSync(join(directory, "README.md"), join(out, "README.md"));
+	// The skills are read where they lie: their links to the READMEs are relative, and hold in a product as here.
+	// `bin` holds the script that links them into a project.
+	if (pkg.kind === "docs") {
+		for (const kept of ["skills", "bin"]) cpSync(join(directory, kept), join(out, kept), { recursive: true });
+	}
 	writeFileSync(join(out, "package.json"), `${JSON.stringify(workspaceManifest(manifest), null, "\t")}\n`);
 	console.log(`Vendored ${pkg.name}@${pkg.version}`);
 }

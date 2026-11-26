@@ -237,7 +237,10 @@ function selected(): { readonly packages: readonly EffectPackage[]; readonly wha
 		return { packages, what: `all ${packages.length} packages (${since} reach effect/ or the lockfile)` };
 	}
 	const touched = packages.filter((pkg) => files.some((file) => file.startsWith(`${pkg.directory}/`)));
-	const chosen = withDependents(touched);
+	// A docs package is built from every other package's README and manifest: a change to any of them is its too.
+	const chosen = withDependents(
+		touched.length === 0 ? [] : [...touched, ...packages.filter((pkg) => pkg.kind === "docs")],
+	);
 	if (chosen.length === 0) return { packages: [], what: `no package (no ${since} in a package)` };
 	return { packages: chosen, what: `${chosen.map(shortName).join(", ")} (${since}, with what depends on them)` };
 }

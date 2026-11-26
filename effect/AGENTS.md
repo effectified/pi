@@ -21,6 +21,9 @@ the packages and their state are in `effect/COMPAT.md`; the first consumer's bin
 
 - One facade per Pi package, named `<pi package>-effect`; plugins and hosts are separate packages (PRD section 5).
   `package.json` says which in `piEffect.kind`: `facade`, `plugin` or `host`.
+  `packages/docs-effect` is the one `docs` package: no library code, the others explained as pages for people
+  (`npm run build --workspace packages/docs-effect`, then `dist/index.html`) and as skills for agents. A new
+  package needs a role in its `src/content.ts` and a row in `effect/COMPAT.md`, or the pages do not build.
   `packages/thread-effect` is the one `composition`: an agent thread made of all of them as a product composes
   them, in one process and as a Rivet actor. Nothing depends on it. A change to a plugin is done when its tests and
   the composition's pass.
@@ -102,6 +105,23 @@ every core.
   ...]`, then `npm install --ignore-scripts`. A subpath another package imports needs its own `paths` line in the root
   `tsconfig.json`, listed in `effect/boundary.json`.
 - A test file that needs one runtime is named for it (`*.node.test.ts`, `*.bun.test.ts`) and skipped on the other.
+
+## Skills
+
+`packages/docs-effect/skills/<name>/SKILL.md` are procedures and maps written for agents, each checked against the
+tree by that package's test. Read the one that matches the task before you start:
+
+| Task | Skill |
+|---|---|
+| Any change in this repository: the order of work, what each gate failure means, adding a package | `pi-effect-contributing` |
+| Moving the packages to a new Pi version | `pi-effect-upstream-sync` |
+| Which package answers which need, and how the kinds layer | `pi-effect` |
+| A tool, a hook, a task, a stored document or a whole plugin | `pi-effect-extending` |
+| An agent thread in a product | `pi-effect-thread` |
+| A harness or a thread in Rivet actors, a local engine | `pi-effect-rivet` |
+| Tests without a network or a key, on Node and on Bun | `pi-effect-testing` |
+
+A change to a README example that a skill quotes fails `docs-effect`'s test until the skill follows.
 
 ## Writing a plugin
 

@@ -1,0 +1,44 @@
+{
+	"name": "@gunta/pi-docs-effect",
+	"version": "0.1.0",
+	"private": true,
+	"description": "The pi-effect packages explained: a landing page and every README as a page for people, skills and an llms.txt for agents",
+	"type": "module",
+	"exports": {
+		"./package.json": "./package.json"
+	},
+	"piEffect": {
+		"kind": "docs"
+	},
+	"files": [
+		"dist",
+		"skills",
+		"bin",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "node ../../scripts/package-files.mjs clean dist",
+		"build": "node ../../scripts/package-files.mjs clean dist && node src/node/build.ts",
+		"test": "vitest --run"
+	},
+	"keywords": [
+		"effect",
+		"pi",
+		"docs",
+		"skills"
+	],
+	"author": "Gunther Brunner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/gunta/pi-effect.git",
+		"directory": "packages/docs-effect"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"devDependencies": {
+		"marked": "18.0.11",
+		"vitest": "4.1.12"
+	}
+}

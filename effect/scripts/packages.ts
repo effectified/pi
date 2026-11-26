@@ -6,9 +6,11 @@ import { fileURLToPath } from "node:url";
 
 /**
  * What a package is (PRD section 5): a facade of one Pi package, a plugin on the facades, a host adapter, or a
- * composition, which composes the others as a product would: it may depend on all of them, and none on it.
+ * composition, which composes the others as a product would: it may depend on all of them, and none on it. A `docs`
+ * package holds no library code: it explains the others, as built pages for people and as skills for agents. It is
+ * private, has no `effect` peer, and nothing depends on it.
  */
-export type PackageKind = "facade" | "plugin" | "host" | "composition";
+export type PackageKind = "facade" | "plugin" | "host" | "composition" | "docs";
 
 /** One pi-effect package as its `package.json` declares it. */
 export interface EffectPackage {
@@ -35,8 +37,8 @@ export function effectPackages(): EffectPackage[] {
 			// Trust boundary: a manifest is a file, read as untyped JSON.
 			const manifest = JSON.parse(readFileSync(join(ROOT, directory, "package.json"), "utf8"));
 			const kind: unknown = manifest.piEffect?.kind;
-			if (kind !== "facade" && kind !== "plugin" && kind !== "host" && kind !== "composition") {
-				const kinds = '"facade", "plugin", "host" or "composition"';
+			if (kind !== "facade" && kind !== "plugin" && kind !== "host" && kind !== "composition" && kind !== "docs") {
+				const kinds = '"facade", "plugin", "host", "composition" or "docs"';
 				throw new Error(`${directory}/package.json: piEffect.kind must be ${kinds}`);
 			}
 			return {

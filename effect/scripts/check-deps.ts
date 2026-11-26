@@ -15,12 +15,14 @@ const failures: string[] = [];
 const IMPORT = /(?:^|\n)\s*(?:import|export)\s+(?:type\s+)?(?:[^;'"]*?\sfrom\s*)?["']([^"']+)["']/g;
 
 for (const pkg of packages) {
-	for (const file of sourceFiles(join(ROOT, pkg.directory, "src"))) checkImports(pkg, file, runtimeDependencies(pkg));
 	const testDependencies = [...runtimeDependencies(pkg), ...Object.keys(pkg.devDependencies)];
+	// A docs package ships built pages and no code: what its generator imports is a development dependency.
+	const sourceDependencies = pkg.kind === "docs" ? testDependencies : runtimeDependencies(pkg);
+	for (const file of sourceFiles(join(ROOT, pkg.directory, "src"))) checkImports(pkg, file, sourceDependencies);
 	for (const file of sourceFiles(join(ROOT, pkg.directory, "test"))) checkImports(pkg, file, testDependencies);
 	checkKinds(pkg);
 }
-checkSingleVersion("effect peer range", (pkg) => [pkg.peerDependencies.effect]);
+checkSingleVersion("effect peer range", (pkg) => (pkg.kind === "docs" ? [] : [pkg.peerDependencies.effect]));
 checkSingleVersion("upstream Pi version", (pkg) =>
 	Object.entries(pkg.dependencies)
 		.filter(([name]) => name.startsWith("@earendil-works/"))
@@ -79,7 +81,11 @@ function checkKinds(pkg: EffectPackage): void {
 		if (byName.get(name)?.kind !== "composition") continue;
 		failures.push(`${pkg.name}: depends on the composition ${name}`);
 	}
-	if (pkg.kind === "composition") return;
+	for (const name of [...runtimeDependencies(pkg), ...Object.keys(pkg.devDependencies)]) {
+		if (byName.get(name)?.kind === "docs") failures.push(`${pkg.name}: depends on the docs package ${name}`);
+	}
+	if (pkg.kind === "docs" && manifestOf(pkg).private !== true) failures.push(`${pkg.name}: a docs package is private`);
+	if (pkg.kind === "composition" || pkg.kind === "docs") return;
 	for (const name of runtimeDependencies(pkg)) {
 		const dependency = byName.get(name);
 		if (dependency === undefined || dependency.kind === "facade") continue;
@@ -89,6 +95,12 @@ function checkKinds(pkg: EffectPackage): void {
 			failures.push(`${pkg.name}: the host ${name} must be an optional peer, used from a subpath named for it`);
 		}
 	}
+}
+
+/** A package's manifest as it is written. */
+function manifestOf(pkg: EffectPackage): { readonly private?: unknown } {
+	// Trust boundary: a manifest is a file, read as untyped JSON.
+	return JSON.parse(readFileSync(join(ROOT, pkg.directory, "package.json"), "utf8"));
 }
 
 /** Every package declares the same value, so a consumer installs one copy of `effect` and one Pi version. */
