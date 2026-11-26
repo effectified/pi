@@ -145,7 +145,7 @@ OpenRouter is therefore reachable twice: Pi's `openrouterProvider()` and `@effec
 | `env-effect` | `pi-env`, `pi-durable` (Pi's environment contract, `ExecutionEnv` and its results, is declared in `pi-durable/env`), `chord-effect` (the Chord context of its calls, with the calling fiber's span) | Pi |
 | `chord-effect` | `chord`, `telemetry-effect` (the calling fiber's current span in the contexts it makes) | Pi |
 | `tui-effect` | `pi-tui` | Pi |
-| `coding-agent-effect` | `pi-coding-agent`, `agent-effect`, `ai-effect`, `tui-effect`, `durable-effect` where it adds tools | Pi |
+| `coding-agent-effect` | `pi-coding-agent`, `agent-effect`, `ai-effect`, `mcp-effect` (MCP tools as Pi tools), `env-effect` (where bash runs its commands), `schema-effect`; `tui-effect` for interactive mode once it is built | Pi |
 | `evals-effect` | `pi-evals`, `ai-effect` | Pi |
 | `recorder-effect`, `guard-effect`, `budget-effect`, `approvals-effect`, `subagent-effect`, `review-effect`, `workflow-effect` | `durable-effect` only | Pi, as extensions, or their own repository |
 | `router-effect` | `ai-effect` only | Its own repository; it is useful without a harness |

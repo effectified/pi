@@ -42,6 +42,8 @@ export const ROLES: Readonly<Record<string, string>> = {
 		"The Chord context every Pi call takes, cancelled by the calling fiber's scope or the Clock, and Chord's JSON, SQLite and delta values.",
 	"agent-effect":
 		"Pi's non-durable agent for short-lived uses: a prompt is an Effect, its events a Stream, its tools and hooks Effects.",
+	"coding-agent-effect":
+		"Pi's coding agent in Effect: extensions written as Effect programs, sessions whose prompts are Effects and events Streams, the built-in and MCP tools, and print and RPC modes.",
 	"env-effect":
 		"Local and remote execution environments in Effect: commands and files as Effects, output as Streams, and daemon connections, SSH, processes and terminals as scoped resources.",
 	"tui-effect":

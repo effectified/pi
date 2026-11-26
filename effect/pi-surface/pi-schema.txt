@@ -159,7 +159,7 @@ used by: schema-effect
 export function recursive<T>(id: string, build: (self: Schema<T>) => Schema<T>): Schema<T>
 
 ## Schema  schema/src/builders.ts
-used by: chord-effect, schema-effect; agent-effect via RunToolCallOptions, ai-effect via StringEnum, durable-effect via SummaryRequest, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: chord-effect, schema-effect; agent-effect via RunToolCallOptions, ai-effect via StringEnum, coding-agent-effect via ModelRuntime, durable-effect via SummaryRequest, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
 /** A JSON Schema object whose valid values have type `T` (a type-level brand; nothing extra exists at run time). */
 export type Schema<T = unknown> = { readonly [keyword: string]: unknown } & { readonly [STATIC]?: T };
 
@@ -168,7 +168,7 @@ used by: chord-effect via obj, schema-effect via StaticObject
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
 
 ## Static  schema/src/builders.ts
-used by: chord-effect, schema-effect; agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
+used by: chord-effect, schema-effect; agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, coding-agent-effect via ModelRuntime, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions
 // TypeBox is tested first and in its own branch: a builder brand's fallback through TypeBoxStatic would leave
 // `Static<S>` of a generic `S` (constrained to builder schemas) unresolvable to its constraint's types.
 /**
@@ -249,7 +249,7 @@ function pointer(path: string, key: string | number): string {
 }
 
 ## KindStatic  schema/src/typebox-static.ts
-used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
+used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, coding-agent-effect via ModelRuntime, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
 type KindStatic<S, K> = K extends keyof Primitives
 	? Primitives[K]
 	: K extends "Literal"
@@ -283,7 +283,7 @@ type KindStatic<S, K> = K extends keyof Primitives
 								: unknown;
 
 ## ObjectStatic  schema/src/typebox-static.ts
-used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
+used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, coding-agent-effect via ModelRuntime, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
 type ObjectStatic<P> = keyof P extends never
 	? object
 	: Simplify<
@@ -303,11 +303,11 @@ type ObjectStatic<P> = keyof P extends never
 		>;
 
 ## Optional  schema/src/typebox-static.ts
-used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
+used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, coding-agent-effect via ModelRuntime, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
 type Optional = { readonly "~optional": true };
 
 ## Primitives  schema/src/typebox-static.ts
-used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
+used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, coding-agent-effect via ModelRuntime, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
 interface Primitives {
 	String: string;
 	Number: number;
@@ -321,21 +321,21 @@ interface Primitives {
 }
 
 ## Readonly  schema/src/typebox-static.ts
-used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
+used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, coding-agent-effect via ModelRuntime, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
 type Readonly = { readonly "~readonly": true };
 
 ## RecordKey  schema/src/typebox-static.ts
-used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
+used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, coding-agent-effect via ModelRuntime, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
 type RecordKey<Pattern> = Pattern extends "^-?(?:0|[1-9][0-9]*)$" | "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$"
 	? number
 	: string;
 
 ## Simplify  schema/src/typebox-static.ts
-used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
+used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, coding-agent-effect via ModelRuntime, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
 
 ## TypeBoxStatic  schema/src/typebox-static.ts
-used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
+used by: agent-effect via AgentToolParams, ai-effect via AnthropicAllowedFallbackModel, chord-effect via Static, coding-agent-effect via ModelRuntime, durable-effect via SignalDefinition, durable-rivet-effect via SqliteStorage, evals-effect via PiCodingAgentHarnessOptions, schema-effect via Static
 /** The value type of a TypeBox schema type by its `'~kind'`, or its `Type.Unsafe` type; `unknown` for other kinds. */
 export type TypeBoxStatic<S> = S extends { readonly "~kind": infer K }
 	? KindStatic<S, K>

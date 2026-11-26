@@ -161,14 +161,16 @@
 			}
 		]
 	},
+	// The ambient declarations of the upstream sources `paths` reaches (pi-coding-agent's highlight.js, codemode's
+	// Cloudflare and QuickJS modules): the root program includes them with their packages, this one names them.
 	"include": [
 		"../packages/*-effect/src/**/*",
 		"../packages/*-effect/test/**/*",
 		"./scripts/**/*",
 		"./spikes/**/*",
-		// pi-coding-agent's declarations of the highlight.js modules it imports: the root program has them through its
-		// `include`; this one reaches coding-agent only through imports (evals-effect wraps pi-evals, which runs it).
-		"../packages/coding-agent/src/utils/highlight-js.d.ts"
+		"../packages/coding-agent/src/utils/highlight-js.d.ts",
+		"../packages/coding-agent/src/bun/quickjs-wasm.d.ts",
+		"../packages/codemode/src/cloudflare-modules.d.ts"
 	],
 	"exclude": ["../**/dist/**"]
 }
