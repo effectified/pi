@@ -51,7 +51,7 @@ export const ROLES: Readonly<Record<string, string>> = {
 	"evals-effect":
 		"Pi's evals in Effect: a coding-agent run is an Effect scored by Effects with your services, a documentation comparison's runs a Stream of Pi's observations.",
 	"durable-effect":
-		"The durable harness as Layers: conversations, tools, hooks, tasks, documents and commits, with tagged errors and interruption that cancels.",
+		"The durable harness as Layers: conversations, tools, hooks, tasks, documents and commits, with tagged errors and interruption that cancels; Pi's storages, built-in tools, code mode and environment contract on its subpaths.",
 	"mcp-effect":
 		"Connects to MCP servers as scoped clients whose calls are Effects, notifications are Streams and errors one tagged union, with OAuth sign-in.",
 	"durable-rivet-effect":
