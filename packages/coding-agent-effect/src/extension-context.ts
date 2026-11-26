@@ -24,9 +24,10 @@ type PiReplacedSessionContext = Parameters<
 export type DialogOptions = Omit<ExtensionUIDialogOptions, "signal">;
 
 /**
- * The user interface of the mode the session runs in. In print and JSON mode the dialogs answer at once (no choice,
- * `false`) and the rest does nothing, as Pi's own. Components, themes, footers, headers, editors and raw terminal input
- * are interactive-mode parts that wait for `@effectified/pi-tui`.
+ * The user interface of the mode the session runs in: interactive mode's dialogs, notifications, status and widgets,
+ * drawn in its TUI. In print and JSON mode the dialogs answer at once (no choice, `false`) and the rest does nothing,
+ * as Pi's own. What hands Pi a component or a factory of one (custom components, footers, headers, editors,
+ * autocomplete providers), the theme object and raw terminal input are not wrapped yet.
  */
 export interface Ui {
 	/** Asks the user to pick one of `options`; `undefined` when dismissed or timed out. */

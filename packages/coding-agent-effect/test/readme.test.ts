@@ -10,14 +10,18 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { fauxAssistantMessage, fauxToolCall, runLive, runTest, ScriptedModels } from "@effectified/pi-ai/testing";
 import { Env } from "@effectified/pi-env";
 import type { McpClientService } from "@effectified/pi-mcp";
-import { Context, Effect, Layer, Schema, Stream } from "effect";
+import { Context, Effect, Fiber, Latch, Layer, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	AgentSession,
+	type AgentSessionRuntimeHandle,
 	Builtin,
 	Command,
 	Extension,
 	ExtensionContext,
+	InteractiveMode,
+	type InteractiveModeOptions,
+	initTheme,
 	isToolCallEventType,
 	McpTools,
 	ModelRuntime,
@@ -28,6 +32,7 @@ import {
 	SettingsManager,
 	Tool,
 } from "../src/index.ts";
+import { next, openRuntime, sessionEvents, TestTerminal } from "./interactive.ts";
 import { connected } from "./mcp-server.ts";
 import { openSession as openTestSession, services, tempDir } from "./scripted.ts";
 
@@ -212,6 +217,44 @@ describe("the MCP tools of the README", () => {
 			}).pipe(Effect.provide(services)),
 		);
 		expect(names).toEqual(expect.arrayContaining(["mcp__docs__search", "mcp__docs__fail"]));
+	});
+});
+
+// README: interactive mode
+// runtime: an AgentSessionRuntime (above). options.terminal: where it draws; none for this process's terminal.
+const chat = (runtime: AgentSessionRuntimeHandle, options: InteractiveModeOptions = {}) =>
+	Effect.scoped(
+		Effect.gen(function* () {
+			const session = yield* runtime.session;
+			yield* initTheme(yield* session.settingsManager.getTheme());
+			const mode = yield* InteractiveMode.make(runtime, options);
+			// "quit" (Ctrl+D, /quit, an extension's shutdown) or "signal" (SIGTERM, SIGHUP).
+			return yield* mode.run;
+		}),
+	);
+
+describe("the interactive mode of the README", () => {
+	it("chats on a virtual terminal until the user quits", async () => {
+		const terminal = new TestTerminal(80, 30);
+		const seen = await runTest(
+			Effect.gen(function* () {
+				// The mode binds the session's extensions once its TUI has started: then it takes input.
+				const started = yield* Latch.make();
+				const ready = Extension.make("ready", { on: { session_start: () => Effect.asVoid(Latch.open(started)) } });
+				const { runtime, models } = yield* openRuntime([ready]);
+				yield* models.setResponses([fauxAssistantMessage("Hello from the README.")]);
+				const events = yield* sessionEvents(runtime);
+				const running = yield* Effect.forkChild(chat(runtime, { terminal }), { startImmediately: true });
+				yield* Latch.await(started);
+				terminal.sendInput("Hi.");
+				terminal.sendInput("\r");
+				yield* next(events, "agent_settled");
+				terminal.sendInput("\x04");
+				const ending = yield* Fiber.join(running);
+				return { ending, answer: yield* (yield* runtime.session).getLastAssistantText() };
+			}).pipe(Effect.provide(services)),
+		);
+		expect(seen).toEqual({ ending: "quit", answer: "Hello from the README." });
 	});
 });
 

@@ -1,7 +1,8 @@
 import { fauxAssistantMessage, fauxToolCall, runTest } from "@effectified/pi-ai/testing";
-import { Effect, Schema } from "effect";
+import { Deferred, Effect, Fiber, Latch, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Command, CommandContext, Extension, ExtensionContext, Tool, ToolContext } from "../src/index.ts";
+import { openMode, openRuntime, screen, TestTerminal } from "./interactive.ts";
 import { openSession, services, texts } from "./scripted.ts";
 
 const echo = Tool.make("echo", {
@@ -92,6 +93,52 @@ describe("ToolContext", () => {
 			}).pipe(Effect.provide(services)),
 		);
 		expect(results).toEqual(["echo: nested"]);
+	});
+});
+
+describe("ExtensionContext.ui in interactive mode", () => {
+	it("asks the user through Pi's TUI and shows what the extension sets", async () => {
+		const terminal = new TestTerminal(80, 30);
+		const seen = await runTest(
+			Effect.gen(function* () {
+				const asked = yield* Latch.make();
+				const done = yield* Deferred.make<string | undefined>();
+				const ask = Command.make("ask", {
+					handler: () =>
+						Effect.gen(function* () {
+							const { ui, mode, hasUI } = yield* ExtensionContext;
+							// Started at once, so the dialog is on screen when the latch opens.
+							const answer = yield* Effect.forkChild(ui.select("Pick a color", ["red", "green"]), {
+								startImmediately: true,
+							});
+							yield* Latch.open(asked);
+							const color = yield* Fiber.join(answer);
+							yield* ui.notify(`picked ${color} in ${yield* mode} (dialogs: ${yield* hasUI})`);
+							yield* ui.setStatus("color", `color: ${color}`);
+							yield* ui.setWidget("palette", ["a widget of the extension"]);
+							yield* Deferred.succeed(done, color);
+						}),
+				});
+				const { runtime } = yield* openRuntime([Extension.make("ask", { commands: [ask] })]);
+				const mode = yield* openMode(runtime, terminal);
+				yield* Effect.forkChild(mode.run, { startImmediately: true });
+				terminal.sendInput("/ask");
+				terminal.sendInput("\r");
+				yield* Latch.await(asked);
+				const dialog = yield* screen(mode, terminal);
+				// Down to "green", then confirm.
+				terminal.sendInput("\x1b[B");
+				terminal.sendInput("\r");
+				const picked = yield* Deferred.await(done);
+				return { dialog: dialog.join("\n"), picked, after: (yield* screen(mode, terminal)).join("\n") };
+			}).pipe(Effect.provide(services)),
+		);
+		expect(seen.dialog).toContain("Pick a color");
+		expect(seen.dialog).toContain("green");
+		expect(seen.picked).toBe("green");
+		expect(seen.after).toContain("picked green in tui (dialogs: true)");
+		expect(seen.after).toContain("color: green");
+		expect(seen.after).toContain("a widget of the extension");
 	});
 });
 

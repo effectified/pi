@@ -99,7 +99,7 @@ Directory names mirror upstream (`packages/durable` gives `packages/durable-effe
 | P3 | `packages/env-effect` | `pi-env-effect` | `pi-env` | Remote execution environments as scoped resources |
 | P2 | `packages/chord-effect` | `pi-chord` | `chord` | Chord's context (cancellation, telemetry, values) from the fiber that makes a call, its JSON and SQLite types, so no product imports Chord |
 | P2 | `packages/tui-effect` | `pi-tui` | `pi-tui` | The terminal UI's components and renderer as scoped resources, input as `Stream`s |
-| P2 | `packages/coding-agent-effect` | `pi-coding-agent` | `pi-coding-agent` | Sessions, tools, settings and the extension API in Effect: a Pi extension written as an Effect program |
+| P2 | `packages/coding-agent-effect` | `pi-coding-agent` | `pi-coding-agent` | Sessions, tools, settings and the extension API in Effect: a Pi extension written as an Effect program; interactive mode as a scoped service on `tui-effect` |
 | P3 | `packages/evals-effect` | `pi-evals` | `pi-evals` | Evaluations whose cases and scorers are Effects |
 
 Every Pi package has a facade (owner, 2026-11-26): an application imports `@effectified/pi-*` only. Each facade
@@ -145,7 +145,7 @@ OpenRouter is therefore reachable twice: Pi's `openrouterProvider()` and `@effec
 | `env-effect` | `pi-env`, `pi-durable` (Pi's environment contract, `ExecutionEnv` and its results, is declared in `pi-durable/env`), `chord-effect` (the Chord context of its calls, with the calling fiber's span) | Pi |
 | `chord-effect` | `chord`, `telemetry-effect` (the calling fiber's current span in the contexts it makes) | Pi |
 | `tui-effect` | `pi-tui` | Pi |
-| `coding-agent-effect` | `pi-coding-agent`, `agent-effect`, `ai-effect`, `mcp-effect` (MCP tools as Pi tools), `env-effect` (where bash runs its commands), `schema-effect`; `tui-effect` for interactive mode once it is built | Pi |
+| `coding-agent-effect` | `pi-coding-agent`, `agent-effect`, `ai-effect`, `mcp-effect` (MCP tools as Pi tools), `env-effect` (where bash runs its commands), `schema-effect`, `tui-effect` (interactive mode and its components) | Pi |
 | `evals-effect` | `pi-evals`, `ai-effect` | Pi |
 | `recorder-effect`, `guard-effect`, `budget-effect`, `approvals-effect`, `subagent-effect`, `review-effect`, `workflow-effect` | `durable-effect` only | Pi, as extensions, or their own repository |
 | `router-effect` | `ai-effect` only | Its own repository; it is useful without a harness |

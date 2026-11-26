@@ -10,6 +10,7 @@ import type {
 	AgentSession as PiAgentSession,
 	AgentSessionRuntime as PiAgentSessionRuntime,
 	ExtensionContext as PiExtensionContext,
+	InteractiveMode as PiInteractiveMode,
 	ModelRegistry as PiModelRegistry,
 	ModelRuntime as PiModelRuntime,
 	PackageManager as PiPackageManager,
@@ -18,6 +19,7 @@ import type {
 	RpcClient as PiRpcClient,
 	SessionManager as PiSessionManager,
 	SettingsManager as PiSettingsManager,
+	SettingsCallbacks,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { Effect } from "effect";
@@ -32,6 +34,7 @@ import type {
 	CommandContextHandle,
 	ExtensionApiHandle,
 	ExtensionContextHandle,
+	InteractiveModeHandle,
 	ModelRegistryHandle,
 	ModelRuntimeHandle,
 	PackageManagerHandle,
@@ -44,6 +47,7 @@ import type { MethodKeys } from "../src/lift.ts";
 import type * as PackageModule from "../src/package-manager.ts";
 import type * as LoaderModule from "../src/resource-loader.ts";
 import type * as RpcModule from "../src/rpc-client.ts";
+import type * as SelectorsModule from "../src/selectors.ts";
 import type * as SessionModule from "../src/session-manager.ts";
 import type * as SettingsModule from "../src/settings-manager.ts";
 import type * as TrustModule from "../src/trust-store.ts";
@@ -121,6 +125,14 @@ export type AgentSessionListed = Assert<
 	>
 >;
 
+/** Every public member of Pi's interactive mode is a member of the handle, or what `make` and its scope do. */
+export type InteractiveModeCovered = Assert<Covers<PiInteractiveMode, InteractiveModeHandle, "init" | "stop">>;
+
+/** The settings selector's list of callbacks is exactly Pi's `SettingsCallbacks`, each a kind of its events. */
+export type SettingsCallbacksListed = Assert<
+	Conform<(typeof SelectorsModule.SETTINGS_CALLBACKS)[number], keyof SettingsCallbacks>
+>;
+
 /** Every public member of Pi's runtime is a member of the handle, or disposed of by its scope. */
 export type RuntimeCovered = Assert<Covers<PiAgentSessionRuntime, AgentSessionRuntimeHandle, "dispose">>;
 
@@ -177,7 +189,10 @@ export type CommandContextCovered = Assert<
 	Covers<Omit<ExtensionCommandContext, keyof PiExtensionContext>, CommandContextHandle>
 >;
 
-/** Every method of Pi's UI is one of `Ui`, or a part of interactive mode that waits for `@effectified/pi-tui`. */
+/**
+ * Every method of Pi's UI is one of `Ui`, or one that hands Pi a component, a factory of one or a raw input listener,
+ * which `Ui` does not wrap yet (an extension that draws reaches them through Pi's context).
+ */
 export type UiCovered = Assert<
 	Covers<
 		ExtensionUIContext,
@@ -195,8 +210,8 @@ export type UiCovered = Assert<
 >;
 
 /**
- * Every member of Pi's extension API is a member of the handle, a part of `Extension.make` (`on`), or a renderer that
- * waits for `@effectified/pi-tui`.
+ * Every member of Pi's extension API is a member of the handle, a part of `Extension.make` (`on`), or a renderer (a
+ * factory of components Pi calls while drawing), which the handle does not wrap yet.
  */
 export type ExtensionApiCovered = Assert<
 	Covers<
@@ -269,8 +284,8 @@ declare function handler<K extends EventType>(type: K): PiHandlerOf<K>;
 export type OnChecksEveryEvent = Assert<Conform<Parameters<typeof handler>[0], EventType>>;
 
 /**
- * Every field of Pi's tool definition is set from `Tool.make`'s options, or drawn by interactive mode (waits for
- * `@effectified/pi-tui`), or built by `make`: `execute` runs the handler, `outputSchema` is `success`'s JSON Schema.
+ * Every field of Pi's tool definition is set from `Tool.make`'s options, or a renderer of interactive mode (not
+ * wrapped yet), or built by `make`: `execute` runs the handler, `outputSchema` is `success`'s JSON Schema.
  */
 export type ToolCovered = Assert<
 	Covers<

@@ -18,17 +18,19 @@ Pi's coding agent ([`@earendil-works/pi-coding-agent`](../coding-agent)) in Effe
   Effects; providers of [`@effectified/pi-ai`](../ai-effect/README.md) register on the runtime.
 - Print mode and RPC mode as Effects, and the RPC client as a scoped resource whose commands are Effects and whose
   events are a Stream.
+- Interactive mode, Pi's terminal UI, as a scoped service on [`@effectified/pi-tui`](../tui-effect/README.md): it runs
+  until the user quits, and its scope hands the terminal back. Its components are pi-tui components as they are, or
+  scoped Effects whose callbacks are a Stream; setting the theme is an Effect.
 - pi-coding-agent's errors as one union of tagged errors, `CodingAgentFailure`.
 
 It adds no behaviour of its own: what pi-coding-agent does is what happens. Built for pi-coding-agent 1.6.1.
-Interactive mode (its components, theme and editor) waits for `@effectified/pi-tui`.
 
 ## Install
 
 ```sh
 # the pi-effect packages come from their GitHub release, not npm
 R=https://github.com/effectified/pi/releases/download/v0.1.0
-npm install --allow-remote=all $R/effectified-pi-coding-agent-0.1.0.tgz $R/effectified-pi-agent-0.1.0.tgz $R/effectified-pi-ai-0.1.0.tgz $R/effectified-pi-mcp-0.1.0.tgz $R/effectified-pi-env-0.1.0.tgz $R/effectified-pi-schema-0.1.0.tgz effect
+npm install --allow-remote=all $R/effectified-pi-coding-agent-0.1.0.tgz $R/effectified-pi-agent-0.1.0.tgz $R/effectified-pi-ai-0.1.0.tgz $R/effectified-pi-mcp-0.1.0.tgz $R/effectified-pi-env-0.1.0.tgz $R/effectified-pi-schema-0.1.0.tgz $R/effectified-pi-tui-0.1.0.tgz effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`), so the application has one copy.
@@ -232,6 +234,61 @@ const ask = (options: RpcClientOptions) =>
 Every command of Pi's `RpcClient` is an Effect under its name; `events` is a Stream of the process's events.
 `waitForIdle` and `collectEvents` have no deadline of their own: add one with `Effect.timeout`, on `Clock`.
 
+## Interactive mode
+
+Pi's terminal UI over a session runtime: the chat, the editor, the footer, the slash commands, and the dialogs of
+extensions. `InteractiveMode.make` starts it for the scope; `run` sends what the user types until they quit.
+
+```ts
+import { Effect } from "effect";
+import {
+	type AgentSessionRuntimeHandle,
+	InteractiveMode,
+	type InteractiveModeOptions,
+	initTheme,
+} from "@effectified/pi-coding-agent";
+
+// runtime: an AgentSessionRuntime (above). options.terminal: where it draws; none for this process's terminal.
+const chat = (runtime: AgentSessionRuntimeHandle, options: InteractiveModeOptions = {}) =>
+	Effect.scoped(
+		Effect.gen(function* () {
+			const session = yield* runtime.session;
+			yield* initTheme(yield* session.settingsManager.getTheme());
+			const mode = yield* InteractiveMode.make(runtime, options);
+			// "quit" (Ctrl+D, /quit, an extension's shutdown) or "signal" (SIGTERM, SIGHUP).
+			return yield* mode.run;
+		}),
+	);
+```
+
+- **`InteractiveMode.make(runtime, options)`** starts Pi's mode: its TUI takes the terminal, the session's extensions
+  are bound to it, and the chat shows the session. Pi makes its own TUI on `options.terminal`, since it replaces it
+  when the user switches between regular and fullscreen; `mode.tui` is that TUI. Closing the scope stops the mode as
+  Pi's quit does and hands the terminal back; the runtime's own scope then ends the session. Where Pi's quit ends the
+  process, `run` ends instead, with `"quit"` or `"signal"`.
+- **`InteractiveMode.layer(options)`** builds it over the program's `AgentSessionRuntime`, and gives its TUI as
+  `@effectified/pi-tui`'s `Tui` service: `Tui.showOverlay`, `Tui.presses` and `loader` work on the mode's own TUI.
+- **`initTheme(name)`** sets the theme of the process, which the mode, its components and the theme helpers draw
+  with. Run it first, with the settings' theme, as Pi's CLI does.
+- An extension's `ExtensionContext.ui` is the mode's: `select`, `confirm`, `input` and `editor` show Pi's dialogs and
+  wait for the user; `notify`, `setStatus`, `setWidget` and `setTitle` draw in the TUI.
+
+The components of interactive mode, for a program that composes its own screen:
+
+- The views of messages (`AssistantMessageComponent`, `UserMessageComponent`, `ToolExecutionComponent`, ...),
+  `DynamicBorder`, `FooterComponent` and `CustomEditor` are pi-tui components as they are. Their callback properties
+  (`onSubmit`, `onEscape`, ...) are Streams through `@effectified/pi-tui`'s `events`.
+- The selectors (`themeSelector`, `thinkingSelector`, `modelSelector`, `sessionSelector`, `treeSelector`,
+  `settingsSelector`, ...) and the dialogs (`extensionInput`, `extensionSelector`, `extensionEditor`, `loginDialog`)
+  take their callbacks in Pi's constructors. Here each is a scoped Effect that gives `{ component, events }`: the
+  component, and each call of its callbacks as `{ kind, args }` (`{ kind: "select", args: ["dark"] }`), until the
+  scope closes. Those that need the running TUI take it from the `Tui` service.
+- `armin`, `borderedLoader` and `bashExecution` animate on a timer from the moment they are made: scoped Effects for
+  the `Tui` service, whose timer stops when the scope closes.
+- `Theme` and the helpers a component's `render` calls (`keyHint`, `keyText`, `rawKeyHint`, `highlightCode`,
+  `renderDiff`, `getMarkdownTheme`, `getSelectListTheme`, `getSettingsListTheme`) are Pi's. They read the theme of the
+  process and its keybindings at the call, as pi-tui's components read their keybindings.
+
 ## Errors
 
 Every call into Pi fails with `CodingAgentFailure`: `CredentialSynchronizationError` (a credential change stored but
@@ -240,10 +297,12 @@ Building a tool fails with `@effectified/pi-schema`'s `SchemaConversionError` wh
 
 ## Not wrapped yet
 
-- Interactive mode: `InteractiveMode`, every `*Component`, `CustomEditor`, `Theme` and the theme helpers
-  (`initTheme`, `getMarkdownTheme`, `highlightCode`, `keyHint`, `renderDiff`, ...). They wait for
-  `@effectified/pi-tui`. So do the parts of the extension API that draw: message, entry and tool renderers, custom
-  UI components, headers, footers, editors and raw terminal input.
+- The parts of the extension API that hand Pi a component or a factory Pi calls while it draws: message, entry and
+  tool renderers, and on `ExtensionContext.ui` custom components, headers, footers, editors, autocomplete providers,
+  the theme object and raw terminal input.
+- Interactive mode's timers (the render throttle, spinners, countdowns, the 100 ms wait for the terminal's colors)
+  are Pi's and pi-tui's, not `Clock`. Where Pi's quit prints how to resume the session and ends the process, `run`
+  ends and prints nothing.
 - OAuth login on the model runtime (`login`), as in `@effectified/pi-ai`.
 - The model runtime's own requests (`stream`, `complete`, image generation, classification): a session makes them;
   `@effectified/pi-ai` makes requests on a `Models` of its own.
