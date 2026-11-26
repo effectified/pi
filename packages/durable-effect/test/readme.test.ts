@@ -2,12 +2,14 @@
 // comment are the README's, line for line; only the imports differ (the README names the package, this file its
 // sources).
 
-import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import { type AssistantMessage, Models } from "@effectified/pi-ai";
 import { fauxAssistantMessage, fauxText, runTest } from "@effectified/pi-ai/testing";
 import { Context, Effect, Fiber, Latch, Layer, Option, Queue, Schedule, Schema, Stream } from "effect";
 import { Tool as AiTool, Toolkit } from "effect/ai";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
+// The Chord facade by its sources, as this package by its own: durable-effect does not depend on it.
+import { ChordContext } from "../../chord-effect/src/context.ts";
 import type { ConversationId, EntryId, Report, TaskId, Wake } from "../src/index.ts";
 import {
 	BuiltinDoc,
@@ -408,20 +410,23 @@ describe("the host example of the README", () => {
 			root.waitForIdle.pipe(Effect.andThen(root.prompt("Hi."))),
 		);
 		// README: ParentContext.
-		// Every Pi call of `program` is cancelled after thirty seconds, and fails with `Cancelled`.
-		const deadline = withAbortSignal(AbortSignal.timeout(30_000), BACKGROUND_CONTEXT);
-		const bounded = Effect.provideService(program, ParentContext, deadline);
+		// Every Pi call of `program` is cancelled after thirty seconds of the Clock, and fails with `Cancelled`.
+		const bounded = Effect.scoped(
+			Effect.flatMap(ChordContext.timeout("30 seconds"), (deadline) =>
+				Effect.provideService(program, ParentContext, deadline),
+			),
+		);
 
 		const settled = await Effect.runPromise(
 			bounded.pipe(Effect.provide(TestHarness.layer({ responses: [answer("Hello.")] }))),
 		);
 		expect(settled.status).toBe("done");
-		const expired = withAbortSignal(
-			AbortSignal.abort(new DOMException("Too late", "TimeoutError")),
-			BACKGROUND_CONTEXT,
-		);
-		const failure = await Effect.runPromise(
-			Effect.flip(Effect.provideService(program, ParentContext, expired)).pipe(Effect.provide(TestHarness.layer())),
+		const failure = await runTest(
+			Effect.gen(function* () {
+				const deadline = yield* ChordContext.timeout("30 seconds");
+				yield* TestClock.adjust("30 seconds");
+				return yield* Effect.flip(Effect.provideService(program, ParentContext, deadline));
+			}).pipe(Effect.provide(TestHarness.layer())),
 		);
 		expect(failure._tag).toBe("Cancelled");
 	});

@@ -18,16 +18,7 @@ const IMPORT = /(?:^|\n)\s*(?:import|export)\s+(?:type\s+)?(?:[^;'"]*?\sfrom\s*)
  * Imports of Pi that a README or a documentation page may still show, each with why: what the facades do not offer
  * yet. Each entry is an open entry of a facade's coverage (`test/index.test.ts`).
  */
-const DOCUMENTED_PI_IMPORTS: ReadonlyMap<string, string> = new Map([
-	[
-		"packages/durable-effect/README.md @earendil-works/chord/context",
-		"a Chord context for ParentContext: Chord has no facade yet",
-	],
-	[
-		"packages/telemetry-effect/README.md @earendil-works/chord/context",
-		"host code giving Pi a Chord context: Chord has no facade yet",
-	],
-]);
+const DOCUMENTED_PI_IMPORTS: ReadonlyMap<string, string> = new Map<string, string>([]);
 
 for (const pkg of packages) {
 	const testDependencies = [...runtimeDependencies(pkg), ...Object.keys(pkg.devDependencies)];

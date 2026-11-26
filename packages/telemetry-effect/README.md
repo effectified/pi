@@ -87,12 +87,13 @@ const ask = Effect.gen(function* () {
 // The trace: chat.turn > pi.ai.request
 ```
 
-For a Pi call that takes a Chord `Context`, the host puts the handle into the context. This package does not import
-Chord, so this step is host code:
+For a Pi call that takes a Chord `Context`, the host puts the handle into the context with
+[`@effectified/pi-chord/context`](../chord-effect/README.md#telemetry-and-values). This package does not depend on
+the Chord facade, so this step is host code:
 
 ```typescript
-// Host code: it imports Chord, which this package does not depend on.
-import { BACKGROUND_CONTEXT, withTelemetry } from "@earendil-works/chord/context";
+// Host code: it imports the Chord facade, which this package does not depend on.
+import { BACKGROUND_CONTEXT, withTelemetry } from "@effectified/pi-chord/context";
 
 const submit = Effect.gen(function* () {
 	const span = yield* PiTelemetry.currentSpan;

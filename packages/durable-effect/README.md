@@ -1005,13 +1005,17 @@ const live = Harness.layer({
   with `UnexpectedError` when the harness closes: Pi ends its observers so.
 - **`ParentContext`** holds the Chord context every Pi call of a fiber is made under: its telemetry span, its values
   and its cancellation. Default: Chord's background context. Inside a tool or hook handler it is that invocation's.
+  `@effectified/pi-chord/context` makes one from Effect: cancelled by a scope or by the Clock.
 
 ```ts
-import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
+import { ChordContext } from "@effectified/pi-chord/context";
 
-// Every Pi call of `program` is cancelled after thirty seconds, and fails with `Cancelled`.
-const deadline = withAbortSignal(AbortSignal.timeout(30_000), BACKGROUND_CONTEXT);
-const bounded = Effect.provideService(program, ParentContext, deadline);
+// Every Pi call of `program` is cancelled after thirty seconds of the Clock, and fails with `Cancelled`.
+const bounded = Effect.scoped(
+	Effect.flatMap(ChordContext.timeout("30 seconds"), (deadline) =>
+		Effect.provideService(program, ParentContext, deadline),
+	),
+);
 ```
 
 ## Errors
