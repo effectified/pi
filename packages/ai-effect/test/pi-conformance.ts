@@ -1,14 +1,31 @@
 // What ai-effect restates of pi-ai by hand, and which of pi-ai's members it leaves out, checked against pi-ai's own
 // types. Type-only: nothing here runs. A failure names what moved upstream.
 
-import type { Api, Model, ModelCostRates, MutableModels, Usage } from "@earendil-works/pi-ai";
+import type {
+	Api,
+	ApiKeyCredential,
+	AuthContext,
+	AuthInteraction,
+	AuthResult,
+	CredentialStore,
+	LoginOptions,
+	Model,
+	ModelAuth,
+	ModelCostRates,
+	ModelsErrorCode,
+	MutableModels,
+	OAuthCredential,
+	RetryCallbacks,
+	Usage,
+} from "@earendil-works/pi-ai";
 import type { Assert, Conform, Covers } from "../../../effect/conformance.ts";
 import type * as AiEffect from "../src/index.ts";
 
 /**
  * Every member of pi-ai's model collection is lifted into an Effect here (`stream`, `complete`, `streamSimple`,
- * `completeSimple`, `getModel`), or used on the `Models` service value, which is pi-ai's own object. A member pi-ai
- * adds fails here until it is wrapped or named below.
+ * `completeSimple`, `getModel`, `getAuth`, `checkAuth`, `getAvailable`, `getAvailableOfType`, `getAllAvailable`,
+ * `login`, `logout`), or used on the `Models` service value, which is pi-ai's own object. A member pi-ai adds fails
+ * here until it is wrapped or named below.
  */
 export type ModelsCovered = Assert<
 	Covers<
@@ -79,3 +96,37 @@ export type EffectModelCovered = Assert<
 		| "compat"
 	>
 >;
+
+/** The keys of `T` that are named, without those of an index signature. */
+type NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: T[K] };
+
+/** `AuthError.reason` takes pi-ai's `ModelsError` codes, and `login`. */
+export type AuthErrorReasonSame = Assert<Conform<AiEffect.AuthError["reason"], ModelsErrorCode | "login">>;
+
+/** A redacted API key credential has exactly the fields of pi-ai's. */
+export type ApiKeyCredentialSame = Assert<Conform<keyof AiEffect.RedactedApiKeyCredential, keyof ApiKeyCredential>>;
+
+/** A redacted OAuth credential names exactly the fields pi-ai's names; both keep a flow's own fields. */
+export type OAuthCredentialSame = Assert<
+	Conform<NamedKeys<AiEffect.RedactedOAuthCredential>, NamedKeys<OAuthCredential>>
+>;
+
+/** Resolved auth has the fields of pi-ai's `AuthResult` and `ModelAuth`. */
+export type ResolvedAuthSame = Assert<Conform<keyof AiEffect.ResolvedAuth, keyof AuthResult>>;
+export type ModelAuthSame = Assert<Conform<keyof AiEffect.RedactedModelAuth, keyof ModelAuth>>;
+
+/** The overrides of `getAuth` are pi-ai's without `signal`. */
+export type AuthOverridesSame = Assert<
+	Conform<keyof AiEffect.AuthOverrides | "signal", keyof NonNullable<Parameters<MutableModels["getAuth"]>[1]>>
+>;
+
+/** A login interaction is pi-ai's without `signal`; its options are pi-ai's with the device id as an Effect. */
+export type LoginInteractionCovered = Assert<Covers<AuthInteraction, AiEffect.LoginInteraction, "signal">>;
+export type LoginOptionsCovered = Assert<Covers<LoginOptions, AiEffect.LoginEffectOptions, "getDeviceId">>;
+
+/** The services have the members of pi-ai's ports. */
+export type CredentialsSame = Assert<Conform<keyof AiEffect.CredentialsService, keyof CredentialStore>>;
+export type AuthContextSame = Assert<Conform<keyof AiEffect.ProviderAuthContextService, keyof AuthContext>>;
+
+/** The notifications of `retryAssistantCall` are pi-ai's callbacks. */
+export type RetryNotificationsSame = Assert<Conform<keyof AiEffect.RetryNotifications, keyof RetryCallbacks>>;

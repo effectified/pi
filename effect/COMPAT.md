@@ -50,7 +50,7 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | Package | Kind | Wraps or does | Tests | Not covered |
 |---|---|---|---|---|
 | `@effectified/pi-schema` | facade | `@earendil-works/pi-schema` | 28 | |
-| `@effectified/pi-ai` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges, the key of a request, `runTest`, the forms the plugins share | 62 | Images, classifiers, OAuth login, deferred responses |
+| `@effectified/pi-ai` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges, credentials and login as services and Effects, its helpers, the key of a request, `runTest`, the forms the plugins share | 119 | Images, classifiers, deferred responses; timers inside pi-ai's OAuth flows run on the real clock |
 | `@effectified/pi-telemetry` | facade | `@earendil-works/pi-telemetry` | 59 | `TelemetryStore`; histogram exemplars |
 | `@effectified/pi-chord` | facade | `@earendil-works/chord`: its context from the fiber, JSON, SQLite, delta, output | 42 | Chord's runtime (hosts, facets, links, store, clients, plugins, app kit, surfaces, sync); `Progress`; `/sqlite/cloudflare` |
 | `@effectified/pi-agent` | facade | `@earendil-works/pi-agent-core` | 54 | Changing the agent's settings and hooks after `make`; `Clock` for the timestamps Pi stamps itself |
@@ -97,7 +97,7 @@ An application imports `@effectified/pi-*` and `effect`, never `@earendil-works/
 
   | Facade | Open entries |
   |---|---|
-  | pi-ai | 70 |
+  | pi-ai | 0 (and its `utils/estimate` subpath, 0) |
   | pi-durable | 12 |
   | pi-telemetry | 3 |
   | pi-schema | 0 |

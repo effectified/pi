@@ -3049,6 +3049,39 @@ export function extractDiagnosticError(error: unknown): DiagnosticErrorInfo
 used by: ai-effect
 export function formatThrownValue(value: unknown): string
 
+## calculateContextTokens  ai/src/utils/estimate.ts
+used by: ai-effect
+export function calculateContextTokens(usage: Usage): number
+
+## ContextUsageEstimate  ai/src/utils/estimate.ts
+used by: ai-effect
+export interface ContextUsageEstimate {
+	/** Estimated total context tokens. */
+	tokens: number;
+	/** Tokens reported by the most recent applicable assistant usage block. */
+	usageTokens: number;
+	/** Estimated tokens after the most recent applicable assistant usage block. */
+	trailingTokens: number;
+	/** Index of the applicable message that provided usage, or null when none exists. */
+	lastUsageIndex: number | null;
+}
+
+## estimateContextTokens  ai/src/utils/estimate.ts
+used by: ai-effect
+export function estimateContextTokens(context: TranscriptContext | readonly Message[]): ContextUsageEstimate
+
+## estimateMessageTokens  ai/src/utils/estimate.ts
+used by: ai-effect
+export function estimateMessageTokens(message: Message): number
+
+## estimateTextAndImageContentTokens  ai/src/utils/estimate.ts
+used by: ai-effect
+export function estimateTextAndImageContentTokens(content: string | Array<TextContent | ImageContent>): number
+
+## estimateTextTokens  ai/src/utils/estimate.ts
+used by: ai-effect
+export function estimateTextTokens(text: string): number
+
 ## AssistantMessageEventStream  ai/src/utils/event-stream.ts
 used by: ai-effect; agent-effect via streamProxy, coding-agent-effect via ProviderConfig, durable-effect via HarnessOptions, evals-effect via PiCodingAgentHarnessOptions
 /**

@@ -5,7 +5,11 @@ Pi's model library ([`@earendil-works/pi-ai`](../ai)) in Effect terms, for `effe
 - `Models`, pi-ai's provider collection, as a service and a Layer.
 - A chat request as a `Stream` of pi-ai's events or an `Effect` of the final message, with typed errors. Interrupting
   the fiber aborts the provider request.
+- Credentials and auth: the credential store and the environment as services, login and logout as Effects,
+  secrets as `Redacted`.
 - Two bridges to `effect/ai`: a pi-ai model as a `LanguageModel`, and a `LanguageModel` as a pi-ai provider.
+- pi-ai's helpers: the pure ones as they are, the rest (retry, JSON repair, tool validation, ids, cache warming,
+  session cleanup) as Effects.
 - Scripted models for tests.
 
 It adds no behaviour of its own: what pi-ai does is what happens. Built for pi-ai 1.6.1.
@@ -89,6 +93,45 @@ at run time:
 | `ModelRef` | The schema of a model's name (`{ provider, modelId }`), Pi Durable's `ModelRef`, for state and wires that name one; also its type |
 | `StrictOmit<T, K>` | `Omit` that only takes keys `T` has: a key pi-ai renames fails to compile instead of being left in |
 
+## Credentials and login
+
+`Models.layerWithAuth(providers)` is `Models.layer` with its credentials in the `Credentials` service and the
+environment and files its auth reads in the `ProviderAuthContext` service. `Credentials.layerMemory` is pi-ai's memory
+store; `Credentials.fromPiStore(store)` takes an application's pi-ai `CredentialStore` (a file, a keychain), or the
+application provides the service itself. `ProviderAuthContext.layer` reads environment variables through `Config`, so
+a `ConfigProvider` supplies the keys. Every secret the services and `getAuth` return is `Redacted`.
+
+```ts
+import { Console, Effect, Layer, Redacted } from "effect";
+import { Credentials, getAuth, login, Models, ProviderAuthContext } from "@effectified/pi-ai";
+import { anthropicProvider } from "@effectified/pi-ai/providers/anthropic";
+
+const models = Models.layerWithAuth([anthropicProvider()]).pipe(
+	Layer.provide(Layer.merge(Credentials.layerMemory, ProviderAuthContext.layer)),
+);
+
+const program = Effect.gen(function* () {
+	// The provider's own OAuth flow; the credential it returns is stored.
+	yield* login("anthropic", "oauth", {
+		prompt: (prompt) => Effect.succeed(prompt.type === "select" ? (prompt.options[0]?.id ?? "") : ""),
+		notify: (event) => (event.type === "auth_url" ? Console.log(`Open ${event.url}`) : Effect.void),
+	});
+	// The auth a request would use, refreshing an expiring OAuth token first. None when not configured.
+	const auth = yield* getAuth("anthropic");
+	return auth._tag === "Some" ? auth.value.source : "not configured";
+}).pipe(Effect.provide(models));
+```
+
+- `login(providerId, type, interaction)` runs the provider's flow (`"oauth"`, or `"api_key"` to prompt for a key).
+  A prompt is an Effect: failing it cancels the login with that failure, and pi-ai interrupts it when the flow no
+  longer needs the answer. `notify` must not wait. Interrupting the login aborts the flow.
+- `logout`, `checkAuth`, `getAvailable`, `getAvailableOfType`, `getAllAvailable` and `refreshModels` (pi-ai's
+  `refresh`: the catalogs of configured providers) are the other auth members of `Models`.
+- Failures are `AuthError`, whose `reason` is pi-ai's code (`provider`, `auth`, `oauth`) or `login` when the
+  provider's flow failed; and `CredentialStoreError` from the store.
+- `redactCredential` and `revealCredential` convert between pi-ai's `Credential` and the redacted one, for a store
+  that persists credentials.
+
 ## Pi serves Effect
 
 `PiLanguageModel.layer(ref)` gives an `effect/ai` `LanguageModel` backed by a pi-ai model, so an Effect AI program
@@ -162,6 +205,30 @@ Not carried: `temperature`, `maxTokens`, `reasoning` and the other pi-ai request
 them from its own layer), pi-ai's replay signatures, and the provider-executed tool calls, files and sources of a
 response.
 
+## pi-ai's helpers
+
+pi-ai's root exports helpers beside `Models`. Those that only compute are exported as they are: transcript and tool
+declaration helpers (`getCurrentTools`, `resolveTranscript`, `getToolStateChanges`, ...), `isContextOverflow`,
+`isRetryableAssistantError`, `retryDelayMs`, `repairJson`, `calculateCost`, `clampThinkingLevel`, the numbers and the
+decision of prompt cache warming (`evaluateCacheWarming`), client identity headers, the streaming JSON parsers and
+the auth definitions of a pi-ai provider (`envApiKeyAuth`, `lazyOAuth`). Those that throw, read the time or the
+environment, or do I/O are Effects of the same name:
+
+| | |
+|---|---|
+| `retryAssistantCall(produce, policy, notifications)` | pi-ai's retry rule over an Effect of a response: its classifier, backoff and notifications, the backoff on `Clock`. Interrupting is interruption, never an `aborted` response |
+| `parseJsonWithRepair(text)` | pi-ai's parse with repair; fails with `MalformedJson` |
+| `validateToolCall(tools, call)`, `validateToolArguments(tool, call)` | pi-ai's validation; fails with `InvalidToolCall` carrying pi-ai's message for the model |
+| `createAssistantMessageDiagnostic(type, error)` | stamped by `Clock` |
+| `uuidv7` | pi-ai's UUIDv7 with the time of `Clock` |
+| `getPromptCacheTtlMs(model, options)` | `PI_CACHE_RETENTION` read through `Config` |
+| `warmCache(model, context, options)` | the refresh request with pi-ai's refresh options |
+| `withClientIdentity(identity)(effect)` | every request of `Models` inside carries the identity |
+| `registerSessionResourceCleanup(cleanup)`, `cleanupSessionResources(sessionId)` | a cleanup for the scope; failures as `SessionCleanupError` |
+
+`@effectified/pi-ai/estimate` offers pi-ai's token estimates (`estimateContextTokens`, ...) for an application that
+decides when to compact.
+
 ## Testing
 
 The `./testing` subpath has scripted models: no network, no keys.
@@ -194,9 +261,16 @@ real clock, for a test of real processes or files. Both import no test runner, s
 
 - Image generation (`generateImages`) and classifiers (`classify`).
 - Deferred responses (`streamDeferred`, `fetchDeferred`, `cancelDeferred`, the `deferred` option).
-- OAuth login and logout, credential stores, `checkAuth`, `getAvailable` and model refresh (`refresh`).
+- The models store (`ModelsStore`) that persists refreshed catalogs: `Models.layer` and `Models.layerWithAuth` take
+  pi-ai's in their options.
+- Timers inside pi-ai's OAuth flows (device code polling) and token expiry stamps run on the real clock.
 
 All of them remain reachable through the `Models` service value, which is pi-ai's own object.
+
+pi-ai's subpaths an application does not need here: `compat` (pi-ai's old global API), `api/*` (the API
+implementations its providers call), `oauth` (types only, in the root), and the bundling helpers (`lazy-oauth`,
+`bun-oauth`, `bedrock-provider`, `lazy-bedrock-provider`). `models` and `session-resources` repeat the root. The
+package's `test/index.test.ts` records each with its reason.
 
 ## License
 
