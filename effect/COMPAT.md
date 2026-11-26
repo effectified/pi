@@ -14,7 +14,10 @@ all fifteen suites passed on it on Pi 1.6.0 (1,747 tests, 2026-11-25). On Pi 1.6
 tests, 2026-11-26, by `node effect/scripts/gate.ts`) and on Bun (2026-11-26); between the two versions Pi Durable changed only its Node environment (shell lookup,
 line reader). Not yet run against a real model provider. Under the names `@effectified/pi-<x>` (2026-11-26), the
 fifteen tarballs of `effect/scripts/pack.ts` installed into an empty project beside the published `@earendil-works/*`
-1.6.1 and `effect` 4.1.5, and every package and `@effectified/pi-ai/testing` imported on Node 26.
+1.6.1 and `effect` 4.1.5, and every package and `@effectified/pi-ai/testing` imported on Node 26. From the GitHub
+release `v0.1.0`, the one URL of `pi-thread` installed it with the pi-effect packages it depends on into an empty
+project with npm 12.2.3 (`--allow-remote=all`), pnpm 12.21.0 (`blockExoticSubdeps` off) and Bun 1.4.5, and it
+imported on Node 26.
 
 CI (`effect-ci.yml`, Node 22, Linux) first ran on 2026-11-25 and was red in upstream's own check and tests, not in
 these packages: upstream's build fetches the model catalogs of the day, and the tests at `f8149d1ab` named models

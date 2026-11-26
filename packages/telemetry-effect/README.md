@@ -17,7 +17,7 @@ The package adds no telemetry of its own. It forwards what Pi records; Pi's sche
 ```bash
 # the pi-effect packages come from their GitHub release, not npm
 R=https://github.com/effectified/pi/releases/download/v0.1.0
-npm install $R/effectified-pi-telemetry-0.1.0.tgz @earendil-works/pi-telemetry effect
+npm install --allow-remote=all $R/effectified-pi-telemetry-0.1.0.tgz @earendil-works/pi-telemetry effect
 ```
 
 ## Pi telemetry into Effect

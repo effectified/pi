@@ -22,7 +22,7 @@ one Rivet actor per thread. For `effect` 4.1 and Pi Durable 1.6.1.
 ```sh
 # the pi-effect packages come from their GitHub release, not npm
 R=https://github.com/effectified/pi/releases/download/v0.1.0
-npm install $R/effectified-pi-thread-0.1.0.tgz effect
+npm install --allow-remote=all $R/effectified-pi-thread-0.1.0.tgz effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`), and so is `rivetkit` (`~3.1.1`), which only the `/rivet` entry loads. The

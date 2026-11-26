@@ -23,7 +23,7 @@ No promise appears in this package's signatures; Rivet's promise-shaped hooks ar
 ```sh
 # the pi-effect packages come from their GitHub release, not npm
 R=https://github.com/effectified/pi/releases/download/v0.1.0
-npm install $R/effectified-pi-durable-rivet-0.1.0.tgz $R/effectified-pi-durable-0.1.0.tgz $R/effectified-pi-ai-0.1.0.tgz effect rivetkit
+npm install --allow-remote=all $R/effectified-pi-durable-rivet-0.1.0.tgz $R/effectified-pi-durable-0.1.0.tgz $R/effectified-pi-ai-0.1.0.tgz effect rivetkit
 ```
 
 `effect` (`~4.1.5`) and `rivetkit` (`~3.1.1`) are peer dependencies, so the application has one copy of each.

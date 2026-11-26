@@ -1,6 +1,6 @@
 // Releases the pi-effect packages on GitHub instead of npm: the tarballs of `pack.ts`, attached to the prerelease
 // `v<version>` of effectified/pi, where each package's dependencies on the others name their tarballs' release URLs.
-// So `npm install <release URL of one tarball>` (or pnpm, or Bun) installs it with every pi-effect package it needs,
+// So installing the release URL of one tarball (npm, pnpm or Bun) installs it with every pi-effect package it needs,
 // and Pi and `effect` from npm. A release is made from a clean tree whose HEAD is pushed, and never replaced: a new
 // release needs a new version (`node effect/scripts/sync.ts bump` moves Pi; the packages' own version moves by hand).
 // Usage: node effect/scripts/release.ts
@@ -86,8 +86,13 @@ function releaseNotes(files: string[], source: string): string {
 		"it depends on come from this release, Pi and `effect` from npm:",
 		"",
 		"```sh",
-		`npm install ${base}/effectified-pi-ai-${version}.tgz @earendil-works/pi-ai effect`,
+		`npm install --allow-remote=all ${base}/effectified-pi-ai-${version}.tgz @earendil-works/pi-ai effect`,
+		`pnpm add --config.block-exotic-subdeps=false ${base}/effectified-pi-ai-${version}.tgz @earendil-works/pi-ai effect`,
+		`bun add ${base}/effectified-pi-ai-${version}.tgz @earendil-works/pi-ai effect`,
 		"```",
+		"",
+		"npm 12 fetches no URL dependencies unless `--allow-remote=all` (or `allow-remote=all` in `.npmrc`) allows them,",
+		"and pnpm none below the top level unless `blockExoticSubdeps` is off; Bun needs neither.",
 		"",
 		...lines,
 		"",

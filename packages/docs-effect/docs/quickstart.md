@@ -8,10 +8,12 @@ The packages are released on GitHub, not on npm. Each release of [effectified/pi
 
 ```sh
 R=https://github.com/effectified/pi/releases/download/v0.1.0
-npm install $R/effectified-pi-thread-0.1.0.tgz effect
+npm install --allow-remote=all $R/effectified-pi-thread-0.1.0.tgz effect
+pnpm add --config.block-exotic-subdeps=false $R/effectified-pi-thread-0.1.0.tgz effect
+bun add $R/effectified-pi-thread-0.1.0.tgz effect
 ```
 
-pnpm and Bun take the same URLs. `node effect/scripts/release.ts` makes a release from a clean, pushed tree.
+npm 12 fetches no URL dependency unless `allow-remote` allows it, and pnpm none below the top level while `blockExoticSubdeps` is on, so each needs the switch above (or the same setting in the project's `.npmrc` or `pnpm-workspace.yaml`); Bun needs none. `node effect/scripts/release.ts` makes a release from a clean, pushed tree.
 
 A product that keeps them in its own repository instead holds them as built workspace packages, written by a script of the pi-effect repository:
 
