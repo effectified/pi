@@ -1445,21 +1445,21 @@ used by: ai-effect via AnthropicAllowedFallbackModel
 export const AnthropicAllowedFallbackModelSchema: Schema<{ provider: string; model: string; cost: { input: number; output: number; cacheRead: number; cacheWrite: number; tiers?: { input: number; output: number; cacheRead: number; cacheWrite: number; inputTokensAbove: number; }[] | undefined; }; }>
 
 ## AnthropicMessagesCompat  ai/src/providers/compat-schema.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 /** Compatibility settings for Anthropic Messages-compatible APIs. */
 export interface AnthropicMessagesCompat extends Static<typeof AnthropicMessagesCompatSchema> {}
 
 ## AnthropicMessagesCompatSchema  ai/src/providers/compat-schema.ts
-used by: ai-effect via AnthropicMessagesCompat, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: agent-effect via streamProxy, ai-effect via AnthropicMessagesCompat, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export const AnthropicMessagesCompatSchema: Schema<{ supportsEagerToolInputStreaming?: boolean | undefined; supportsLongCacheRetention?: boolean | undefined; sendSessionAffinityHeaders?: boolean | undefined; sessionAffinityFormat?: "openrouter" | undefined; supportsCacheControlOnTools?: boolean | undefined; supportsTemperature?: boolean | undefined; forceAdaptiveThinking?: boolean | undefined; allowEmptySignature?: boolean | undefined; supportsStrictTools?: boolean | undefined; supportsMidConvoEffort?: boolean | undefined; supportsMidConvoSystemMessages?: boolean | undefined; supportsMidConvoToolChanges?: boolean | undefined; supportsMessageThreads?: boolean | undefined; allowedFallbackModels?: { provider: string; model: string; cost: { input: number; output: number; cacheRead: number; cacheWrite: number; tiers?: { input: number; output: number; cacheRead: number; cacheWrite: number; inputTokensAbove: number; }[] | undefined; }; }[] | undefined; }>
 
 ## BedrockCompat  ai/src/providers/compat-schema.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 /** Compatibility settings for Amazon Bedrock models. */
 export interface BedrockCompat extends Static<typeof BedrockCompatSchema> {}
 
 ## BedrockCompatSchema  ai/src/providers/compat-schema.ts
-used by: ai-effect via BedrockCompat, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: agent-effect via streamProxy, ai-effect via BedrockCompat, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export const BedrockCompatSchema: Schema<{ supportsStrictMode?: boolean | undefined; }>
 
 ## ChatTemplateKwargValue  ai/src/providers/compat-schema.ts
@@ -1471,39 +1471,39 @@ used by: ai-effect via ChatTemplateKwargValue
 export const ChatTemplateKwargValueSchema: Schema<string | number | boolean | { $var: "thinking.budget" | "thinking.effort" | "thinking.enabled"; omitWhenOff?: boolean | undefined; } | null>
 
 ## GoogleCompat  ai/src/providers/compat-schema.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 /** Compatibility settings for the Google Generative AI and Vertex APIs. */
 export interface GoogleCompat extends Static<typeof GoogleCompatSchema> {}
 
 ## GoogleCompatSchema  ai/src/providers/compat-schema.ts
-used by: ai-effect via GoogleCompat, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: agent-effect via streamProxy, ai-effect via GoogleCompat, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export const GoogleCompatSchema: Schema<{ supportsStrictMode?: boolean | undefined; }>
 
 ## MistralConversationsCompat  ai/src/providers/compat-schema.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 /** Compatibility settings for the Mistral chat API. */
 export interface MistralConversationsCompat extends Static<typeof MistralConversationsCompatSchema> {}
 
 ## MistralConversationsCompatSchema  ai/src/providers/compat-schema.ts
-used by: ai-effect via MistralConversationsCompat, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: agent-effect via streamProxy, ai-effect via MistralConversationsCompat, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export const MistralConversationsCompatSchema: Schema<{ supportsMidConvoSystemMessages?: boolean | undefined; supportsStrictMode?: boolean | undefined; }>
 
 ## OpenAICompletionsCompat  ai/src/providers/compat-schema.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 /** Compatibility settings for OpenAI-compatible completions APIs. */
 export interface OpenAICompletionsCompat extends Static<typeof OpenAICompletionsCompatSchema> {}
 
 ## OpenAICompletionsCompatSchema  ai/src/providers/compat-schema.ts
-used by: ai-effect via OpenAICompletionsCompat, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: agent-effect via streamProxy, ai-effect via OpenAICompletionsCompat, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export const OpenAICompletionsCompatSchema: Schema<{ supportsStore?: boolean | undefined; supportsDeveloperRole?: boolean | undefined; supportsReasoningEffort?: boolean | undefined; supportsUsageInStreaming?: boolean | undefined; supportsFinishReason?: boolean | undefined; maxTokensField?: "max_completion_tokens" | "max_tokens" | undefined; requiresToolResultName?: boolean | undefined; requiresAssistantAfterToolResult?: boolean | undefined; requiresNonNullAssistantContent?: boolean | undefined; requiresToolsWithToolHistory?: boolean | undefined; requiresThinkingAsText?: boolean | undefined; requiresReasoningContentOnAssistantMessages?: boolean | undefined; thinkingFormat?: "ant-ling" | "baseten" | "chat-template" | "deepseek" | "openai" | "openrouter" | "qwen" | "qwen-chat-template" | "string-thinking" | "together" | "zai" | undefined; chatTemplateKwargs?: Record<string, string | number | boolean | { $var: "thinking.budget" | "thinking.effort" | "thinking.enabled"; omitWhenOff?: boolean | undefined; } | null> | undefined; chatTemplateArgs?: Record<string, string | number | boolean | { $var: "thinking.budget" | "thinking.effort" | "thinking.enabled"; omitWhenOff?: boolean | undefined; } | null> | undefined; openRouterRouting?: { allow_fallbacks?: boolean | undefined; require_parameters?: boolean | undefined; data_collection?: "allow" | "deny" | undefined; zdr?: boolean | undefined; enforce_distillable_text?: boolean | undefined; order?: string[] | undefined; only?: string[] | undefined; ignore?: string[] | undefined; quantizations?: string[] | undefined; sort?: string | { by?: string | undefined; partition?: string | null | undefined; } | undefined; max_price?: { prompt?: string | number | undefined; completion?: string | number | undefined; image?: string | number | undefined; audio?: string | number | undefined; request?: string | number | undefined; } | undefined; preferred_min_throughput?: number | { p50?: number | undefined; p75?: number | undefined; p90?: number | undefined; p99?: number | undefined; } | undefined; preferred_max_latency?: number | { p50?: number | undefined; p75?: number | undefined; p90?: number | undefined; p99?: number | undefined; } | undefined; } | undefined; vercelGatewayRouting?: { only?: string[] | undefined; order?: string[] | undefined; } | undefined; zaiToolStream?: boolean | undefined; thinkingTokenBudgetField?: "thinking_budget" | "thinking_budget_tokens" | "thinking_token_budget" | undefined; supportsThinkingTokenBudget?: boolean | undefined; supportsOpenAIGrammarTools?: boolean | undefined; supportsMidConvoSystemMessages?: boolean | undefined; supportsMidConvoToolAdditions?: boolean | undefined; supportsStrictMode?: boolean | undefined; cacheControlFormat?: "anthropic" | undefined; sendSessionAffinityHeaders?: boolean | undefined; sessionAffinityFormat?: "openai" | "openai-nosession" | "openrouter" | undefined; promptCacheKeyMode?: "auto" | "disabled" | "enabled" | undefined; supportsLongCacheRetention?: boolean | undefined; vllmPriority?: number | undefined; }>
 
 ## OpenAIResponsesCompat  ai/src/providers/compat-schema.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 /** Compatibility settings for OpenAI Responses APIs. */
 export interface OpenAIResponsesCompat extends Static<typeof OpenAIResponsesCompatSchema> {}
 
 ## OpenAIResponsesCompatSchema  ai/src/providers/compat-schema.ts
-used by: ai-effect via OpenAIResponsesCompat, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: agent-effect via streamProxy, ai-effect via OpenAIResponsesCompat, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export const OpenAIResponsesCompatSchema: Schema<{ supportsDeveloperRole?: boolean | undefined; supportsMidConvoSystemMessages?: boolean | undefined; sessionAffinityFormat?: "openai" | "openai-nosession" | "openrouter" | undefined; promptCacheKeyMode?: "auto" | "disabled" | "enabled" | undefined; supportsLongCacheRetention?: boolean | undefined; supportsStrictMode?: boolean | undefined; supportsOpenAIGrammarTools?: boolean | undefined; supportsAdditionalTools?: boolean | undefined; supportsToolSearch?: boolean | undefined; supportsExplicitPromptCacheMode?: boolean | undefined; supportsMidConvoEffort?: boolean | undefined; supportsMaxOutputTokens?: boolean | undefined; }>
 
 ## OpenRouterRouting  ai/src/providers/compat-schema.ts
@@ -1735,11 +1735,11 @@ used by: ai-effect
 export function mistralProvider(): Provider<"mistral-conversations">
 
 ## CacheRetention  ai/src/providers/model-schema.ts
-used by: ai-effect; durable-effect via ConversationStreamOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via Agent, durable-effect via ConversationStreamOptions, durable-rivet-effect via CompactionTask
 export type CacheRetention = Static<typeof CacheRetentionSchema>;
 
 ## CacheRetentionSchema  ai/src/providers/model-schema.ts
-used by: ai-effect via CacheRetention, durable-effect via ConversationStreamOptions, durable-rivet-effect via CompactionTask
+used by: agent-effect via Agent, ai-effect via CacheRetention, durable-effect via ConversationStreamOptions, durable-rivet-effect via CompactionTask
 export const CacheRetentionSchema: Schema<"long" | "none" | "short">
 
 ## MODEL_THINKING_LEVELS  ai/src/providers/model-schema.ts
@@ -1747,7 +1747,7 @@ used by: ai-effect, durable-effect
 export const MODEL_THINKING_LEVELS = ["off", ...THINKING_LEVELS] as const
 
 ## ModelCost  ai/src/providers/model-schema.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export type ModelCost = Static<typeof ModelCostSchema>;
 
 ## ModelCostRates  ai/src/providers/model-schema.ts
@@ -1759,7 +1759,7 @@ used by: ai-effect via ModelCostRates
 export const ModelCostRatesSchema: Schema<{ input: number; output: number; cacheRead: number; cacheWrite: number; }>
 
 ## ModelCostSchema  ai/src/providers/model-schema.ts
-used by: ai-effect via ModelCost, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: agent-effect via streamProxy, ai-effect via ModelCost, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export const ModelCostSchema: Schema<{ input: number; output: number; cacheRead: number; cacheWrite: number; tiers?: { input: number; output: number; cacheRead: number; cacheWrite: number; inputTokensAbove: number; }[] | undefined; }>
 
 ## ModelCostTier  ai/src/providers/model-schema.ts
@@ -1787,51 +1787,51 @@ used by: ai-effect via ModelImageResizeOptions
 export const ModelImageResizeOptionsSchema: Schema<{ maxWidth?: number | undefined; maxHeight?: number | undefined; maxBytes?: number | undefined; jpegQuality?: number | undefined; }>
 
 ## ModelInputLimits  ai/src/providers/model-schema.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export type ModelInputLimits = Static<typeof ModelInputLimitsSchema>;
 
 ## ModelInputLimitsSchema  ai/src/providers/model-schema.ts
-used by: ai-effect via ModelInputLimits, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: agent-effect via streamProxy, ai-effect via ModelInputLimits, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export const ModelInputLimitsSchema: Schema<{ maxRequestBytes?: number | undefined; images?: { resize?: { maxWidth?: number | undefined; maxHeight?: number | undefined; maxBytes?: number | undefined; jpegQuality?: number | undefined; } | undefined; maxPerMessage?: number | undefined; maxPerRequest?: number | undefined; } | undefined; }>
 
 ## ModelInputModality  ai/src/providers/model-schema.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export type ModelInputModality = Static<typeof ModelInputModalitySchema>;
 
 ## ModelInputModalitySchema  ai/src/providers/model-schema.ts
-used by: ai-effect via ModelInputModality, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: agent-effect via streamProxy, ai-effect via ModelInputModality, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export const ModelInputModalitySchema: Schema<"image" | "text">
 
 ## ModelPromptCache  ai/src/providers/model-schema.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export type ModelPromptCache = Static<typeof ModelPromptCacheSchema>;
 
 ## ModelPromptCacheSchema  ai/src/providers/model-schema.ts
-used by: ai-effect via ModelPromptCache, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: agent-effect via streamProxy, ai-effect via ModelPromptCache, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export const ModelPromptCacheSchema: Schema<{ short?: number | undefined; long?: number | undefined; }>
 
 ## ModelThinkingLevel  ai/src/providers/model-schema.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via RunToolCallOptions, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export type ModelThinkingLevel = Static<typeof ModelThinkingLevelSchema>;
 
 ## ModelThinkingLevelSchema  ai/src/providers/model-schema.ts
-used by: ai-effect via ModelThinkingLevel, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: agent-effect via RunToolCallOptions, ai-effect via ModelThinkingLevel, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export const ModelThinkingLevelSchema: Schema<"high" | "low" | "max" | "medium" | "minimal" | "off" | "xhigh">
 
 ## ThinkingLevel  ai/src/providers/model-schema.ts
-used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via Agent, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export type ThinkingLevel = Static<typeof ThinkingLevelSchema>;
 
 ## ThinkingLevelMap  ai/src/providers/model-schema.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export type ThinkingLevelMap = Static<typeof ThinkingLevelMapSchema>;
 
 ## ThinkingLevelMapSchema  ai/src/providers/model-schema.ts
-used by: ai-effect via ThinkingLevelMap, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: agent-effect via streamProxy, ai-effect via ThinkingLevelMap, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export const ThinkingLevelMapSchema: Schema<{ off?: string | null | undefined; minimal?: string | null | undefined; low?: string | null | undefined; medium?: string | null | undefined; high?: string | null | undefined; xhigh?: string | null | undefined; max?: string | null | undefined; }>
 
 ## ThinkingLevelSchema  ai/src/providers/model-schema.ts
-used by: ai-effect via ThinkingLevel, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: agent-effect via Agent, ai-effect via ThinkingLevel, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export const ThinkingLevelSchema: Schema<"high" | "low" | "max" | "medium" | "minimal" | "xhigh">
 
 ## moonshotaiCnProvider  ai/src/providers/moonshotai-cn.ts
@@ -1966,7 +1966,7 @@ used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via 
 export type AnyModel = ModelTypeMap[ModelType];
 
 ## Api  ai/src/types.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via StreamFn, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export type Api = KnownApi | (string & {});
 
 ## ApiOptionsMap  ai/src/types.ts
@@ -2014,7 +2014,7 @@ export interface AssistantImages {
 }
 
 ## AssistantMessage  ai/src/types.ts
-used by: ai-effect, durable-effect; durable-rivet-effect via SqliteStorage
+used by: ai-effect, durable-effect; agent-effect via RunToolCallOptions, durable-rivet-effect via SqliteStorage
 export interface AssistantMessage {
 	role: "assistant";
 	content: (TextContent | ThinkingContent | ToolCall)[];
@@ -2049,7 +2049,7 @@ export interface AssistantMessage {
 }
 
 ## AssistantMessageEvent  ai/src/types.ts
-used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via AgentEvent, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /**
  * Event protocol for AssistantMessageEventStream.
  *
@@ -2085,7 +2085,7 @@ export type AssistantMessageEvent =
 	| { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: AssistantMessage };
 
 ## BaseModel  ai/src/types.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 /** Fields shared by every catalog entry, regardless of what you can do with it. */
 export interface BaseModel<TApi extends string> {
 	id: string;
@@ -2225,7 +2225,7 @@ used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via 
 export type ClassifierStopReason = "stop" | "error" | "aborted";
 
 ## ConstrainedSamplingConfig  ai/src/types.ts
-used by: ai-effect; durable-effect via ToolRegistration, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via AgentTool, durable-effect via ToolRegistration, durable-rivet-effect via SqliteStorage
 /**
  * Optional provider-side constrained sampling configs for a tool.
  *
@@ -2273,7 +2273,7 @@ export interface DeferredFetchOptions extends ProviderRequestOptions<Model<Api>>
 }
 
 ## DeferredHandle  ai/src/types.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via RunToolCallOptions, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export interface DeferredHandle {
 	provider: string;
 	modelId: string;
@@ -2287,16 +2287,16 @@ export interface DeferredHandle {
 }
 
 ## FetchFunction  ai/src/types.ts
-used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via Agent, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export type FetchFunction = typeof globalThis.fetch;
 
 ## GrammarFormat  ai/src/types.ts
-used by: ai-effect; durable-effect via ToolRegistration, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via AgentTool, durable-effect via ToolRegistration, durable-rivet-effect via SqliteStorage
 /** OpenAI grammar variants for constrained sampling. */
 export type GrammarFormat = "openai_lark" | "openai_regex";
 
 ## GrammarVariants  ai/src/types.ts
-used by: ai-effect; durable-effect via ToolRegistration, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via AgentTool, durable-effect via ToolRegistration, durable-rivet-effect via SqliteStorage
 export type GrammarVariants = Partial<Record<GrammarFormat, string>>;
 
 ## ImageApi  ai/src/types.ts
@@ -2304,7 +2304,7 @@ used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via 
 export type ImageApi = KnownImageApi | (string & {});
 
 ## ImageContent  ai/src/types.ts
-used by: ai-effect; durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via Agent, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
 export interface ImageContent {
 	type: "image";
 	data: string; // base64 encoded image data
@@ -2357,21 +2357,21 @@ used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via 
 export type ImagesStopReason = "stop" | "error" | "aborted";
 
 ## InvalidJsonKeys  ai/src/types.ts
-used by: ai-effect via ToolResultMessage, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
+used by: agent-effect via AgentEvent, ai-effect via ToolResultMessage, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
 type InvalidJsonKeys<T extends object> = {
 	[TKey in keyof T]-?: TKey extends string | number ? (IsJsonProperty<T[TKey]> extends true ? never : TKey) : TKey;
 }[keyof T];
 
 ## IsAny  ai/src/types.ts
-used by: ai-effect via JsonRepresentation, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
+used by: agent-effect via AgentEvent, ai-effect via JsonRepresentation, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
 type IsAny<T> = 0 extends 1 & T ? true : false;
 
 ## IsExactlyJsonValue  ai/src/types.ts
-used by: ai-effect via ToolResultMessage, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
+used by: agent-effect via AgentEvent, ai-effect via ToolResultMessage, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
 type IsExactlyJsonValue<T> = [T] extends [JsonValue] ? ([JsonValue] extends [T] ? true : false) : false;
 
 ## IsJsonCompatible  ai/src/types.ts
-used by: ai-effect via ToolResultMessage, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
+used by: agent-effect via AgentEvent, ai-effect via ToolResultMessage, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
 type IsJsonCompatible<T> = IsAny<T> extends true
 	? false
 	: unknown extends T
@@ -2393,7 +2393,7 @@ type IsJsonCompatible<T> = IsAny<T> extends true
 								: false;
 
 ## IsJsonProperty  ai/src/types.ts
-used by: ai-effect via ToolResultMessage, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
+used by: agent-effect via AgentEvent, ai-effect via ToolResultMessage, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
 type IsJsonProperty<T> = IsAny<T> extends true
 	? false
 	: unknown extends T
@@ -2403,11 +2403,11 @@ type IsJsonProperty<T> = IsAny<T> extends true
 			: IsJsonCompatible<Exclude<T, undefined>>;
 
 ## JsonObject  ai/src/types.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via ProxyAssistantMessageEvent, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export type JsonObject = { [key: string]: JsonValue };
 
 ## JsonRepresentation  ai/src/types.ts
-used by: ai-effect; durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via AgentEvent, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
 /** The JSON representation of a typed in-memory value. Optional object properties remain optional. */
 export type JsonRepresentation<T> = IsAny<T> extends true
 	? JsonValue
@@ -2422,11 +2422,11 @@ export type JsonRepresentation<T> = IsAny<T> extends true
 					: never;
 
 ## JsonValue  ai/src/types.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via AfterToolCallResult, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | JsonObject;
 
 ## KnownApi  ai/src/types.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via StreamFn, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export type KnownApi =
 	| "openai-completions"
 	| "mistral-conversations"
@@ -2453,7 +2453,7 @@ used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via 
 export type KnownImageApi = "openrouter-images";
 
 ## KnownProvider  ai/src/types.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via RunToolCallOptions, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export type KnownProvider =
 	| "amazon-bedrock"
 	| "ant-ling"
@@ -2500,11 +2500,11 @@ export type KnownProvider =
 	| "xiaomi-token-plan-sgp";
 
 ## Message  ai/src/types.ts
-used by: ai-effect; durable-effect via CompactionHooks, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via Agent, durable-effect via CompactionHooks, durable-rivet-effect via SqliteStorage
 export type Message = SystemMessage | UserMessage | AssistantMessage | ToolResultMessage;
 
 ## Model  ai/src/types.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 /** Chat model: usable with `stream()` and friends. */
 export interface Model<TApi extends Api> extends BaseModel<TApi> {
 	/**
@@ -2558,7 +2558,7 @@ export interface ModelTypeMap {
 }
 
 ## NestedToolCallRecord  ai/src/types.ts
-used by: ai-effect; durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via AgentEvent, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
 /** A tool call that another tool made while it ran, for example from a codemode script. */
 export interface NestedToolCallRecord {
 	id: string;
@@ -2575,7 +2575,7 @@ export interface NestedToolCallRecord {
 }
 
 ## NestedToolCalls  ai/src/types.ts
-used by: ai-effect; durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via AgentEvent, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
 /** Bounded record of the nested calls a tool made. Results are not recorded. */
 export interface NestedToolCalls {
 	calls: NestedToolCallRecord[];
@@ -2595,16 +2595,16 @@ export interface ProviderClassifier {
 }
 
 ## ProviderEnv  ai/src/types.ts
-used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via Agent, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /** Provider-scoped environment overrides. Values take precedence over process.env. */
 export type ProviderEnv = Record<string, string>;
 
 ## ProviderHeaders  ai/src/types.ts
-used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via Agent, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export type ProviderHeaders = Record<string, string | null>;
 
 ## ProviderId  ai/src/types.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via RunToolCallOptions, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export type ProviderId = KnownProvider | string;
 
 ## ProviderImages  ai/src/types.ts
@@ -2628,7 +2628,7 @@ used by: ai-effect
 export type ProviderImagesOptions = ImagesOptions & Record<string, unknown>;
 
 ## ProviderRequestOptions  ai/src/types.ts
-used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via Agent, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /** Authentication, HTTP transport, and lifecycle callbacks shared by provider requests. */
 export interface ProviderRequestOptions<TModel = Model<Api>> {
 	signal?: AbortSignal;
@@ -2693,7 +2693,7 @@ export interface ProviderRequestOptions<TModel = Model<Api>> {
 }
 
 ## ProviderResponse  ai/src/types.ts
-used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via Agent, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export interface ProviderResponse {
 	status: number;
 	headers: Record<string, string>;
@@ -2729,15 +2729,15 @@ export interface ProviderStreams {
 }
 
 ## SamplingParams  ai/src/types.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export type SamplingParams = Record<string, unknown>;
 
 ## SamplingParamsByThinkingLevel  ai/src/types.ts
-used by: ai-effect; durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via GenerationHooks, durable-rivet-effect via CompactionTask
 export type SamplingParamsByThinkingLevel = Partial<Record<ModelThinkingLevel, SamplingParams>>;
 
 ## SimpleStreamOptions  ai/src/types.ts
-used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via Agent, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export interface SimpleStreamOptions extends StreamOptions {
 	/** Provider-neutral tool selection for simple requests. When omitted, adapters use provider-specific behavior. */
 	toolChoice?: ToolChoice;
@@ -2749,7 +2749,7 @@ export interface SimpleStreamOptions extends StreamOptions {
 }
 
 ## StopReason  ai/src/types.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via ProxyAssistantMessageEvent, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export type StopReason = "pending" | "stop" | "length" | "toolUse" | "error" | "aborted" | "deferred";
 
 ## StreamFunction  ai/src/types.ts
@@ -2761,7 +2761,7 @@ export type StreamFunction<TApi extends Api = Api, TOptions extends StreamOption
 ) => AssistantMessageEventStream;
 
 ## StreamOptions  ai/src/types.ts
-used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via Agent, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export interface StreamOptions extends ProviderRequestOptions<Model<Api>> {
 	/**
 	 * Optional callback invoked after each HTTP response is received, including error responses and
@@ -2823,7 +2823,7 @@ export interface StreamOptions extends ProviderRequestOptions<Model<Api>> {
 }
 
 ## SystemMessage  ai/src/types.ts
-used by: ai-effect; durable-effect via CompactionHooks, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via Agent, durable-effect via CompactionHooks, durable-rivet-effect via SqliteStorage
 /**
  * System instructions and tool declarations at one point in the transcript.
  *
@@ -2853,7 +2853,7 @@ export interface SystemMessage {
 }
 
 ## TextContent  ai/src/types.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via AfterToolCallResult, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export interface TextContent {
 	type: "text";
 	text: string;
@@ -2869,7 +2869,7 @@ export interface TextSignatureV1 {
 }
 
 ## ThinkingBudgets  ai/src/types.ts
-used by: ai-effect; durable-effect via ConversationStreamOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via Agent, durable-effect via ConversationStreamOptions, durable-rivet-effect via CompactionTask
 /** Token budgets for each thinking level (token-based providers only) */
 export interface ThinkingBudgets {
 	minimal?: number;
@@ -2879,7 +2879,7 @@ export interface ThinkingBudgets {
 }
 
 ## ThinkingContent  ai/src/types.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via RunToolCallOptions, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export interface ThinkingContent {
 	type: "thinking";
 	thinking: string;
@@ -2891,7 +2891,7 @@ export interface ThinkingContent {
 }
 
 ## Tool  ai/src/types.ts
-used by: ai-effect; durable-effect via ToolRegistration, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via AgentTool, durable-effect via ToolRegistration, durable-rivet-effect via SqliteStorage
 /**
  * A tool the model may call. `parameters` is the JSON Schema of its arguments: pi-schema's builders (which also type
  * the arguments, see `Static` in `@earendil-works/pi-schema`), TypeBox schemas, or any JSON Schema object.
@@ -2904,7 +2904,7 @@ export interface Tool<TParameters extends object = object> {
 }
 
 ## ToolCall  ai/src/types.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via ProxyAssistantMessageEvent, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export interface ToolCall {
 	type: "toolCall";
 	id: string;
@@ -2921,17 +2921,17 @@ export interface ToolCall {
 }
 
 ## ToolChoice  ai/src/types.ts
-used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via Agent, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export type ToolChoice = "auto" | "none";
 
 ## ToolReference  ai/src/types.ts
-used by: ai-effect; durable-effect via CompactionHooks, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via Agent, durable-effect via CompactionHooks, durable-rivet-effect via SqliteStorage
 export interface ToolReference {
 	name: string;
 }
 
 ## ToolResultMessage  ai/src/types.ts
-used by: ai-effect; durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via AgentEvent, durable-effect via ToolExecutionResult, durable-rivet-effect via SqliteStorage
 export type ToolResultMessage<TDetails = JsonValue> = IsJsonCompatible<TDetails> extends true
 	? {
 			role: "toolResult";
@@ -2952,7 +2952,7 @@ export type ToolResultMessage<TDetails = JsonValue> = IsJsonCompatible<TDetails>
 	: never;
 
 ## TranscriptContext  ai/src/types.ts
-used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /**
  * Normalized request context passed to providers and API implementations. The
  * prompt and tool declarations are carried by the transcript's system messages.
@@ -2965,11 +2965,11 @@ export type TranscriptContext = {
 };
 
 ## Transport  ai/src/types.ts
-used by: ai-effect; durable-effect via ConversationStreamOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via Agent, durable-effect via ConversationStreamOptions, durable-rivet-effect via CompactionTask
 export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 
 ## Usage  ai/src/types.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via AfterToolCallResult, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export interface Usage {
 	input: number;
 	output: number;
@@ -3001,7 +3001,7 @@ export interface Usage {
 }
 
 ## UserMessage  ai/src/types.ts
-used by: ai-effect; durable-effect via UserInput, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via Agent, durable-effect via UserInput, durable-rivet-effect via SqliteStorage
 export interface UserMessage {
 	role: "user";
 	content: string | (TextContent | ImageContent)[];
@@ -3016,7 +3016,7 @@ export function appendAssistantMessageDiagnostic<T extends { diagnostics?: Assis
 ): void
 
 ## AssistantMessageDiagnostic  ai/src/utils/diagnostics.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via RunToolCallOptions, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export interface AssistantMessageDiagnostic {
 	type: string;
 	timestamp: number;
@@ -3033,7 +3033,7 @@ export function createAssistantMessageDiagnostic(
 ): AssistantMessageDiagnostic
 
 ## DiagnosticErrorInfo  ai/src/utils/diagnostics.ts
-used by: ai-effect; durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
+used by: ai-effect; agent-effect via RunToolCallOptions, durable-effect via AssistantMessage, durable-rivet-effect via SqliteStorage
 export interface DiagnosticErrorInfo {
 	name?: string;
 	message: string;
@@ -3050,7 +3050,7 @@ used by: ai-effect
 export function formatThrownValue(value: unknown): string
 
 ## AssistantMessageEventStream  ai/src/utils/event-stream.ts
-used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via streamProxy, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /**
  * Event stream of one assistant response. It also times the response: the final message (`done` or `error` event, or
  * the result passed to `end()`) gets `durationMs`, measured with a monotonic clock from the stream's creation, unless
@@ -3069,7 +3069,7 @@ used by: ai-effect
 export function createAssistantMessageEventStream(): AssistantMessageEventStream
 
 ## EventStream  ai/src/utils/event-stream.ts
-used by: ai-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via agentLoop, durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export class EventStream<T, R = T> implements AsyncIterable<T> {
 	constructor(isComplete: (event: T) => boolean, extractResult: (event: T) => R)
 	push(event: T): void
@@ -3079,7 +3079,7 @@ export class EventStream<T, R = T> implements AsyncIterable<T> {
 }
 
 ## ClientAttribution  ai/src/utils/identity.ts
-used by: ai-effect; durable-effect via DEFAULT_HARNESS_IDENTITY, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via DEFAULT_AGENT_IDENTITY, durable-effect via DEFAULT_HARNESS_IDENTITY, durable-rivet-effect via CompactionTask
 /** Who requests are attributed to. `getAttributionHeaders()` maps the fields to each provider's headers. */
 export interface ClientAttribution {
 	/** App name: OpenRouter app title, NVIDIA invoke origin (first letter upper-cased), OpenCode client. */
@@ -3091,7 +3091,7 @@ export interface ClientAttribution {
 }
 
 ## ClientIdentity  ai/src/utils/identity.ts
-used by: ai-effect; durable-effect via DEFAULT_HARNESS_IDENTITY, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via DEFAULT_AGENT_IDENTITY, durable-effect via DEFAULT_HARNESS_IDENTITY, durable-rivet-effect via CompactionTask
 /**
  * How pi-ai identifies the calling app to providers. Every field is optional; absent fields use pi-ai's defaults:
  * a detailed `User-Agent` with pi-ai's version and no attribution headers. Plain JSON, so it can be persisted.
@@ -3158,7 +3158,7 @@ used by: ai-effect
 export const PI_ATTRIBUTION: ClientAttribution
 
 ## UserAgentMode  ai/src/utils/identity.ts
-used by: ai-effect; durable-effect via DEFAULT_HARNESS_IDENTITY, durable-rivet-effect via CompactionTask
+used by: ai-effect; agent-effect via DEFAULT_AGENT_IDENTITY, durable-effect via DEFAULT_HARNESS_IDENTITY, durable-rivet-effect via CompactionTask
 /**
  * The `User-Agent` sent to providers:
  * - `"detailed"`: `pi/<version> (<platform>; <runtime>/<runtime version>; <arch>)`, or `pi/<version> (browser)`
