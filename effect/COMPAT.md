@@ -58,6 +58,7 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@effectified/pi-tui` | facade | `@earendil-works/pi-tui`: a running TUI as a scoped service, input, keybindings and component callbacks as Streams, clipboard and autocomplete as Effects | 65 | pi-tui's own timers (render throttle, spinners, input timeouts) do not follow `Clock`; an `AutocompleteProvider` or `SlashCommand` written in Effect |
 | `@effectified/pi-durable` | facade | `@earendil-works/pi-durable` | 442 | A task's own hooks, `setTimer`, prompt sections and wrappers, synchronous observers |
 | `@effectified/pi-env` | facade | `@earendil-works/pi-env` | 84 | A real remote machine (runs with `PI_ENV_SSH_HOST`); the daemon tests need a daemon built from `packages/env` |
+| `@effectified/pi-codemode` | facade | `@earendil-works/pi-codemode`: sandboxes in worker threads, on the calling thread and on a remote; deterministic runs; Effect tools; the Cloudflare entry in workerd | 52 | Pi's deadline (`timeoutMs`) and call durations run on Pi's timers, not `Clock` |
 | `@effectified/pi-durable-rivet` | host | A harness in a Rivet actor: storage, wake-ups, forks; a local engine in a kept directory; `ActorSql` | 239 | Several machines; an engine that dies |
 | `@effectified/pi-router` | plugin | Routes, fallback, limiter, prices, constraints | 181 | A real provider; image and classifier routing |
 | `@effectified/pi-budget` | plugin | Lease at the model boundary, shares | 92 | |
@@ -71,7 +72,7 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@effectified/pi-thread` | composition | An agent thread made of all of them, in process and as a Rivet actor | 141 | See its README, "Gaps" |
 | `@effectified/pi-docs` | docs | The documentation of all of them, as Pi keeps its own (`docs/`, `docs.json`), a site built from it, and skills that lead agents to its pages | 38 | |
 
-Being built: `codemode-effect`, `coding-agent-effect`, `evals-effect`. Not built:
+Being built: `coding-agent-effect`, `evals-effect`. Not built:
 `workflow-effect`, `sandbox-effect` (PRD priority P3).
 
 ## What an application imports
@@ -98,6 +99,7 @@ An application imports `@effectified/pi-*` and `effect`, never `@earendil-works/
   | pi-durable | 12 |
   | pi-telemetry | 3 |
   | pi-schema | 0 |
+  | pi-codemode | 0 |
   | pi-chord | 167 (37 of Chord's app runtime at its root, `Progress`, and 129 in the 19 subpaths of its app runtime, which the facade does not export) |
   | pi-mcp | 0 |
   | pi-tui | 0 |
