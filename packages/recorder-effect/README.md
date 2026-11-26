@@ -14,7 +14,9 @@ product's own record can be written exactly once. Written on
 ## Install
 
 ```sh
-npm install @effectified/pi-recorder @effectified/pi-durable @earendil-works/pi-durable effect
+# the pi-effect packages come from their GitHub release, not npm
+R=https://github.com/effectified/pi/releases/download/v0.1.0
+npm install $R/effectified-pi-recorder-0.1.0.tgz $R/effectified-pi-durable-0.1.0.tgz @earendil-works/pi-durable effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`).

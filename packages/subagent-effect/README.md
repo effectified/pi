@@ -19,7 +19,9 @@ Nothing here knows your tools, models or budgets: all of it is data and one port
 ## Install
 
 ```sh
-npm install @effectified/pi-subagent @effectified/pi-durable @earendil-works/pi-durable effect
+# the pi-effect packages come from their GitHub release, not npm
+R=https://github.com/effectified/pi/releases/download/v0.1.0
+npm install $R/effectified-pi-subagent-0.1.0.tgz $R/effectified-pi-durable-0.1.0.tgz @earendil-works/pi-durable effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`). Built for Pi Durable 1.6.1.

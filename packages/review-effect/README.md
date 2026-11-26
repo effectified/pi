@@ -20,7 +20,9 @@ verifier are yours.
 ## Install
 
 ```sh
-npm install @effectified/pi-review @effectified/pi-durable @earendil-works/pi-durable @earendil-works/pi-ai effect
+# the pi-effect packages come from their GitHub release, not npm
+R=https://github.com/effectified/pi/releases/download/v0.1.0
+npm install $R/effectified-pi-review-0.1.0.tgz $R/effectified-pi-durable-0.1.0.tgz @earendil-works/pi-durable @earendil-works/pi-ai effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`).

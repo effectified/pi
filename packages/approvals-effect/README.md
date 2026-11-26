@@ -16,7 +16,9 @@ The package authenticates nobody and knows no product: it parks, binds and recor
 ## Install
 
 ```sh
-npm install @effectified/pi-approvals @effectified/pi-durable @earendil-works/pi-durable effect
+# the pi-effect packages come from their GitHub release, not npm
+R=https://github.com/effectified/pi/releases/download/v0.1.0
+npm install $R/effectified-pi-approvals-0.1.0.tgz $R/effectified-pi-durable-0.1.0.tgz @earendil-works/pi-durable effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`).

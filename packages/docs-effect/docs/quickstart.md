@@ -4,7 +4,16 @@ Get the packages into a product, compose one agent thread, and work it to its ou
 
 ## Get the packages
 
-The packages are not published to npm. A product keeps them as built workspace packages, written by a script of the pi-effect repository:
+The packages are released on GitHub, not on npm. Each release of [effectified/pi](https://github.com/effectified/pi/releases) holds one tarball per package, and a package's dependencies on the other pi-effect packages point at their tarballs in the same release, so one URL installs a package with everything of ours it needs. Pi and `effect` come from npm:
+
+```sh
+R=https://github.com/effectified/pi/releases/download/v0.1.0
+npm install $R/effectified-pi-thread-0.1.0.tgz effect
+```
+
+pnpm and Bun take the same URLs. `node effect/scripts/release.ts` makes a release from a clean, pushed tree.
+
+A product that keeps them in its own repository instead holds them as built workspace packages, written by a script of the pi-effect repository:
 
 ```sh
 node effect/scripts/vendor.ts <a directory of your product>
