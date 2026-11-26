@@ -1,4 +1,4 @@
-import { Conversation } from "@gunta/pi-durable-effect";
+import { Conversation } from "@effectified/pi-durable";
 import { describe, expect, it } from "vitest";
 import { cancelled, failed, isLive, isSettled, type Job, planned, ranOf } from "../src/job.ts";
 

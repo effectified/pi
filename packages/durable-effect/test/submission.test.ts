@@ -1,5 +1,5 @@
 import type { SubmissionId } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Cause, Effect, Exit, Fiber, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Harness, Submission } from "../src/index.ts";

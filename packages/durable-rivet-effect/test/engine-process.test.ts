@@ -3,7 +3,7 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { join } from "node:path";
-import { runLive } from "@gunta/pi-ai-effect/testing";
+import { runLive } from "@effectified/pi-ai/testing";
 import { Effect, Layer, PlatformError } from "effect";
 import { ChildProcessSpawner } from "effect/process";
 import { afterAll, describe, expect, it } from "vitest";

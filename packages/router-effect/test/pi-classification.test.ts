@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { streamSimple as anthropic } from "@earendil-works/pi-ai/api/anthropic-messages";
 import { streamSimple as openAi } from "@earendil-works/pi-ai/api/openai-completions";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { classify } from "../src/classify.ts";

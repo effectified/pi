@@ -1,7 +1,7 @@
-# @gunta/pi-subagent-effect
+# @effectified/pi-subagent
 
 Ready-made tools with which an agent of a [Pi Durable](../durable) harness delegates work to a child agent. A plugin
-for [`@gunta/pi-durable-effect`](../durable-effect), for `effect` 4.1:
+for [`@effectified/pi-durable`](../durable-effect), for `effect` 4.1:
 
 - **Declared agents.** A product declares the subagents a parent may start. A child runs with exactly its
   declaration: none of its parent's tools, instructions or limits.
@@ -19,7 +19,7 @@ Nothing here knows your tools, models or budgets: all of it is data and one port
 ## Install
 
 ```sh
-npm install @gunta/pi-subagent-effect @gunta/pi-durable-effect @earendil-works/pi-durable effect
+npm install @effectified/pi-subagent @effectified/pi-durable @earendil-works/pi-durable effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`). Built for Pi Durable 1.6.1.
@@ -31,9 +31,9 @@ The examples of this README run on the scripted model of the testing kit, and ar
 
 ```ts
 import { Effect, Layer, Schema } from "effect";
-import { Extension, Harness, Tool } from "@gunta/pi-durable-effect";
-import { answer, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
-import { ChildSetup, Subagent, Subagents } from "@gunta/pi-subagent-effect";
+import { Extension, Harness, Tool } from "@effectified/pi-durable";
+import { answer, TestHarness, toolCall } from "@effectified/pi-durable/testing";
+import { ChildSetup, Subagent, Subagents } from "@effectified/pi-subagent";
 
 const Search = Tool.make("search", {
 	description: "Search the web.",
@@ -216,8 +216,8 @@ A product with the guard and the budget plugins, as product code. A child inheri
 its allow-list; the budget plugin sets a cap in a commit of its own, so that goes into `beforeStart`:
 
 ```ts
-import { Conversations, Guard } from "@gunta/pi-guard-effect";
-import { Shares } from "@gunta/pi-budget-effect";
+import { Conversations, Guard } from "@effectified/pi-guard";
+import { Shares } from "@effectified/pi-budget";
 
 // The product's own table: what each declared subagent may call, and spend.
 const allowances: Record<string, { readonly tools: ReadonlyArray<string>; readonly cap: bigint }> = {
@@ -287,7 +287,7 @@ that. Two things link a child to its parent:
 
 ```ts
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { Child } from "@gunta/pi-subagent-effect";
+import { Child } from "@effectified/pi-subagent";
 
 // From a child to its parent, its declaration and how it ended: one committed read.
 const linkOf = (child: ConversationId) => Harness.snapshot(Child.Document, Child.key(child));
@@ -309,7 +309,7 @@ alone it starts its phase again in the copy, and the storage it was copied from 
 its task, or both send the child's result to the parent, where it starts a turn.
 
 ```ts
-import { onStorageFork } from "@gunta/pi-subagent-effect";
+import { onStorageFork } from "@effectified/pi-subagent";
 
 // In the host of the copy, on a harness opened with `resume: false`, before anything else:
 yield* onStorageFork; // Effect<void, DurableError | SchemaDecodeError, Harness>

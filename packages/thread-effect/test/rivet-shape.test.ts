@@ -2,8 +2,8 @@
 // Nothing is hosted here, and no engine runs: the actor form of the composition is `ThreadActor.make`, built on these
 // parts, and test/rivet-suite.ts runs it on an engine.
 
-import type { DurableError, Harness } from "@gunta/pi-durable-effect";
-import { Actor } from "@gunta/pi-durable-rivet-effect";
+import type { DurableError, Harness } from "@effectified/pi-durable";
+import { Actor } from "@effectified/pi-durable-rivet";
 import { Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { Composition } from "../src/index.ts";

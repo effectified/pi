@@ -1,6 +1,6 @@
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { Harness } from "@gunta/pi-durable-effect";
-import { toolCall } from "@gunta/pi-durable-effect/testing";
+import { Harness } from "@effectified/pi-durable";
+import { toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { ResultMismatch, Subagent, Subagents } from "../src/index.ts";

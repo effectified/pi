@@ -5,8 +5,8 @@
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Conversation, Extension, Harness, Registry, Storage, Tool } from "@gunta/pi-durable-effect";
-import { answer, type FauxResponseStep, ScriptedModels, toolCall } from "@gunta/pi-durable-effect/testing";
+import { type Conversation, Extension, Harness, Registry, Storage, Tool } from "@effectified/pi-durable";
+import { answer, type FauxResponseStep, ScriptedModels, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Logger, Option, Schema, Stream } from "effect";
 import type { SqlClient } from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";

@@ -1,7 +1,7 @@
 // The job an actor was forked for: what the driver gives the Rivet host as the fork's input, and what the fork reads.
 
-import { Agent, Conversation, Entry } from "@gunta/pi-durable-effect";
-import { ActorInfo } from "@gunta/pi-durable-rivet-effect";
+import { Agent, Conversation, Entry } from "@effectified/pi-durable";
+import { ActorInfo } from "@effectified/pi-durable-rivet";
 import { Effect, Option, Schema } from "effect";
 import type { ForkRequest } from "../driver.ts";
 

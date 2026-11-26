@@ -44,22 +44,22 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 
 | Package | Kind | Wraps or does | Tests | Not covered |
 |---|---|---|---|---|
-| `@gunta/pi-schema-effect` | facade | `@earendil-works/pi-schema` | 28 | |
-| `@gunta/pi-ai-effect` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges, the key of a request, `runTest`, the forms the plugins share | 62 | Images, classifiers, OAuth login, deferred responses |
-| `@gunta/pi-telemetry-effect` | facade | `@earendil-works/pi-telemetry` | 59 | `TelemetryStore`; histogram exemplars |
-| `@gunta/pi-durable-effect` | facade | `@earendil-works/pi-durable` | 442 | A task's own hooks, `setTimer`, prompt sections and wrappers, synchronous observers |
-| `@gunta/pi-durable-rivet-effect` | host | A harness in a Rivet actor: storage, wake-ups, forks; a local engine in a kept directory; `ActorSql` | 239 | Several machines; an engine that dies |
-| `@gunta/pi-router-effect` | plugin | Routes, fallback, limiter, prices, constraints | 181 | A real provider; image and classifier routing |
-| `@gunta/pi-budget-effect` | plugin | Lease at the model boundary, shares | 92 | |
-| `@gunta/pi-guard-effect` | plugin | Denied verbs, grants, argument rules, ceilings | 112 | |
-| `@gunta/pi-approvals-effect` | plugin | Approval as a parking gate | 65 | |
-| `@gunta/pi-recorder-effect` | plugin | Records from committed entries to a sink | 57 | A real crash (closes were tested) |
-| `@gunta/pi-review-effect` | plugin | Second-family review, checks, corrections, holds | 153 | |
-| `@gunta/pi-subagent-effect` | plugin | Foreground and background children | 67 | |
-| `@gunta/pi-swarm-effect` | plugin | Keyed forks under a cap, in storage and as actor forks | 154 | |
-| `@gunta/pi-search-effect` | plugin | Search and fetch tools, Exa adapter | 60 | A real Exa call |
-| `@gunta/pi-thread-effect` | composition | An agent thread made of all of them, in process and as a Rivet actor | 141 | See its README, "Gaps" |
-| `@gunta/pi-docs-effect` | docs | The documentation of all of them, as Pi keeps its own (`docs/`, `docs.json`), a site built from it, and skills that lead agents to its pages | 38 | |
+| `@effectified/pi-schema` | facade | `@earendil-works/pi-schema` | 28 | |
+| `@effectified/pi-ai` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges, the key of a request, `runTest`, the forms the plugins share | 62 | Images, classifiers, OAuth login, deferred responses |
+| `@effectified/pi-telemetry` | facade | `@earendil-works/pi-telemetry` | 59 | `TelemetryStore`; histogram exemplars |
+| `@effectified/pi-durable` | facade | `@earendil-works/pi-durable` | 442 | A task's own hooks, `setTimer`, prompt sections and wrappers, synchronous observers |
+| `@effectified/pi-durable-rivet` | host | A harness in a Rivet actor: storage, wake-ups, forks; a local engine in a kept directory; `ActorSql` | 239 | Several machines; an engine that dies |
+| `@effectified/pi-router` | plugin | Routes, fallback, limiter, prices, constraints | 181 | A real provider; image and classifier routing |
+| `@effectified/pi-budget` | plugin | Lease at the model boundary, shares | 92 | |
+| `@effectified/pi-guard` | plugin | Denied verbs, grants, argument rules, ceilings | 112 | |
+| `@effectified/pi-approvals` | plugin | Approval as a parking gate | 65 | |
+| `@effectified/pi-recorder` | plugin | Records from committed entries to a sink | 57 | A real crash (closes were tested) |
+| `@effectified/pi-review` | plugin | Second-family review, checks, corrections, holds | 153 | |
+| `@effectified/pi-subagent` | plugin | Foreground and background children | 67 | |
+| `@effectified/pi-swarm` | plugin | Keyed forks under a cap, in storage and as actor forks | 154 | |
+| `@effectified/pi-search` | plugin | Search and fetch tools, Exa adapter | 60 | A real Exa call |
+| `@effectified/pi-thread` | composition | An agent thread made of all of them, in process and as a Rivet actor | 141 | See its README, "Gaps" |
+| `@effectified/pi-docs` | docs | The documentation of all of them, as Pi keeps its own (`docs/`, `docs.json`), a site built from it, and skills that lead agents to its pages | 38 | |
 
 Not built: `mcp-effect`, `codemode-effect`, `agent-effect`, `env-effect`, `workflow-effect`, `sandbox-effect`
 (PRD priorities P2 and P3).

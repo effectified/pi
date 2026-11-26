@@ -1,5 +1,5 @@
 import type { TaskId } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Extension, Gate, Harness, Hook, Signal, Tool } from "../src/index.ts";

@@ -1,4 +1,4 @@
-import { answer } from "@gunta/pi-durable-effect/testing";
+import { answer } from "@effectified/pi-durable/testing";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import type { Subject } from "../src/check.ts";

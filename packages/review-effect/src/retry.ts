@@ -1,6 +1,6 @@
 // Reviewing again: the request that asks a deferred review task for another attempt at its answer.
 
-import { type Conversation, Harness, type Signal } from "@gunta/pi-durable-effect";
+import { type Conversation, Harness, type Signal } from "@effectified/pi-durable";
 import { Effect } from "effect";
 import * as Deferral from "./deferral.ts";
 import { NotDeferred } from "./errors.ts";

@@ -1,7 +1,7 @@
 // A copied storage holds no swarm of its own: what a host runs on a copy of a whole harness storage before its first call.
 
 import type { TaskId } from "@earendil-works/pi-durable";
-import { type Doc, Harness } from "@gunta/pi-durable-effect";
+import { type Doc, Harness } from "@effectified/pi-durable";
 import { Effect, Stream } from "effect";
 import { TASK_PREFIX } from "./coordinator.ts";
 import { Copy } from "./ledger.ts";

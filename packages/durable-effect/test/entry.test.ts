@@ -1,5 +1,5 @@
 import { defineEntry, type EntryId, type EntryRecord } from "@earendil-works/pi-durable";
-import type { SchemaDecodeError } from "@gunta/pi-schema-effect";
+import type { SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { type DurableError, Entry, Extension, Harness, Hook, Registry } from "../src/index.ts";

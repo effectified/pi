@@ -15,8 +15,8 @@
 
 import type { FauxResponseFactory } from "@earendil-works/pi-ai";
 import type { EntryRecord, SettledSubmissionRecord } from "@earendil-works/pi-durable";
-import { Extension, Harness, Storage, Tool } from "@gunta/pi-durable-effect";
-import { answer, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { Extension, Harness, Storage, Tool } from "@effectified/pi-durable";
+import { answer, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 import type { SqlClient } from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";

@@ -2,7 +2,7 @@
 // storage before its first call.
 
 import type { TaskId } from "@earendil-works/pi-durable";
-import { type Doc, Harness, type Tx } from "@gunta/pi-durable-effect";
+import { type Doc, Harness, type Tx } from "@effectified/pi-durable";
 import { Effect, Stream } from "effect";
 import * as Copy from "./copy.ts";
 import { LIVE } from "./live.ts";

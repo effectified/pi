@@ -2,7 +2,7 @@
 // cancel and a failing model end it.
 
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
-import { answer, held, toolCall } from "@gunta/pi-durable-effect/testing";
+import { answer, held, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Fiber, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { ThreadNotFound, Threads } from "../src/index.ts";

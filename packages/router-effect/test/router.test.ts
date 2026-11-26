@@ -7,8 +7,8 @@ import {
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
-import { complete, EffectProvider, getModel, Models } from "@gunta/pi-ai-effect";
-import { runTest, ScriptedLanguageModel } from "@gunta/pi-ai-effect/testing";
+import { complete, EffectProvider, getModel, Models } from "@effectified/pi-ai";
+import { runTest, ScriptedLanguageModel } from "@effectified/pi-ai/testing";
 import { Effect, Exit, Fiber, Layer, Option, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

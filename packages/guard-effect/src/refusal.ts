@@ -1,6 +1,6 @@
 // Refusals: what a guard publishes for every tool call it kept from running. Never the arguments.
 
-import { Conversation, Task } from "@gunta/pi-durable-effect";
+import { Conversation, Task } from "@effectified/pi-durable";
 import { Schema } from "effect";
 
 /**

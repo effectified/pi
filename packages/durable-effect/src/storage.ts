@@ -2,7 +2,7 @@
 
 import { MemoryStorage, type Storage as PiStorage } from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
-import type { StrictOmit } from "@gunta/pi-ai-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
 import { Context, Effect, Layer, type Scope } from "effect";
 import type { SqlClient } from "effect/sql/SqlClient";
 import { call } from "./call.ts";
@@ -14,7 +14,7 @@ import * as SqlDatabase from "./sql-database.ts";
  * when no harness did. Either way the storage behind it is closed once.
  */
 export class HarnessStorage extends Context.Service<HarnessStorage, PiStorage>()(
-	"@gunta/pi-durable-effect/HarnessStorage",
+	"@effectified/pi-durable/HarnessStorage",
 ) {}
 
 /** Storage that keeps everything in memory: Pi's `MemoryStorage`, a fresh one per build of the Layer. */

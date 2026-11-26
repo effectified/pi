@@ -1,8 +1,8 @@
 // The reviewer's request as a model call record: a wrapper of the product's record sink that adds, after every
 // verdict's entry record that holds a request, a `ModelCall` record of that request.
 
-import { RecordSink, type Records } from "@gunta/pi-recorder-effect";
-import * as Review from "@gunta/pi-review-effect";
+import { RecordSink, type Records } from "@effectified/pi-recorder";
+import * as Review from "@effectified/pi-review";
 import { Effect, Layer, Option, Schema } from "effect";
 
 /** What this module reads of a verdict: the reviewer's request, and when the verdict was decided. */

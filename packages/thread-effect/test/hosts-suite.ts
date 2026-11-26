@@ -5,8 +5,8 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { Client } from "@gunta/pi-durable-rivet-effect";
-import type * as LocalEngine from "@gunta/pi-durable-rivet-effect/node";
+import { Client } from "@effectified/pi-durable-rivet";
+import type * as LocalEngine from "@effectified/pi-durable-rivet/node";
 import { Context, Effect, Exit, Layer, Option, Schedule, Scope } from "effect";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Remote, SwarmId } from "../src/rivet.ts";

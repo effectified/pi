@@ -9,8 +9,8 @@ import {
 	type SchemaDecodeError,
 	Tool,
 	type Tx,
-} from "@gunta/pi-durable-effect";
-import { answer, type FauxResponseStep, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+} from "@effectified/pi-durable";
+import { answer, type FauxResponseStep, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Child, ChildSetup, ChildSetupFailed, Subagent, Subagents } from "../src/index.ts";
@@ -161,8 +161,8 @@ describe("README: Background children", () => {
 	});
 });
 
-// README: The setup port. Stand-ins with the signatures of `@gunta/pi-guard-effect` (`Guard.Guard`,
-// `Conversations.grantIn`) and `@gunta/pi-budget-effect` (`Shares`, `setCap`), which this package may not import.
+// README: The setup port. Stand-ins with the signatures of `@effectified/pi-guard` (`Guard.Guard`,
+// `Conversations.grantIn`) and `@effectified/pi-budget` (`Shares`, `setCap`), which this package may not import.
 const GrantDocument = Doc.make({
 	kind: "test.grant",
 	version: 1,

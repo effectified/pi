@@ -1,5 +1,5 @@
 import { isContextOverflow, isRetryableAssistantError } from "@earendil-works/pi-ai";
-import { fauxAssistantMessage } from "@gunta/pi-ai-effect/testing";
+import { fauxAssistantMessage } from "@effectified/pi-ai/testing";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { LeaseFenced, PriceMissing, type Refusal, refusalOf, ShareExhausted } from "../src/index.ts";

@@ -1,8 +1,8 @@
 // The wake keeper without an engine: a harness on memory storage that leaves its wake-ups to the host, and a fake of
 // the actor's schedule and keep-awake. The park below is 200 milliseconds of real time.
 
-import { Extension, Gate, Harness, Hook, Tool } from "@gunta/pi-durable-effect";
-import { answer, type FauxResponseStep, held, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { Extension, Gate, Harness, Hook, Tool } from "@effectified/pi-durable";
+import { answer, type FauxResponseStep, held, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Clock, Effect, Layer, Option, Schedule, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as WakeKeeper from "../src/wake-keeper.ts";

@@ -1,7 +1,7 @@
 // The PRD's fork and swarm test (sections 8 and 10): 50 forks of a 30-turn conversation under a cap of 8, with
 // scripted models, in under 5 seconds.
 
-import { Harness } from "@gunta/pi-durable-effect";
+import { Harness } from "@effectified/pi-durable";
 import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Swarm from "../src/index.ts";

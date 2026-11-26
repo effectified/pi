@@ -1,9 +1,9 @@
-# @gunta/pi-router-effect
+# @effectified/pi-router
 
 Model routing for Pi in Effect, for `effect` 4.1. A caller asks for an alias such as `"author"` or `"fast"`. A route
 table, which is plain data, says which models of which providers may serve that alias, in which order, for which
 content, from which region, under which labels and at what price. The router is a [`@earendil-works/pi-ai`](../ai) provider whose models
-are the aliases, so anything that takes a pi-ai `Models` (a Pi Durable harness, [`@gunta/pi-ai-effect`](../ai-effect))
+are the aliases, so anything that takes a pi-ai `Models` (a Pi Durable harness, [`@effectified/pi-ai`](../ai-effect))
 uses it by naming `{ provider: "router", modelId: "author" }`.
 
 - A model id comes only from the route table.
@@ -18,12 +18,12 @@ uses it by naming `{ provider: "router", modelId: "author" }`.
 - Prices in integer micro units; every attempt is priced, also a failed one. The same prices as rows for a budget.
 
 It knows no product rule: classifications, regions, labels, aliases and currencies are whatever the table says. Built
-for pi-ai 1.6.1. It needs no harness: it depends on `@gunta/pi-ai-effect` only.
+for pi-ai 1.6.1. It needs no harness: it depends on `@effectified/pi-ai` only.
 
 ## Install
 
 ```sh
-npm install @gunta/pi-router-effect @gunta/pi-ai-effect @earendil-works/pi-ai effect
+npm install @effectified/pi-router @effectified/pi-ai @earendil-works/pi-ai effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`), so the application has one copy.
@@ -31,7 +31,7 @@ npm install @gunta/pi-router-effect @gunta/pi-ai-effect @earendil-works/pi-ai ef
 ## The route table
 
 ```ts
-import type { RouteTable } from "@gunta/pi-router-effect";
+import type { RouteTable } from "@effectified/pi-router";
 
 const table: RouteTable = {
 	// The product's labels, lowest to highest. The router has none of its own.
@@ -96,8 +96,8 @@ provides `Router` and `RouteEvents`.
 
 ```ts
 import { Effect, Layer } from "effect";
-import { complete, getModel, Models } from "@gunta/pi-ai-effect";
-import { Router } from "@gunta/pi-router-effect";
+import { complete, getModel, Models } from "@effectified/pi-ai";
+import { Router } from "@effectified/pi-router";
 
 const live = Router.layer(table, { id: "router" }).pipe(Layer.provideMerge(Models.layer([openrouter, local])));
 
@@ -129,7 +129,7 @@ A request says three things about itself: the classification of its content, the
 labels a route must carry. They travel in pi-ai's request `metadata`, under the key `"pi-router"`.
 
 ```ts
-import { constraintsToMetadata } from "@gunta/pi-router-effect";
+import { constraintsToMetadata } from "@effectified/pi-router";
 
 // A pi-ai request.
 yield* complete(model, context, {
@@ -179,7 +179,7 @@ that conversation, so a lookup by session is a lookup by conversation.
 
 ```ts
 import { Effect, Layer } from "effect";
-import { type Constraints, ConstraintSource, ConstraintsUnavailable, Router } from "@gunta/pi-router-effect";
+import { type Constraints, ConstraintSource, ConstraintsUnavailable, Router } from "@effectified/pi-router";
 
 // The product's own state: what it decided about each conversation, by the conversation's provider session.
 const bySession = new Map<string, Constraints>();
@@ -252,7 +252,7 @@ const message = yield* router.complete("author", context, { constraints: { class
 ```
 
 The other errors are `UnknownAlias`, `InvalidConstraints`, `ConstraintsUnavailable`, `AttemptUnsettled` (see
-[With a budget](#with-a-budget)), and `ModelRequestError` of `@gunta/pi-ai-effect` for the one route that ended the
+[With a budget](#with-a-budget)), and `ModelRequestError` of `@effectified/pi-ai` for the one route that ended the
 request.
 
 ## The record
@@ -261,7 +261,7 @@ Every attempt is published to `RouteEvents` when it ends, before its outcome rea
 
 ```ts
 import { Effect, Stream } from "effect";
-import { RouteEvents } from "@gunta/pi-router-effect";
+import { RouteEvents } from "@effectified/pi-router";
 
 const record = Effect.gen(function* () {
 	const events = yield* RouteEvents;
@@ -290,7 +290,7 @@ afterwards is missed.
   one: Pi builds a request's context from its committed entries and leaves out answers that failed or were cut off,
   so the request it sends again after a crash has the key of the one that was cut off. Pi's retry after a provider
   error has it too. A new request of the conversation asks more (an input, a tool result, an answer), and has
-  another. `@gunta/pi-budget-effect` makes the same key of the same request for its reservation, so a lease and the
+  another. `@effectified/pi-budget` makes the same key of the same request for its reservation, so a lease and the
   route events name one request alike. A copy of a storage keeps its source's sessions, so a request in flight when
   a Rivet actor was forked is sent by both actors under one key. It costs a walk of the context and a hash per
   request.
@@ -300,7 +300,7 @@ afterwards is missed.
 
 ## With a budget
 
-[`@gunta/pi-budget-effect`](../budget-effect) wraps the `Models` the harness is opened with, the router underneath
+[`@effectified/pi-budget`](../budget-effect) wraps the `Models` the harness is opened with, the router underneath
 it. One request of the harness is then one reservation, settled with the usage of the message the request ends
 with. The router makes sure that this message carries the usage of the request's **last** attempt and of no earlier
 one. An attempt another route took over used tokens too, and the budget never sees it. The router hands each such
@@ -308,8 +308,8 @@ attempt to the product's `AttemptSettlement` and waits for it, before the next r
 
 ```ts
 import { Effect, Layer } from "effect";
-import { Spend } from "@gunta/pi-budget-effect";
-import { AttemptSettlement, Router } from "@gunta/pi-router-effect";
+import { Spend } from "@effectified/pi-budget";
+import { AttemptSettlement, Router } from "@effectified/pi-router";
 
 /** Charges each attempt another route takes over to the budget, before that route is tried. */
 const SettleAttempts = Layer.effect(
@@ -401,7 +401,7 @@ The request itself moves on to its next route.
 `Limiter` is also usable alone:
 
 ```ts
-import { Limiter } from "@gunta/pi-router-effect";
+import { Limiter } from "@effectified/pi-router";
 
 const limited = Effect.gen(function* () {
 	const limiter = yield* Limiter;
@@ -419,7 +419,7 @@ unit once. A price may have `tiers`, as pi-ai's model costs do: a request whose 
 tokens, the tier with the highest threshold below it winning.
 
 ```ts
-import { cost } from "@gunta/pi-router-effect";
+import { cost } from "@effectified/pi-router";
 
 // 1,234 input and 567 output tokens at USD 3 and USD 15 per million.
 const price = { currency: "USD", input: 3_000_000, output: 15_000_000, cacheRead: 0, cacheWrite: 0 };
@@ -436,16 +436,16 @@ yield* cost({ price: tiered }, { input: 205_000, output: 0, cacheRead: 0, cacheW
 It fails with `InvalidUsage` for a count that is not a whole number of tokens: it is the strict form, for a
 product's own figures. The cost in a route event is the same arithmetic and never fails, because an attempt is
 recorded whatever a provider reported: a count that is not a whole number is rounded up, one that is not a positive
-number counts as zero, and one-hour cache writes count at most all of `cacheWrite`. That is the rule of `@gunta/pi-budget-effect`, so both packages give the same amount
+number counts as zero, and one-hour cache writes count at most all of `cacheWrite`. That is the rule of `@effectified/pi-budget`, so both packages give the same amount
 for the same usage at the same price.
 
 ### Prices for a budget
 
 A budget needs a price for every model it settles, and the route table already has them. `priceRows(table)` gives
-them as plain rows, in the shape the `PriceTable` of `@gunta/pi-budget-effect` decodes, so a price is written once:
+them as plain rows, in the shape the `PriceTable` of `@effectified/pi-budget` decodes, so a price is written once:
 
 ```ts
-import { priceRows } from "@gunta/pi-router-effect";
+import { priceRows } from "@effectified/pi-router";
 
 // { currency: "USD", prices: [{ provider, model, input, output, cacheRead, cacheWrite }, ...] }
 const rows = yield* priceRows(table); // or priceRows(table, "routes") for a router built with { id: "routes" }
@@ -466,12 +466,12 @@ route's name) and `NoRoute` (a table without a route has no price and no currenc
 
 ## OpenRouter
 
-pi-ai 1.6.0 ships an OpenRouter provider, and `@gunta/pi-ai-effect` can make a provider of any `effect/ai` model,
+pi-ai 1.6.0 ships an OpenRouter provider, and `@effectified/pi-ai` can make a provider of any `effect/ai` model,
 such as `@effect/ai-openrouter`. A table can route to both side by side:
 
 ```ts
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
-import { EffectProvider, Models } from "@gunta/pi-ai-effect";
+import { EffectProvider, Models } from "@effectified/pi-ai";
 
 const viaEffect = yield* EffectProvider.make({
 	id: "effect-openrouter",

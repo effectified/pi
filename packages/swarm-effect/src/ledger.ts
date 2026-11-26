@@ -1,6 +1,6 @@
 // What a swarm keeps in the harness storage beside its coordinator task: its task by swarm id, and its jobs' statuses.
 
-import { Doc, type DurableError, type SchemaDecodeError, Task, type Tx } from "@gunta/pi-durable-effect";
+import { Doc, type DurableError, type SchemaDecodeError, Task, type Tx } from "@effectified/pi-durable";
 import { Effect, Schema } from "effect";
 import { Place } from "./driver.ts";
 import { type Job, Reason, ranOf, Status } from "./job.ts";

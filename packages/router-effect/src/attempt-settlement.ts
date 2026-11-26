@@ -27,7 +27,7 @@ const NONE: AttemptSettlementService = { settle: () => Effect.void };
  * falls back as before and its attempts are told by their route events alone.
  */
 export const AttemptSettlement: Context.Reference<AttemptSettlementService> =
-	Context.Reference<AttemptSettlementService>("@gunta/pi-router-effect/AttemptSettlement", {
+	Context.Reference<AttemptSettlementService>("@effectified/pi-router/AttemptSettlement", {
 		defaultValue: () => NONE,
 	});
 

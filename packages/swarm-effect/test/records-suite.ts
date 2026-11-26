@@ -1,8 +1,8 @@
 // Test helper: the Rivet driver's record of forks (src/rivet/records.ts) on a real SQLite `SqlClient` as the actor's
 // `ActorSql`, registered once per driver by sqlite-suites.ts. An engine runs the record in rivet-suite.ts.
 
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { ActorInfo, ActorSql, type Identity } from "@gunta/pi-durable-rivet-effect";
+import { runTest } from "@effectified/pi-ai/testing";
+import { ActorInfo, ActorSql, type Identity } from "@effectified/pi-durable-rivet";
 import { Effect, Layer, Option } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
 import { expect, it } from "vitest";

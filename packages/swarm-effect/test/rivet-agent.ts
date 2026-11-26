@@ -2,9 +2,9 @@
 // harness on a scripted model, the Rivet fork driver, the fork actions and the fork hygiene, with the swarm's host
 // operations as product actions. The test and the actors share a process, so the model's counts are the test's.
 
-import { Conversation, Entry, Harness, Registry, Task } from "@gunta/pi-durable-effect";
-import { type FauxResponseFactory, ScriptedModels, TestHarness } from "@gunta/pi-durable-effect/testing";
-import { Action, Actor, ActorInfo, type Fork, Self } from "@gunta/pi-durable-rivet-effect";
+import { Conversation, Entry, Harness, Registry, Task } from "@effectified/pi-durable";
+import { type FauxResponseFactory, ScriptedModels, TestHarness } from "@effectified/pi-durable/testing";
+import { Action, Actor, ActorInfo, type Fork, Self } from "@effectified/pi-durable-rivet";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 import * as Swarm from "../src/index.ts";
 import * as Records from "../src/rivet/records.ts";

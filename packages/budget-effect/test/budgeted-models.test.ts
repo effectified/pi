@@ -13,8 +13,8 @@ import {
 	type Provider,
 	type Usage,
 } from "@earendil-works/pi-ai";
-import { complete, ModelRequestError, Models, stream } from "@gunta/pi-ai-effect";
-import { fauxAssistantMessage, runTest, ScriptedModels } from "@gunta/pi-ai-effect/testing";
+import { complete, ModelRequestError, Models, stream } from "@effectified/pi-ai";
+import { fauxAssistantMessage, runTest, ScriptedModels } from "@effectified/pi-ai/testing";
 import { Effect, Exit, Fiber, Latch, Layer, Option, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

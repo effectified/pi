@@ -5,12 +5,12 @@ and under `bun test`. What to reach for:
 
 | Testing | Use |
 |---|---|
-| A model request, a provider, an `effect/ai` program | `ScriptedModels`, `ScriptedLanguageModel` of `@gunta/pi-ai-effect/testing` ([Testing](../../ai-effect/README.md#testing)) |
-| A tool, hook, gate, task or plugin on a harness | `TestHarness.layer` of `@gunta/pi-durable-effect/testing` |
+| A model request, a provider, an `effect/ai` program | `ScriptedModels`, `ScriptedLanguageModel` of `@effectified/pi-ai/testing` ([Testing](../../ai-effect/README.md#testing)) |
+| A tool, hook, gate, task or plugin on a harness | `TestHarness.layer` of `@effectified/pi-durable/testing` |
 | A plugin that builds the registry or wraps the models (guard, budget, router) | `TestHarness.layerWith({ registry, models })` |
 | A close and a reopen, or a crash | `TestHarness.sqlStorage` on a SQLite file |
-| A Rivet actor | `@gunta/pi-durable-rivet-effect/testing` with a local engine |
-| Running the test's Effect | `runTest` (test clock) or `runLive` (real clock) of `@gunta/pi-ai-effect/testing` |
+| A Rivet actor | `@effectified/pi-durable-rivet/testing` with a local engine |
+| Running the test's Effect | `runTest` (test clock) or `runLive` (real clock) of `@effectified/pi-ai/testing` |
 
 ## Running a test's Effect
 
@@ -37,7 +37,7 @@ From the README: the root conversation on the scripted model, with an extension 
 
 ```ts
 import { Effect } from "effect";
-import { answer, ScriptedModels, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { answer, ScriptedModels, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 
 const test = Effect.gen(function* () {
 	const root = yield* TestHarness.root; // the root conversation, on the scripted model
@@ -61,7 +61,7 @@ const test = Effect.gen(function* () {
   by what it was asked. `held(turn)` holds a turn back: `requested` succeeds once the model was asked, `release` lets
   it answer, so a test acts while a run is busy.
 - `ScriptedModels.use((models) => models.setResponses([...]))` queues more; `models.callCount` counts the requests
-  that reached the provider. `@gunta/pi-durable-effect/testing` re-exports `ScriptedModels` and pi-ai's `faux*`
+  that reached the provider. `@effectified/pi-durable/testing` re-exports `ScriptedModels` and pi-ai's `faux*`
   helpers, so one import serves a harness test.
 - **A plugin that builds the registry or wraps the models** passes its Layers: `TestHarness.layerWith({ registry,
   models, responses, storage })`. `registry` is any Layer that provides `Registry` (a guard's); `models` any Layer
@@ -161,7 +161,7 @@ What Pi promises: [Hook](../../durable-effect/README.md#hook), [The request](../
 
 ## Testing a thread composition
 
-Build `Composition.open(config)` of `@gunta/pi-thread-effect` with scripted providers in `config.models.providers`
+Build `Composition.open(config)` of `@effectified/pi-thread` with scripted providers in `config.models.providers`
 (one per model family the route table names), `Storage.sql()` over a SQLite file, and the fakes above for every port.
 Assert on `Threads.work`'s `Outcome`, the records in the fake `RecordSink`, the events in the fake `OutcomeSink`
 (same ids across a restart) and the fake lease's reservations (each settled once). The composition's own kill and
@@ -170,11 +170,11 @@ resume cases are the reference for what to expect at each close point:
 
 ## Engine tests of Rivet actors
 
-`@gunta/pi-durable-rivet-effect/testing` has no platform code: the engine comes from the `/node` or `/bun` entry.
+`@effectified/pi-durable-rivet/testing` has no platform code: the engine comes from the `/node` or `/bun` entry.
 
 ```ts
-import * as LocalEngine from "@gunta/pi-durable-rivet-effect/node";
-import * as Testing from "@gunta/pi-durable-rivet-effect/testing";
+import * as LocalEngine from "@effectified/pi-durable-rivet/node";
+import * as Testing from "@effectified/pi-durable-rivet/testing";
 
 const TestAgent = Testing.observed(Agent); // host this one instead of Agent
 

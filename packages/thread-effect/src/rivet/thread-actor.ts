@@ -1,15 +1,15 @@
 // The thread actor: the composition hosted in a Rivet actor, one actor per thread, with the thread and swarm
 // operations as actions and the forks of its swarms as actor forks.
 
-import * as Budget from "@gunta/pi-budget-effect";
-import type { Extension } from "@gunta/pi-durable-effect";
-import { type Action, Actor, type ActorDatabase, ActorInfo, type Fork } from "@gunta/pi-durable-rivet-effect";
-import type { Rule } from "@gunta/pi-guard-effect";
-import * as Recorder from "@gunta/pi-recorder-effect";
-import type * as Review from "@gunta/pi-review-effect";
-import * as Subagent from "@gunta/pi-subagent-effect";
-import * as Rivet from "@gunta/pi-swarm-effect/rivet";
-import type { PiTelemetry } from "@gunta/pi-telemetry-effect";
+import * as Budget from "@effectified/pi-budget";
+import type { Extension } from "@effectified/pi-durable";
+import { type Action, Actor, type ActorDatabase, ActorInfo, type Fork } from "@effectified/pi-durable-rivet";
+import type { Rule } from "@effectified/pi-guard";
+import * as Recorder from "@effectified/pi-recorder";
+import type * as Review from "@effectified/pi-review";
+import * as Subagent from "@effectified/pi-subagent";
+import * as Rivet from "@effectified/pi-swarm/rivet";
+import type { PiTelemetry } from "@effectified/pi-telemetry";
 import { Layer } from "effect";
 import type { ActorOptionsInput } from "rivetkit";
 import * as Composition from "../composition.ts";

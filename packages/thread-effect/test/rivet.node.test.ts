@@ -1,4 +1,4 @@
-import * as LocalEngine from "@gunta/pi-durable-rivet-effect/node";
+import * as LocalEngine from "@effectified/pi-durable-rivet/node";
 import { registerRivetSuite } from "./rivet-suite.ts";
 
 // The Node lane's local engine. Bun runs this file too, since its runner takes every test file: there the Node entry

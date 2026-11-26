@@ -1,7 +1,7 @@
-# @gunta/pi-approvals-effect
+# @effectified/pi-approvals
 
 Human approval of tool calls for [Pi Durable](../durable) agents, for `effect` 4.1, on
-[`@gunta/pi-durable-effect`](../durable-effect).
+[`@effectified/pi-durable`](../durable-effect).
 
 A tool call that needs a person's approval parks before it runs. It holds no process, survives restarts, and runs only
 once someone approved exactly the arguments it has. The result says who decided.
@@ -16,7 +16,7 @@ The package authenticates nobody and knows no product: it parks, binds and recor
 ## Install
 
 ```sh
-npm install @gunta/pi-approvals-effect @gunta/pi-durable-effect @earendil-works/pi-durable effect
+npm install @effectified/pi-approvals @effectified/pi-durable @earendil-works/pi-durable effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`).
@@ -28,9 +28,9 @@ It runs as it stands, because the model is scripted; the same code is the test
 
 ```ts
 import { Effect, Layer, Option, Queue, Schema, Stream } from "effect";
-import { Tool } from "@gunta/pi-durable-effect";
-import { answer, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
-import * as Approvals from "@gunta/pi-approvals-effect";
+import { Tool } from "@effectified/pi-durable";
+import { answer, TestHarness, toolCall } from "@effectified/pi-durable/testing";
+import * as Approvals from "@effectified/pi-approvals";
 
 const Transfer = Tool.make("transfer", {
 	description: "Transfer money to someone.",

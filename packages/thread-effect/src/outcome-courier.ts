@@ -1,7 +1,7 @@
 // The outcome courier: the durable task that delivers a thread's outcome events, so a pending delivery is work of the
 // harness itself, which a host holds its process awake for and wakes it up for.
 
-import { Extension, Signal, Task } from "@gunta/pi-durable-effect";
+import { Extension, Signal, Task } from "@effectified/pi-durable";
 import { Context, Deferred, Effect, Layer, Schema } from "effect";
 
 /** What a courier is created with: the thread whose events it delivers. */
@@ -40,7 +40,7 @@ export type Step = Task.Step<typeof State.Type, null> | Task.Committed;
 export class Delivery extends Context.Service<
 	Delivery,
 	Deferred.Deferred<(task: Running, api: Api) => Effect.Effect<Step>>
->()("@gunta/pi-thread-effect/OutcomeCourier/Delivery") {}
+>()("@effectified/pi-thread/OutcomeCourier/Delivery") {}
 
 /** The place the delivery is given to: provide it under the registry. */
 export const holder: Layer.Layer<Delivery> = Layer.effect(

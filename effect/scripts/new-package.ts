@@ -2,7 +2,7 @@
 // every package shares. Run `npm install --ignore-scripts` afterwards to link it and refresh the lockfile.
 // Usage: node effect/scripts/new-package.ts <directory> <facade|plugin|host|composition> <description> [dependency ...]
 //   A dependency is `name@version` (run time) or `dev:name@version` (tests only), such as
-//   `@gunta/pi-durable-effect@0.1.0` or `dev:@earendil-works/pi-schema@1.6.0`.
+//   `@effectified/pi-durable@0.1.0` or `dev:@earendil-works/pi-schema@1.6.0`.
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -37,7 +37,7 @@ for (const spec of dependencySpecs) {
 }
 
 const manifest = {
-	name: `@gunta/pi-${directory}`,
+	name: `@effectified/pi-${directory.slice(0, -"-effect".length)}`,
 	version: "0.1.0",
 	description,
 	type: "module",
@@ -61,7 +61,7 @@ const manifest = {
 	license: "MIT",
 	repository: {
 		type: "git",
-		url: "git+https://github.com/gunta/pi-effect.git",
+		url: "git+https://github.com/effectified/pi.git",
 		directory: `packages/${directory}`,
 	},
 	engines: { node: ">=22.19.0" },

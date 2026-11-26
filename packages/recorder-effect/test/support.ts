@@ -1,7 +1,7 @@
 // Test helper: a sink that keeps what it is given and can be told to fail or to wait, and the tools the tests call.
 
-import { conditions } from "@gunta/pi-ai-effect/testing";
-import { Extension, Gate, Hook, Tool } from "@gunta/pi-durable-effect";
+import { conditions } from "@effectified/pi-ai/testing";
+import { Extension, Gate, Hook, Tool } from "@effectified/pi-durable";
 import { Effect, Layer, Option, Schema } from "effect";
 import { RecordSink, RecordSinkError, type Records } from "../src/index.ts";
 

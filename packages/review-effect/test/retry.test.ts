@@ -1,5 +1,5 @@
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
-import { answer, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { answer, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { Check, type Finding, retry, state, verdicts } from "../src/index.ts";

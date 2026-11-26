@@ -1,6 +1,6 @@
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { Extension, Gate, Harness, Hook, Registry, Tool } from "@gunta/pi-durable-effect";
-import { answer, type FauxResponseStep, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { Extension, Gate, Harness, Hook, Registry, Tool } from "@effectified/pi-durable";
+import { answer, type FauxResponseStep, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Fiber, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { Conversations, Grant, Guard, Matcher, Policy, Refused, Rule } from "../src/index.ts";

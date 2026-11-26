@@ -1,7 +1,7 @@
 // The driver's durable record of the forks it asked for, in the source actor's own SQLite: the intent written before
 // each fork call, the actor the call gave, and what destroying it answered.
 
-import { ActorInfo, ActorSql } from "@gunta/pi-durable-rivet-effect";
+import { ActorInfo, ActorSql } from "@effectified/pi-durable-rivet";
 import { type Cause, Effect, Option, Predicate, Schema } from "effect";
 import * as Migrator from "effect/sql/Migrator";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -145,7 +145,7 @@ export const claim: Effect.Effect<void, RecordFailure, ActorSql | ActorInfo> = E
  */
 export class Unclean extends Schema.TaggedError<Unclean>()("SwarmForkUnclean", {}) {
 	override get message(): string {
-		return "This actor is a fork whose swarm fork hygiene did not run: put forkHygiene of @gunta/pi-swarm-effect/rivet into the forkHygiene of Actor.make";
+		return "This actor is a fork whose swarm fork hygiene did not run: put forkHygiene of @effectified/pi-swarm/rivet into the forkHygiene of Actor.make";
 	}
 }
 

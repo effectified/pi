@@ -1,7 +1,7 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord/json";
 import type { ConversationId, ConversationRecord, Cursor, Page, TaskRecord } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { type DurableError, Extension, Harness, type Scans, Storage, Task } from "../src/index.ts";

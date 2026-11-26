@@ -1,8 +1,8 @@
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { Harness } from "@gunta/pi-durable-effect";
-import { answer, type FauxResponseStep, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
+import { Harness } from "@effectified/pi-durable";
+import { answer, type FauxResponseStep, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Fiber, Latch, Layer, Option, Schedule, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

@@ -1,5 +1,5 @@
 {
-	"name": "@gunta/pi-router-effect",
+	"name": "@effectified/pi-router",
 	"version": "0.1.0",
 	"description": "Model routes for Pi in Effect: fallback, a concurrency limiter with backoff, prices, and region and classification filters",
 	"type": "module",
@@ -35,7 +35,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/gunta/pi-effect.git",
+		"url": "git+https://github.com/effectified/pi.git",
 		"directory": "packages/router-effect"
 	},
 	"engines": {
@@ -43,7 +43,7 @@
 	},
 	"dependencies": {
 		"@earendil-works/pi-ai": "1.6.1",
-		"@gunta/pi-ai-effect": "0.1.0"
+		"@effectified/pi-ai": "0.1.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5"

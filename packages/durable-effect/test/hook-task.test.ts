@@ -6,7 +6,7 @@ import {
 	hookTask,
 	type YieldDecision,
 } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { Extension, Harness, Hook, Registry, Task, Tool } from "../src/index.ts";

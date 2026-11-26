@@ -1,7 +1,7 @@
 // A job's status as its fork's conversation holds it: the submission of a request, and the text of its answer.
 
 import type { ConversationId, EntryRecord } from "@earendil-works/pi-durable";
-import { type Doc, Harness } from "@gunta/pi-durable-effect";
+import { type Doc, Harness } from "@effectified/pi-durable";
 import { Effect, Option } from "effect";
 import type { JobStatus } from "./driver.ts";
 

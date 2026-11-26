@@ -1,7 +1,7 @@
 // The routing limits of a conversation: the regions that may serve it and the labels its routes must carry.
 
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { Doc, Harness, type Tx } from "@gunta/pi-durable-effect";
+import { Doc, Harness, type Tx } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 
 /**

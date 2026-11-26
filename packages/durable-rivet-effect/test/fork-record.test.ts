@@ -1,6 +1,6 @@
 // The durable record of a fork's hygiene, on the host's `SqlClient` over the stand-in database.
 
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import * as ForkRecord from "../src/fork-record.ts";

@@ -1,5 +1,5 @@
 {
-	"name": "@gunta/pi-durable-effect",
+	"name": "@effectified/pi-durable",
 	"version": "0.1.0",
 	"description": "Pi Durable in Effect: the durable agent harness as Layers, Effects and Streams",
 	"type": "module",
@@ -42,7 +42,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/gunta/pi-effect.git",
+		"url": "git+https://github.com/effectified/pi.git",
 		"directory": "packages/durable-effect"
 	},
 	"engines": {
@@ -52,8 +52,8 @@
 		"@earendil-works/chord": "1.6.1",
 		"@earendil-works/pi-ai": "1.6.1",
 		"@earendil-works/pi-durable": "1.6.1",
-		"@gunta/pi-ai-effect": "0.1.0",
-		"@gunta/pi-schema-effect": "0.1.0"
+		"@effectified/pi-ai": "0.1.0",
+		"@effectified/pi-schema": "0.1.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5"

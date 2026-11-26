@@ -1,7 +1,7 @@
 // The search and fetch tools: a model's call is brought within the limits and answered by the provider; the model
 // reads compact text, and the host finds the evidence of the call in the result's details.
 
-import { Tool } from "@gunta/pi-durable-effect";
+import { Tool } from "@effectified/pi-durable";
 import { Effect, Schema, SchemaTransformation } from "effect";
 import { capFetch, capSearch, defaultLimits, type Limits } from "./limits.ts";
 import { Count, Evidence, type Retrieval, SearchProvider } from "./provider/index.ts";

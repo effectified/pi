@@ -1,7 +1,7 @@
-import { complete, type Models } from "@gunta/pi-ai-effect";
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { Harness } from "@gunta/pi-durable-effect";
-import { answer, ScriptedModels } from "@gunta/pi-durable-effect/testing";
+import { complete, type Models } from "@effectified/pi-ai";
+import { runTest } from "@effectified/pi-ai/testing";
+import { Harness } from "@effectified/pi-durable";
+import { answer, ScriptedModels } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option } from "effect";
 import type { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

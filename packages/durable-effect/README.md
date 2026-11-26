@@ -1,4 +1,4 @@
-# @gunta/pi-durable-effect
+# @effectified/pi-durable
 
 Pi's durable agent harness ([`@earendil-works/pi-durable`](../durable)) in Effect terms, for `effect` 4.1:
 
@@ -24,7 +24,7 @@ which says of itself: "Experimental. The API changes without notice."
 ## Install
 
 ```sh
-npm install @gunta/pi-durable-effect @gunta/pi-ai-effect @earendil-works/pi-durable effect
+npm install @effectified/pi-durable @effectified/pi-ai @earendil-works/pi-durable effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`), so the application has one copy.
@@ -36,8 +36,8 @@ model is scripted; the same code is the test [`test/readme.test.ts`](test/readme
 
 ```ts
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect";
-import { Extension, Gate, Harness, Hook, Registry, Storage, Tool } from "@gunta/pi-durable-effect";
-import { answer, ScriptedModels, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { Extension, Gate, Harness, Hook, Registry, Storage, Tool } from "@effectified/pi-durable";
+import { answer, ScriptedModels, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 
 // A service of your program. Handlers reach it through the Layer you provide.
 class Records extends Context.Service<
@@ -93,7 +93,7 @@ Effect.runPromise(Effect.provide(program, live)).then(console.log);
 ```
 
 With a real provider, replace `ScriptedModels.layer()` by `Models.layer([anthropicProvider()])` from
-`@gunta/pi-ai-effect`, name one of its models in `agent`, and drop `setResponses`. To keep conversations across
+`@effectified/pi-ai`, name one of its models in `agent`, and drop `setResponses`. To keep conversations across
 restarts, replace `Storage.memory` by `Storage.sql()` over an Effect SQLite client (below).
 
 ## Harness
@@ -472,7 +472,7 @@ A name nothing is registered under is stored and offers nothing until an extensi
 `Agent.byName(change)` gives its JSON form, every tool and extension by its name, and `Agent.ByName` is the schema of
 that form, to keep a change in stored state or send it to another process and decode it back into a change
 `configure` takes; its thinking levels are pi-ai's own list, and its numbers those Pi's `configure` accepts.
-`Agent.ModelRef` is the schema of the model a change names (`@gunta/pi-ai-effect`'s `ModelRef`, Pi's `ModelRef`).
+`Agent.ModelRef` is the schema of the model a change names (`@effectified/pi-ai`'s `ModelRef`, Pi's `ModelRef`).
 
 ## Extension and Registry
 
@@ -1020,7 +1020,7 @@ cancelled a call the fiber did not interrupt) and `UnexpectedError` (anything el
 Every error class Pi Durable exports has its tag: the mapping is keyed by Pi's exports, so a class Pi adds fails to
 compile until it has one. `conversationId` of `ConversationBusy` and `ConversationIdle` is Pi's `ConversationId`.
 `Registry.layer` and signals add `SchemaConversionError`, and signals, documents and typed entries
-`SchemaDecodeError`, both from `@gunta/pi-schema-effect`. A commit also fails with whatever its body fails with.
+`SchemaDecodeError`, both from `@effectified/pi-schema`. A commit also fails with whatever its body fails with.
 
 ## Interruption
 
@@ -1043,11 +1043,11 @@ process that opens one storage must use the same clock.
 
 ## Testing
 
-`@gunta/pi-durable-effect/testing` is what a test of an agent needs, with no provider:
+`@effectified/pi-durable/testing` is what a test of an agent needs, with no provider:
 
 ```ts
 import { Effect } from "effect";
-import { answer, ScriptedModels, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { answer, ScriptedModels, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 
 const test = Effect.gen(function* () {
 	const root = yield* TestHarness.root; // the root conversation, on the scripted model

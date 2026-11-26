@@ -1,7 +1,7 @@
 // The asks of one tool call: its requests in the order they were made, kept in the memos of the call's task.
 
 import type { JsonObject } from "@earendil-works/pi-durable";
-import type { DurableError, Hook } from "@gunta/pi-durable-effect";
+import type { DurableError, Hook } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import { MalformedState } from "./errors.ts";
 import { Request } from "./request.ts";

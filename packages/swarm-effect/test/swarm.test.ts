@@ -1,4 +1,4 @@
-import { Registry } from "@gunta/pi-durable-effect";
+import { Registry } from "@effectified/pi-durable";
 import { Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import type { ForkDriver } from "../src/driver.ts";

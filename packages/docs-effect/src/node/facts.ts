@@ -21,7 +21,7 @@ export interface Package {
 	readonly description: string;
 	/** Its role in one sentence (`ROLES`). */
 	readonly role: string;
-	/** Its entry points as import specifiers: `@gunta/pi-thread-effect`, `@gunta/pi-thread-effect/rivet`. */
+	/** Its entry points as import specifiers: `@effectified/pi-thread`, `@effectified/pi-thread/rivet`. */
 	readonly entries: ReadonlyArray<string>;
 	readonly readme: string;
 	/** How many tests its suite has on Node, by the compatibility table. */
@@ -136,7 +136,7 @@ function testCounts(compat: string): ReadonlyMap<string, number> {
 	const counts = new Map<string, number>();
 	for (const line of compat.split("\n")) {
 		const cells = line.split("|").map((cell) => cell.trim());
-		const name = /^`(@gunta\/pi-[a-z-]+)`$/.exec(cells[1] ?? "")?.[1];
+		const name = /^`(@effectified\/pi-[a-z-]+)`$/.exec(cells[1] ?? "")?.[1];
 		const count = Number((cells[4] ?? "").replaceAll(",", ""));
 		if (name !== undefined && Number.isInteger(count) && cells[4] !== "") counts.set(name, count);
 	}

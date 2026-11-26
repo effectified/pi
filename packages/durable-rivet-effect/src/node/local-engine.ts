@@ -5,7 +5,7 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import type { StrictOmit } from "@gunta/pi-ai-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
 import { Effect, Exit, FileSystem, Path, type PlatformError, Schedule, Schema, Scope, Semaphore } from "effect";
 import { EngineUnavailable } from "../errors.ts";
 import * as Host from "../host.ts";

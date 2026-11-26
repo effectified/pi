@@ -1,8 +1,8 @@
 // The actions a fork actor serves the driver in its source: accept a request of its job, say where one stands, and
 // stop the job's work.
 
-import { Conversation, type Harness } from "@gunta/pi-durable-effect";
-import { Action, type ActorInfo, type ActorSql } from "@gunta/pi-durable-rivet-effect";
+import { Conversation, type Harness } from "@effectified/pi-durable";
+import { Action, type ActorInfo, type ActorSql } from "@effectified/pi-durable-rivet";
 import { Effect, Schema } from "effect";
 import { JobStatus } from "../driver.ts";
 import type { ForkSetup } from "../fork-setup.ts";

@@ -1,7 +1,7 @@
 // The registry a harness resolves extensions from, as a service built from Effect extensions.
 
 import { createRegistry, defineExtension, type Registry as PiRegistry } from "@earendil-works/pi-durable";
-import type { SchemaConversionError } from "@gunta/pi-schema-effect";
+import type { SchemaConversionError } from "@effectified/pi-schema";
 import { Context, Effect, Layer } from "effect";
 import type * as Extension from "./extension.ts";
 
@@ -9,7 +9,7 @@ import type * as Extension from "./extension.ts";
  * The Pi Durable registry of this program. The service value is Pi's own object, so Pi extensions can be installed
  * in it too, also while a harness runs.
  */
-export class Registry extends Context.Service<Registry, PiRegistry>()("@gunta/pi-durable-effect/Registry") {}
+export class Registry extends Context.Service<Registry, PiRegistry>()("@effectified/pi-durable/Registry") {}
 
 /**
  * A fresh registry with `extensions` installed, in order. The Layer requires what the handlers of the tools, hooks

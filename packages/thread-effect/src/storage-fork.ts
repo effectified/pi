@@ -2,7 +2,7 @@
 // composition's own step on a copy of a whole harness storage, beside the plugins'.
 
 import type { TaskId } from "@earendil-works/pi-durable";
-import { Doc, Harness } from "@gunta/pi-durable-effect";
+import { Doc, Harness } from "@effectified/pi-durable";
 import { Effect, Option, Schema, Stream } from "effect";
 import * as Courier from "./outcome-courier.ts";
 import * as Cursor from "./outcome-cursor.ts";

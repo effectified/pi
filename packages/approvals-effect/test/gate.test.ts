@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { Gate, Harness, Hook } from "@gunta/pi-durable-effect";
-import { answer, ScriptedModels, toolCall } from "@gunta/pi-durable-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
+import { Gate, Harness, Hook } from "@effectified/pi-durable";
+import { answer, ScriptedModels, toolCall } from "@effectified/pi-durable/testing";
 import { Context, Effect, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

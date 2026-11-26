@@ -3,8 +3,8 @@
 // the same client on a real actor database.
 
 import { registerStorageConformance } from "@earendil-works/pi-durable/testing";
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { Storage } from "@gunta/pi-durable-effect";
+import { runTest } from "@effectified/pi-ai/testing";
+import { Storage } from "@effectified/pi-durable";
 import { Clock, Deferred, Effect, Exit, Fiber, FiberSet, Option, Result, Schema, Semaphore } from "effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";

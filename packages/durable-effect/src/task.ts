@@ -10,8 +10,8 @@ import {
 	type TaskRecord,
 	type TaskState,
 } from "@earendil-works/pi-durable";
-import type { StrictOmit } from "@gunta/pi-ai-effect";
-import { decodeUnknown, encode, type SchemaDecodeError } from "@gunta/pi-schema-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
+import { decodeUnknown, encode, type SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, type Schema } from "effect";
 import * as Ids from "./id.ts";
 import { type Invoke, invoker } from "./invocation.ts";

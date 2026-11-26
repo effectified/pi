@@ -1,7 +1,7 @@
 // The recorder: a pump that delivers the records of committed entries to the sink, in order, at least once.
 
 import type { ConversationId, Cursor as ScanCursor } from "@earendil-works/pi-durable";
-import { type Doc, type DurableError, Entry, Harness } from "@gunta/pi-durable-effect";
+import { type Doc, type DurableError, Entry, Harness } from "@effectified/pi-durable";
 import { Context, Effect, Layer, Option, Queue, Schedule, Semaphore, Stream } from "effect";
 import * as Cursor from "./cursor.ts";
 import { fromEntry } from "./from-entry.ts";
@@ -23,7 +23,7 @@ export interface Service {
 }
 
 /** The running pump of this program. */
-export class Recorder extends Context.Service<Recorder, Service>()("@gunta/pi-recorder-effect/Recorder") {}
+export class Recorder extends Context.Service<Recorder, Service>()("@effectified/pi-recorder/Recorder") {}
 
 /** Options of `layer`. */
 export interface Options {

@@ -1,7 +1,7 @@
 // Test helper: a harness on scripted models whose registry is the guard's, and the tools and reads the tests share.
 
 import type { EntryRecord } from "@earendil-works/pi-durable";
-import type { Models } from "@gunta/pi-ai-effect";
+import type { Models } from "@effectified/pi-ai";
 import {
 	type Conversation,
 	type DurableError,
@@ -10,8 +10,8 @@ import {
 	type Registry,
 	Storage,
 	Tool,
-} from "@gunta/pi-durable-effect";
-import { answer, type FauxResponseStep, ScriptedModels } from "@gunta/pi-durable-effect/testing";
+} from "@effectified/pi-durable";
+import { answer, type FauxResponseStep, ScriptedModels } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option, PubSub, Schema, type Scope, Stream } from "effect";
 import {
 	Conversations,

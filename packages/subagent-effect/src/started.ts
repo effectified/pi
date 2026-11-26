@@ -1,7 +1,7 @@
 // The `subagent.started` document: the child a task of this package started, so that it is found again by its task.
 
 import type { ConversationId, TaskId } from "@earendil-works/pi-durable";
-import { Conversation, Doc, Task } from "@gunta/pi-durable-effect";
+import { Conversation, Doc, Task } from "@effectified/pi-durable";
 import { Schema } from "effect";
 
 /** A child that exists: its conversation, and the task that drives it. */

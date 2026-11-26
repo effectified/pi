@@ -2,9 +2,9 @@
 // elsewhere, whose calls fail and are retried, and whose jobs settle later.
 
 import type { EntryId } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { Conversation, Extension, Harness, Signal, Task } from "@gunta/pi-durable-effect";
-import { TestHarness } from "@gunta/pi-durable-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
+import { Conversation, Extension, Harness, Signal, Task } from "@effectified/pi-durable";
+import { TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Fiber, Layer, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

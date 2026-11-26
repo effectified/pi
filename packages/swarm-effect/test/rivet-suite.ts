@@ -9,9 +9,9 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { Client } from "@gunta/pi-durable-rivet-effect";
-import type * as LocalEngine from "@gunta/pi-durable-rivet-effect/node";
-import * as Testing from "@gunta/pi-durable-rivet-effect/testing";
+import { Client } from "@effectified/pi-durable-rivet";
+import type * as LocalEngine from "@effectified/pi-durable-rivet/node";
+import * as Testing from "@effectified/pi-durable-rivet/testing";
 import { type Context, Effect, Exit, Option, Schedule, Scope } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as Swarm from "../src/index.ts";

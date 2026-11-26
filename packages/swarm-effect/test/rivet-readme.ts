@@ -2,10 +2,10 @@
 // runtime by rivet-readme.node.test.ts and rivet-readme.bun.test.ts. Skipped when the engine binary is not installed.
 // Only the imports differ (the README names the package, this file its sources).
 
-import { Registry } from "@gunta/pi-durable-effect";
-import { answer, type FauxResponseFactory, ScriptedModels, TestHarness } from "@gunta/pi-durable-effect/testing";
-import { Action, Actor, Client, Self } from "@gunta/pi-durable-rivet-effect";
-import type * as LocalEngine from "@gunta/pi-durable-rivet-effect/node";
+import { Registry } from "@effectified/pi-durable";
+import { answer, type FauxResponseFactory, ScriptedModels, TestHarness } from "@effectified/pi-durable/testing";
+import { Action, Actor, Client, Self } from "@effectified/pi-durable-rivet";
+import type * as LocalEngine from "@effectified/pi-durable-rivet/node";
 import { Effect, Layer, Schedule, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Swarm from "../src/index.ts";

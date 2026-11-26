@@ -4,8 +4,8 @@
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Storage } from "@gunta/pi-durable-effect";
-import { answer, type FauxResponseStep, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Storage } from "@effectified/pi-durable";
+import { answer, type FauxResponseStep, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option, Stream } from "effect";
 import { expect, it } from "vitest";
 import { fromEntry } from "../src/from-entry.ts";

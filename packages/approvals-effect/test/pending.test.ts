@@ -1,4 +1,4 @@
-import { answer, fauxAssistantMessage, fauxToolCall } from "@gunta/pi-durable-effect/testing";
+import { answer, fauxAssistantMessage, fauxToolCall } from "@effectified/pi-durable/testing";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { approve, decide, pending } from "../src/index.ts";

@@ -8,8 +8,8 @@ import {
 	type EntryRecord,
 	type TaskId,
 } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { type SchemaConversionError, toJsonSchema } from "@gunta/pi-schema-effect";
+import { runTest } from "@effectified/pi-ai/testing";
+import { type SchemaConversionError, toJsonSchema } from "@effectified/pi-schema";
 import { Effect, Fiber, Latch, type Layer, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { Doc, Extension, Harness, Registry, Signal, Task, Tool } from "../src/index.ts";

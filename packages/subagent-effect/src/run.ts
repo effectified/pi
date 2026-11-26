@@ -16,7 +16,7 @@ import {
 	Task,
 	type Tool,
 	type Tx,
-} from "@gunta/pi-durable-effect";
+} from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import * as Child from "./child.ts";
 import * as ChildSetup from "./child-setup.ts";

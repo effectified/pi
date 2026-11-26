@@ -9,8 +9,8 @@ import {
 	type Context as PiContext,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
-import { Models, type ResponseEvent } from "@gunta/pi-ai-effect";
-import { conditions } from "@gunta/pi-ai-effect/testing";
+import { Models, type ResponseEvent } from "@effectified/pi-ai";
+import { conditions } from "@effectified/pi-ai/testing";
 import { Effect, type Layer, Stream } from "effect";
 import type { Price, Route, RouteEvent, RouteEventsService, RouteTable } from "../src/index.ts";
 

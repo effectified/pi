@@ -1,6 +1,6 @@
 import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
-import { Harness } from "@gunta/pi-durable-effect";
-import { answer, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Harness } from "@effectified/pi-durable";
+import { answer, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Cursors from "../src/cursor.ts";

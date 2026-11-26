@@ -10,14 +10,14 @@ import {
 	type ToolPark,
 	type ToolRegistration,
 } from "@earendil-works/pi-durable";
-import type { StrictOmit } from "@gunta/pi-ai-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
 import {
 	decodeUnknown,
 	encode,
 	SchemaConversionError,
 	type SchemaDecodeError,
 	toJsonSchema,
-} from "@gunta/pi-schema-effect";
+} from "@effectified/pi-schema";
 import { Effect, Formatter, Option, Predicate, Record, Schema, Stream } from "effect";
 import * as AiTool from "effect/ai/Tool";
 import type * as Toolkit from "effect/ai/Toolkit";
@@ -107,7 +107,7 @@ export interface Any {
 /** The services a tool, or each tool of a union, needs to run. */
 export type Services<T> = T extends { readonly registration: Effect.Effect<infer _A, infer _E, infer R> } ? R : never;
 
-const ReplyTypeId = "~@gunta/pi-durable-effect/Tool/Reply";
+const ReplyTypeId = "~@effectified/pi-durable/Tool/Reply";
 
 /**
  * What a handler succeeds with instead of the bare success value: a result with more than text, an error result, or a

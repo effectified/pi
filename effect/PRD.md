@@ -3,7 +3,7 @@
 Effect-native packages for Pi, built beside Pi and never inside it.
 
 - Status: draft 1, 2026-11-24, for the owner's decision. Nothing is committed or pushed.
-- Repository: `github.com/gunta/pi-effect`, a fork of `earendil-works/pi`, identical to upstream at
+- Repository: `github.com/effectified/pi`, a fork of `earendil-works/pi`, identical to upstream at
   `f8149d1ab` when this was written. Local clone: `/Volumes/Banana/GitHub/gunta/pi-effect`.
 - First consumer: PatentOS v2 (`/Volumes/Banana/GitHub/gunta/patentos`), whose hand-written agent loop
   this replaces.
@@ -44,7 +44,7 @@ either way.
 
 1. **New packages only.** No file of an upstream package is changed. If we need something from Pi that is
    not public, we ask upstream or do without; we do not patch.
-2. **One facade per Pi package, named `<pi package>-effect`.** A facade adds no behaviour: it gives the
+2. **One facade per Pi package, in `packages/<pi package>-effect`, named `@effectified/<pi package>`.** A facade adds no behaviour: it gives the
    same capability in Effect terms (Effect, Stream, Layer, Scope, Schema, typed errors, interruption).
 3. **Plugins are where our behaviour goes.** They are Pi extensions and host adapters written on the
    facades, each small and separately installable.
@@ -83,8 +83,8 @@ either way.
 
 ## 5. Package map
 
-Directory names mirror upstream (`packages/durable` gives `packages/durable-effect`). The npm scope is an
-open decision (section 13); `@gunta` is the working default.
+Directory names mirror upstream (`packages/durable` gives `packages/durable-effect`). The npm name drops the suffix
+(`packages/durable-effect` is `@effectified/pi-durable`, section 13.1).
 
 ### 5.1 Facades
 
@@ -364,8 +364,8 @@ host seam. What it deletes: the hand-written loop and the sequential swarm runne
 
 ## 13. Decisions for the owner
 
-1. **npm scope.** `@gunta/pi-durable-effect` and siblings is the working default. An organisation scope is
-   the alternative. It can change until the first publish.
+1. **npm scope.** Decided on 2026-11-26: the organisation scope `@effectified`, without the `-effect` suffix
+   (`@effectified/pi-durable`). The repository moved to `effectified/pi` with it.
 2. **Default branch.** `effect` as the fork's default, `main` as a pure mirror (assumed above).
 3. **Layout.** `packages/*-effect` inside upstream's workspace (assumed above, best for a later merge) or
    `effect/packages/*` with its own workspace (zero conflicts, a directory move away from mergeable).

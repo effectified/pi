@@ -2,7 +2,7 @@
 // and a budget cap.
 
 import type { ConversationId } from "@earendil-works/pi-durable";
-import type { Tx } from "@gunta/pi-durable-effect";
+import type { Tx } from "@effectified/pi-durable";
 import { Context, Effect, Layer } from "effect";
 import type { ForkSetupFailed } from "./errors.ts";
 
@@ -48,7 +48,7 @@ export interface ForkSetupService {
  * job's conversation there, so the actor's own `layer` must provide it. A driver whose forks are in no Pi harness
  * cannot call it.
  */
-export class ForkSetup extends Context.Service<ForkSetup, ForkSetupService>()("@gunta/pi-swarm-effect/ForkSetup") {}
+export class ForkSetup extends Context.Service<ForkSetup, ForkSetupService>()("@effectified/pi-swarm/ForkSetup") {}
 
 /** A setup that does nothing, for a product without guards and budgets: the stated choice, never a default. */
 export const none: Layer.Layer<ForkSetup> = Layer.succeed(ForkSetup, {

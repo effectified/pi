@@ -1,7 +1,7 @@
 // The runs of this package that are still at work: what `maxLive` counts and what a copied storage aborts.
 
 import type { ConversationId, SettledTask, TaskState } from "@earendil-works/pi-durable";
-import type { DurableError, Tx } from "@gunta/pi-durable-effect";
+import type { DurableError, Tx } from "@effectified/pi-durable";
 import { Effect } from "effect";
 
 /** The statuses of a task Pi has not settled: every status but that of Pi's `SettledTask`. */

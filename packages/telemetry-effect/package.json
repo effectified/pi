@@ -1,5 +1,5 @@
 {
-	"name": "@gunta/pi-telemetry-effect",
+	"name": "@effectified/pi-telemetry",
 	"version": "0.1.0",
 	"description": "Pi telemetry in Effect: Pi spans, metrics and events as Effect spans, metrics and logs, with trace context carried into Pi calls",
 	"type": "module",
@@ -35,7 +35,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/gunta/pi-effect.git",
+		"url": "git+https://github.com/effectified/pi.git",
 		"directory": "packages/telemetry-effect"
 	},
 	"engines": {

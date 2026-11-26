@@ -1,4 +1,4 @@
-# @gunta/pi-telemetry-effect
+# @effectified/pi-telemetry
 
 [`@earendil-works/pi-telemetry`](../telemetry/README.md) on Effect's own observability services, in both directions.
 For `effect` 4.1.
@@ -15,7 +15,7 @@ The package adds no telemetry of its own. It forwards what Pi records; Pi's sche
 ## Installation
 
 ```bash
-npm install @gunta/pi-telemetry-effect @earendil-works/pi-telemetry effect
+npm install @effectified/pi-telemetry @earendil-works/pi-telemetry effect
 ```
 
 ## Pi telemetry into Effect
@@ -25,7 +25,7 @@ one.
 
 ```typescript
 import { Effect } from "effect";
-import { PiTelemetry } from "@gunta/pi-telemetry-effect";
+import { PiTelemetry } from "@effectified/pi-telemetry";
 
 const program = Effect.gen(function* () {
 	const telemetry = yield* PiTelemetry;
@@ -75,7 +75,7 @@ one as `telemetry`. `PiTelemetry.currentSpan` gives that handle for the Effect s
 
 ```typescript
 import { Effect } from "effect";
-import { PiTelemetry } from "@gunta/pi-telemetry-effect";
+import { PiTelemetry } from "@effectified/pi-telemetry";
 
 // models: a pi-ai `Models`; model and conversation: what the request needs.
 const ask = Effect.gen(function* () {
@@ -138,7 +138,7 @@ tracer:
 import { Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { Otlp } from "effect/observability";
-import { PiTelemetry } from "@gunta/pi-telemetry-effect";
+import { PiTelemetry } from "@effectified/pi-telemetry";
 
 const Observability = Otlp.layerJson({
 	baseUrl: "http://localhost:4318",

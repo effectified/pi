@@ -5,7 +5,7 @@
 // fails here.
 
 import { type AgentChange, type ConversationId, configure, type Tx } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as ForkAgent from "../src/rivet/fork-agent.ts";

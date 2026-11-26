@@ -1,6 +1,6 @@
 // What the host provides inside an actor, without an engine: Pi's storage on the actor's database, under a prefix.
 
-import { Storage } from "@gunta/pi-durable-effect";
+import { Storage } from "@effectified/pi-durable";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { ActorDatabase, storage } from "../src/actor-context.ts";

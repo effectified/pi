@@ -1,6 +1,6 @@
 // The extension a product installs: the gate of its policy and the record of what the gate decided by.
 
-import type { Extension, Hook } from "@gunta/pi-durable-effect";
+import type { Extension, Hook } from "@effectified/pi-durable";
 import { record } from "./applied.ts";
 import { gate } from "./gate.ts";
 import type { Inbox } from "./inbox.ts";

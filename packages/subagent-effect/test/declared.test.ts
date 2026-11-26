@@ -1,4 +1,4 @@
-import { Registry, SchemaConversionError } from "@gunta/pi-durable-effect";
+import { Registry, SchemaConversionError } from "@effectified/pi-durable";
 import { Effect, Layer, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Declared from "../src/declared.ts";

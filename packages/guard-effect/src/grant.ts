@@ -1,6 +1,6 @@
 // A grant: the tools one conversation may call and its classification, and the document that stores it.
 
-import { Conversation, Doc } from "@gunta/pi-durable-effect";
+import { Conversation, Doc } from "@effectified/pi-durable";
 import { Schema } from "effect";
 
 /**

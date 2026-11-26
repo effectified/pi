@@ -1,8 +1,8 @@
 // `onStorageFork` on one storage, which stands in for a copy of itself here: the suite on a copied SQLite file is in
 // kill-resume.ts.
 
-import { Harness } from "@gunta/pi-durable-effect";
-import { TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Harness } from "@effectified/pi-durable";
+import { TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Swarm from "../src/index.ts";

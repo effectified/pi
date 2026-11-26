@@ -2,7 +2,7 @@
 // what an earlier process left undelivered.
 
 import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
-import type { Shares } from "@gunta/pi-budget-effect";
+import type { Shares } from "@effectified/pi-budget";
 import {
 	type Conversation,
 	type Doc,
@@ -11,9 +11,9 @@ import {
 	Submission,
 	Task,
 	type Tx,
-} from "@gunta/pi-durable-effect";
-import { Recorder } from "@gunta/pi-recorder-effect";
-import * as Review from "@gunta/pi-review-effect";
+} from "@effectified/pi-durable";
+import { Recorder } from "@effectified/pi-recorder";
+import * as Review from "@effectified/pi-review";
 import { Clock, Deferred, Duration, Effect, Layer, Option, Pull, Queue, Schedule, Schema, Stream } from "effect";
 import * as Counts from "./counts.ts";
 import type { ThreadNotFound } from "./errors.ts";

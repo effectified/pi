@@ -1,7 +1,7 @@
 // Test helper: one harness closed while a model request is pending, then a second harness on the same storage.
 
 import type { SubmissionRecord } from "@earendil-works/pi-durable";
-import { runLive } from "@gunta/pi-ai-effect/testing";
+import { runLive } from "@effectified/pi-ai/testing";
 import { Effect, Fiber, type Layer, Option, Stream } from "effect";
 import { type DurableError, Harness, type Storage, type Submission } from "../src/index.ts";
 import { AGENT, answer, harnessLayer, heldAnswer, scriptedModels } from "./scripted.ts";

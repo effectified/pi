@@ -1,5 +1,5 @@
 import type { EntryRecord } from "@earendil-works/pi-durable";
-import { answer, toolCall } from "@gunta/pi-durable-effect/testing";
+import { answer, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Option, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

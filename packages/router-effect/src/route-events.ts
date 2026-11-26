@@ -48,7 +48,7 @@ export const RouteEvent = Schema.Struct({
 	usage: TokenUsage,
 	/**
 	 * `usage` at the route's price, rounded up once. A count that is not a whole number is rounded up and one that is
-	 * not a positive number counts as zero: the rule of `@gunta/pi-budget-effect`.
+	 * not a positive number counts as zero: the rule of `@effectified/pi-budget`.
 	 */
 	cost: Cost,
 	/** Clock time in milliseconds when the attempt began, before any wait. */
@@ -74,7 +74,7 @@ export interface RouteEventsService {
 
 /** The hub of a router's route events. A subscriber that stops reading keeps its unread events in memory. */
 export class RouteEvents extends Context.Service<RouteEvents, RouteEventsService>()(
-	"@gunta/pi-router-effect/RouteEvents",
+	"@effectified/pi-router/RouteEvents",
 ) {
 	/** A fresh hub with no subscriber; closing the Layer's scope ends every subscriber's Stream. */
 	static readonly layer: Layer.Layer<RouteEvents> = Layer.effect(

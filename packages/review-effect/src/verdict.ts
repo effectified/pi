@@ -1,6 +1,6 @@
 // The verdict: what one review of one answer came to, stored as an entry of the reviewed conversation.
 
-import { Entry, Submission, Task } from "@gunta/pi-durable-effect";
+import { Entry, Submission, Task } from "@effectified/pi-durable";
 import { Schema } from "effect";
 import { Finding } from "./finding.ts";
 

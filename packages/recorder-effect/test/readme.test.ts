@@ -1,8 +1,8 @@
 // The examples of README.md, as they stand there, each run once.
 
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { Extension, Gate, Harness, Hook, Registry, Storage } from "@gunta/pi-durable-effect";
-import { answer, ScriptedModels, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
+import { Extension, Gate, Harness, Hook, Registry, Storage } from "@effectified/pi-durable";
+import { answer, ScriptedModels, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Context, Effect, Latch, Layer, Option, Schedule } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

@@ -1,13 +1,13 @@
 // The constraint source of the composition: what the router is told of each request, read from the grant and the
 // routing limits of the conversation the request's provider session belongs to.
 
-import { Conversations, Guard } from "@gunta/pi-guard-effect";
+import { Conversations, Guard } from "@effectified/pi-guard";
 import {
 	type ConstraintRequest,
 	ConstraintSource,
 	type Constraints,
 	ConstraintsUnavailable,
-} from "@gunta/pi-router-effect";
+} from "@effectified/pi-router";
 import { Effect, Layer, Option } from "effect";
 import * as Opened from "./opened.ts";
 import * as Routing from "./routing.ts";

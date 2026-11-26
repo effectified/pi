@@ -1,5 +1,5 @@
 import { defineExtension, defineTask, type Report, type TaskId } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Context, Effect, Exit, Layer, Option, Schema, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

@@ -20,7 +20,7 @@ export function serve(options: Local.ServeOptions): Effect.Effect<Local.LocalEng
 		return Effect.fail(
 			new EngineUnavailable({
 				code: "environment",
-				message: "On Bun, start the local engine with @gunta/pi-durable-rivet-effect/bun",
+				message: "On Bun, start the local engine with @effectified/pi-durable-rivet/bun",
 				retryable: false,
 			}),
 		);

@@ -2,8 +2,8 @@
 // on. A background task of Pi's own (an automatic compaction) is not created here: it needs a context past the
 // compaction threshold.
 
-import { Extension, Harness, Task } from "@gunta/pi-durable-effect";
-import { TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Extension, Harness, Task } from "@effectified/pi-durable";
+import { TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Protocol from "../src/protocol.ts";

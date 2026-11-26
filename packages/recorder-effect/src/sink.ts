@@ -25,5 +25,5 @@ export interface RecordSinkService {
 
 /** The record sink of this program: provided by the product, required by the pump and by the advisory hook. */
 export class RecordSink extends Context.Service<RecordSink, RecordSinkService>()(
-	"@gunta/pi-recorder-effect/RecordSink",
+	"@effectified/pi-recorder/RecordSink",
 ) {}

@@ -1,6 +1,6 @@
 // Typed results: what a child is told to answer with for a declared result Schema, and its answer decoded against it.
 
-import { SchemaConversionError } from "@gunta/pi-durable-effect";
+import { SchemaConversionError } from "@effectified/pi-durable";
 import { Effect, Predicate, Schema } from "effect";
 import { ResultMismatch } from "./errors.ts";
 import type { ResultSchema, Subagent } from "./subagent.ts";

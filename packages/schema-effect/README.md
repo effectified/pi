@@ -1,4 +1,4 @@
-# @gunta/pi-schema-effect
+# @effectified/pi-schema
 
 Effect `Schema` to and from the JSON Schema that Pi tool parameters are written in, and
 [`@earendil-works/pi-schema`](../schema/README.md)'s validator with typed errors. For `effect` 4.1.
@@ -6,14 +6,14 @@ Effect `Schema` to and from the JSON Schema that Pi tool parameters are written 
 ## Installation
 
 ```bash
-npm install @gunta/pi-schema-effect @earendil-works/pi-schema effect
+npm install @effectified/pi-schema @earendil-works/pi-schema effect
 ```
 
 ## Effect Schema to tool parameters
 
 ```typescript
 import { Effect, Schema } from "effect";
-import { decodeUnknown, encode, toJsonSchema } from "@gunta/pi-schema-effect";
+import { decodeUnknown, encode, toJsonSchema } from "@effectified/pi-schema";
 
 const Lookup = Schema.Struct({
 	id: Schema.String.annotate({ description: "Record id" }),
@@ -51,7 +51,7 @@ those of the member the value comes closest to.
 
 ```typescript
 import { obj, str } from "@earendil-works/pi-schema";
-import { fromJsonSchema } from "@gunta/pi-schema-effect";
+import { fromJsonSchema } from "@effectified/pi-schema";
 
 const schema = await Effect.runPromise(fromJsonSchema(obj({ path: str({ minLength: 1 }) })));
 ```
@@ -64,7 +64,7 @@ effort, as Effect's importer is. Keywords Effect cannot express (`if`, `contains
 ## pi-schema's validator
 
 ```typescript
-import { validator } from "@gunta/pi-schema-effect";
+import { validator } from "@effectified/pi-schema";
 
 const read = await Effect.runPromise(validator(Read));
 read.check(value); // boolean, pi-schema's allocation-free check

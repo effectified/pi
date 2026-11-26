@@ -5,9 +5,9 @@
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { CompactionTask } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { Harness } from "@gunta/pi-durable-effect";
-import { answer, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
+import { Harness } from "@effectified/pi-durable";
+import { answer, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Protocol from "../src/protocol.ts";

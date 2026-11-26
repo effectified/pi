@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   boundary:
-    if: github.repository == 'gunta/pi-effect'
+    if: github.repository == 'effectified/pi'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -38,7 +38,7 @@ jobs:
         run: node effect/scripts/check-deps.ts
 
   check:
-    if: github.repository == 'gunta/pi-effect'
+    if: github.repository == 'effectified/pi'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -125,7 +125,7 @@ jobs:
   # red: upstream's tests name models of the catalogs its build fetches that day, so they also fail for a catalog
   # change, on upstream's own `main` too. The run's result is the result of the pi-effect packages.
   upstream-tests:
-    if: github.repository == 'gunta/pi-effect'
+    if: github.repository == 'effectified/pi'
     name: upstream tests (${{ matrix.name }})
     runs-on: ubuntu-latest
     continue-on-error: true

@@ -11,7 +11,7 @@ import type {
 	WatchEnd,
 	WatchHandle,
 } from "@earendil-works/pi-durable";
-import type { StrictOmit } from "@gunta/pi-ai-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
 import { Cause, Effect, Queue, Stream } from "effect";
 import { absurd } from "effect/Function";
 import { call } from "./call.ts";

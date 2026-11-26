@@ -25,7 +25,7 @@ import {
 	type TaskQuery,
 	type TaskRecord,
 } from "@earendil-works/pi-durable";
-import type { SchemaDecodeError } from "@gunta/pi-schema-effect";
+import type { SchemaDecodeError } from "@effectified/pi-schema";
 import { type Cause, Effect, Exit, Option, type Schema, type Stream } from "effect";
 import * as Agent from "./agent.ts";
 import { call, step } from "./call.ts";

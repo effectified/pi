@@ -1,7 +1,7 @@
 // Shares: what one conversation has settled of the harness's lease, and a cap of its own, kept in the harness storage.
 
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { BuiltinDoc, Doc, Harness, type Tx } from "@gunta/pi-durable-effect";
+import { BuiltinDoc, Doc, Harness, type Tx } from "@effectified/pi-durable";
 import { Context, Deferred, Effect, Layer, Option, Schema } from "effect";
 
 /**
@@ -71,7 +71,7 @@ export interface SharesService {
  * share settles is counted and stored, and one with a cap (a subagent) stops when it has settled that much while the
  * others go on.
  */
-export class Shares extends Context.Service<Shares, SharesService>()("@gunta/pi-budget-effect/Shares") {
+export class Shares extends Context.Service<Shares, SharesService>()("@effectified/pi-budget/Shares") {
 	/**
 	 * The shares of a budget, before its harness is open: `BudgetedModels.layerWithShares` needs them to build the
 	 * `Models` the harness is opened with. Every request that names a session, and every Effect of the service that

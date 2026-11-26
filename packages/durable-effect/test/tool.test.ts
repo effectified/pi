@@ -6,8 +6,8 @@ import {
 	type JsonObject,
 	type ToolRegistration,
 } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { type SchemaConversionError, toJsonSchema } from "@gunta/pi-schema-effect";
+import { runTest } from "@effectified/pi-ai/testing";
+import { type SchemaConversionError, toJsonSchema } from "@effectified/pi-schema";
 import { Context, Effect, Layer, Schema, Stream } from "effect";
 import { Tool as AiTool, Toolkit } from "effect/ai";
 import { describe, expect, it } from "vitest";

@@ -52,7 +52,7 @@ half-written ones included.
   product rule, name or constant in the code.
 - **Every public function returns `Effect`, `Stream` or `Layer`.** Errors are `Schema.TaggedError` classes. Library
   code does not throw.
-- **No test waits on the real clock.** A test runs its Effect with `runTest` of `@gunta/pi-ai-effect/testing` and
+- **No test waits on the real clock.** A test runs its Effect with `runTest` of `@effectified/pi-ai/testing` and
   moves time with `TestClock.adjust`. See [Test Without a Network](testing.md).
 - **A README example is tested.** Each package's `test/readme.test.ts` runs its README's code. Change the two
   together.

@@ -1,7 +1,7 @@
 // A copied storage has settled nothing itself: what a host runs on a copy of a whole harness storage before its first
 // request, so that money stored in two storages is counted once.
 
-import { Doc, Harness } from "@gunta/pi-durable-effect";
+import { Doc, Harness } from "@effectified/pi-durable";
 import { Effect, Option, Schema, Stream } from "effect";
 import { forget, type Share, ShareDocument, Shares, seedOf, sessionOf } from "./shares.ts";
 

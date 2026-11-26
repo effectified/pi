@@ -1,6 +1,6 @@
 import { type EntryRecord, MemoryStorage } from "@earendil-works/pi-durable";
-import { type DurableError, Harness, Registry, Storage } from "@gunta/pi-durable-effect";
-import { answer, ScriptedModels, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { type DurableError, Harness, Registry, Storage } from "@effectified/pi-durable";
+import { answer, ScriptedModels, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { DateTime, Effect, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

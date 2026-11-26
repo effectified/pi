@@ -2,8 +2,8 @@
 // what the actor does with a request of the job.
 
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { Conversation, Doc, Harness, type Tx } from "@gunta/pi-durable-effect";
-import type { ActorInfo, ActorSql } from "@gunta/pi-durable-rivet-effect";
+import { Conversation, Doc, Harness, type Tx } from "@effectified/pi-durable";
+import type { ActorInfo, ActorSql } from "@effectified/pi-durable-rivet";
 import { Effect, Option, Schema } from "effect";
 import type { JobStatus } from "../driver.ts";
 import type { ForkSetupFailed } from "../errors.ts";

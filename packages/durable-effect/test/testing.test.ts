@@ -1,4 +1,4 @@
-import { Models } from "@gunta/pi-ai-effect";
+import { Models } from "@effectified/pi-ai";
 import { Context, Effect, Layer, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {

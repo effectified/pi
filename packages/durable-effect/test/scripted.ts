@@ -11,8 +11,8 @@ import {
 	fauxText,
 } from "@earendil-works/pi-ai";
 import { MemoryStorage } from "@earendil-works/pi-durable";
-import { Models } from "@gunta/pi-ai-effect";
-import type { SchemaConversionError } from "@gunta/pi-schema-effect";
+import { Models } from "@effectified/pi-ai";
+import type { SchemaConversionError } from "@effectified/pi-schema";
 import { Layer } from "effect";
 import { Harness, Registry, Storage } from "../src/index.ts";
 

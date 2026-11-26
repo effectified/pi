@@ -17,7 +17,7 @@ import type {
 	TaskRuntime,
 	WakeReason,
 } from "@earendil-works/pi-durable";
-import type { SchemaConversionError, SchemaDecodeError } from "@gunta/pi-schema-effect";
+import type { SchemaConversionError, SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, Option, type Schema, type Stream } from "effect";
 import { call } from "./call.ts";
 import * as Doc from "./doc.ts";

@@ -1,5 +1,5 @@
-import { Extension, Hook, Registry } from "@gunta/pi-durable-effect";
-import { answer } from "@gunta/pi-durable-effect/testing";
+import { Extension, Hook, Registry } from "@effectified/pi-durable";
+import { answer } from "@effectified/pi-durable/testing";
 import { Context, Effect, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { Check, Citations, extension, NAME, state } from "../src/index.ts";

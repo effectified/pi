@@ -1,6 +1,6 @@
 // The subagent extension: the tools and the run task over a product's declarations, as one thing a registry installs.
 
-import { Extension } from "@gunta/pi-durable-effect";
+import { Extension } from "@effectified/pi-durable";
 import { Effect } from "effect";
 import * as Declared from "./declared.ts";
 import * as Run from "./run.ts";

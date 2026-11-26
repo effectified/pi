@@ -1,7 +1,7 @@
-# @gunta/pi-guard-effect
+# @effectified/pi-guard
 
 What an agent of a [Pi Durable](../durable) harness may do, enforced so that it fails closed. A plugin for
-[`@gunta/pi-durable-effect`](../durable-effect), for `effect` 4.1:
+[`@effectified/pi-durable`](../durable-effect), for `effect` 4.1:
 
 - **Denied names.** A tool whose name the policy denies fails the construction of the registry: no harness opens.
 - **An exact allow-list per conversation.** A grant names the tools a conversation may call. It is stored in the
@@ -17,7 +17,7 @@ Nothing here knows your tools, verbs or labels: all of it is data and rules you 
 ## Install
 
 ```sh
-npm install @gunta/pi-guard-effect @gunta/pi-durable-effect @earendil-works/pi-durable effect
+npm install @effectified/pi-guard @effectified/pi-durable @earendil-works/pi-durable effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`). Built for Pi Durable 1.6.1.
@@ -30,9 +30,9 @@ scripted model of the testing kit, and are the test [`test/readme.test.ts`](test
 
 ```ts
 import { Effect, Layer, Schema, Stream } from "effect";
-import { Extension, Harness, Storage, Tool } from "@gunta/pi-durable-effect";
-import { ScriptedModels, TestHarness } from "@gunta/pi-durable-effect/testing";
-import { Conversations, Guard, Matcher, Policy, Rule } from "@gunta/pi-guard-effect";
+import { Extension, Harness, Storage, Tool } from "@effectified/pi-durable";
+import { ScriptedModels, TestHarness } from "@effectified/pi-durable/testing";
+import { Conversations, Guard, Matcher, Policy, Rule } from "@effectified/pi-guard";
 
 const Search = Tool.make("search", {
 	description: "Search the web.",
@@ -102,13 +102,13 @@ Effect.runPromise(Effect.scoped(program).pipe(Effect.provide(live)));
 | `Guard.layer({ policy, rules, extensions })` | Both | What the tools, hooks and rules need, less the `Guard` |
 
 Use the parts when a tool needs a service that needs the guard. The usual case is a port that grants a child
-conversation in the commit that creates it (the `ChildSetup` of `@gunta/pi-subagent-effect`): with `Guard.layer`
+conversation in the commit that creates it (the `ChildSetup` of `@effectified/pi-subagent`): with `Guard.layer`
 alone, the port would need the `Guard` that only the registry gives, and the registry the port. With the parts
 there is no cycle, and no `Deferred`:
 
 ```ts
 import type { ConversationId } from "@earendil-works/pi-durable";
-import type { Tx } from "@gunta/pi-durable-effect";
+import type { Tx } from "@effectified/pi-durable";
 import { Context } from "effect";
 
 // A port of your own that a tool needs, and that needs the guard.
@@ -321,7 +321,7 @@ request, never with no constraint.
 Limit, stated plainly: **this package cannot stop a provider request.** In Pi Durable 1.6.0 a failing generation
 hook is reported and skipped, and no hook can refuse a request. A model set with `configure`, outside the guard, is
 not checked, and a classification raised later does not look at the stored model. Enforcement at request time
-belongs to the model boundary: `@gunta/pi-router-effect` filters routes by classification and fails with a typed
+belongs to the model boundary: `@effectified/pi-router` filters routes by classification and fails with a typed
 error before a request leaves.
 
 **5. Refusals are observable, and recorded.** Every call the guard kept from running is told twice.

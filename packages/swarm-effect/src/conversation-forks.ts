@@ -1,7 +1,7 @@
 // The in-storage driver: a swarm's forks are conversation forks of the source, in the harness its coordinator runs in.
 
 import { type ConversationId, SubmissionSettled } from "@earendil-works/pi-durable";
-import { Conversation, Doc, Entry, Harness, type Tx } from "@gunta/pi-durable-effect";
+import { Conversation, Doc, Entry, Harness, type Tx } from "@effectified/pi-durable";
 import { Deferred, Effect, Layer, Option, Schema, Stream } from "effect";
 import {
 	type Destroyed,

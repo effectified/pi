@@ -2,7 +2,7 @@
 // by the product's own function of it, and how a product action is called for a thread. What needs an actor is in
 // rivet-suite.ts.
 
-import { Action, Client } from "@gunta/pi-durable-rivet-effect";
+import { Action, Client } from "@effectified/pi-durable-rivet";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { type ClientRaw, RivetError } from "rivetkit/client";
 import { describe, expect, it } from "vitest";

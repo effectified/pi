@@ -2,9 +2,9 @@
 // published as they happen, kept in the results for good, counted from there and delivered to the sink.
 
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
-import { Extension, Tool } from "@gunta/pi-durable-effect";
-import { answer, held, toolCall } from "@gunta/pi-durable-effect/testing";
-import { DeniedTool, Guard, Refused } from "@gunta/pi-guard-effect";
+import { Extension, Tool } from "@effectified/pi-durable";
+import { answer, held, toolCall } from "@effectified/pi-durable/testing";
+import { DeniedTool, Guard, Refused } from "@effectified/pi-guard";
 import { Effect, Fiber, Layer, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { Composition, Threads } from "../src/index.ts";

@@ -1,9 +1,9 @@
 // The examples of README.md, each as it is written there, run on scripted models.
 
 import { type FauxResponseStep, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
-import { Models } from "@gunta/pi-ai-effect";
-import { Harness, Registry, Storage } from "@gunta/pi-durable-effect";
-import { answer, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Models } from "@effectified/pi-ai";
+import { Harness, Registry, Storage } from "@effectified/pi-durable";
+import { answer, TestHarness } from "@effectified/pi-durable/testing";
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Review from "../src/index.ts";

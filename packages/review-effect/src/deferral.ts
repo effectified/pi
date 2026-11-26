@@ -1,6 +1,6 @@
 // The deferral: the signal that asks a review whose request failed to run again, and the key of each attempt.
 
-import { Signal } from "@gunta/pi-durable-effect";
+import { Signal } from "@effectified/pi-durable";
 import { Schema } from "effect";
 
 /** The signal a deferred review task sleeps on. It carries nothing: asking again is the whole message. */

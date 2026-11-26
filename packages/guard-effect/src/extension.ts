@@ -2,7 +2,7 @@
 // refused in the call's result.
 
 import type { JsonObject, ToolExecutionResult } from "@earendil-works/pi-durable";
-import { Extension, Gate, Hook } from "@gunta/pi-durable-effect";
+import { Extension, Gate, Hook } from "@effectified/pi-durable";
 import { Cause, Effect, Option, PubSub } from "effect";
 import * as Check from "./check.ts";
 import * as Grant from "./grant.ts";

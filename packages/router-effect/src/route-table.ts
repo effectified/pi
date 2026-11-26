@@ -1,7 +1,7 @@
 // The route table as data: aliases, their routes, classifications, labels, limits and prices, decoded and validated.
 
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { Models } from "@gunta/pi-ai-effect";
+import { Models } from "@effectified/pi-ai";
 import { Effect, Schema } from "effect";
 import { Constraints, Label } from "./constraints.ts";
 import { RouteTableError, type RouteTableIssue } from "./errors.ts";

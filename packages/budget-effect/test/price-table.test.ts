@@ -1,6 +1,6 @@
 import { calculateCost, fauxProvider, type Usage } from "@earendil-works/pi-ai";
-import { emptyUsage } from "@gunta/pi-ai-effect";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { emptyUsage } from "@effectified/pi-ai";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
@@ -188,7 +188,7 @@ describe("pi-ai's rule", () => {
 });
 
 /**
- * The price rows of a route table as `priceRows` of `@gunta/pi-router-effect` gives them, written out: an alias
+ * The price rows of a route table as `priceRows` of `@effectified/pi-router` gives them, written out: an alias
  * `author` with two routes, an alias `fast` with the first of them, under the router's provider id `router`. A row
  * per route's model at the route's price, then a row per alias at the highest price of its routes for each kind.
  */

@@ -17,8 +17,8 @@ import {
 	type TaskId,
 	type WatchHandle,
 } from "@earendil-works/pi-durable";
-import type { StrictOmit } from "@gunta/pi-ai-effect";
-import { decodeUnknown, encode, type Issue, SchemaDecodeError } from "@gunta/pi-schema-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
+import { decodeUnknown, encode, type Issue, SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, type Option, Predicate, type Schema, Stream } from "effect";
 import { call, step } from "./call.ts";
 import type { DurableError } from "./errors.ts";

@@ -1,7 +1,7 @@
 // Scripted model responses for tests: the turns a scripted provider answers with.
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { type FauxResponseFactory, fauxAssistantMessage, fauxText, fauxToolCall } from "@gunta/pi-ai-effect/testing";
+import { type FauxResponseFactory, fauxAssistantMessage, fauxText, fauxToolCall } from "@effectified/pi-ai/testing";
 import { Effect } from "effect";
 
 /** A response the model is asked for but holds back: what a test uses to act while a run is busy. */

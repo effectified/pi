@@ -2,7 +2,7 @@
 // that delivers, with the commits that start and wake that courier.
 
 import type { ConversationId, TaskId } from "@earendil-works/pi-durable";
-import { Doc, type Signal, Task, type Tx } from "@gunta/pi-durable-effect";
+import { Doc, type Signal, Task, type Tx } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import * as Courier from "./outcome-courier.ts";
 import { Mark } from "./outcome-event.ts";

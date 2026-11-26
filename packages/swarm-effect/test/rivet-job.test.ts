@@ -1,9 +1,9 @@
 // A job in its fork actor, without an engine: a harness that stands for the copied storage, and the actor's identity
 // with the fork input the driver gave. The actor is no fork of anything here, so its database is never read.
 
-import { Conversation, Doc, Harness } from "@gunta/pi-durable-effect";
-import { TestHarness } from "@gunta/pi-durable-effect/testing";
-import { ActorInfo, ActorSql, type Identity } from "@gunta/pi-durable-rivet-effect";
+import { Conversation, Doc, Harness } from "@effectified/pi-durable";
+import { TestHarness } from "@effectified/pi-durable/testing";
+import { ActorInfo, ActorSql, type Identity } from "@effectified/pi-durable-rivet";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 import * as Reactivity from "effect/reactivity/Reactivity";
 import * as SqlClient from "effect/sql/SqlClient";

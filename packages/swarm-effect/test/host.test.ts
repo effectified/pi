@@ -1,7 +1,7 @@
 // The host operations on the in-storage driver, with a scripted model: start, status, cancel, result, destroyFork.
 
-import { Harness } from "@gunta/pi-durable-effect";
-import { TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Harness } from "@effectified/pi-durable";
+import { TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Swarm from "../src/index.ts";

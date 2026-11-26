@@ -1,6 +1,6 @@
 // The agent change of a swarm's forks as it crosses to a thread actor: what `ForkAgent.toWire` makes of a change.
 
-import { Extension, Registry, Tool } from "@gunta/pi-durable-effect";
+import { Extension, Registry, Tool } from "@effectified/pi-durable";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { ForkAgent } from "../src/rivet.ts";

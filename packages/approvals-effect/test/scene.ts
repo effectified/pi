@@ -2,9 +2,9 @@
 // the waits and reads the tests share.
 
 import type { EntryRecord, TaskGraph, TaskId } from "@earendil-works/pi-durable";
-import { conditions } from "@gunta/pi-ai-effect/testing";
-import { type DurableError, Harness, type Hook, Tool } from "@gunta/pi-durable-effect";
-import { answer, type FauxResponseStep, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { conditions } from "@effectified/pi-ai/testing";
+import { type DurableError, Harness, type Hook, Tool } from "@effectified/pi-durable";
+import { answer, type FauxResponseStep, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 import { extension, Inbox, type Policy, type Request } from "../src/index.ts";
 

@@ -2,9 +2,9 @@
 // the imports differ (the README names the packages, this file its sources and a stand-in for the router's port),
 // and the model is scripted.
 
-import { complete } from "@gunta/pi-ai-effect";
-import { Harness, Registry, Storage } from "@gunta/pi-durable-effect";
-import { answer, ScriptedModels } from "@gunta/pi-durable-effect/testing";
+import { complete } from "@effectified/pi-ai";
+import { Harness, Registry, Storage } from "@effectified/pi-durable";
+import { answer, ScriptedModels } from "@effectified/pi-durable/testing";
 import { Context, Effect, Layer, Option, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {
@@ -89,7 +89,7 @@ const agent = ScriptedModels.use(({ model }) =>
 const requests = ScriptedModels.use((scripted) => scripted.callCount);
 
 // README: prices behind a router
-// From the product's route table: `yield* priceRows(routes)` of @gunta/pi-router-effect, written out.
+// From the product's route table: `yield* priceRows(routes)` of @effectified/pi-router, written out.
 const routerRows: PriceTable = {
 	currency: "USD",
 	prices: [
@@ -118,7 +118,7 @@ const routerRows: PriceTable = {
 const routerPrices = Prices.layer(routerRows);
 
 /**
- * A stand-in for the settlement port of `@gunta/pi-router-effect`, which this package does not import: the fields of
+ * A stand-in for the settlement port of `@effectified/pi-router`, which this package does not import: the fields of
  * a `RouteEvent` the README's code reads, and a `Context.Reference` with the port's signature and its default.
  */
 interface RouteEvent {

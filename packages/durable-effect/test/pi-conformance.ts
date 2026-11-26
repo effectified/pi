@@ -53,7 +53,7 @@ import type {
 	ToolPark,
 	ToolRegistration,
 } from "@earendil-works/pi-durable";
-import type { StrictOmit } from "@gunta/pi-ai-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
 import type { Assert, Conform, Covers } from "../../../effect/conformance.ts";
 import type * as Errors from "../src/errors.ts";
 import type {

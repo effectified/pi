@@ -7,7 +7,7 @@ import type {
 	EntryRecord,
 	Conversation as PiConversation,
 } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Fiber, Latch, Option, Schema, Stream } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { Conversation, ConversationBusy, ConversationIdle, Extension, Harness, Registry, Task } from "../src/index.ts";

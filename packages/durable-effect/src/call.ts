@@ -11,7 +11,7 @@ import { Cancelled, type DurableError, fromRejection, type UnexpectedError } fro
  * Pi invocation. A cancelled parent fails the calls with `Cancelled`.
  */
 export const ParentContext: Context.Reference<ChordContext> = Context.Reference<ChordContext>(
-	"@gunta/pi-durable-effect/ParentContext",
+	"@effectified/pi-durable/ParentContext",
 	{ defaultValue: () => BACKGROUND_CONTEXT },
 );
 

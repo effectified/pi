@@ -1,5 +1,5 @@
-import { Conversation, Harness } from "@gunta/pi-durable-effect";
-import { TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Conversation, Harness } from "@effectified/pi-durable";
+import { TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { failed, type Job, planned } from "../src/job.ts";

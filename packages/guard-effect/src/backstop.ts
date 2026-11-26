@@ -1,7 +1,7 @@
 // The backstop: a tool that refuses to run in a conversation that does not ask the guard's extension first.
 
 import type { ToolExecutionResult, ToolRegistration } from "@earendil-works/pi-durable";
-import type { Tool } from "@gunta/pi-durable-effect";
+import type { Tool } from "@effectified/pi-durable";
 import { Effect, PubSub } from "effect";
 import * as Enforced from "./enforced.ts";
 import type { Service } from "./guard.ts";

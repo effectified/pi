@@ -1,5 +1,5 @@
 {
-	"name": "@gunta/pi-ai-effect",
+	"name": "@effectified/pi-ai",
 	"version": "0.1.0",
 	"description": "Pi's models in Effect: Models as a service, streams and completions as Stream and Effect, and bridges to effect/ai in both directions",
 	"type": "module",
@@ -42,7 +42,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/gunta/pi-effect.git",
+		"url": "git+https://github.com/effectified/pi.git",
 		"directory": "packages/ai-effect"
 	},
 	"engines": {
@@ -50,7 +50,7 @@
 	},
 	"dependencies": {
 		"@earendil-works/pi-ai": "1.6.1",
-		"@gunta/pi-schema-effect": "0.1.0"
+		"@effectified/pi-schema": "0.1.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5"

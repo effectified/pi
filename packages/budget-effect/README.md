@@ -1,4 +1,4 @@
-# @gunta/pi-budget-effect
+# @effectified/pi-budget
 
 A budget lease for Pi agents in Effect, for `effect` 4.1. No provider request of a Pi Durable harness goes out
 without money reserved for it under a lease the product owns, every response is settled against that lease, and a
@@ -18,13 +18,13 @@ harness whose lease is gone stops cleanly and can be continued.
 - **Events** for every reservation, settlement and refusal: amounts, model and outcome, never content.
 
 It knows no product rule: the lease, the size of a reservation, the prices and the currency are the product's.
-Built for pi-ai 1.6.1 and Pi Durable 1.6.1, on [`@gunta/pi-ai-effect`](../ai-effect) and
-[`@gunta/pi-durable-effect`](../durable-effect).
+Built for pi-ai 1.6.1 and Pi Durable 1.6.1, on [`@effectified/pi-ai`](../ai-effect) and
+[`@effectified/pi-durable`](../durable-effect).
 
 ## Install
 
 ```sh
-npm install @gunta/pi-budget-effect @gunta/pi-durable-effect @gunta/pi-ai-effect @earendil-works/pi-durable @earendil-works/pi-ai effect
+npm install @effectified/pi-budget @effectified/pi-durable @effectified/pi-ai @earendil-works/pi-durable @earendil-works/pi-ai effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`), so the application has one copy.
@@ -43,7 +43,7 @@ The product provides `Lease`, a service with two Effects.
 
 ```ts
 import { Effect, Layer } from "effect";
-import { Lease, LeaseFenced } from "@gunta/pi-budget-effect";
+import { Lease, LeaseFenced } from "@effectified/pi-budget";
 
 /** A product's lease. This one is a wallet in memory; a real one is a row the product fences and renews. */
 const wallet = { left: 1_000_000n, held: new Map<string, bigint>(), fenced: false };
@@ -80,7 +80,7 @@ const WalletLease = Layer.succeed(Lease, {
 ## Prices and the estimate
 
 ```ts
-import { Estimator, type PriceTable } from "@gunta/pi-budget-effect";
+import { Estimator, type PriceTable } from "@effectified/pi-budget";
 
 const table: PriceTable = {
 	currency: "USD",
@@ -109,7 +109,7 @@ const estimate = Estimator.fixed(50_000n);
 
 ### Prices behind a router
 
-Behind [`@gunta/pi-router-effect`](../router-effect) a request is asked of an alias (`router/author`) and answered
+Behind [`@effectified/pi-router`](../router-effect) a request is asked of an alias (`router/author`) and answered
 by a route (`openrouter/anthropic/claude-haiku-5.5`). The budget uses two prices for it:
 
 - **Before it is sent**, the model that was asked: the alias. Without a row for it the request is refused
@@ -124,9 +124,9 @@ table, as plain data in the shape of `PriceTable`: `priceRows(routes)`. Neither 
 below are what it returns for an alias `author` with two routes.
 
 ```ts
-import { Prices, type PriceTable } from "@gunta/pi-budget-effect";
+import { Prices, type PriceTable } from "@effectified/pi-budget";
 
-// From the product's route table: `yield* priceRows(routes)` of @gunta/pi-router-effect, written out.
+// From the product's route table: `yield* priceRows(routes)` of @effectified/pi-router, written out.
 const routerRows: PriceTable = {
 	currency: "USD",
 	prices: [
@@ -149,9 +149,9 @@ positive number counted as zero, one-hour cache writes counted at most all of `c
 
 ```ts
 import { Effect, Layer } from "effect";
-import { Harness, Registry, Storage } from "@gunta/pi-durable-effect";
-import { ScriptedModels } from "@gunta/pi-durable-effect/testing";
-import { BudgetedModels, Prices, Shares } from "@gunta/pi-budget-effect";
+import { Harness, Registry, Storage } from "@effectified/pi-durable";
+import { ScriptedModels } from "@effectified/pi-durable/testing";
+import { BudgetedModels, Prices, Shares } from "@effectified/pi-budget";
 
 const budget = Layer.mergeAll(WalletLease, estimate, Layer.orDie(Prices.layer(table)));
 
@@ -176,11 +176,11 @@ const agent = ScriptedModels.use(({ model }) =>
 ```
 
 The examples of this README run as they stand, because the model is scripted (`ScriptedModels` and `answer` of
-`@gunta/pi-durable-effect/testing`, whose provider is `faux` and whose model is `faux-1`); they are the test
+`@effectified/pi-durable/testing`, whose provider is `faux` and whose model is `faux-1`); they are the test
 [`test/readme.test.ts`](test/readme.test.ts).
 
 - **Order.** The budgeted `Models` sits directly under the harness. Everything that makes provider requests on
-  its own goes underneath: the providers, and [`@gunta/pi-router-effect`](../router-effect).
+  its own goes underneath: the providers, and [`@effectified/pi-router`](../router-effect).
 - **With the router.** Build `Router.layer(routes)` and `BudgetedModels` on the same plain `Models` value, and open
   the harness on the budgeted one. The harness asks for an alias, so one harness request is one reservation, settled
   with the usage of the request's last attempt. The table needs a row for the alias and for each route's model (see
@@ -219,13 +219,13 @@ The budgeted `Models` settles what a response says was used. Usage that reaches 
 through `Spend`, which `BudgetedModels.layer` and `layerWithShares` provide on the same lease, prices, events and
 shares. The case it is for: a router's attempt that failed after using tokens and that another route took over. The
 harness's request ends with the serving route's message, so the budgeted `Models` never sees the failed attempt.
-[`@gunta/pi-router-effect`](../router-effect) hands that attempt to a port, `AttemptSettlement`, and waits for the
+[`@effectified/pi-router`](../router-effect) hands that attempt to a port, `AttemptSettlement`, and waits for the
 answer before it tries the next route. A product implements the port with `Spend`:
 
 ```ts
 import { Effect, Layer } from "effect";
-import { Spend } from "@gunta/pi-budget-effect";
-import { AttemptSettlement } from "@gunta/pi-router-effect";
+import { Spend } from "@effectified/pi-budget";
+import { AttemptSettlement } from "@effectified/pi-router";
 
 /** Charges each attempt another route takes over to the budget, before that route is tried. */
 const SettleAttempts = Layer.effect(
@@ -459,7 +459,7 @@ had settled. The same money is then stored in two storages, and a product that a
 counts it twice.
 
 ```ts
-import { onStorageFork } from "@gunta/pi-budget-effect";
+import { onStorageFork } from "@effectified/pi-budget";
 
 // In the host of the copy, on a harness opened with `resume: false`, before its first request:
 yield* onStorageFork(copyName); // Effect<void, DurableError | SchemaDecodeError, Harness | Shares>

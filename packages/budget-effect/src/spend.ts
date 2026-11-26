@@ -67,7 +67,7 @@ export interface SpendService {
  * The way to charge usage the model boundary did not see. Provided by `BudgetedModels.layer` and
  * `BudgetedModels.layerWithShares`, on the lease, the prices, the events and the shares of that budget.
  */
-export class Spend extends Context.Service<Spend, SpendService>()("@gunta/pi-budget-effect/Spend") {}
+export class Spend extends Context.Service<Spend, SpendService>()("@effectified/pi-budget/Spend") {}
 
 /** The `Spend` of `budget`. Its record of keys lives as long as the service does. */
 export function make(budget: Budget): Effect.Effect<SpendService> {

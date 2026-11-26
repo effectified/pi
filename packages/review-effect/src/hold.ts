@@ -1,7 +1,7 @@
 // The hold: what a person decides about a held answer, the signal that carries the decision to the waiting review
 // task, and the entry that records it.
 
-import { Entry, Signal } from "@gunta/pi-durable-effect";
+import { Entry, Signal } from "@effectified/pi-durable";
 import { Schema } from "effect";
 
 /**

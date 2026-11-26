@@ -8,8 +8,8 @@ import {
 	type EntryRecord,
 	type Entry as PiEntry,
 } from "@earendil-works/pi-durable";
-import type { StrictOmit } from "@gunta/pi-ai-effect";
-import { decodeUnknown, encode, type SchemaDecodeError } from "@gunta/pi-schema-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
+import { decodeUnknown, encode, type SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, Option, type Schema } from "effect";
 import * as Ids from "./id.ts";
 

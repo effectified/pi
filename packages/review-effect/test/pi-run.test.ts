@@ -2,9 +2,9 @@
 // selected has answered and settled its inputs, yet keeps Pi's `run` while the hook and its tasks are pending. The
 // view reads that run as not working, as `Run.view` documents; a Pi that marks such a run otherwise fails here.
 
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { BuiltinDoc, type Conversation, Extension, Harness, Hook } from "@gunta/pi-durable-effect";
-import { answer, held, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
+import { BuiltinDoc, type Conversation, Extension, Harness, Hook } from "@effectified/pi-durable";
+import { answer, held, TestHarness } from "@effectified/pi-durable/testing";
 import { Deferred, Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Run from "../src/run.ts";

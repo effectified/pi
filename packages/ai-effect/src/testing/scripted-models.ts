@@ -31,7 +31,7 @@ export interface ScriptedModelsService {
 
 /** A scripted pi-ai provider for tests: no network, no keys, responses in the order they were queued. */
 export class ScriptedModels extends Context.Service<ScriptedModels, ScriptedModelsService>()(
-	"@gunta/pi-ai-effect/testing/ScriptedModels",
+	"@effectified/pi-ai/testing/ScriptedModels",
 ) {
 	/**
 	 * A fresh scripted provider and a `Models` that holds only it. `options` are pi-ai's `fauxProvider` options; give

@@ -33,7 +33,7 @@ export type Verification =
 export class Verifier extends Context.Service<
 	Verifier,
 	{ readonly verify: (citation: Citation) => Effect.Effect<Verification, unknown> }
->()("@gunta/pi-review-effect/Citations/Verifier") {}
+>()("@effectified/pi-review/Citations/Verifier") {}
 
 /**
  * The citation check: `extract` finds the citations of an answer's text, and the `Verifier` of the context is asked

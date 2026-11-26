@@ -4,11 +4,11 @@
 
 import type { FauxResponseFactory, Message } from "@earendil-works/pi-ai";
 import type { CompactionSettings } from "@earendil-works/pi-durable";
-import { BuiltinDoc, Extension, Hook } from "@gunta/pi-durable-effect";
-import { answer } from "@gunta/pi-durable-effect/testing";
-import { Action, ActorDatabase, ActorInfo, type Client, type Fork } from "@gunta/pi-durable-rivet-effect";
-import * as Testing from "@gunta/pi-durable-rivet-effect/testing";
-import type { Records } from "@gunta/pi-recorder-effect";
+import { BuiltinDoc, Extension, Hook } from "@effectified/pi-durable";
+import { answer } from "@effectified/pi-durable/testing";
+import { Action, ActorDatabase, ActorInfo, type Client, type Fork } from "@effectified/pi-durable-rivet";
+import * as Testing from "@effectified/pi-durable-rivet/testing";
+import type { Records } from "@effectified/pi-recorder";
 import { Effect, Layer, Option, Queue, Schedule, Schema } from "effect";
 import { Threads } from "../src/index.ts";
 import { ThreadActor } from "../src/rivet.ts";

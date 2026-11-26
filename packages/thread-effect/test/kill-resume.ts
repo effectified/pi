@@ -27,10 +27,10 @@
 
 import type { FauxResponseFactory } from "@earendil-works/pi-ai";
 import { createExpectAssertions, type StorageConformanceRunner } from "@earendil-works/pi-durable/testing";
-import * as Approvals from "@gunta/pi-approvals-effect";
-import { LeaseFenced } from "@gunta/pi-budget-effect";
-import { Storage } from "@gunta/pi-durable-effect";
-import { answer, toolCall } from "@gunta/pi-durable-effect/testing";
+import * as Approvals from "@effectified/pi-approvals";
+import { LeaseFenced } from "@effectified/pi-budget";
+import { Storage } from "@effectified/pi-durable";
+import { answer, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Fiber, Layer, Queue, Schedule } from "effect";
 import type { SqlClient } from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";

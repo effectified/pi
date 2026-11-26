@@ -1,7 +1,7 @@
 // Settling the attempts another route takes over: the router's settlement port, implemented with the budget's `Spend`.
 
-import { Spend } from "@gunta/pi-budget-effect";
-import { AttemptSettlement } from "@gunta/pi-router-effect";
+import { Spend } from "@effectified/pi-budget";
+import { AttemptSettlement } from "@effectified/pi-router";
 import { Effect, Layer } from "effect";
 
 /**

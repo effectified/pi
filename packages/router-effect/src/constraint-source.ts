@@ -32,7 +32,7 @@ const NONE: ConstraintSourceService = { constraintsOf: () => Effect.succeed({}) 
  * imposes nothing, so a router without one routes by the request and the alias alone.
  */
 export const ConstraintSource: Context.Reference<ConstraintSourceService> = Context.Reference<ConstraintSourceService>(
-	"@gunta/pi-router-effect/ConstraintSource",
+	"@effectified/pi-router/ConstraintSource",
 	{ defaultValue: () => NONE },
 );
 

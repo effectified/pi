@@ -9,7 +9,7 @@ import { makeTelemetryContext, spanHandle } from "./adapter.ts";
  * handed to anything that takes one (`HarnessOptions.telemetry` of a Pi Durable harness).
  */
 export class PiTelemetry extends Context.Service<PiTelemetry, TelemetryContext>()(
-	"@gunta/pi-telemetry-effect/PiTelemetry",
+	"@effectified/pi-telemetry/PiTelemetry",
 ) {
 	/**
 	 * The adapter on the `Tracer`, `Clock`, metric registry and loggers of the context the Layer is built in. It has

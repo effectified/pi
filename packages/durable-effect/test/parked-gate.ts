@@ -3,7 +3,7 @@
 
 import type { TaskId } from "@earendil-works/pi-durable";
 import { createExpectAssertions, type StorageConformanceRunner } from "@earendil-works/pi-durable/testing";
-import { runLive } from "@gunta/pi-ai-effect/testing";
+import { runLive } from "@effectified/pi-ai/testing";
 import { Effect, Latch, Layer, Option, Schema, Stream } from "effect";
 import { Extension, Gate, Harness, Hook, Signal, Storage, Tool } from "../src/index.ts";
 import { answer, type FauxResponseStep, ScriptedModels, TestHarness, toolCall } from "../src/testing/index.ts";

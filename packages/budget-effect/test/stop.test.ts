@@ -1,7 +1,7 @@
 import type { Usage } from "@earendil-works/pi-ai";
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { type Conversation, Extension, Harness, Registry, Tool } from "@gunta/pi-durable-effect";
-import { answer, held, ScriptedModels, toolCall } from "@gunta/pi-durable-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
+import { type Conversation, Extension, Harness, Registry, Tool } from "@effectified/pi-durable";
+import { answer, held, ScriptedModels, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

@@ -1,6 +1,6 @@
 import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
-import { type Conversation, Extension, Harness, Registry, Storage, Tool } from "@gunta/pi-durable-effect";
-import { answer, ScriptedModels, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { type Conversation, Extension, Harness, Registry, Storage, Tool } from "@effectified/pi-durable";
+import { answer, ScriptedModels, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Exit, Layer, Option, PubSub, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {

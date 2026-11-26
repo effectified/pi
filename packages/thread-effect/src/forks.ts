@@ -1,8 +1,8 @@
 // Where a swarm's forks live: the choice a host makes for the composition, and what the composition asks of it.
 
-import { Shares } from "@gunta/pi-budget-effect";
-import type { Doc, Harness } from "@gunta/pi-durable-effect";
-import * as Swarm from "@gunta/pi-swarm-effect";
+import { Shares } from "@effectified/pi-budget";
+import type { Doc, Harness } from "@effectified/pi-durable";
+import * as Swarm from "@effectified/pi-swarm";
 import { Context, Effect, Layer, Option } from "effect";
 import type { Opened } from "./opened.ts";
 
@@ -20,7 +20,7 @@ export class Accounts extends Context.Service<
 		 */
 		readonly spent: (swarmId: string, job: Swarm.JobReport) => Effect.Effect<Option.Option<bigint>, Doc.Failure>;
 	}
->()("@gunta/pi-thread-effect/Forks/Accounts") {}
+>()("@effectified/pi-thread/Forks/Accounts") {}
 
 /**
  * One way to hold a swarm's forks. `R` is what its driver needs of the host.

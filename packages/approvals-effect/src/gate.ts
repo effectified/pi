@@ -1,7 +1,7 @@
 // The gate: a `beforeTool` hook that parks a call until a person decided about exactly the arguments it has.
 
 import type { JsonObject } from "@earendil-works/pi-durable";
-import { Gate, Hook } from "@gunta/pi-durable-effect";
+import { Gate, Hook } from "@effectified/pi-durable";
 import { Duration, Effect } from "effect";
 import * as Asks from "./asks.ts";
 import * as Digest from "./digest.ts";

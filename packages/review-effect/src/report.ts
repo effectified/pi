@@ -1,6 +1,6 @@
 // A check's report: its findings or its failure, kept in a memo of the review task so each check is asked once.
 
-import type { DurableError } from "@gunta/pi-durable-effect";
+import type { DurableError } from "@effectified/pi-durable";
 import { Cause, Effect, Schema } from "effect";
 import type { Check, Subject } from "./check.ts";
 import { describe } from "./errors.ts";

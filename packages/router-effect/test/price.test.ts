@@ -1,6 +1,6 @@
 import { calculateCost, type Usage } from "@earendil-works/pi-ai";
-import { emptyUsage } from "@gunta/pi-ai-effect";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { emptyUsage } from "@effectified/pi-ai";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { cost, type Price, type TokenUsage } from "../src/index.ts";

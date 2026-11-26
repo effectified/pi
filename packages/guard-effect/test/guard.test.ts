@@ -1,6 +1,6 @@
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { Extension, Harness, Hook, Registry, Tool, type Tx } from "@gunta/pi-durable-effect";
-import { answer, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { Extension, Harness, Hook, Registry, Tool, type Tx } from "@effectified/pi-durable";
+import { answer, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {

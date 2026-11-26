@@ -1,9 +1,9 @@
 // The actions of a thread actor for the swarms that run on its thread: run, cancel, probe, result, the money per job,
 // and the destruction of a fork. The coordinator of a swarm lives in the actor of its thread.
 
-import { Entry, type Registry } from "@gunta/pi-durable-effect";
-import { Action } from "@gunta/pi-durable-rivet-effect";
-import * as Swarm from "@gunta/pi-swarm-effect";
+import { Entry, type Registry } from "@effectified/pi-durable";
+import { Action } from "@effectified/pi-durable-rivet";
+import * as Swarm from "@effectified/pi-swarm";
 import { Effect, Schema } from "effect";
 import * as ForkSetup from "../fork-setup.ts";
 import * as Swarms from "../swarms.ts";

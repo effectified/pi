@@ -16,7 +16,7 @@ import {
 	type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { MODEL_THINKING_LEVELS } from "@earendil-works/pi-ai/providers/model-schema";
-import { type ErrorReason, emptyUsage, type ResponseEvent } from "@gunta/pi-ai-effect";
+import { type ErrorReason, emptyUsage, type ResponseEvent } from "@effectified/pi-ai";
 import { Cause, Clock, Effect, Exit, FiberSet, Option, type Scope } from "effect";
 import type { RouterError } from "./errors.ts";
 import type { Alias, ValidRouteTable } from "./route-table.ts";

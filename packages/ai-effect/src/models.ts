@@ -7,7 +7,7 @@ import { Context, Layer } from "effect";
  * The pi-ai `Models` collection of this program. The service value is pi-ai's own object, so it can be handed to
  * anything that takes one (a Pi Durable harness), and providers can be added or replaced while the program runs.
  */
-export class Models extends Context.Service<Models, MutableModels>()("@gunta/pi-ai-effect/Models") {
+export class Models extends Context.Service<Models, MutableModels>()("@effectified/pi-ai/Models") {
 	/** A fresh collection holding `providers`; a later provider replaces an earlier one with the same id. */
 	static layer(providers: readonly Provider[], options?: CreateModelsOptions): Layer.Layer<Models> {
 		return Layer.sync(Models, () => {

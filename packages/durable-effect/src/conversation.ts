@@ -21,7 +21,7 @@ import type {
 	TaskId,
 	UserInput,
 } from "@earendil-works/pi-durable";
-import type { StrictOmit } from "@gunta/pi-ai-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
 import { Effect, Option, Predicate, type Stream } from "effect";
 import * as Agent from "./agent.ts";
 import { call } from "./call.ts";

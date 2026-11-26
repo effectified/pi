@@ -1,8 +1,8 @@
 // The agent change of a swarm's forks as it crosses to the thread's actor: plain data, with tools and extensions by
 // name.
 
-import { Agent, Registry } from "@gunta/pi-durable-effect";
-import * as Swarm from "@gunta/pi-swarm-effect";
+import { Agent, Registry } from "@effectified/pi-durable";
+import * as Swarm from "@effectified/pi-swarm";
 import { Effect, Schema } from "effect";
 
 /**

@@ -1,9 +1,9 @@
 // The swarm service: run a swarm from a thread, cancel it, probe it with its job keys, read what each job spent, and
 // destroy a kept fork.
 
-import { type Doc, type DurableError, Harness, type SchemaDecodeError } from "@gunta/pi-durable-effect";
-import { Recorder } from "@gunta/pi-recorder-effect";
-import * as Swarm from "@gunta/pi-swarm-effect";
+import { type Doc, type DurableError, Harness, type SchemaDecodeError } from "@effectified/pi-durable";
+import { Recorder } from "@effectified/pi-recorder";
+import * as Swarm from "@effectified/pi-swarm";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import type { ThreadNotFound } from "./errors.ts";
 import * as ForkSetup from "./fork-setup.ts";
@@ -98,7 +98,7 @@ export interface Service {
 }
 
 /** The swarm operations of the composed harness. */
-export class Swarms extends Context.Service<Swarms, Service>()("@gunta/pi-thread-effect/Swarms") {}
+export class Swarms extends Context.Service<Swarms, Service>()("@effectified/pi-thread/Swarms") {}
 
 /** What the operations run on: the open harness, the fork driver and its accounts, and the recorder's pump. */
 type Composed = Harness.Harness | Swarm.ForkDriver | Forks.Accounts | Recorder.Recorder;

@@ -1,5 +1,5 @@
 {
-	"name": "@gunta/pi-budget-effect",
+	"name": "@effectified/pi-budget",
 	"version": "0.1.0",
 	"description": "Budget leases for Pi agents in Effect: reserve before each provider request, settle after the response, stop cleanly when the lease is fenced",
 	"type": "module",
@@ -35,7 +35,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/gunta/pi-effect.git",
+		"url": "git+https://github.com/effectified/pi.git",
 		"directory": "packages/budget-effect"
 	},
 	"engines": {
@@ -44,8 +44,8 @@
 	"dependencies": {
 		"@earendil-works/pi-ai": "1.6.1",
 		"@earendil-works/pi-durable": "1.6.1",
-		"@gunta/pi-ai-effect": "0.1.0",
-		"@gunta/pi-durable-effect": "0.1.0"
+		"@effectified/pi-ai": "0.1.0",
+		"@effectified/pi-durable": "0.1.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5"

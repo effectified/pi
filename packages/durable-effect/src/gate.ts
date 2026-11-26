@@ -1,8 +1,8 @@
 // Gates: what a `beforeTool` hook decides about one tool call, as a tagged union.
 
 import type { JsonObject, ToolHooks } from "@earendil-works/pi-durable";
-import type { StrictOmit } from "@gunta/pi-ai-effect";
-import type { SchemaConversionError } from "@gunta/pi-schema-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
+import type { SchemaConversionError } from "@effectified/pi-schema";
 import { Effect } from "effect";
 import * as Signal from "./signal.ts";
 

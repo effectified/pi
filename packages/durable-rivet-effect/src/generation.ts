@@ -21,9 +21,7 @@ export interface Generation<R> {
  * are interrupted after the Layer has closed: what the Layer does while it closes, such as Pi's last writes, runs on
  * them, and what is left then ends with the wake.
  */
-export class Work extends Context.Service<Work, FiberSet.FiberSet>()(
-	"@gunta/pi-durable-rivet-effect/Generation/Work",
-) {}
+export class Work extends Context.Service<Work, FiberSet.FiberSet>()("@effectified/pi-durable-rivet/Generation/Work") {}
 
 /** Builds `layer` in a scope of its own, with the wake's `Work`. A Layer that fails to build leaves nothing open. */
 export function open<R, E>(layer: Layer.Layer<R, E, Work>): Effect.Effect<Generation<R>, E> {

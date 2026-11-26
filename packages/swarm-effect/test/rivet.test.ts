@@ -2,8 +2,8 @@
 // is made with. Everything that needs an actor is in rivet-suite.ts.
 
 import { readdirSync, readFileSync } from "node:fs";
-import { Conversation, Entry, Task } from "@gunta/pi-durable-effect";
-import { ActorInfo, type Identity } from "@gunta/pi-durable-rivet-effect";
+import { Conversation, Entry, Task } from "@effectified/pi-durable";
+import { ActorInfo, type Identity } from "@effectified/pi-durable-rivet";
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Package from "../src/index.ts";
@@ -47,7 +47,7 @@ describe("the Rivet subpath", () => {
 		const files = readdirSync(source, { recursive: true, encoding: "utf8" }).filter((file) => file.endsWith(".ts"));
 		const importing = (specifier: string) =>
 			files.filter((file) => readFileSync(new URL(file, source), "utf8").includes(`from "${specifier}`)).sort();
-		expect(importing("@gunta/pi-durable-rivet-effect")).toEqual([
+		expect(importing("@effectified/pi-durable-rivet")).toEqual([
 			"rivet/actions.ts",
 			"rivet/assignment.ts",
 			"rivet/driver.ts",

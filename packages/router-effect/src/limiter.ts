@@ -41,7 +41,7 @@ interface KeyState {
 }
 
 /** A concurrency limiter with backoff, in this process. Time comes from Effect's `Clock`. */
-export class Limiter extends Context.Service<Limiter, LimiterService>()("@gunta/pi-router-effect/Limiter") {
+export class Limiter extends Context.Service<Limiter, LimiterService>()("@effectified/pi-router/Limiter") {
 	/** A fresh limiter: every key idle and not waiting. */
 	static make(options: LimiterOptions): Effect.Effect<LimiterService> {
 		return Effect.sync(() => {

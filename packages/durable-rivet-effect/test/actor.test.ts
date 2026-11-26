@@ -1,8 +1,8 @@
 // What an actor definition takes, without an engine: the harness options as they are, or as an Effect on what
 // `layer` provides. engine-suite.ts runs an actor whose options are such an Effect.
 
-import { Registry } from "@gunta/pi-durable-effect";
-import { ScriptedModels } from "@gunta/pi-durable-effect/testing";
+import { Registry } from "@effectified/pi-durable";
+import { ScriptedModels } from "@effectified/pi-durable/testing";
 import { Context, Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { Actor, ActorInfo } from "../src/index.ts";

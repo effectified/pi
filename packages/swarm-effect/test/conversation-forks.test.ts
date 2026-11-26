@@ -1,9 +1,9 @@
 // The in-storage driver, operation by operation, on a harness with a scripted model.
 
 import type { EntryId } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { Conversation, Extension, Harness, Signal, Task } from "@gunta/pi-durable-effect";
-import { answer, type FauxResponseFactory, ScriptedModels, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
+import { Conversation, Extension, Harness, Signal, Task } from "@effectified/pi-durable";
+import { answer, type FauxResponseFactory, ScriptedModels, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Fiber, Latch, Layer, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

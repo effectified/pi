@@ -3,7 +3,7 @@
 // caller takes the callback's error for a rollback that happened. Rivet hides a failed rollback (the gap the adapter's
 // doc names); this pins that the adapter itself adds none.
 
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import * as SqliteDatabase from "../src/sqlite-database.ts";

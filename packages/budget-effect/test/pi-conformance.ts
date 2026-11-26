@@ -3,7 +3,7 @@
 // where the wrapper is written (`budgeted-models.ts`).
 
 import type { ModelCost, Usage } from "@earendil-works/pi-ai";
-import type { StrictOmit } from "@gunta/pi-ai-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
 import type { Assert, Conform, Covers } from "../../../effect/conformance.ts";
 import type { ModelPrice, TokenUsage } from "../src/index.ts";
 

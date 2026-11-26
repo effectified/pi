@@ -2,8 +2,8 @@
 // the fork's conversation, and the coordinator says where each job ran. The Rivet driver's side is in
 // rivet-job.test.ts (in process) and rivet-suite.ts (on an engine).
 
-import { Harness } from "@gunta/pi-durable-effect";
-import { TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Harness } from "@effectified/pi-durable";
+import { TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Swarm from "../src/index.ts";

@@ -1,4 +1,4 @@
-import type { SchemaConversionError } from "@gunta/pi-schema-effect";
+import type { SchemaConversionError } from "@effectified/pi-schema";
 import { Context, Effect, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Extension, Hook, Registry, Task, Tool } from "../src/index.ts";

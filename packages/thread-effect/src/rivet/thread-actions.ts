@@ -1,10 +1,10 @@
 // The actions of a thread actor for its thread: start, resume, cancel, release, probe, outcome, and the approvals of
 // its parked calls. None waits for the thread: Rivet ends an action after its timeout.
 
-import * as Approvals from "@gunta/pi-approvals-effect";
-import type { Harness } from "@gunta/pi-durable-effect";
-import { Action } from "@gunta/pi-durable-rivet-effect";
-import * as Review from "@gunta/pi-review-effect";
+import * as Approvals from "@effectified/pi-approvals";
+import type { Harness } from "@effectified/pi-durable";
+import { Action } from "@effectified/pi-durable-rivet";
+import * as Review from "@effectified/pi-review";
 import { Effect, Schema } from "effect";
 import { Outcome } from "../outcome.ts";
 import * as Threads from "../threads.ts";

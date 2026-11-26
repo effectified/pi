@@ -1,8 +1,8 @@
 // The thread actor's definition without an engine: the product's own actions beside the fixed ones, its own Layer on
 // the open harness, and what their types refuse. What an actor does is in rivet-suite.ts.
 
-import { Harness } from "@gunta/pi-durable-effect";
-import { Action, ActorDatabase } from "@gunta/pi-durable-rivet-effect";
+import { Harness } from "@effectified/pi-durable";
+import { Action, ActorDatabase } from "@effectified/pi-durable-rivet";
 import { Context, Effect, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Threads } from "../src/index.ts";

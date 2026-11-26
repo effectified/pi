@@ -3,9 +3,9 @@
 // thread at the router.
 
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
-import { LeaseFenced } from "@gunta/pi-budget-effect";
-import { answer, toolCall } from "@gunta/pi-durable-effect/testing";
-import type { RouteTable } from "@gunta/pi-router-effect";
+import { LeaseFenced } from "@effectified/pi-budget";
+import { answer, toolCall } from "@effectified/pi-durable/testing";
+import type { RouteTable } from "@effectified/pi-router";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { Routing, Session, Threads } from "../src/index.ts";

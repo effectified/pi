@@ -11,7 +11,7 @@ import {
 	Harness as PiHarness,
 	type Storage as PiStorage,
 } from "@earendil-works/pi-durable";
-import type { SchemaConversionError, SchemaDecodeError } from "@gunta/pi-schema-effect";
+import type { SchemaConversionError, SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, type Layer } from "effect";
 import { type DurableError, Harness, type Registry, Storage } from "../src/index.ts";
 import { harnessLayer, KeptStorage, scriptedModels } from "./scripted.ts";

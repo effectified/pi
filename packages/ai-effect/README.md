@@ -1,4 +1,4 @@
-# @gunta/pi-ai-effect
+# @effectified/pi-ai
 
 Pi's model library ([`@earendil-works/pi-ai`](../ai)) in Effect terms, for `effect` 4.1:
 
@@ -13,7 +13,7 @@ It adds no behaviour of its own: what pi-ai does is what happens. Built for pi-a
 ## Install
 
 ```sh
-npm install @gunta/pi-ai-effect @earendil-works/pi-ai effect
+npm install @effectified/pi-ai @earendil-works/pi-ai effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`), so the application has one copy.
@@ -26,7 +26,7 @@ handed to anything that takes one, and providers can be added while the program 
 ```ts
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { Effect } from "effect";
-import { getModel, Models } from "@gunta/pi-ai-effect";
+import { getModel, Models } from "@effectified/pi-ai";
 
 const program = Effect.gen(function* () {
 	// Fails with ModelNotFound when no registered provider lists the model.
@@ -41,7 +41,7 @@ provider-neutral ones (`reasoning`, `toolChoice`). None takes a `signal`: the fi
 
 ```ts
 import { Effect, Stream } from "effect";
-import { complete, getModel, stream } from "@gunta/pi-ai-effect";
+import { complete, getModel, stream } from "@effectified/pi-ai";
 
 const program = Effect.gen(function* () {
 	const model = yield* getModel({ provider: "anthropic", modelId: "claude-opus-4-7" });
@@ -68,8 +68,8 @@ when the provider gave the request up). Interrupting the fiber is interruption, 
 `requestKey(session, context)` is the SHA-256 of the canonical JSON of a provider session and a whole context, as
 64 hexadecimal digits: the same each time one request is sent, in this process or a later one, and another for
 every other request. Pi builds a context from committed entries only, so a request sent again after a crash, and
-Pi's retry after a provider error, have the key of the first send. `@gunta/pi-router-effect` puts it on its route
-events and `@gunta/pi-budget-effect` on its reservations, so a product's lease and its event store name one
+Pi's retry after a provider error, have the key of the first send. `@effectified/pi-router` puts it on its route
+events and `@effectified/pi-budget` on its reservations, so a product's lease and its event store name one
 request alike. It is no idempotency key for a provider: a retry after an error has the same key by design.
 
 ## Values that follow pi-ai's types
@@ -95,7 +95,7 @@ gets Pi's providers and catalog.
 ```ts
 import { Effect, Layer } from "effect";
 import { LanguageModel } from "effect/ai";
-import { Models, PiLanguageModel } from "@gunta/pi-ai-effect";
+import { Models, PiLanguageModel } from "@effectified/pi-ai";
 
 const model = PiLanguageModel.layer({ provider: "anthropic", modelId: "claude-opus-4-7" }, { reasoning: "high" }).pipe(
 	Layer.provide(Models.layer([anthropicProvider()])),
@@ -127,7 +127,7 @@ anything that takes a pi-ai `Models`.
 
 ```ts
 import { Effect } from "effect";
-import { complete, EffectProvider, getModel, Models } from "@gunta/pi-ai-effect";
+import { complete, EffectProvider, getModel, Models } from "@effectified/pi-ai";
 
 const program = Effect.scoped(
 	Effect.gen(function* () {
@@ -166,8 +166,8 @@ The `./testing` subpath has scripted models: no network, no keys.
 
 ```ts
 import { Effect } from "effect";
-import { complete } from "@gunta/pi-ai-effect";
-import { fauxAssistantMessage, ScriptedModels } from "@gunta/pi-ai-effect/testing";
+import { complete } from "@effectified/pi-ai";
+import { fauxAssistantMessage, ScriptedModels } from "@effectified/pi-ai/testing";
 
 const program = Effect.gen(function* () {
 	const scripted = yield* ScriptedModels;

@@ -2,7 +2,7 @@
 
 import { MODEL_THINKING_LEVELS } from "@earendil-works/pi-ai/providers/model-schema";
 import type { AgentChange, ConversationCreateOptions, ConversationOwnership } from "@earendil-works/pi-durable";
-import { ModelRef as ModelRefSchema, type StrictOmit } from "@gunta/pi-ai-effect";
+import { ModelRef as ModelRefSchema, type StrictOmit } from "@effectified/pi-ai";
 import { Schema } from "effect";
 
 /**
@@ -34,7 +34,7 @@ type Lists<T, Item> = T extends readonly (infer Element)[]
 
 /**
  * The model of a conversation's agent (`Change.model`), as a Schema for state and wires that name one: Pi's
- * `ModelRef`, the schema of `@gunta/pi-ai-effect`.
+ * `ModelRef`, the schema of `@effectified/pi-ai`.
  */
 export const ModelRef = ModelRefSchema;
 

@@ -1,7 +1,7 @@
 // The typed failures of this package: a reviewer that gave no usable answer, a review task without an answer to
 // review, a release for a conversation that is not held, and a retry for one whose review is not deferred.
 
-import { Conversation, Task } from "@gunta/pi-durable-effect";
+import { Conversation, Task } from "@effectified/pi-durable";
 import { Predicate, Schema } from "effect";
 
 /** The reviewer's request ended without an answer: the provider failed it, or it was aborted. */

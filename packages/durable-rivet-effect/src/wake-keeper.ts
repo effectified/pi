@@ -2,7 +2,7 @@
 // action scheduled at the earliest time Pi asks for, as Pi's host contract says (specification section 5.6).
 
 import type { Wake } from "@earendil-works/pi-durable";
-import { type DurableError, Harness } from "@gunta/pi-durable-effect";
+import { type DurableError, Harness } from "@effectified/pi-durable";
 import { Clock, Context, Effect, Layer, Option, Semaphore, Stream } from "effect";
 
 /** The actor's side of the keeper: its schedule of wake actions, and whether it may sleep. */
@@ -42,7 +42,7 @@ export class WakeKeeper extends Context.Service<
 		/** A scheduled wake action fired, `id` when Rivet says which: resumes Pi's due work and schedules the next. */
 		readonly fired: (id: Option.Option<string>) => Effect.Effect<void, DurableError>;
 	}
->()("@gunta/pi-durable-rivet-effect/WakeKeeper") {}
+>()("@effectified/pi-durable-rivet/WakeKeeper") {}
 
 /**
  * How far ahead the recovery wake is while Pi has work that can run. Keeping the actor awake lasts only as long as

@@ -2,8 +2,8 @@
 
 import type { Provider } from "@earendil-works/pi-ai";
 import type { ConversationRecord, HarnessSettings } from "@earendil-works/pi-durable";
-import { Models } from "@gunta/pi-ai-effect";
-import * as Approvals from "@gunta/pi-approvals-effect";
+import { Models } from "@effectified/pi-ai";
+import * as Approvals from "@effectified/pi-approvals";
 import {
 	type BudgetEvents,
 	BudgetedModels,
@@ -12,7 +12,7 @@ import {
 	type Prices,
 	Shares,
 	type Spend,
-} from "@gunta/pi-budget-effect";
+} from "@effectified/pi-budget";
 import {
 	type DurableError,
 	type Extension,
@@ -20,7 +20,7 @@ import {
 	type Registry,
 	type Storage,
 	type Tx,
-} from "@gunta/pi-durable-effect";
+} from "@effectified/pi-durable";
 import {
 	Conversations,
 	type DeniedTool,
@@ -29,19 +29,19 @@ import {
 	type Policy,
 	type ReservedExtension,
 	type Rule,
-} from "@gunta/pi-guard-effect";
-import { Advisory, Recorder, type RecordSink } from "@gunta/pi-recorder-effect";
-import * as Review from "@gunta/pi-review-effect";
+} from "@effectified/pi-guard";
+import { Advisory, Recorder, type RecordSink } from "@effectified/pi-recorder";
+import * as Review from "@effectified/pi-review";
 import {
 	type RouteEvents,
 	Router,
 	type RouterOptions,
 	type RouteTable,
 	type RouteTableError,
-} from "@gunta/pi-router-effect";
-import { Subagents } from "@gunta/pi-subagent-effect";
-import * as Swarm from "@gunta/pi-swarm-effect";
-import { PiTelemetry } from "@gunta/pi-telemetry-effect";
+} from "@effectified/pi-router";
+import { Subagents } from "@effectified/pi-subagent";
+import * as Swarm from "@effectified/pi-swarm";
+import { PiTelemetry } from "@effectified/pi-telemetry";
 import { Effect, Layer } from "effect";
 import * as ChildSetup from "./child-setup.ts";
 import * as Constraints from "./constraints.ts";
@@ -90,7 +90,7 @@ export interface Config<
 	readonly swarms: ReadonlyArray<Swarm.Swarm<never, unknown>>;
 	/**
 	 * Where a swarm's forks live. Default: `Forks.conversations`, conversations of the harness the swarm runs in. A
-	 * host inside a Rivet actor chooses actor forks (`@gunta/pi-thread-effect/rivet`).
+	 * host inside a Rivet actor chooses actor forks (`@effectified/pi-thread/rivet`).
 	 */
 	readonly forks?: Forks.Forks<ForkNeeds>;
 	readonly recorder?: Recorder.Options;

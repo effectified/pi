@@ -1,7 +1,7 @@
 // The open harness, for what the composition builds before it: the router's constraint source and the accounts of a
 // swarm's forks are services of before the harness, and read its storage once it is open.
 
-import { Harness } from "@gunta/pi-durable-effect";
+import { Harness } from "@effectified/pi-durable";
 import { Context, Deferred, Effect, Layer } from "effect";
 
 /**
@@ -9,7 +9,7 @@ import { Context, Deferred, Effect, Layer } from "effect";
  * harness, and so is everything they need: what of that reads the harness storage waits here until it is open.
  */
 export class Opened extends Context.Service<Opened, Deferred.Deferred<Harness.Open>>()(
-	"@gunta/pi-thread-effect/Opened",
+	"@effectified/pi-thread/Opened",
 ) {}
 
 /** The place the open harness is given to: provide it under everything that waits for the harness. */

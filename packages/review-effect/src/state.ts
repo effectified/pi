@@ -11,7 +11,7 @@ import {
 	type SchemaDecodeError,
 	Signal,
 	Task,
-} from "@gunta/pi-durable-effect";
+} from "@effectified/pi-durable";
 import { Effect, Option, Schema, Stream } from "effect";
 import * as Deferral from "./deferral.ts";
 import { NAME } from "./extension.ts";

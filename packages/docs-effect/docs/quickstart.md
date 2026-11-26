@@ -15,7 +15,7 @@ Run it in a checkout of pi-effect in which upstream's `npm run build` has run on
 Then, in the product:
 
 1. Add the directory to the product's workspaces.
-2. Depend on `@gunta/pi-thread-effect` as `workspace:*`, and on each plugin whose port the product implements.
+2. Depend on `@effectified/pi-thread` as `workspace:*`, and on each plugin whose port the product implements.
 3. Install `effect` in the range the packages name as their peer, and the Pi packages at the exact version `SOURCE.json` names.
 
 The script refuses when the packages' Pi pins are not the Pi sources in the tree, since it makes what a product installs. [Packages](packages.md#installing-in-a-product) says what each package needs beside it.

@@ -1,6 +1,6 @@
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { SchemaConversionError } from "@gunta/pi-durable-effect";
-import { answer, toolCall } from "@gunta/pi-durable-effect/testing";
+import { SchemaConversionError } from "@effectified/pi-durable";
+import { answer, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { ResultMismatch, Subagent, Subagents } from "../src/index.ts";

@@ -2,7 +2,7 @@
 // decision, cancel it and probe it, on the composed harness.
 
 import type { ConversationId, SubmissionId } from "@earendil-works/pi-durable";
-import { continueStopped, Shares } from "@gunta/pi-budget-effect";
+import { continueStopped, Shares } from "@effectified/pi-budget";
 import {
 	Agent,
 	type Conversation,
@@ -11,12 +11,12 @@ import {
 	type SchemaDecodeError,
 	type Signal,
 	Submission,
-} from "@gunta/pi-durable-effect";
-import { Conversations, Grant, type Guard, type MalformedRefusal } from "@gunta/pi-guard-effect";
-import { Recorder } from "@gunta/pi-recorder-effect";
-import * as Review from "@gunta/pi-review-effect";
-import { decodeUnknown } from "@gunta/pi-schema-effect";
-import type { SwarmFaulted } from "@gunta/pi-swarm-effect";
+} from "@effectified/pi-durable";
+import { Conversations, Grant, type Guard, type MalformedRefusal } from "@effectified/pi-guard";
+import { Recorder } from "@effectified/pi-recorder";
+import * as Review from "@effectified/pi-review";
+import { decodeUnknown } from "@effectified/pi-schema";
+import type { SwarmFaulted } from "@effectified/pi-swarm";
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect";
 import * as Counts from "./counts.ts";
 import { type ReviewerSharesFamily, ThreadNotFound } from "./errors.ts";
@@ -161,7 +161,7 @@ export interface Service {
 }
 
 /** The thread operations of the composed harness. */
-export class Threads extends Context.Service<Threads, Service>()("@gunta/pi-thread-effect/Threads") {}
+export class Threads extends Context.Service<Threads, Service>()("@effectified/pi-thread/Threads") {}
 
 /**
  * What the operations run on: the open harness, the plugins' services built on it, the reviewer check, and the

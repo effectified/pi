@@ -1,4 +1,4 @@
-import { Extension, Registry } from "@gunta/pi-durable-effect";
+import { Extension, Registry } from "@effectified/pi-durable";
 import { Context, Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { extension, Inbox, type Policy } from "../src/index.ts";

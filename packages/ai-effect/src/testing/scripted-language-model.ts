@@ -22,7 +22,7 @@ export interface ScriptedLanguageModelService {
 
 /** A scripted effect/ai model for tests: no network, no keys, responses in the order they were queued. */
 export class ScriptedLanguageModel extends Context.Service<ScriptedLanguageModel, ScriptedLanguageModelService>()(
-	"@gunta/pi-ai-effect/testing/ScriptedLanguageModel",
+	"@effectified/pi-ai/testing/ScriptedLanguageModel",
 ) {
 	/**
 	 * A fresh scripted `LanguageModel` and its controls. `generateText` returns a response's parts as they are;

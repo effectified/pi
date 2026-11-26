@@ -5,7 +5,7 @@
 export type { JsonValue } from "@earendil-works/chord/json";
 export type { JsonObject } from "@earendil-works/pi-durable";
 // The schema failures this package's functions can fail with, so a caller needs no second import to name them.
-export { SchemaConversionError, SchemaDecodeError } from "@gunta/pi-schema-effect";
+export { SchemaConversionError, SchemaDecodeError } from "@effectified/pi-schema";
 export * as Agent from "./agent.ts";
 export * as BuiltinDoc from "./builtin-doc.ts";
 export { ParentContext } from "./call.ts";

@@ -10,8 +10,8 @@ import {
 	type SchemaDecodeError,
 	type Storage,
 	Tool,
-} from "@gunta/pi-durable-effect";
-import { answer, type FauxResponseFactory, type FauxResponseStep, TestHarness } from "@gunta/pi-durable-effect/testing";
+} from "@effectified/pi-durable";
+import { answer, type FauxResponseFactory, type FauxResponseStep, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 import { Child, ChildSetup, Subagent, Subagents } from "../src/index.ts";
 

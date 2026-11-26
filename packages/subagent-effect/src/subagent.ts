@@ -1,6 +1,6 @@
 // A declared subagent: the name and description a parent's model reads, the child's whole agent, and its result.
 
-import type { Agent } from "@gunta/pi-durable-effect";
+import type { Agent } from "@effectified/pi-durable";
 import { Effect, Schema } from "effect";
 import { ResultMismatch } from "./errors.ts";
 

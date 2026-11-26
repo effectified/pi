@@ -1,4 +1,4 @@
-import { answer, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { answer, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { Advisory, Recorder } from "../src/index.ts";

@@ -9,13 +9,13 @@
 // and not tested: an engine that refuses.
 
 import type { FauxResponseFactory } from "@earendil-works/pi-ai";
-import * as Approvals from "@gunta/pi-approvals-effect";
-import { LeaseFenced } from "@gunta/pi-budget-effect";
-import { answer, held, toolCall } from "@gunta/pi-durable-effect/testing";
-import { Client, NotIdle } from "@gunta/pi-durable-rivet-effect";
-import type * as LocalEngine from "@gunta/pi-durable-rivet-effect/node";
-import * as Testing from "@gunta/pi-durable-rivet-effect/testing";
-import * as Rivet from "@gunta/pi-swarm-effect/rivet";
+import * as Approvals from "@effectified/pi-approvals";
+import { LeaseFenced } from "@effectified/pi-budget";
+import { answer, held, toolCall } from "@effectified/pi-durable/testing";
+import { Client, NotIdle } from "@effectified/pi-durable-rivet";
+import type * as LocalEngine from "@effectified/pi-durable-rivet/node";
+import * as Testing from "@effectified/pi-durable-rivet/testing";
+import * as Rivet from "@effectified/pi-swarm/rivet";
 import { Context, Effect, Exit, Layer, Option, Queue, Schedule, Scope } from "effect";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ReviewerSharesFamily, ThreadNotFound } from "../src/index.ts";

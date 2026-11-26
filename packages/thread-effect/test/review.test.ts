@@ -3,10 +3,10 @@
 // that reaches the sink.
 
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
-import { LeaseFenced } from "@gunta/pi-budget-effect";
-import { Harness } from "@gunta/pi-durable-effect";
-import { answer, held } from "@gunta/pi-durable-effect/testing";
-import * as Review from "@gunta/pi-review-effect";
+import { LeaseFenced } from "@effectified/pi-budget";
+import { Harness } from "@effectified/pi-durable";
+import { answer, held } from "@effectified/pi-durable/testing";
+import * as Review from "@effectified/pi-review";
 import { Effect, Fiber, Option, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { ReviewerSharesFamily, Thread, ThreadNotFound, Threads } from "../src/index.ts";

@@ -1,11 +1,11 @@
 // The composition as one Layer: the order of its extensions, Pi's telemetry on the product's tracer, the evidence of
 // a search, and a setup port that takes the guard from its context.
 
-import { Storage } from "@gunta/pi-durable-effect";
-import { answer, toolCall } from "@gunta/pi-durable-effect/testing";
-import { Conversations, Guard } from "@gunta/pi-guard-effect";
-import { Evidence } from "@gunta/pi-search-effect";
-import { ChildSetup, ChildSetupFailed, Subagents } from "@gunta/pi-subagent-effect";
+import { Storage } from "@effectified/pi-durable";
+import { answer, toolCall } from "@effectified/pi-durable/testing";
+import { Conversations, Guard } from "@effectified/pi-guard";
+import { Evidence } from "@effectified/pi-search";
+import { ChildSetup, ChildSetupFailed, Subagents } from "@effectified/pi-subagent";
 import { Context, Effect, Layer, Tracer } from "effect";
 import { describe, expect, it } from "vitest";
 import { Composition, Threads } from "../src/index.ts";
@@ -98,6 +98,6 @@ describe("the composition", () => {
 			// @ts-expect-error The registry still requires the `Guard` it provides, so it cannot be built.
 			Effect.scoped(Layer.build(whole)),
 		);
-		expect(String(exit)).toContain("Service not found: @gunta/pi-guard-effect/Guard");
+		expect(String(exit)).toContain("Service not found: @effectified/pi-guard/Guard");
 	});
 });

@@ -1,8 +1,8 @@
 // The outcome sink of a thread in one process: which events it is told, their ids and their order, the record sink
 // before it, a sink that fails, and a product that asks instead.
 
-import { Harness, Storage } from "@gunta/pi-durable-effect";
-import { answer, held, toolCall } from "@gunta/pi-durable-effect/testing";
+import { Harness, Storage } from "@effectified/pi-durable";
+import { answer, held, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Fiber, Layer, Option, Schedule, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Composition, OutcomeCursor, OutcomeEvent, OutcomeSink, Threads } from "../src/index.ts";

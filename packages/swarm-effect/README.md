@@ -1,6 +1,6 @@
-# @gunta/pi-swarm-effect
+# @effectified/pi-swarm
 
-A swarm of [Pi Durable](../durable) agents, in Effect 4.1, on [`@gunta/pi-durable-effect`](../durable-effect).
+A swarm of [Pi Durable](../durable) agents, in Effect 4.1, on [`@effectified/pi-durable`](../durable-effect).
 
 One conversation reads an expensive context once (it is primed). A swarm then forks it once per job, never more than
 a cap at a time; each fork does one small job and answers with a typed result; the results are fanned in, in job
@@ -13,14 +13,14 @@ order; and every fork nobody pinned is destroyed.
 - **Typed fan-in.** Each answer is decoded against an Effect `Schema`. A fork whose answer does not decode is told
   what was wrong and asked again, a bounded number of times.
 - **A driver port.** Where forks live is a service. This package has two drivers: conversation forks inside one
-  harness storage, and Rivet actor forks, each fork an actor of its own (`@gunta/pi-swarm-effect/rivet`).
+  harness storage, and Rivet actor forks, each fork an actor of its own (`@effectified/pi-swarm/rivet`).
 - **A setup port.** The product grants a fork its tools and caps its budget in the commit that creates the fork's
   conversation, and the swarm says which conversation, and which actor, each job ran in.
 
 ## Install
 
 ```sh
-npm install @gunta/pi-swarm-effect @gunta/pi-durable-effect @earendil-works/pi-durable effect
+npm install @effectified/pi-swarm @effectified/pi-durable @earendil-works/pi-durable effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`).
@@ -32,8 +32,8 @@ It runs as it stands, because the model is scripted. Every example of this READM
 
 ```ts
 import { Effect, Layer, Schema } from "effect";
-import { answer, type FauxResponseFactory, TestHarness } from "@gunta/pi-durable-effect/testing";
-import * as Swarm from "@gunta/pi-swarm-effect";
+import { answer, type FauxResponseFactory, TestHarness } from "@effectified/pi-durable/testing";
+import * as Swarm from "@effectified/pi-swarm";
 
 // The work of one kind of swarm: what a job is given, what a fork must answer, and what a fork is asked.
 const Covers = Swarm.make({
@@ -323,8 +323,8 @@ A product with the guard and the budget plugins, as product code: a fork inherit
 its allow-list; the budget plugin sets a cap in a commit of its own, so that goes into `beforeStart`.
 
 ```ts
-import { Conversations, Guard } from "@gunta/pi-guard-effect";
-import { Shares } from "@gunta/pi-budget-effect";
+import { Conversations, Guard } from "@effectified/pi-guard";
+import { Shares } from "@effectified/pi-budget";
 
 const refused = (fork: Swarm.ForkSetup.Forked) => (cause: unknown) =>
 	new Swarm.ForkSetupFailed({ reason: `The job ${fork.jobKey} has no allowance.`, cause });
@@ -355,7 +355,7 @@ that conversation belongs to.
 
 ## The driver port
 
-`@gunta/pi-swarm-effect/driver` holds the port alone: `ForkDriver`, its data and its two errors. It imports only
+`@effectified/pi-swarm/driver` holds the port alone: `ForkDriver`, its data and its two errors. It imports only
 `effect` and the type `Agent.Change`. The data (`Fork`, `Notice`, `JobStatus`) are schemas, so a driver can send
 them across a process boundary. Ids are plain numbers and strings.
 
@@ -518,13 +518,13 @@ None for a fork the swarm never had, and for one whose conversation the storage 
 
 ## The Rivet driver
 
-`@gunta/pi-swarm-effect/rivet` makes each fork of a swarm a fork of the Rivet actor that holds the primed harness: a
+`@effectified/pi-swarm/rivet` makes each fork of a swarm a fork of the Rivet actor that holds the primed harness: a
 copy-on-write copy of the actor's storage, with a harness of its own, in another actor. It is written on
-[`@gunta/pi-durable-rivet-effect`](../durable-rivet-effect), an optional peer dependency that only this subpath
+[`@effectified/pi-durable-rivet`](../durable-rivet-effect), an optional peer dependency that only this subpath
 imports.
 
 ```sh
-npm install @gunta/pi-swarm-effect @gunta/pi-durable-rivet-effect rivetkit
+npm install @effectified/pi-swarm @effectified/pi-durable-rivet rivetkit
 ```
 
 It runs as it stands, because the model is scripted; the same code is the test
@@ -532,12 +532,12 @@ It runs as it stands, because the model is scripted; the same code is the test
 
 ```ts
 import { Effect, Layer, Schedule, Schema } from "effect";
-import { Registry } from "@gunta/pi-durable-effect";
-import { answer, type FauxResponseFactory, ScriptedModels, TestHarness } from "@gunta/pi-durable-effect/testing";
-import { Action, Actor, Client, Self } from "@gunta/pi-durable-rivet-effect";
-import * as LocalEngine from "@gunta/pi-durable-rivet-effect/node"; // on Bun: "@gunta/pi-durable-rivet-effect/bun"
-import * as Swarm from "@gunta/pi-swarm-effect";
-import * as Rivet from "@gunta/pi-swarm-effect/rivet";
+import { Registry } from "@effectified/pi-durable";
+import { answer, type FauxResponseFactory, ScriptedModels, TestHarness } from "@effectified/pi-durable/testing";
+import { Action, Actor, Client, Self } from "@effectified/pi-durable-rivet";
+import * as LocalEngine from "@effectified/pi-durable-rivet/node"; // on Bun: "@effectified/pi-durable-rivet/bun"
+import * as Swarm from "@effectified/pi-swarm";
+import * as Rivet from "@effectified/pi-swarm/rivet";
 
 // The work of one kind of swarm, and a scripted model, as in the quick start.
 const Covers = Swarm.make({

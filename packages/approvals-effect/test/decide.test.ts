@@ -1,6 +1,6 @@
 import type { TaskId } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { Gate, Harness, Hook } from "@gunta/pi-durable-effect";
+import { runTest } from "@effectified/pi-ai/testing";
+import { Gate, Harness, Hook } from "@effectified/pi-durable";
 import { Effect } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

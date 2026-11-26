@@ -1,6 +1,6 @@
 // The requests that await a decision, read from the harness's durable state.
 
-import { type DurableError, Harness, Signal } from "@gunta/pi-durable-effect";
+import { type DurableError, Harness, Signal } from "@effectified/pi-durable";
 import { Effect, Option } from "effect";
 import * as Asks from "./asks.ts";
 import type { MalformedState } from "./errors.ts";

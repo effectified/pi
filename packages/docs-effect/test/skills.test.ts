@@ -79,7 +79,7 @@ describe("the checker of the contract", () => {
 	it("passes a skill that links a README's heading and quotes its example, whatever the indentation", () => {
 		const text = `${HEAD}# Fixture
 
-See [the composition](../../../thread-effect/README.md#the-composition) of \`@gunta/pi-thread-effect/rivet\`.
+See [the composition](../../../thread-effect/README.md#the-composition) of \`@effectified/pi-thread/rivet\`.
 
 \`\`\`ts
         ${EXCERPT[0]}
@@ -131,9 +131,9 @@ See [the composition](../../../thread-effect/README.md#the-composition) of \`@gu
 	});
 
 	it("names a package and an entry point the library does not have", () => {
-		expect(broken(`${HEAD}Use \`@gunta/pi-workflow-effect\` and \`@gunta/pi-thread-effect/actors\`.\n`)).toEqual([
-			expect.stringContaining("@gunta/pi-workflow-effect is no package"),
-			expect.stringContaining("@gunta/pi-thread-effect/actors is no package"),
+		expect(broken(`${HEAD}Use \`@effectified/pi-workflow\` and \`@effectified/pi-thread/actors\`.\n`)).toEqual([
+			expect.stringContaining("@effectified/pi-workflow is no package"),
+			expect.stringContaining("@effectified/pi-thread/actors is no package"),
 		]);
 	});
 

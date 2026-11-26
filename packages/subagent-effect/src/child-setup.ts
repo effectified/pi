@@ -1,7 +1,7 @@
 // The child setup port: what the product does to a child conversation as it is created, such as grants and budgets.
 
 import type { ConversationId } from "@earendil-works/pi-durable";
-import type { Tx } from "@gunta/pi-durable-effect";
+import type { Tx } from "@effectified/pi-durable";
 import { Context, Effect, Layer } from "effect";
 import type { ChildSetupFailed } from "./errors.ts";
 
@@ -41,7 +41,7 @@ export interface ChildSetupService {
  * wants nothing done says so with `none`.
  */
 export class ChildSetup extends Context.Service<ChildSetup, ChildSetupService>()(
-	"@gunta/pi-subagent-effect/ChildSetup",
+	"@effectified/pi-subagent/ChildSetup",
 ) {}
 
 /** A setup that does nothing, for a product without guards and budgets: the stated choice, never a default. */

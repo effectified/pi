@@ -1,9 +1,9 @@
 // A harness for tests: scripted models, memory storage and a registry of your extensions or your own, as one Layer.
 
 import type { ModelRef } from "@earendil-works/pi-durable";
-import type { Models } from "@gunta/pi-ai-effect";
-import { type FauxResponseStep, type RegisterFauxProviderOptions, ScriptedModels } from "@gunta/pi-ai-effect/testing";
-import type { SchemaConversionError } from "@gunta/pi-schema-effect";
+import type { Models } from "@effectified/pi-ai";
+import { type FauxResponseStep, type RegisterFauxProviderOptions, ScriptedModels } from "@effectified/pi-ai/testing";
+import type { SchemaConversionError } from "@effectified/pi-schema";
 import { Effect, Layer } from "effect";
 import type { SqlClient } from "effect/sql/SqlClient";
 import type * as Conversation from "../conversation.ts";

@@ -1,9 +1,9 @@
-# @gunta/pi-recorder-effect
+# @effectified/pi-recorder
 
 Every message, model call and tool call of a [Pi Durable](../durable) harness, and every entry a plugin stores
 beside the transcript, goes to a sink your product provides, with a deterministic id, at least once, so the
 product's own record can be written exactly once. Written on
-[`@gunta/pi-durable-effect`](../durable-effect), for `effect` 4.1 and Pi Durable 1.6.1.
+[`@effectified/pi-durable`](../durable-effect), for `effect` 4.1 and Pi Durable 1.6.1.
 
 - The entries are the outbox. A record is derived from an entry Pi committed with its step, so a record exists
   exactly when its step does. No hook writes a pending row: a Pi hook cannot commit.
@@ -14,7 +14,7 @@ product's own record can be written exactly once. Written on
 ## Install
 
 ```sh
-npm install @gunta/pi-recorder-effect @gunta/pi-durable-effect @earendil-works/pi-durable effect
+npm install @effectified/pi-recorder @effectified/pi-durable @earendil-works/pi-durable effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`).
@@ -26,8 +26,8 @@ every example below.
 
 ```ts
 import { Effect, Layer } from "effect";
-import { Recorder, RecordSink, type Records } from "@gunta/pi-recorder-effect";
-import { answer, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Recorder, RecordSink, type Records } from "@effectified/pi-recorder";
+import { answer, TestHarness } from "@effectified/pi-durable/testing";
 
 // Your store, keyed by record id: a record that comes twice is written once.
 const store = new Map<string, Records.Record>();
@@ -119,7 +119,7 @@ const command = (record: Records.Record): string => {
   carries. A host that turns what a plugin stored about a request of its own into a `ModelCall`, so that its sink
   gets every model call in one shape, sets it: `from` is the id of the `Entry` record it derived the call from, and
   `unknown` names the fields that entry does not hold (`api`, `cost.input`), which then carry their empty value
-  (`""`, `0`, `false`) and mean "not known". `@gunta/pi-thread-effect` does this for a reviewer's request.
+  (`""`, `0`, `false`) and mean "not known". `@effectified/pi-thread` does this for a reviewer's request.
 - **Content.** Records carry content: text, images, arguments, tool output. This package logs none of it.
 
 ### Ids
@@ -159,7 +159,7 @@ What no record can hold, because Pi commits no entry for it:
   usage is in Pi's ledger (`Harness.usage`, `Harness.usageEvents`).
 - **A model call a task makes itself**, through the harness's models and outside a generation, such as a reviewer's
   request. It leaves no model message and is not in Pi's ledger. What its task stores about it in an entry of its
-  own is delivered as that `Entry` record: `@gunta/pi-review-effect` keeps the request in its verdict (`data.call`).
+  own is delivered as that `Entry` record: `@effectified/pi-review` keeps the request in its verdict (`data.call`).
   The recorder does not know such an entry's shape; a host that does can add a `ModelCall` for it (`derived`, above).
 
 A replay-unsafe tool call that a close or a crash cut off is not run again: Pi writes an `interrupted` error result,

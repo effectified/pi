@@ -1,7 +1,7 @@
 // The session index: which conversation a provider session belongs to, kept where the conversation is created.
 
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { BuiltinDoc, Conversation, Doc, Harness, type Tx } from "@gunta/pi-durable-effect";
+import { BuiltinDoc, Conversation, Doc, Harness, type Tx } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 
 /**

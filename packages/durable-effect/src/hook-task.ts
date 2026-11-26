@@ -1,7 +1,7 @@
 // Hook tasks: the tasks a generation hook asks for, and what such a task completes with.
 
 import { type HookTask, hookTask } from "@earendil-works/pi-durable";
-import type { SchemaDecodeError } from "@gunta/pi-schema-effect";
+import type { SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, Schema } from "effect";
 import type * as Task from "./task.ts";
 

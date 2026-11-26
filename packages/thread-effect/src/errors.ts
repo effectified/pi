@@ -1,6 +1,6 @@
 // The typed failures of this package's own services: a thread the product did not set up, and one it may not start.
 
-import { Agent } from "@gunta/pi-durable-effect";
+import { Agent } from "@effectified/pi-durable";
 import { Schema } from "effect";
 
 /** No thread was started under this key in this harness storage. */

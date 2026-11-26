@@ -4,7 +4,7 @@
 
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { EntryId, SubmissionId, TaskId } from "@earendil-works/pi-durable";
-import { BuiltinDoc, Entry, Hook, Task } from "@gunta/pi-durable-effect";
+import { BuiltinDoc, Entry, Hook, Task } from "@effectified/pi-durable";
 import { Effect, Option, Schema, Stream } from "effect";
 import type * as Check from "./check.ts";
 import * as Correction from "./correction.ts";

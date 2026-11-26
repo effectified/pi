@@ -1,7 +1,7 @@
 // The typed failures of this package: a registry or a policy the guard refuses, a grant it cannot give, and a record of
 // a refusal it cannot read.
 
-import { Conversation } from "@gunta/pi-durable-effect";
+import { Conversation } from "@effectified/pi-durable";
 import { Schema } from "effect";
 import * as Matcher from "./matcher.ts";
 

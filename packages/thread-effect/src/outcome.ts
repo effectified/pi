@@ -1,7 +1,7 @@
 // The outcome of a thread: how its work ended and what it took, as a Schema a host can send across a boundary.
 
-import { Refusal } from "@gunta/pi-budget-effect";
-import * as Review from "@gunta/pi-review-effect";
+import { Refusal } from "@effectified/pi-budget";
+import * as Review from "@effectified/pi-review";
 import { Schema } from "effect";
 
 /**

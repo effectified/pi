@@ -1,7 +1,7 @@
 // Fork hygiene for an actor whose definition runs swarms on Rivet: a copied storage holds no swarm, no fork and no
 // job of its own.
 
-import type { Fork } from "@gunta/pi-durable-rivet-effect";
+import type { Fork } from "@effectified/pi-durable-rivet";
 import { Effect } from "effect";
 import { onStorageFork } from "../storage-fork.ts";
 import * as Job from "./job.ts";

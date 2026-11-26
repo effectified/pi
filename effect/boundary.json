@@ -3,16 +3,16 @@
 		{
 			"file": "tsconfig.json",
 			"added": [
-				"\"@gunta/pi-durable-rivet-effect/bun\": [\"./packages/durable-rivet-effect/src/bun.ts\"],",
-				"\"@gunta/pi-durable-rivet-effect/node\": [\"./packages/durable-rivet-effect/src/node.ts\"],",
-				"\"@gunta/pi-search-effect/exa\": [\"./packages/search-effect/src/exa.ts\"],",
-				"\"@gunta/pi-search-effect/provider\": [\"./packages/search-effect/src/provider/index.ts\"],",
-				"\"@gunta/pi-swarm-effect/driver\": [\"./packages/swarm-effect/src/driver.ts\"],",
-				"\"@gunta/pi-swarm-effect/rivet\": [\"./packages/swarm-effect/src/rivet.ts\"],",
-				"\"@gunta/pi-*/testing\": [\"./packages/*/src/testing/index.ts\"],",
-				"\"@gunta/pi-*\": [\"./packages/*/src/index.ts\"],"
+				"\"@effectified/pi-durable-rivet/bun\": [\"./packages/durable-rivet-effect/src/bun.ts\"],",
+				"\"@effectified/pi-durable-rivet/node\": [\"./packages/durable-rivet-effect/src/node.ts\"],",
+				"\"@effectified/pi-search/exa\": [\"./packages/search-effect/src/exa.ts\"],",
+				"\"@effectified/pi-search/provider\": [\"./packages/search-effect/src/provider/index.ts\"],",
+				"\"@effectified/pi-swarm/driver\": [\"./packages/swarm-effect/src/driver.ts\"],",
+				"\"@effectified/pi-swarm/rivet\": [\"./packages/swarm-effect/src/rivet.ts\"],",
+				"\"@effectified/pi-*/testing\": [\"./packages/*-effect/src/testing/index.ts\"],",
+				"\"@effectified/pi-*\": [\"./packages/*-effect/src/index.ts\"],"
 			],
-			"reason": "Upstream's `tsc --noEmit` (npm run check) type checks every packages/*/src from source through `paths`. Without these entries an import of one pi-effect package from another resolves to `dist/*.d.ts`, which exists only after a build. Two wildcard lines cover every package named @gunta/pi-<directory> and its `testing` subpath. They are the first entries of `paths`, so they are pure additions and upstream appending entries does not conflict. The `testing` line comes first: both patterns share the prefix `@gunta/pi-`, TypeScript takes the first pattern of equal prefix length, and `@gunta/pi-*` would otherwise match `@gunta/pi-x-effect/testing` and miss. Every other subpath one pi-effect package imports from another has its own exact line, for the same reason: `paths` allows one wildcard, so no pattern can cover `<package>/<subpath>`."
+			"reason": "Upstream's `tsc --noEmit` (npm run check) type checks every packages/*/src from source through `paths`. Without these entries an import of one pi-effect package from another resolves to `dist/*.d.ts`, which exists only after a build. Two wildcard lines cover every package named @effectified/pi-<name>, in packages/<name>-effect, and its `testing` subpath. They are the first entries of `paths`, so they are pure additions and upstream appending entries does not conflict. The `testing` line comes first: both patterns share the prefix `@effectified/pi-`, TypeScript takes the first pattern of equal prefix length, and `@effectified/pi-*` would otherwise match `@effectified/pi-x/testing` and miss. Every other subpath one pi-effect package imports from another has its own exact line, for the same reason: `paths` allows one wildcard, so no pattern can cover `<package>/<subpath>`."
 		}
 	]
 }

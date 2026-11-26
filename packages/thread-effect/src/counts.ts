@@ -2,11 +2,11 @@
 // and from the accounts of its swarms' forks.
 
 import { AssistantEntry, type ConversationId, type EntryRecord, ToolResultEntry } from "@earendil-works/pi-durable";
-import { ANSWERED } from "@gunta/pi-ai-effect";
-import { Shares, type SharesService } from "@gunta/pi-budget-effect";
-import { type Conversation, type Doc, Harness } from "@gunta/pi-durable-effect";
-import { type MalformedRefusal, Refused } from "@gunta/pi-guard-effect";
-import * as Swarm from "@gunta/pi-swarm-effect";
+import { ANSWERED } from "@effectified/pi-ai";
+import { Shares, type SharesService } from "@effectified/pi-budget";
+import { type Conversation, type Doc, Harness } from "@effectified/pi-durable";
+import { type MalformedRefusal, Refused } from "@effectified/pi-guard";
+import * as Swarm from "@effectified/pi-swarm";
 import { Effect, Option, Stream } from "effect";
 import * as Forks from "./forks.ts";
 import type { Counts, Outcome } from "./outcome.ts";

@@ -1,7 +1,7 @@
 // The typed failures of this package: a route table that cannot be used, and a request no route served.
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { ModelRequestError } from "@gunta/pi-ai-effect";
+import type { ModelRequestError } from "@effectified/pi-ai";
 import { Predicate, Schema } from "effect";
 
 /** One reason a route table cannot be used, naming the entry it is about. */

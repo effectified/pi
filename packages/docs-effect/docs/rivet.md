@@ -2,9 +2,9 @@
 
 Two levels, one host:
 
-- **A thread per actor**: `@gunta/pi-thread-effect/rivet`. `ThreadActor.make` is the composition of
+- **A thread per actor**: `@effectified/pi-thread/rivet`. `ThreadActor.make` is the composition of
   [Build an Agent Thread](threads.md) inside an actor; `Remote` is the client a product binds its ports to. Use this for threads.
-- **A harness per actor**: `@gunta/pi-durable-rivet-effect`. `Actor.make` puts any registry and models of yours into
+- **A harness per actor**: `@effectified/pi-durable-rivet`. `Actor.make` puts any registry and models of yours into
   an actor, with actions of your own. Use this for something that is not the thread composition.
 
 Read [Build an Agent Thread](threads.md) first for what a thread is; this page adds what changes in an actor.
@@ -16,8 +16,8 @@ From the thread README, "The Rivet form" (`config`, `productPorts`, `openRecordS
 
 ```ts
 import { Effect, Layer, Schedule } from "effect";
-import { ActorInfo, Client, Host } from "@gunta/pi-durable-rivet-effect";
-import { Remote, ThreadActor } from "@gunta/pi-thread-effect/rivet";
+import { ActorInfo, Client, Host } from "@effectified/pi-durable-rivet";
+import { Remote, ThreadActor } from "@effectified/pi-thread/rivet";
 
 // The product's ports as one Layer, built in each actor at each wake. It may read the actor it is built in.
 const ports = Layer.unwrap(ActorInfo.use((actor) => Effect.succeed(productPorts(actor))));
@@ -131,7 +131,7 @@ Then [The actor](../../durable-rivet-effect/README.md#the-actor), [Actions](../.
 
 ## A local engine
 
-`serve` of `@gunta/pi-durable-rivet-effect/node`, or of `@gunta/pi-durable-rivet-effect/bun` on Bun, starts
+`serve` of `@effectified/pi-durable-rivet/node`, or of `@effectified/pi-durable-rivet/bun` on Bun, starts
 rivetkit's engine binary beside the process and hosts the given actors in this process. It is scoped.
 
 | Call | Gives |
@@ -223,7 +223,7 @@ tables that name the source (a lease, a stream position, a pending send), and th
 
 A bare `Actor.make` with
 plugins lists their steps itself: the recorder's `onStorageFork` first, `Rivet.forkHygiene` of
-`@gunta/pi-swarm-effect/rivet` in every actor that runs swarms, and the `onStorageFork` of the subagent and budget
+`@effectified/pi-swarm/rivet` in every actor that runs swarms, and the `onStorageFork` of the subagent and budget
 plugins (the budget's takes the fork's actor id).
 Why each step and in that order: [What a fork inherits, and the fork hygiene](../../thread-effect/README.md#what-a-fork-inherits-and-the-fork-hygiene).
 The host's side: [Forks](../../durable-rivet-effect/README.md#forks).
@@ -234,7 +234,7 @@ The host's side: [Forks](../../durable-rivet-effect/README.md#forks).
 transactions queue with Pi's. Keep product tables outside Pi's `prefix` (default `pi_`).
 
 ```ts
-import { ActorSql } from "@gunta/pi-durable-rivet-effect";
+import { ActorSql } from "@effectified/pi-durable-rivet";
 import { Effect, Schema } from "effect";
 import * as SqlSchema from "effect/sql/SqlSchema";
 

@@ -1,8 +1,8 @@
 // Test helper: the README's example, as it stands there, on a local engine of its own, registered once per runtime
 // by readme.node.test.ts and readme.bun.test.ts. Skipped when the engine binary is not installed.
 
-import { Registry } from "@gunta/pi-durable-effect";
-import { answer, ScriptedModels, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Registry } from "@effectified/pi-durable";
+import { answer, ScriptedModels, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Action, Actor, Client } from "../src/index.ts";

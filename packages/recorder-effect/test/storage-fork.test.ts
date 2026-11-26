@@ -1,5 +1,5 @@
-import { Harness } from "@gunta/pi-durable-effect";
-import { answer, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Harness } from "@effectified/pi-durable";
+import { answer, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Option, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { fromEntry } from "../src/from-entry.ts";

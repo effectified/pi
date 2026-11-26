@@ -7,8 +7,8 @@ import {
 	type TaskId,
 	type WatchHandle,
 } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import type { SchemaDecodeError } from "@gunta/pi-schema-effect";
+import { runTest } from "@effectified/pi-ai/testing";
+import type { SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, Fiber, Option, Queue, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { Doc, type DurableError, Harness } from "../src/index.ts";

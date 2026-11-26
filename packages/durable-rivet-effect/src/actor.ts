@@ -1,8 +1,8 @@
 // The Rivet actor that holds one Pi Durable harness: its storage is the actor's SQLite, it opens when the actor wakes
 // and closes when the actor sleeps or is destroyed, its actions are Effects, and a fork starts clean.
 
-import type { Models, StrictOmit } from "@gunta/pi-ai-effect";
-import { type DurableError, Harness, type Registry, UnexpectedError } from "@gunta/pi-durable-effect";
+import type { Models, StrictOmit } from "@effectified/pi-ai";
+import { type DurableError, Harness, type Registry, UnexpectedError } from "@effectified/pi-durable";
 import { Cause, Clock, Context, Effect, Exit, FiberSet, Layer, Option, Predicate, Schema, Semaphore } from "effect";
 import {
 	type ActorCron,

@@ -1,8 +1,8 @@
 // Test helper: what a host process and the test say to each other: each thing the product's ports are asked, as one
 // tagged value that crosses as JSON, and the call that sends it.
 
-import type { Settlement } from "@gunta/pi-budget-effect";
-import type { Records } from "@gunta/pi-recorder-effect";
+import type { Settlement } from "@effectified/pi-budget";
+import type { Records } from "@effectified/pi-recorder";
 
 /** What a host process asks the outside, or tells it. `host` is the process, `actor` the Rivet actor. */
 export type Ask = { readonly host: string } & (

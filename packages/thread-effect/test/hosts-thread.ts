@@ -2,12 +2,12 @@
 // models and the tools of the outside, over HTTP. The test makes one too, for its handles; only a host runs it.
 
 import { type FauxResponseFactory, fauxProvider } from "@earendil-works/pi-ai";
-import * as Approvals from "@gunta/pi-approvals-effect";
-import { Lease } from "@gunta/pi-budget-effect";
-import { Extension, Tool } from "@gunta/pi-durable-effect";
-import { answer, toolCall } from "@gunta/pi-durable-effect/testing";
-import { ActorInfo } from "@gunta/pi-durable-rivet-effect";
-import { RecordSink } from "@gunta/pi-recorder-effect";
+import * as Approvals from "@effectified/pi-approvals";
+import { Lease } from "@effectified/pi-budget";
+import { Extension, Tool } from "@effectified/pi-durable";
+import { answer, toolCall } from "@effectified/pi-durable/testing";
+import { ActorInfo } from "@effectified/pi-durable-rivet";
+import { RecordSink } from "@effectified/pi-recorder";
 import { Effect, Layer, Schema } from "effect";
 import { OutcomeSink } from "../src/index.ts";
 import { ThreadActor } from "../src/rivet.ts";

@@ -1,8 +1,8 @@
 // Test helper: a second driver, in memory, that behaves like a remote one: calls that fail and are retried, a
 // creation that answers "duplicate key", jobs that settle later, and a destroy that knows the bytes written.
 
-import { conditions } from "@gunta/pi-ai-effect/testing";
-import { Signal } from "@gunta/pi-durable-effect";
+import { conditions } from "@effectified/pi-ai/testing";
+import { Signal } from "@effectified/pi-durable";
 import { Clock, Effect, Layer, Option, Schema } from "effect";
 import * as Swarm from "../src/index.ts";
 import { measured } from "./support.ts";

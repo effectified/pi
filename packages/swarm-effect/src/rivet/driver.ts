@@ -13,7 +13,7 @@ import {
 	type ForkTooDeep,
 	type NotIdle,
 	Self,
-} from "@gunta/pi-durable-rivet-effect";
+} from "@effectified/pi-durable-rivet";
 import { type Context, Effect, Layer, Option, Schema } from "effect";
 import {
 	type Destroyed,

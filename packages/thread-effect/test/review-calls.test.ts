@@ -1,7 +1,7 @@
 // The reviewer's request as a model call record: what `ReviewCalls.modelCall` makes of a verdict's record, and what
 // the wrapped sink is given.
 
-import { RecordSink, type Records } from "@gunta/pi-recorder-effect";
+import { RecordSink, type Records } from "@effectified/pi-recorder";
 import { Effect, Layer, Option, type Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { ReviewCalls } from "../src/index.ts";

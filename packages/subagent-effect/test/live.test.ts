@@ -1,4 +1,4 @@
-import { Task } from "@gunta/pi-durable-effect";
+import { Task } from "@effectified/pi-durable";
 import { describe, expect, it } from "vitest";
 import { LIVE } from "../src/live.ts";
 

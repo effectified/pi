@@ -16,9 +16,9 @@ import {
 	type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import type { EntryRecord } from "@earendil-works/pi-durable";
-import { Models } from "@gunta/pi-ai-effect";
-import { type DurableError, type Extension, Harness, type Hook } from "@gunta/pi-durable-effect";
-import { answer, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Models } from "@effectified/pi-ai";
+import { type DurableError, type Extension, Harness, type Hook } from "@effectified/pi-durable";
+import { answer, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option, Stream } from "effect";
 import { expect } from "vitest";
 import {

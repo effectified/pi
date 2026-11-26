@@ -1,12 +1,12 @@
 import { type AssistantMessage, createModels, fauxProvider, type Models } from "@earendil-works/pi-ai";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import {
 	answer,
 	type FauxResponseStep,
 	fauxAssistantMessage,
 	fauxText,
 	fauxThinking,
-} from "@gunta/pi-durable-effect/testing";
+} from "@effectified/pi-durable/testing";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { type Check, state } from "../src/index.ts";

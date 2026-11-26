@@ -1,4 +1,4 @@
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { PriceRows, PriceRowsError, priceRows, type RouteTable } from "../src/index.ts";

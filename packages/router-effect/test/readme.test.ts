@@ -3,7 +3,7 @@
 // the providers are scripted.
 
 import { type AssistantMessage, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
-import { complete, getModel, Models } from "@gunta/pi-ai-effect";
+import { complete, getModel, Models } from "@effectified/pi-ai";
 import { Context, Effect, Layer, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {
@@ -71,7 +71,7 @@ function providers() {
 	return { openrouter, local, models: Models.layer([openrouter.provider, local.provider]) };
 }
 
-/** A stand-in for the `Spend` of `@gunta/pi-budget-effect`, which this package does not import: its signature. */
+/** A stand-in for the `Spend` of `@effectified/pi-budget`, which this package does not import: its signature. */
 interface Spent {
 	readonly key: string;
 	readonly provider: string;

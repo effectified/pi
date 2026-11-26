@@ -1,6 +1,6 @@
 // The process that hosts actors: a rivetkit registry of this package's actors, started and stopped with a scope.
 
-import type { StrictOmit } from "@gunta/pi-ai-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
 import { Effect, Exit, Predicate, type Scope } from "effect";
 import { type RegistryActors, type RegistryConfigInput, setup } from "rivetkit";
 import { decodeBridgeRivetError } from "rivetkit/errors";

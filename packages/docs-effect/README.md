@@ -1,4 +1,4 @@
-# @gunta/pi-docs-effect
+# @effectified/pi-docs
 
 The documentation of the pi-effect packages, kept the way Pi keeps its own: a directory of Markdown pages and a catalog, `docs/docs.json`, whose navigation names every page. It holds no library code, is private, and is never published.
 

@@ -22,8 +22,8 @@ import {
 	type UsageState,
 	type Wake,
 } from "@earendil-works/pi-durable";
-import { Models } from "@gunta/pi-ai-effect";
-import type { SchemaDecodeError } from "@gunta/pi-schema-effect";
+import { Models } from "@effectified/pi-ai";
+import type { SchemaDecodeError } from "@effectified/pi-schema";
 import { type Cause, Context, Effect, FiberSet, Layer, Option, PubSub, Queue, type Schema, Stream } from "effect";
 import * as Agent from "./agent.ts";
 import { call } from "./call.ts";
@@ -54,7 +54,7 @@ export interface Open extends PiHarness {}
  * The open harness of this program. The service value is Pi's own object, for what this package does not wrap yet;
  * the functions of this module are the Effect way to use it.
  */
-export class Harness extends Context.Service<Harness, Open>()("@gunta/pi-durable-effect/Harness") {}
+export class Harness extends Context.Service<Harness, Open>()("@effectified/pi-durable/Harness") {}
 
 /** Options of `layer`. `R` is what `conversationCreated` needs: the Layer requires it. */
 export interface Options<R = never> {

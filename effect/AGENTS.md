@@ -19,7 +19,7 @@ the packages and their state are in `effect/COMPAT.md`; the first consumer's bin
 
 ## Packages
 
-- One facade per Pi package, named `<pi package>-effect`; plugins and hosts are separate packages (PRD section 5).
+- One facade per Pi package, in `packages/<pi package>-effect` and named `@effectified/<pi package>` on npm; plugins and hosts are separate packages (PRD section 5).
   `package.json` says which in `piEffect.kind`: `facade`, `plugin` or `host`.
   `packages/docs-effect` is the one `docs` package: no library code, the documentation of the others
   (`docs/`, and `npm run build --workspace packages/docs-effect` for the site in `dist/`). A new package needs a
@@ -49,7 +49,7 @@ the packages and their state are in `effect/COMPAT.md`; the first consumer's bin
 - Time and ids come from services (`Clock`), so `TestClock` drives a test.
 - Casts only where TypeScript cannot express a decided invariant or at a decode boundary, each with a short why.
 - `@effect/vitest` needs Vitest 5 (upstream pins Vitest 4) and does not load under `bun test`. A test runs its Effect
-  with `runTest` of `@gunta/pi-ai-effect/testing`: a scope, the test clock and the test console, on both lanes.
+  with `runTest` of `@effectified/pi-ai/testing`: a scope, the test clock and the test console, on both lanes.
   `runLive` is for a test of real processes or files. `schema-effect` and `telemetry-effect`, which do not depend
   on it, keep `Effect.runPromise`.
 - What Pi defines is not written a second time. A type comes from Pi's (`Pick`, `Extract`, indexed access, a mapped

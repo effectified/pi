@@ -10,8 +10,8 @@ import {
 	type TaskId,
 	type Wake,
 } from "@earendil-works/pi-durable";
-import type { Models } from "@gunta/pi-ai-effect";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import type { Models } from "@effectified/pi-ai";
+import { runTest } from "@effectified/pi-ai/testing";
 import {
 	Cause,
 	Context,

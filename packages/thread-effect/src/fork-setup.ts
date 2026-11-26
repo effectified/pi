@@ -1,11 +1,11 @@
 // The fork setup of the composition: a swarm's fork is granted through the guard, capped on the budget's lease,
 // indexed for the router and left out of the review, all in the commit that creates it.
 
-import { Shares } from "@gunta/pi-budget-effect";
-import { Doc, type Tx } from "@gunta/pi-durable-effect";
-import { Conversations, Grant, Guard } from "@gunta/pi-guard-effect";
-import * as Review from "@gunta/pi-review-effect";
-import { ForkSetup, ForkSetupFailed } from "@gunta/pi-swarm-effect";
+import { Shares } from "@effectified/pi-budget";
+import { Doc, type Tx } from "@effectified/pi-durable";
+import { Conversations, Grant, Guard } from "@effectified/pi-guard";
+import * as Review from "@effectified/pi-review";
+import { ForkSetup, ForkSetupFailed } from "@effectified/pi-swarm";
 import { Effect, Layer, Schema } from "effect";
 
 /**

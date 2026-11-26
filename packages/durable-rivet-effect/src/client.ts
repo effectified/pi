@@ -25,7 +25,7 @@ import * as Refusal from "./refusal.ts";
  * this module are the Effect way to use it.
  */
 export class RivetClient extends Context.Service<RivetClient, ClientRaw>()(
-	"@gunta/pi-durable-rivet-effect/RivetClient",
+	"@effectified/pi-durable-rivet/RivetClient",
 ) {}
 
 /**

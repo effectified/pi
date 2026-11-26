@@ -2,17 +2,17 @@
 // approval inbox in memory, kept across reopens; and the composition opened on scripted models, with no network.
 
 import { type FauxProviderHandle, type FauxResponseStep, fauxProvider } from "@earendil-works/pi-ai";
-import * as Approvals from "@gunta/pi-approvals-effect";
-import { type BudgetRequest, Estimator, Lease, LeaseFenced, Prices, type Settlement } from "@gunta/pi-budget-effect";
-import { Extension, Harness, Storage, Tool } from "@gunta/pi-durable-effect";
-import { Policy as GuardPolicy, Matcher } from "@gunta/pi-guard-effect";
-import { RecordSink, type Records } from "@gunta/pi-recorder-effect";
-import * as Review from "@gunta/pi-review-effect";
-import { type PriceRows, priceRows, type RouteEvent, RouteEvents, type RouteTable } from "@gunta/pi-router-effect";
-import { SearchProvider, SearchTools } from "@gunta/pi-search-effect";
-import { Subagent, Subagents } from "@gunta/pi-subagent-effect";
-import * as Swarm from "@gunta/pi-swarm-effect";
-import { PiTelemetry } from "@gunta/pi-telemetry-effect";
+import * as Approvals from "@effectified/pi-approvals";
+import { type BudgetRequest, Estimator, Lease, LeaseFenced, Prices, type Settlement } from "@effectified/pi-budget";
+import { Extension, Harness, Storage, Tool } from "@effectified/pi-durable";
+import { Policy as GuardPolicy, Matcher } from "@effectified/pi-guard";
+import { RecordSink, type Records } from "@effectified/pi-recorder";
+import * as Review from "@effectified/pi-review";
+import { type PriceRows, priceRows, type RouteEvent, RouteEvents, type RouteTable } from "@effectified/pi-router";
+import { SearchProvider, SearchTools } from "@effectified/pi-search";
+import { Subagent, Subagents } from "@effectified/pi-subagent";
+import * as Swarm from "@effectified/pi-swarm";
+import { PiTelemetry } from "@effectified/pi-telemetry";
 import { DateTime, Effect, Layer, Queue, Schema, type Scope, Stream, Tracer } from "effect";
 import {
 	Composition,

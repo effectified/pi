@@ -9,7 +9,7 @@ import type {
 	WatchEnd,
 	WatchHandle,
 } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Cause, Effect, Exit, Fiber, Latch, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Watch from "../src/watch.ts";

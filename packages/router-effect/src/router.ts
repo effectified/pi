@@ -6,7 +6,7 @@ import type {
 	Context as PiContext,
 	Provider,
 } from "@earendil-works/pi-ai";
-import { Models, type RequestOptions, type ResponseEvent, requestKey } from "@gunta/pi-ai-effect";
+import { Models, type RequestOptions, type ResponseEvent, requestKey } from "@effectified/pi-ai";
 import { Clock, Context, Effect, Layer, Queue, Random, Stream } from "effect";
 import { AttemptSettlement } from "./attempt-settlement.ts";
 import { type RoutedRequest, serve } from "./attempts.ts";
@@ -70,7 +70,7 @@ export interface RouterService {
 }
 
 /** Model routing over the providers in `Models`: aliases, fallback, limits, prices and a record of every attempt. */
-export class Router extends Context.Service<Router, RouterService>()("@gunta/pi-router-effect/Router") {
+export class Router extends Context.Service<Router, RouterService>()("@effectified/pi-router/Router") {
 	/**
 	 * Validates `table` against `Models`, then puts the router's provider into `Models` until the scope closes, so
 	 * `{ provider: id, modelId: alias }` names a model anything on `Models` can call. Fails with `RouteTableError`

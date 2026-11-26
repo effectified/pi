@@ -13,7 +13,7 @@ export interface SearchProviderService {
 	readonly fetch: (urls: ReadonlyArray<string>, options?: FetchOptions) => Effect.Effect<Retrieval, SearchError>;
 }
 
-/** The search provider of this program. A provider file gives it as a Layer (`@gunta/pi-search-effect/exa`). */
+/** The search provider of this program. A provider file gives it as a Layer (`@effectified/pi-search/exa`). */
 export class SearchProvider extends Context.Service<SearchProvider, SearchProviderService>()(
-	"@gunta/pi-search-effect/SearchProvider",
+	"@effectified/pi-search/SearchProvider",
 ) {}

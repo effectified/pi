@@ -2,8 +2,8 @@
 // findings as one JSON object. What its one request came to is kept in a memo of the review task.
 
 import type { Api, AssistantMessage, Message, Model, Models } from "@earendil-works/pi-ai";
-import { ANSWERED } from "@gunta/pi-ai-effect";
-import type { DurableError } from "@gunta/pi-durable-effect";
+import { ANSWERED } from "@effectified/pi-ai";
+import type { DurableError } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import type * as Check from "./check.ts";
 import { describe, ReviewerRequestFailed, UndecodableReview } from "./errors.ts";

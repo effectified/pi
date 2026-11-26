@@ -35,7 +35,7 @@ The rules that keep this true:
   last. The composition's table: [The order, and why](../../thread-effect/README.md#the-order-and-why).
 - Models are layers of wrappers: the providers, the router on them, the budget on the same plain `Models`, the
   harness on the budgeted one. Never give the router the budgeted `Models`.
-- A product that wants the whole thread uses `@gunta/pi-thread-effect` and does not rebuild this order by hand.
+- A product that wants the whole thread uses `@effectified/pi-thread` and does not rebuild this order by hand.
 
 ## What a product supplies
 

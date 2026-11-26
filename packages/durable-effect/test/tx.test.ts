@@ -1,6 +1,6 @@
 import { configure, defineDoc, defineExtension, defineTask, type TaskId } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import type { SchemaDecodeError } from "@gunta/pi-schema-effect";
+import { runTest } from "@effectified/pi-ai/testing";
+import type { SchemaDecodeError } from "@effectified/pi-schema";
 import { Cause, Context, Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { Doc, type DurableError, Extension, Harness, Registry, Signal, Task, Tx } from "../src/index.ts";

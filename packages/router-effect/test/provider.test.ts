@@ -9,8 +9,8 @@ import {
 	type Provider,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
-import { ModelRequestError, type ResponseEvent } from "@gunta/pi-ai-effect";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { ModelRequestError, type ResponseEvent } from "@effectified/pi-ai";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Exit, Scope } from "effect";
 import { describe, expect, it } from "vitest";
 import { AttemptUnsettled, NoRouteAvailable, type RouterError, RoutesExhausted } from "../src/index.ts";

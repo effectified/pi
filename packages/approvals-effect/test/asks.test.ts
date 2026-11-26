@@ -1,5 +1,5 @@
 import type { JsonObject } from "@earendil-works/pi-durable";
-import type { Hook } from "@gunta/pi-durable-effect";
+import type { Hook } from "@effectified/pi-durable";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Asks from "../src/asks.ts";

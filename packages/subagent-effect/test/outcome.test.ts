@@ -1,5 +1,5 @@
 import type { EntryId, EntryRecord, SettledSubmissionRecord } from "@earendil-works/pi-durable";
-import { answer } from "@gunta/pi-durable-effect/testing";
+import { answer } from "@effectified/pi-durable/testing";
 import { Option } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Outcome from "../src/outcome.ts";

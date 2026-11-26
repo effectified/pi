@@ -3,8 +3,8 @@
 // sources).
 
 import type { ModelRef } from "@earendil-works/pi-durable";
-import { Harness, Registry, Storage } from "@gunta/pi-durable-effect";
-import { answer, type FauxResponseFactory, ScriptedModels, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Harness, Registry, Storage } from "@effectified/pi-durable";
+import { answer, type FauxResponseFactory, ScriptedModels, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Swarm from "../src/index.ts";

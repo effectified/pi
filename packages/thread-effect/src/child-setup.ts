@@ -1,10 +1,10 @@
 // The child setup of the composition: a subagent is granted at most its declared tools through the guard, capped on
 // the budget's lease, routed as its parent is, and left out of the review, all in the commit that creates it.
 
-import { Shares } from "@gunta/pi-budget-effect";
-import { Conversations, Grant, Guard } from "@gunta/pi-guard-effect";
-import * as Review from "@gunta/pi-review-effect";
-import { ChildSetup, ChildSetupFailed, type Subagent } from "@gunta/pi-subagent-effect";
+import { Shares } from "@effectified/pi-budget";
+import { Conversations, Grant, Guard } from "@effectified/pi-guard";
+import * as Review from "@effectified/pi-review";
+import { ChildSetup, ChildSetupFailed, type Subagent } from "@effectified/pi-subagent";
 import { Effect, Layer } from "effect";
 import * as Routing from "./routing.ts";
 

@@ -1,7 +1,7 @@
-# @gunta/pi-review-effect
+# @effectified/pi-review
 
 Review before an answer stands, for [Pi Durable](../durable) agents, for `effect` 4.1, on
-[`@gunta/pi-durable-effect`](../durable-effect).
+[`@effectified/pi-durable`](../durable-effect).
 
 Every final answer of a conversation is reviewed before Pi settles the run that gave it:
 
@@ -20,7 +20,7 @@ verifier are yours.
 ## Install
 
 ```sh
-npm install @gunta/pi-review-effect @gunta/pi-durable-effect @earendil-works/pi-durable @earendil-works/pi-ai effect
+npm install @effectified/pi-review @effectified/pi-durable @earendil-works/pi-durable @earendil-works/pi-ai effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`).
@@ -32,10 +32,10 @@ It runs as it stands, because both models are scripted; the same code is the tes
 
 ```ts
 import { fauxProvider } from "@earendil-works/pi-ai";
-import { Models } from "@gunta/pi-ai-effect";
-import { answer, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Models } from "@effectified/pi-ai";
+import { answer, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Stream } from "effect";
-import * as Review from "@gunta/pi-review-effect";
+import * as Review from "@effectified/pi-review";
 
 // Policy as data: who reviews, the family of every model, how many corrective runs, what blocks.
 const policy: Review.Policy.Policy = {
@@ -192,7 +192,7 @@ const reviewed = Review.extension({ policy, checks: [Cited, Wording] });
   answer gives `NotReviewed` with the reason `check_failed`, and a failed request gives `Deferred`.
 - **A failed request is not a failed check of the answer.** The reviewer's request failed when pi-ai gave an `error`
   or `aborted` response, a response still `pending` or `deferred` (Pi Durable takes neither as an answer:
-  `ANSWERED` of `@gunta/pi-ai-effect`), or no response at all: a provider outage, a refusal by whatever wraps the
+  `ANSWERED` of `@effectified/pi-ai`), or no response at all: a provider outage, a refusal by whatever wraps the
   models. Nothing was said about the answer, so the review can be asked for again (see [Deferred](#deferred)). An answer that is not
   the findings object is a failed check: asking again is not known to help.
 - **Nothing is retried by itself.** A check that should survive a flaky service retries inside its own Effect.
@@ -268,14 +268,14 @@ const calls = verdicts.flatMap((entry) => {
 });
 ```
 
-A recorder that delivers entries without model messages, such as `@gunta/pi-recorder-effect`, hands a sink every
+A recorder that delivers entries without model messages, such as `@effectified/pi-recorder`, hands a sink every
 `review.verdict` and `review.release` entry in order with the conversation's other records. `Review.VerdictEntry.schema`
 and `Review.ReleaseEntry.schema` decode their data.
 
 ## Review state
 
 ```ts
-const state = yield* Review.state(root); // a conversation handle of `@gunta/pi-durable-effect`
+const state = yield* Review.state(root); // a conversation handle of `@effectified/pi-durable`
 const verdicts = yield* Stream.runCollect(Review.verdicts(root)); // every stored verdict, oldest first
 const since = yield* Stream.runCollect(Review.verdicts(root, { from: entry })); // those from an entry on
 ```
@@ -481,7 +481,7 @@ the memos of a running review. Tested on a SQLite file with both drivers:
 ## Cost and budgets
 
 - The reviewer's request goes through the harness's own `Models` (the task's `api.pi.models`), so whatever wraps
-  them at the model boundary, such as `@gunta/pi-budget-effect`, sees it.
+  them at the model boundary, such as `@effectified/pi-budget`, sees it.
 - It carries the reviewed conversation's provider session (Pi's `pi.provider` document, read through its own token)
   as pi-ai's `sessionId`: the id Pi sends with the conversation's own requests. A cap per conversation counts the
   review. A conversation without one yet sends none.
@@ -555,7 +555,7 @@ answers the review let stand.
   review is asked for again, or it is aborted.
 - **`Released` is read from a task's memo.** Pi gives a task's own handlers `readSignal` and a host nothing. The
   state reads what Pi's specification says a delivery stores, the task's memo `pi.signal.<name>/<key>`, through
-  `Signal.stateIn` of `@gunta/pi-durable-effect`: a memo another version of the signal stored fails the read with
+  `Signal.stateIn` of `@effectified/pi-durable`: a memo another version of the signal stored fails the read with
   `SchemaDecodeError`.
 - **The state is a snapshot** of three reads; a commit between them can make it one step old.
 - **Findings are stored as text** in the conversation, with the reviewer's words.

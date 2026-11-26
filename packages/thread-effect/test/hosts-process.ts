@@ -1,7 +1,7 @@
 // Test helper, run as a process of its own by hosts-suite.ts: a host of the thread actor on an engine that runs already.
 // Arguments: the engine's endpoint, the outside's URL, the name of this host.
 
-import { Host } from "@gunta/pi-durable-rivet-effect";
+import { Host } from "@effectified/pi-durable-rivet";
 import { Effect } from "effect";
 import { HOST_POOL, threadOn } from "./hosts-thread.ts";
 import { ask } from "./hosts-wire.ts";

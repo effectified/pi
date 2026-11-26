@@ -18,7 +18,7 @@ import {
 	type RequestOptions,
 	type ResponseEvent,
 	streamSimple,
-} from "@gunta/pi-ai-effect";
+} from "@effectified/pi-ai";
 import { Clock, Effect, Result, Stream } from "effect";
 import { AttemptSettlement, settledBy } from "./attempt-settlement.ts";
 import { classify } from "./classify.ts";

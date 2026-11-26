@@ -1,6 +1,6 @@
 // A route table's prices as plain rows: what a budget needs to price the same models, written once.
 
-import { TOKEN_KINDS, type TokenKind } from "@gunta/pi-ai-effect";
+import { TOKEN_KINDS, type TokenKind } from "@effectified/pi-ai";
 import { Effect, Schema } from "effect";
 import { type Price, PriceTier, type RouteTable } from "./route-table.ts";
 
@@ -22,7 +22,7 @@ export const PriceRow = Schema.Struct({
 export type PriceRow = typeof PriceRow.Type;
 
 /**
- * The prices of a route table in one currency: the shape of the `PriceTable` of `@gunta/pi-budget-effect`, which
+ * The prices of a route table in one currency: the shape of the `PriceTable` of `@effectified/pi-budget`, which
  * decodes it as it is.
  */
 export const PriceRows = Schema.Struct({

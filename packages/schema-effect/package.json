@@ -1,5 +1,5 @@
 {
-	"name": "@gunta/pi-schema-effect",
+	"name": "@effectified/pi-schema",
 	"version": "0.1.0",
 	"description": "Effect Schema to and from Pi tool parameters (JSON Schema), with typed decode errors",
 	"type": "module",
@@ -37,7 +37,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/gunta/pi-effect.git",
+		"url": "git+https://github.com/effectified/pi.git",
 		"directory": "packages/schema-effect"
 	},
 	"engines": {

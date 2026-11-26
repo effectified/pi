@@ -4,7 +4,7 @@
 // hints are waited out on the test clock, so no test waits for the machine.
 
 import type { SqliteExecutor } from "@earendil-works/chord/sqlite";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Clock, Effect, Exit, Fiber, FiberSet, Layer, Option, Result, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { type ClientRaw, RivetError } from "rivetkit/client";

@@ -1,7 +1,7 @@
 import { defineExtension, type ToolRegistration } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { Extension, Harness, Registry, type Tool } from "@gunta/pi-durable-effect";
-import { answer, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
+import { Extension, Harness, Registry, type Tool } from "@effectified/pi-durable";
+import { answer, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { backstopped } from "../src/backstop.ts";

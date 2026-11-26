@@ -9,7 +9,7 @@ import {
 	type SignalState,
 	type SignalToken,
 } from "@earendil-works/pi-durable";
-import { decodeUnknown, encode, SchemaConversionError, SchemaDecodeError, toJsonSchema } from "@gunta/pi-schema-effect";
+import { decodeUnknown, encode, SchemaConversionError, SchemaDecodeError, toJsonSchema } from "@effectified/pi-schema";
 import { Effect, Option, Predicate, type Schema } from "effect";
 import { call } from "./call.ts";
 import type { DurableError } from "./errors.ts";

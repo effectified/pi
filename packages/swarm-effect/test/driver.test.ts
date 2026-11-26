@@ -13,7 +13,7 @@ describe("the driver port", () => {
 		]);
 		expect(imports).toEqual([
 			["@earendil-works/pi-durable", "type "],
-			["@gunta/pi-durable-effect", ""],
+			["@effectified/pi-durable", ""],
 			["effect", ""],
 			["./fork-setup.ts", "type "],
 		]);

@@ -1,4 +1,4 @@
-# @gunta/pi-search-effect
+# @effectified/pi-search
 
 Web search and page fetch for Pi Durable agents, in Effect 4.1:
 
@@ -7,30 +7,30 @@ Web search and page fetch for Pi Durable agents, in Effect 4.1:
   can store what a conclusion was based on.
 - An **Exa provider**, on Effect's `HttpClient`. No client library.
 - Two **tools**, `web_search` and `web_fetch`, as an extension for
-  [`@gunta/pi-durable-effect`](../durable-effect/README.md). The model reads compact text; the host finds the evidence
+  [`@effectified/pi-durable`](../durable-effect/README.md). The model reads compact text; the host finds the evidence
   in the tool result's details. A product fixes limits the model cannot exceed.
 
-The port needs no harness: `@gunta/pi-search-effect/provider` imports only `effect`.
+The port needs no harness: `@effectified/pi-search/provider` imports only `effect`.
 
 ## Install
 
 ```sh
-npm install @gunta/pi-search-effect @gunta/pi-durable-effect @earendil-works/pi-durable effect
+npm install @effectified/pi-search @effectified/pi-durable @earendil-works/pi-durable effect
 ```
 
 | Import | Holds |
 |---|---|
-| `@gunta/pi-search-effect` | The port, the limits and the tools |
-| `@gunta/pi-search-effect/provider` | The port alone: `SearchProvider`, its options, results and errors |
-| `@gunta/pi-search-effect/exa` | The Exa provider |
+| `@effectified/pi-search` | The port, the limits and the tools |
+| `@effectified/pi-search/provider` | The port alone: `SearchProvider`, its options, results and errors |
+| `@effectified/pi-search/exa` | The Exa provider |
 
 ## The provider port
 
 ```ts
 import { Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
-import * as Exa from "@gunta/pi-search-effect/exa";
-import { SearchProvider } from "@gunta/pi-search-effect/provider";
+import * as Exa from "@effectified/pi-search/exa";
+import { SearchProvider } from "@effectified/pi-search/provider";
 
 const program = Effect.gen(function* () {
 	const provider = yield* SearchProvider;
@@ -121,9 +121,9 @@ const exa = Exa.layer({
 ```ts
 import { Effect, Layer, Stream } from "effect";
 import { FetchHttpClient } from "effect/http";
-import { Harness, Registry } from "@gunta/pi-durable-effect";
-import { Evidence, SearchTools } from "@gunta/pi-search-effect";
-import * as Exa from "@gunta/pi-search-effect/exa";
+import { Harness, Registry } from "@effectified/pi-durable";
+import { Evidence, SearchTools } from "@effectified/pi-search";
+import * as Exa from "@effectified/pi-search/exa";
 
 const registry = Registry.layer([SearchTools.extension({ maxResults: 5, blockedDomains: ["example.org"] })]).pipe(
 	// Does not type check without a SearchProvider: the tools' handlers need one.
@@ -202,7 +202,7 @@ is a page of `evil.test`. Domain limits on a search are the provider's filters: 
 
 ## Writing another provider
 
-A provider is one file. It imports `@gunta/pi-search-effect/provider` and `effect`, and exports:
+A provider is one file. It imports `@effectified/pi-search/provider` and `effect`, and exports:
 
 - `layer`: a `Layer` that gives `SearchProvider`. Credentials come from `Config` as `Redacted`.
 - `name`: the string it writes into `provider`.

@@ -10,6 +10,6 @@ export {
 	type RegisterFauxProviderOptions,
 	ScriptedModels,
 	type ScriptedModelsService,
-} from "@gunta/pi-ai-effect/testing";
+} from "@effectified/pi-ai/testing";
 export { answer, type Held, held, toolCall } from "./responses.ts";
 export * as TestHarness from "./test-harness.ts";

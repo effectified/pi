@@ -1,12 +1,12 @@
 // The accounts of a swarm's forks when the forks are actors: what each job's fork settled is read from the fork, and
 // kept in the swarm's own storage before the fork is destroyed.
 
-import { Shares } from "@gunta/pi-budget-effect";
-import { Doc, Harness } from "@gunta/pi-durable-effect";
-import { Action, type ActorEngine, type ActorInfo, type ActorSql, Client, Self } from "@gunta/pi-durable-rivet-effect";
-import { Recorder } from "@gunta/pi-recorder-effect";
-import * as Swarm from "@gunta/pi-swarm-effect";
-import * as Rivet from "@gunta/pi-swarm-effect/rivet";
+import { Shares } from "@effectified/pi-budget";
+import { Doc, Harness } from "@effectified/pi-durable";
+import { Action, type ActorEngine, type ActorInfo, type ActorSql, Client, Self } from "@effectified/pi-durable-rivet";
+import { Recorder } from "@effectified/pi-recorder";
+import * as Swarm from "@effectified/pi-swarm";
+import * as Rivet from "@effectified/pi-swarm/rivet";
 import { type Context, type Deferred, Effect, Layer, Option, Schema } from "effect";
 import * as Forks from "../forks.ts";
 import * as Opened from "../opened.ts";
@@ -52,7 +52,7 @@ const Ledger = Doc.family({
 type Needs = Client.RivetClient | ActorInfo | ActorSql;
 
 /**
- * Forks that are Rivet actors: the swarm's Rivet driver (`@gunta/pi-swarm-effect/rivet`), for a composition hosted in
+ * Forks that are Rivet actors: the swarm's Rivet driver (`@effectified/pi-swarm/rivet`), for a composition hosted in
  * a Rivet actor whose definition has `actions`, the driver's own actions and its fork hygiene. `options` are the
  * driver's.
  *

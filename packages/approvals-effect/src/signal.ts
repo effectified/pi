@@ -1,6 +1,6 @@
 // The signal a decision travels in.
 
-import { Signal } from "@gunta/pi-durable-effect";
+import { Signal } from "@effectified/pi-durable";
 import { Decision } from "./decision.ts";
 
 /** A decision, delivered to the tool call's task under the request's id. */

@@ -1,7 +1,7 @@
 // Releasing a held conversation: a person's decision, delivered to the review task that waits for it, and the wait
 // for the hold to end.
 
-import { type Conversation, Harness, type Signal } from "@gunta/pi-durable-effect";
+import { type Conversation, Harness, type Signal } from "@effectified/pi-durable";
 import { Effect } from "effect";
 import { NotHeld } from "./errors.ts";
 import * as Hold from "./hold.ts";

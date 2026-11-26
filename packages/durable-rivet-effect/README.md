@@ -1,7 +1,7 @@
-# @gunta/pi-durable-rivet-effect
+# @effectified/pi-durable-rivet
 
 A Pi Durable harness inside a [Rivet](https://rivet.dev) actor, driven from Effect code through
-[`@gunta/pi-durable-effect`](../durable-effect), for `effect` 4.1 and `rivetkit` 3.1:
+[`@effectified/pi-durable`](../durable-effect), for `effect` 4.1 and `rivetkit` 3.1:
 
 - **One actor is one harness storage.** Pi's SQLite storage runs on the actor's own SQLite, beside the tables a
   product keeps there.
@@ -21,7 +21,7 @@ No promise appears in this package's signatures; Rivet's promise-shaped hooks ar
 ## Install
 
 ```sh
-npm install @gunta/pi-durable-rivet-effect @gunta/pi-durable-effect @gunta/pi-ai-effect effect rivetkit
+npm install @effectified/pi-durable-rivet @effectified/pi-durable @effectified/pi-ai effect rivetkit
 ```
 
 `effect` (`~4.1.5`) and `rivetkit` (`~3.1.1`) are peer dependencies, so the application has one copy of each.
@@ -33,10 +33,10 @@ it stands, because the model is scripted; the same code is the test [`test/readm
 
 ```ts
 import { Effect, Layer, Schema } from "effect";
-import { Registry } from "@gunta/pi-durable-effect";
-import { answer, ScriptedModels, TestHarness } from "@gunta/pi-durable-effect/testing";
-import { Action, Actor, Client } from "@gunta/pi-durable-rivet-effect";
-import * as LocalEngine from "@gunta/pi-durable-rivet-effect/node"; // on Bun: "@gunta/pi-durable-rivet-effect/bun"
+import { Registry } from "@effectified/pi-durable";
+import { answer, ScriptedModels, TestHarness } from "@effectified/pi-durable/testing";
+import { Action, Actor, Client } from "@effectified/pi-durable-rivet";
+import * as LocalEngine from "@effectified/pi-durable-rivet/node"; // on Bun: "@effectified/pi-durable-rivet/bun"
 
 // What the harness runs on beside its storage: a registry and the models. Built at each wake of the actor.
 const layer = Layer.merge(
@@ -100,7 +100,7 @@ Effect.runPromise(main).then(console.log);
 ```
 
 With a real provider, replace the scripted Layer by `Models.layer([anthropicProvider()])` from
-`@gunta/pi-ai-effect` and name one of its models in the root's agent. Against a Rivet deployment, the process that
+`@effectified/pi-ai` and name one of its models in the root's agent. Against a Rivet deployment, the process that
 hosts the actors runs `Host.serve({ actors: [Agent], endpoint })`, and callers use `Client.layer({ endpoint })`.
 
 ## The actor
@@ -181,7 +181,7 @@ way: its own `Actor.Definition` is not a value inside the actor (the definition 
 there), and it has no endpoint to build a client from. `Self` gives both.
 
 ```ts
-import { Client, Self } from "@gunta/pi-durable-rivet-effect";
+import { Client, Self } from "@effectified/pi-durable-rivet";
 
 const layer = Layer.mergeAll(registry, models, Self.client); // RivetClient, from the actor's own context
 
@@ -282,7 +282,7 @@ seven times in a row. Until 2026-11-25 such a call found the wake past, replaced
 cancelled it before it ran, so a thread taken up after its host was killed, and asked every 250 milliseconds where
 it stood, never resumed. `test/wake-keeper.test.ts`, "resumes work whose wake is past at the next call", holds it.
 
-Wake times come from Pi's clock, which is Effect's `Clock` inside the actor (see `@gunta/pi-durable-effect`).
+Wake times come from Pi's clock, which is Effect's `Clock` inside the actor (see `@effectified/pi-durable`).
 
 ## Forks
 
@@ -337,7 +337,7 @@ oldest first, and the `input` of its own fork.
 A host may not import a plugin, so what the plugins need done to a copied storage reaches the host as data:
 
 ```ts
-import { onStorageFork } from "@gunta/pi-recorder-effect";
+import { onStorageFork } from "@effectified/pi-recorder";
 
 const Agent = Actor.make("agent", {
 	layer, // registry, models, the plugins' ports
@@ -350,11 +350,11 @@ const Agent = Actor.make("agent", {
 | Plugin | What the copy holds | Hygiene |
 |---|---|---|
 | recorder | Every conversation's `recorder.cursor`, and with it entries the source has not delivered yet | `onStorageFork`: moves every cursor to the copied head, so the fork delivers only what it commits itself. Do not drop the cursors. The pump belongs in `services` |
-| budget | The `budget.share` documents of capped conversations | `onStorageFork(copyName)` of `@gunta/pi-budget-effect`, with the fork's actor id as the name: what each share had settled becomes `inherited`, so a cap still counts it and a sum over storages does not count it twice. The lease is a port of the product: give the fork its own in `layer`, from `ActorInfo` |
+| budget | The `budget.share` documents of capped conversations | `onStorageFork(copyName)` of `@effectified/pi-budget`, with the fork's actor id as the name: what each share had settled becomes `inherited`, so a cap still counts it and a sum over storages does not count it twice. The lease is a port of the product: give the fork its own in `layer`, from `ActorInfo` |
 | approvals | Nothing pending: a parked call is live work, and a busy harness is not forked | None |
 | guard | The grants of its conversations, copied as they are | None; narrow a grant in an Effect of the product if the fork must hold less |
-| subagent | `subagent.child` documents, with the conversations they name, and every run task that was live | `onStorageFork` of `@gunta/pi-subagent-effect`: ends every run the copy inherited live, with the reason `copied`, so no child works in both actors |
-| swarm | Every coordinator task, one of them live when a swarm forked the actor; the Rivet driver's record of forks | `forkHygiene` of `@gunta/pi-swarm-effect/rivet`: ends the copied coordinators and empties the record. Required in every actor that runs swarms on Rivet |
+| subagent | `subagent.child` documents, with the conversations they name, and every run task that was live | `onStorageFork` of `@effectified/pi-subagent`: ends every run the copy inherited live, with the reason `copied`, so no child works in both actors |
+| swarm | Every coordinator task, one of them live when a swarm forked the actor; the Rivet driver's record of forks | `forkHygiene` of `@effectified/pi-swarm/rivet`: ends the copied coordinators and empties the record. Required in every actor that runs swarms on Rivet |
 
 What a fork inherits and nothing drops: the whole Pi storage (every conversation, entry, document, usage ledger and
 settled task record), the product's own tables in the actor database, and the rows of `<prefix>rivet_fork` of the
@@ -366,7 +366,7 @@ Inside an actor its SQLite is `ActorSql`, an Effect `SqlClient` of the SQLite di
 its own tables there, outside `prefix`:
 
 ```ts
-import { ActorSql } from "@gunta/pi-durable-rivet-effect";
+import { ActorSql } from "@effectified/pi-durable-rivet";
 import { Effect, Schema } from "effect";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
@@ -383,10 +383,10 @@ const notes = Effect.gen(function* () {
 ```
 
 Effect's `Migrator` runs on it with the client provided as `SqlClient` (`Effect.provideService(SqlClient.SqlClient,
-sql)`), with a migration table named for the product: `@gunta/pi-swarm-effect/rivet` keeps its record that way.
+sql)`), with a migration table named for the product: `@effectified/pi-swarm/rivet` keeps its record that way.
 
 Pi's storage (`storage({ prefix })`, a `HarnessStorage` Layer) runs on `ActorDatabase`, the adapter below, on the
-same queue. It also passes Pi's storage conformance suite through `Storage.sql` of `@gunta/pi-durable-effect` over
+same queue. It also passes Pi's storage conformance suite through `Storage.sql` of `@effectified/pi-durable` over
 `ActorSql`, on a real actor database; but the 50-fork swarm of `packages/thread-effect` took 12% longer that way
 (7.2 s against 6.4 s for the swarm, the means of four interleaved runs each, slower in three of the four), so the
 host keeps Pi on the adapter.
@@ -445,7 +445,7 @@ transaction, a Rivet transaction) while the actor was forked 24 times.
 
 ## What runs locally, and what needs a deployment
 
-- **Locally.** `LocalEngine.serve({ actors })` from `@gunta/pi-durable-rivet-effect/node` (or `/bun`) starts the
+- **Locally.** `LocalEngine.serve({ actors })` from `@effectified/pi-durable-rivet/node` (or `/bun`) starts the
   engine binary of rivetkit's platform package (`@rivetkit/engine-cli-<platform>-<arch>`) beside the process, on a
   free set of loopback ports, with its data in a temporary directory, and removes all of it with the scope.
   `LocalEngine.available` says whether the binary is installed. Sleep, schedules, forks and destroy all work there.
@@ -504,12 +504,12 @@ transaction, a Rivet transaction) while the actor was forked 24 times.
 
 ## Testing
 
-`@gunta/pi-durable-rivet-effect/testing` has what an engine test of a product needs beside its own actions. It has
+`@effectified/pi-durable-rivet/testing` has what an engine test of a product needs beside its own actions. It has
 no platform code: the engine comes from `/node` or `/bun`.
 
 ```ts
-import * as LocalEngine from "@gunta/pi-durable-rivet-effect/node";
-import * as Testing from "@gunta/pi-durable-rivet-effect/testing";
+import * as LocalEngine from "@effectified/pi-durable-rivet/node";
+import * as Testing from "@effectified/pi-durable-rivet/testing";
 
 const TestAgent = Testing.observed(Agent); // host this one instead of Agent
 
@@ -545,7 +545,7 @@ What holds:
 - While Pi has work that can run, the actor is awake or a wake is scheduled within 15 seconds.
 - A fork's first call sees a storage on which every inherited schedule is gone and every hygiene Effect has run.
 - Nothing is logged but the class of an error that kept the harness from opening, and what
-  `@gunta/pi-durable-effect` logs of Pi's reports: kinds, ids and names, never content.
+  `@effectified/pi-durable` logs of Pi's reports: kinds, ids and names, never content.
 
 What does not:
 

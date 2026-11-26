@@ -1,7 +1,7 @@
 // The `subagent.child` document: one per child conversation, linking it to its parent and holding how it ended.
 
 import type { ConversationId, TaskId } from "@earendil-works/pi-durable";
-import { Conversation, Doc, Entry, Task } from "@gunta/pi-durable-effect";
+import { Conversation, Doc, Entry, Task } from "@effectified/pi-durable";
 import { Schema } from "effect";
 
 /** Whether the parent's tool call waits for the child, or goes on without it. */

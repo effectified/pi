@@ -1,4 +1,4 @@
-import { Conversation } from "@gunta/pi-durable-effect";
+import { Conversation } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { InvalidValue } from "../src/errors.ts";

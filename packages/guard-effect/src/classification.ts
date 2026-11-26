@@ -1,6 +1,6 @@
 // Classification ceilings: whether a conversation's classification stays within what a tool or a model may see.
 
-import type { Agent } from "@gunta/pi-durable-effect";
+import type { Agent } from "@effectified/pi-durable";
 import { Effect } from "effect";
 import { ModelNotCleared } from "./errors.ts";
 import type { Policy } from "./policy.ts";

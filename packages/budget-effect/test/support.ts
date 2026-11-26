@@ -1,10 +1,10 @@
 // Test helper: an in-memory lease that records every reserve and settle, and the layers the suites build on.
 
 import type { Usage } from "@earendil-works/pi-ai";
-import type { Models } from "@gunta/pi-ai-effect";
-import { conditions } from "@gunta/pi-ai-effect/testing";
-import { type Conversation, type DurableError, Harness, Registry, Storage } from "@gunta/pi-durable-effect";
-import { ScriptedModels } from "@gunta/pi-durable-effect/testing";
+import type { Models } from "@effectified/pi-ai";
+import { conditions } from "@effectified/pi-ai/testing";
+import { type Conversation, type DurableError, Harness, Registry, Storage } from "@effectified/pi-durable";
+import { ScriptedModels } from "@effectified/pi-durable/testing";
 import { Context, Effect, Fiber, Layer, Option, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import {

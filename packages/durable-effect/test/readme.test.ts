@@ -5,8 +5,8 @@
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import { type AssistantMessage, fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai";
 import type { ConversationId, EntryId, Report, TaskId, Wake } from "@earendil-works/pi-durable";
-import { Models } from "@gunta/pi-ai-effect";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { Models } from "@effectified/pi-ai";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Context, Effect, Fiber, Latch, Layer, Option, Queue, Schedule, Schema, Stream } from "effect";
 import { Tool as AiTool, Toolkit } from "effect/ai";
 import { describe, expect, it } from "vitest";

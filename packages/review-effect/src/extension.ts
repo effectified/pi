@@ -1,7 +1,7 @@
 // The extension a product installs: the `onYield` hook that asks for a review of every final answer, and the review
 // task.
 
-import { type Extension, Hook } from "@gunta/pi-durable-effect";
+import { type Extension, Hook } from "@effectified/pi-durable";
 import { Effect, Option } from "effect";
 import type * as Check from "./check.ts";
 import * as Correction from "./correction.ts";

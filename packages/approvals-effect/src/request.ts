@@ -1,7 +1,7 @@
 // The request a person decides: one ask of one tool call, with the arguments the call would run with.
 
 import type { TaskId } from "@earendil-works/pi-durable";
-import { Conversation, Task } from "@gunta/pi-durable-effect";
+import { Conversation, Task } from "@effectified/pi-durable";
 import { Schema } from "effect";
 
 /**

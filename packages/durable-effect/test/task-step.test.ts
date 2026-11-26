@@ -1,5 +1,5 @@
 import type { TaskId } from "@earendil-works/pi-durable";
-import { SchemaDecodeError } from "@gunta/pi-schema-effect";
+import { SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Signal } from "../src/index.ts";

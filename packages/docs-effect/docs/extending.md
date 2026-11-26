@@ -1,6 +1,6 @@
 # Write Tools, Hooks, and Plugins
 
-Everything here is `@gunta/pi-durable-effect` unless named otherwise. Its README is the reference, section by
+Everything here is `@effectified/pi-durable` unless named otherwise. Its README is the reference, section by
 section; this page says which part to use and the rules that are easy to break. For tests of what you write, read
 [Test Without a Network](testing.md). To put a tool into the thread composition, read
 [Thread Recipes](thread-recipes.md).
@@ -35,7 +35,7 @@ a missing service is a compile error, not a run-time one ([Quick start](../../du
 ## Tool
 
 `Tool.make(name, { description, parameters, success, replay, handler })`. Pi validates a call against the JSON
-Schema of `parameters` (from `@gunta/pi-schema-effect`'s `toJsonSchema`); the handler gets the decoded value and the
+Schema of `parameters` (from `@effectified/pi-schema`'s `toJsonSchema`); the handler gets the decoded value and the
 call's `api`, and returns an `Effect`.
 
 - The model reads a string result as it is, anything else as JSON. A handler failure, and arguments the schema
@@ -91,7 +91,7 @@ What a hook cannot do:
   and fix each call's decision in a memo of that call's task.
 - **Stop a provider request.** A failing hook is reported (`extension_error`) and skipped: it fails open. Only
   `beforeTool` fails closed: its failure blocks the call. Money and routes are enforced at the `Models` boundary
-  (`@gunta/pi-budget-effect`, `@gunta/pi-router-effect`).
+  (`@effectified/pi-budget`, `@effectified/pi-router`).
 
 [Hook](../../durable-effect/README.md#hook), [Hook tasks](../../durable-effect/README.md#hook-tasks).
 
@@ -128,7 +128,7 @@ const decide = (taskId: TaskId, callId: string) => Harness.signal(taskId, Approv
 - `Signal.SubmissionSettled` with `notify: { taskId, key }` on a submission wakes a task or a call when another
   conversation answers, holding no process.
 
-For human approval do not write this gate yourself: `@gunta/pi-approvals-effect` binds the decision to a digest of
+For human approval do not write this gate yourself: `@effectified/pi-approvals` binds the decision to a digest of
 the arguments. [Gate](../../durable-effect/README.md#gate), [Signal](../../durable-effect/README.md#signal).
 
 ## Task
@@ -239,7 +239,7 @@ fewer. A task is found by its name whichever conversations select its extension.
 
 **Hooks are asked in extension order, so order is behaviour:**
 
-- A guard first (`@gunta/pi-guard-effect`'s `Guard.registry` installs its own extension first).
+- A guard first (`@effectified/pi-guard`'s `Guard.registry` installs its own extension first).
 - Tools without hooks anywhere after it.
 - A `beforeTool` hook that blocks or rewrites before approvals: a hook after approvals that rewrites arguments runs
   a tool with arguments nobody approved.
@@ -256,7 +256,7 @@ A plugin is a package of behaviour on the facades. Its rules:
 
 - **It never imports another plugin.** It meets others in a product's composition. Where it needs what another
   plugin gives (a grant, a cap), it declares a port and the product wires it: `ChildSetup` of
-  `@gunta/pi-subagent-effect` is implemented by the product with the guard's `Conversations.grantIn` and the budget's
+  `@effectified/pi-subagent` is implemented by the product with the guard's `Conversations.grantIn` and the budget's
   `Shares` ([The setup port](../../subagent-effect/README.md#the-setup-port)).
 - **What the product supplies is a `Context.Service` port** (a sink, a lease, a decider), never a callback option.
   Declare it as the quick start declares `Records`. Make it required when a silent default would be wrong, and give
@@ -270,7 +270,7 @@ A plugin is a package of behaviour on the facades. Its rules:
 - **Errors are `Schema.TaggedError` classes.** No `throw`. Every public function returns `Effect`, `Stream` or `Layer`.
 - **Time and ids come from services** (`Clock`), never from `Date.now()` in library code.
 - **What Pi defines is not written a second time.** Take a type from Pi's (`Pick`, `Extract`, indexed access, a mapped
-  type, `StrictOmit` of `@gunta/pi-ai-effect`); make a choice over a Pi union exhaustive where it is written
+  type, `StrictOmit` of `@effectified/pi-ai`); make a choice over a Pi union exhaustive where it is written
   (`satisfies Record<Union, ...>`, a `switch` with a declared return type); use the facades' shared forms
   (`ANSWERED`, `TOKEN_KINDS`, `ModelRef`, `Task.ended`, `Submission.settled`, the id schemas, `Agent.ByName`).
 - **Platform code** (`node:`, `bun:`) lives behind a subpath of its own, so the core runs on Node, Bun and Workers.

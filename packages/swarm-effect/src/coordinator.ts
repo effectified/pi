@@ -1,7 +1,7 @@
 // The coordinator: the durable task that runs one swarm, from the idle source through fan-out and fan-in to clean-up.
 
 import type { WakeReason } from "@earendil-works/pi-durable";
-import { Agent, Entry, type Signal, Task } from "@gunta/pi-durable-effect";
+import { Agent, Entry, type Signal, Task } from "@effectified/pi-durable";
 import { Array as Arr, Effect, Option, Ref, Schedule, Schema, Stream } from "effect";
 import * as Cleanup from "./cleanup.ts";
 import { type Fork, ForkDriver, type ForkDriverService, type ForkRetryLater } from "./driver.ts";

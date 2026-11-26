@@ -52,8 +52,8 @@ export function documentProblems(file: string, facts: Facts, tree: Tree = DISK):
 	for (const [, target] of said.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)) {
 		if (target !== undefined) found.push(...linkProblems(file, target, tree));
 	}
-	for (const [name] of text.matchAll(/@gunta\/pi-[a-z-]+-effect(?:\/[a-z][a-z-]*)*/g)) {
-		if (!entries.has(name) && name !== "@gunta/pi-docs-effect") {
+	for (const [name] of text.matchAll(/@effectified\/pi-[a-z]+(?:-[a-z]+)*(?:\/[a-z][a-z-]*)*/g)) {
+		if (!entries.has(name) && name !== "@effectified/pi-docs") {
 			found.push(`${file}: ${name} is no package or entry point of the library`);
 		}
 	}

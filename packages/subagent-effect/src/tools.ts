@@ -7,7 +7,7 @@ import {
 	type SchemaDecodeError,
 	Task,
 	Tool,
-} from "@gunta/pi-durable-effect";
+} from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import * as Child from "./child.ts";
 import type * as Declared from "./declared.ts";

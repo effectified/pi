@@ -2,8 +2,8 @@
 // "README:" comment are the README's, line for line; only the imports differ (the README names the package, this
 // file its sources).
 
-import { Tool } from "@gunta/pi-durable-effect";
-import { answer, TestHarness, toolCall } from "@gunta/pi-durable-effect/testing";
+import { Tool } from "@effectified/pi-durable";
+import { answer, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Context, Effect, Latch, Layer, Option, Queue, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Approvals from "../src/index.ts";

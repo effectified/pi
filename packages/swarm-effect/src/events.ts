@@ -1,6 +1,6 @@
 // Job events: what a host that shows a swarm's progress watches, read from the statuses the coordinator stores.
 
-import { type Doc, Harness } from "@gunta/pi-durable-effect";
+import { type Doc, Harness } from "@effectified/pi-durable";
 import { Stream } from "effect";
 import type { Reason, Status } from "./job.ts";
 import { Jobs, type Progress } from "./ledger.ts";

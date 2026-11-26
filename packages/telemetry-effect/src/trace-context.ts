@@ -9,7 +9,7 @@ import { Context, Option, Tracer } from "effect";
  * change it.
  */
 export const TraceState: Context.Reference<string | undefined> = Context.Reference<string | undefined>(
-	"@gunta/pi-telemetry-effect/TraceState",
+	"@effectified/pi-telemetry/TraceState",
 	{ defaultValue: () => undefined },
 );
 

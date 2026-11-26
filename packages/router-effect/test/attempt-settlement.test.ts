@@ -1,4 +1,4 @@
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Deferred, Effect, Fiber, Latch } from "effect";
 import { describe, expect, it } from "vitest";
 import { settledBy } from "../src/attempt-settlement.ts";

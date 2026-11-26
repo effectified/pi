@@ -1,6 +1,6 @@
 // The work of a swarm: what a product declares for its jobs (input, result, prompt), and what a coordinator runs.
 
-import type { Task } from "@gunta/pi-durable-effect";
+import type { Task } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import { correction, instruction, jsonOf } from "./answer.ts";
 import { InvalidValue } from "./errors.ts";

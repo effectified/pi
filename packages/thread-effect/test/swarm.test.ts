@@ -3,12 +3,12 @@
 
 import type { FauxResponseFactory } from "@earendil-works/pi-ai";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { Shares } from "@gunta/pi-budget-effect";
-import { Harness } from "@gunta/pi-durable-effect";
-import { answer, held } from "@gunta/pi-durable-effect/testing";
-import { Conversations } from "@gunta/pi-guard-effect";
-import * as Review from "@gunta/pi-review-effect";
-import * as Swarm from "@gunta/pi-swarm-effect";
+import { Shares } from "@effectified/pi-budget";
+import { Harness } from "@effectified/pi-durable";
+import { answer, held } from "@effectified/pi-durable/testing";
+import { Conversations } from "@effectified/pi-guard";
+import * as Review from "@effectified/pi-review";
+import * as Swarm from "@effectified/pi-swarm";
 import { Effect, Option, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { Swarms, ThreadNotFound, Threads } from "../src/index.ts";

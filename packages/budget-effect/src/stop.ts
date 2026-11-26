@@ -8,7 +8,7 @@ import {
 	type DurableError,
 	Harness,
 	type Submission,
-} from "@gunta/pi-durable-effect";
+} from "@effectified/pi-durable";
 import { Effect, Option } from "effect";
 import { type Refusal, refusalOf } from "./refusal.ts";
 

@@ -9,7 +9,7 @@ import {
 	isRetryableAssistantError,
 	type ProviderResponse,
 } from "@earendil-works/pi-ai";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Deferred, Effect, Exit, Fiber, Latch } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

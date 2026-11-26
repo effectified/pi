@@ -56,7 +56,7 @@ export interface BudgetEventsService {
 
 /** The hub of a budget's events. A subscriber that stops reading keeps its unread events in memory. */
 export class BudgetEvents extends Context.Service<BudgetEvents, BudgetEventsService>()(
-	"@gunta/pi-budget-effect/BudgetEvents",
+	"@effectified/pi-budget/BudgetEvents",
 ) {
 	/** A fresh hub with no subscriber; closing the Layer's scope ends every subscriber's Stream. */
 	static readonly layer: Layer.Layer<BudgetEvents> = Layer.effect(

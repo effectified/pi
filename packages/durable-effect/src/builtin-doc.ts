@@ -12,8 +12,8 @@ import {
 	type RewindableConversationSemantics,
 	UsageDoc,
 } from "@earendil-works/pi-durable";
-import type { StrictOmit } from "@gunta/pi-ai-effect";
-import { SchemaDecodeError } from "@gunta/pi-schema-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
+import { SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, Predicate, Schema } from "effect";
 import type * as Doc from "./doc.ts";
 

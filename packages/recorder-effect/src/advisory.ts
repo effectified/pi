@@ -1,6 +1,6 @@
 // The advisory record: a model request about to be sent, which no committed entry holds, told to the sink from a hook.
 
-import { Extension, Hook } from "@gunta/pi-durable-effect";
+import { Extension, Hook } from "@effectified/pi-durable";
 import { Effect, Option, Stream } from "effect";
 import { RecordSink } from "./sink.ts";
 

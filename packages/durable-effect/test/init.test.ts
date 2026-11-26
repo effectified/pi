@@ -1,5 +1,5 @@
 import type { ConversationId, TaskId } from "@earendil-works/pi-durable";
-import type { SchemaDecodeError } from "@gunta/pi-schema-effect";
+import type { SchemaDecodeError } from "@effectified/pi-schema";
 import { Context, Effect, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { Doc, type DurableError, Entry, Extension, Harness, Registry, Task } from "../src/index.ts";

@@ -1,7 +1,7 @@
 // The cost of one response at a route's price, in integer micro units, with no float arithmetic: pi-ai's rule.
 
 import type { Usage } from "@earendil-works/pi-ai";
-import { TOKEN_KINDS, type TokenKind } from "@gunta/pi-ai-effect";
+import { TOKEN_KINDS, type TokenKind } from "@effectified/pi-ai";
 import { Effect, Schema } from "effect";
 import type { Price, Route } from "./route-table.ts";
 
@@ -70,7 +70,7 @@ const PER_MILLION = 1_000_000n;
  * What `usage` costs at `price`, for a route event: the arithmetic of `cost`, and total, because an attempt must be
  * recorded whatever a provider reported. A count that is not a whole number (wire input: a provider reports the
  * counts) is rounded up, one that is not a positive number counts as zero, and one-hour cache writes count at most
- * all of `cacheWrite`. This is the rule of `@gunta/pi-budget-effect`, so a budget that prices the same usage at the
+ * all of `cacheWrite`. This is the rule of `@effectified/pi-budget`, so a budget that prices the same usage at the
  * same price settles the same amount.
  */
 export function priced(price: Price, usage: Counted): Cost {

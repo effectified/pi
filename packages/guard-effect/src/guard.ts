@@ -1,6 +1,6 @@
 // The guard of a program: the service that grants and reads, and the registry it checks against its policy.
 
-import { type Extension, Registry } from "@gunta/pi-durable-effect";
+import { type Extension, Registry } from "@effectified/pi-durable";
 import { Context, Effect, Layer, Option, PubSub, Stream } from "effect";
 import { backstopped } from "./backstop.ts";
 import * as Enforced from "./enforced.ts";
@@ -25,7 +25,7 @@ export interface Service {
  * a registry, so a service a registry's tools need can hold it; `registry` builds the checked registry on it, and
  * `layer` is both. A guard that built no registry grants nothing: `Conversations.grantIn` fails with `Unguarded`.
  */
-export class Guard extends Context.Service<Guard, Service>()("@gunta/pi-guard-effect/Guard") {}
+export class Guard extends Context.Service<Guard, Service>()("@effectified/pi-guard/Guard") {}
 
 /** What `registry` takes. */
 export interface RegistryOptions<

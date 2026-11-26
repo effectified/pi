@@ -3,9 +3,9 @@
 // session and another key, and what it spends is not counted against the parent's cap. A Pi that copied the
 // parent's session would put both conversations on one share: this fails then.
 
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { BuiltinDoc, type Conversation, Harness } from "@gunta/pi-durable-effect";
-import { answer, ScriptedModels } from "@gunta/pi-durable-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
+import { BuiltinDoc, type Conversation, Harness } from "@effectified/pi-durable";
+import { answer, ScriptedModels } from "@effectified/pi-durable/testing";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { Shares } from "../src/index.ts";

@@ -1,7 +1,7 @@
 // Approvals in the composition: a call that needs a person parks, and the outcome and the records follow the decision.
 
-import * as Approvals from "@gunta/pi-approvals-effect";
-import { answer, toolCall } from "@gunta/pi-durable-effect/testing";
+import * as Approvals from "@effectified/pi-approvals";
+import { answer, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Fiber, Queue } from "effect";
 import { describe, expect, it } from "vitest";
 import { Threads } from "../src/index.ts";

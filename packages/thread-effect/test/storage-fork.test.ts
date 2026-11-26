@@ -2,8 +2,8 @@
 // thread actor, it is what keeps the pinned fork's thread at its own money (rivet-suite.ts).
 
 import type { TaskId } from "@earendil-works/pi-durable";
-import { Extension, Harness, Task } from "@gunta/pi-durable-effect";
-import { answer, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Extension, Harness, Task } from "@effectified/pi-durable";
+import { answer, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Option, Schedule, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { OutcomeCourier, OutcomeCursor, StorageFork, Threads } from "../src/index.ts";

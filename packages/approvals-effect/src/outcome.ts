@@ -1,6 +1,6 @@
 // What became of a request: the decision that came, an expiry, or nothing yet.
 
-import type { Signal } from "@gunta/pi-durable-effect";
+import type { Signal } from "@effectified/pi-durable";
 import { Option, Schema } from "effect";
 import { Approved, type Decision, Denied } from "./decision.ts";
 

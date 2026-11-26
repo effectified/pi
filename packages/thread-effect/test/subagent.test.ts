@@ -2,13 +2,13 @@
 // budget's share in the commit that creates it, recorded under its own conversation, and paid from the same lease.
 
 import { fauxProvider } from "@earendil-works/pi-ai";
-import { Models } from "@gunta/pi-ai-effect";
-import { Shares } from "@gunta/pi-budget-effect";
-import { Extension, Harness, Storage, Tool } from "@gunta/pi-durable-effect";
-import { answer, toolCall } from "@gunta/pi-durable-effect/testing";
-import { Conversations, Guard, Policy } from "@gunta/pi-guard-effect";
-import * as Review from "@gunta/pi-review-effect";
-import { ChildSetup, ChildSetupFailed, Subagent, Subagents } from "@gunta/pi-subagent-effect";
+import { Models } from "@effectified/pi-ai";
+import { Shares } from "@effectified/pi-budget";
+import { Extension, Harness, Storage, Tool } from "@effectified/pi-durable";
+import { answer, toolCall } from "@effectified/pi-durable/testing";
+import { Conversations, Guard, Policy } from "@effectified/pi-guard";
+import * as Review from "@effectified/pi-review";
+import { ChildSetup, ChildSetupFailed, Subagent, Subagents } from "@effectified/pi-subagent";
 import { Effect, Layer, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Threads } from "../src/index.ts";

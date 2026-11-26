@@ -85,4 +85,4 @@ export interface LeaseService {
 }
 
 /** The lease every provider request of a budget draws on. The product provides it. */
-export class Lease extends Context.Service<Lease, LeaseService>()("@gunta/pi-budget-effect/Lease") {}
+export class Lease extends Context.Service<Lease, LeaseService>()("@effectified/pi-budget/Lease") {}

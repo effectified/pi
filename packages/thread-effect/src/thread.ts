@@ -1,7 +1,7 @@
 // A thread as it is stored: the document that finds its conversation by the product's key, and its submissions.
 
 import type { ConversationId, SubmissionRecord } from "@earendil-works/pi-durable";
-import { Conversation, Doc, Harness, type Tx } from "@gunta/pi-durable-effect";
+import { Conversation, Doc, Harness, type Tx } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import { ThreadNotFound } from "./errors.ts";
 

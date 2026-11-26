@@ -1,11 +1,11 @@
 // The policy: who reviews, which family each model belongs to, how many corrective runs, and what blocks. Data the
 // product supplies.
 
-import { ModelRef as PiModelRef } from "@gunta/pi-ai-effect";
+import { ModelRef as PiModelRef } from "@effectified/pi-ai";
 import { Option, Schema } from "effect";
 import { Severity } from "./finding.ts";
 
-/** A model as Pi names one: its provider and its id there. The schema of Pi's `ModelRef`, `@gunta/pi-ai-effect`'s. */
+/** A model as Pi names one: its provider and its id there. The schema of Pi's `ModelRef`, `@effectified/pi-ai`'s. */
 export const ModelRef = PiModelRef;
 
 /** A model as Pi names one. */

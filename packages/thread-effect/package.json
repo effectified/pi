@@ -1,5 +1,5 @@
 {
-	"name": "@gunta/pi-thread-effect",
+	"name": "@effectified/pi-thread",
 	"version": "0.1.0",
 	"description": "An agent thread for Pi Durable in Effect, composed of the pi-effect plugins: guarded, budgeted, recorded and reviewed, with subagents and swarms, in one process or as a Rivet actor per thread",
 	"type": "module",
@@ -42,7 +42,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/gunta/pi-effect.git",
+		"url": "git+https://github.com/effectified/pi.git",
 		"directory": "packages/thread-effect"
 	},
 	"engines": {
@@ -51,20 +51,20 @@
 	"dependencies": {
 		"@earendil-works/pi-ai": "1.6.1",
 		"@earendil-works/pi-durable": "1.6.1",
-		"@gunta/pi-ai-effect": "0.1.0",
-		"@gunta/pi-approvals-effect": "0.1.0",
-		"@gunta/pi-budget-effect": "0.1.0",
-		"@gunta/pi-durable-effect": "0.1.0",
-		"@gunta/pi-durable-rivet-effect": "0.1.0",
-		"@gunta/pi-guard-effect": "0.1.0",
-		"@gunta/pi-recorder-effect": "0.1.0",
-		"@gunta/pi-review-effect": "0.1.0",
-		"@gunta/pi-router-effect": "0.1.0",
-		"@gunta/pi-schema-effect": "0.1.0",
-		"@gunta/pi-search-effect": "0.1.0",
-		"@gunta/pi-subagent-effect": "0.1.0",
-		"@gunta/pi-swarm-effect": "0.1.0",
-		"@gunta/pi-telemetry-effect": "0.1.0"
+		"@effectified/pi-ai": "0.1.0",
+		"@effectified/pi-approvals": "0.1.0",
+		"@effectified/pi-budget": "0.1.0",
+		"@effectified/pi-durable": "0.1.0",
+		"@effectified/pi-durable-rivet": "0.1.0",
+		"@effectified/pi-guard": "0.1.0",
+		"@effectified/pi-recorder": "0.1.0",
+		"@effectified/pi-review": "0.1.0",
+		"@effectified/pi-router": "0.1.0",
+		"@effectified/pi-schema": "0.1.0",
+		"@effectified/pi-search": "0.1.0",
+		"@effectified/pi-subagent": "0.1.0",
+		"@effectified/pi-swarm": "0.1.0",
+		"@effectified/pi-telemetry": "0.1.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5",

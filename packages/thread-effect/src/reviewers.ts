@@ -1,8 +1,8 @@
 // The reviewer check of the composition: the route table and the family table held against each other, for one
 // thread's model, before the thread is started.
 
-import * as Review from "@gunta/pi-review-effect";
-import type { RouteTable } from "@gunta/pi-router-effect";
+import * as Review from "@effectified/pi-review";
+import type { RouteTable } from "@effectified/pi-router";
 import { Context, Effect, Layer, Option } from "effect";
 import { ReviewerSharesFamily } from "./errors.ts";
 
@@ -22,7 +22,7 @@ export class Reviewers extends Context.Service<
 		 */
 		readonly check: (thread: string, model: Review.Policy.ModelRef) => Effect.Effect<void, ReviewerSharesFamily>;
 	}
->()("@gunta/pi-thread-effect/Reviewers") {}
+>()("@effectified/pi-thread/Reviewers") {}
 
 /**
  * The check for the routes of `routes` and the reviewer and the families of `policy`. `router` is the id of the

@@ -1,5 +1,5 @@
-import { runTest } from "@gunta/pi-ai-effect/testing";
-import { answer, held, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
+import { answer, held, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Fiber, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

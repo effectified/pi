@@ -1,5 +1,5 @@
 {
-	"name": "@gunta/pi-review-effect",
+	"name": "@effectified/pi-review",
 	"version": "0.1.0",
 	"description": "Review before an answer stands for Pi Durable agents in Effect: a second model of another family, a citation check, and a bounded number of corrective runs",
 	"type": "module",
@@ -35,7 +35,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/gunta/pi-effect.git",
+		"url": "git+https://github.com/effectified/pi.git",
 		"directory": "packages/review-effect"
 	},
 	"engines": {
@@ -44,8 +44,8 @@
 	"dependencies": {
 		"@earendil-works/pi-ai": "1.6.1",
 		"@earendil-works/pi-durable": "1.6.1",
-		"@gunta/pi-ai-effect": "0.1.0",
-		"@gunta/pi-durable-effect": "0.1.0"
+		"@effectified/pi-ai": "0.1.0",
+		"@effectified/pi-durable": "0.1.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5"

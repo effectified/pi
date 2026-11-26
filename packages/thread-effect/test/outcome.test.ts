@@ -1,6 +1,6 @@
 // The outcome and the work input as data: both cross a host boundary as JSON and come back equal.
 
-import { LeaseFenced, ShareExhausted } from "@gunta/pi-budget-effect";
+import { LeaseFenced, ShareExhausted } from "@effectified/pi-budget";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Outcome, Threads } from "../src/index.ts";

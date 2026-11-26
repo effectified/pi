@@ -1,4 +1,4 @@
-import { Conversation, Entry, Task } from "@gunta/pi-durable-effect";
+import { Conversation, Entry, Task } from "@effectified/pi-durable";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { fates, named, pass, plan } from "../src/cleanup.ts";

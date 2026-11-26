@@ -3,7 +3,7 @@
 // decided where the record is made (`model-review.ts`).
 
 import type { Usage as PiUsage, StopReason } from "@earendil-works/pi-ai";
-import type { StrictOmit } from "@gunta/pi-ai-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
 import type { Assert, Conform } from "../../../effect/conformance.ts";
 import type { Call, Cost, Usage } from "../src/index.ts";
 

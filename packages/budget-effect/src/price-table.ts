@@ -1,7 +1,7 @@
 // The price table: what each model charges per million tokens, as data, and the exact cost of one response.
 
 import type { Usage } from "@earendil-works/pi-ai";
-import { TOKEN_KINDS, type TokenKind } from "@gunta/pi-ai-effect";
+import { TOKEN_KINDS, type TokenKind } from "@effectified/pi-ai";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 
 const Micros = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
@@ -98,7 +98,7 @@ export interface PricesService {
 }
 
 /** The prices a budget charges at. A product provides them with `Prices.layer(table)`. */
-export class Prices extends Context.Service<Prices, PricesService>()("@gunta/pi-budget-effect/Prices") {
+export class Prices extends Context.Service<Prices, PricesService>()("@effectified/pi-budget/Prices") {
 	/**
 	 * The prices of `table`. The table is checked against its schema here too, because the types of a table written in
 	 * code cannot say that a price is a whole number. Fails with `InvalidPriceTable` for a malformed table and for one

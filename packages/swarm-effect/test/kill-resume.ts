@@ -11,8 +11,8 @@
 // Pi sends a model request that a close cut off again on reopen (durable-effect's README, "Interruption"), so in
 // (b) the four live jobs are asked twice, and nothing else is.
 
-import { Harness, Storage } from "@gunta/pi-durable-effect";
-import { TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Harness, Storage } from "@effectified/pi-durable";
+import { TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";

@@ -1,6 +1,6 @@
 // The events of a thread's outcome: its work started, and each state it reached, each with a deterministic id.
 
-import { Submission } from "@gunta/pi-durable-effect";
+import { Submission } from "@effectified/pi-durable";
 import { Schema } from "effect";
 import { Outcome } from "./outcome.ts";
 

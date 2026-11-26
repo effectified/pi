@@ -1,10 +1,10 @@
 // The caller's side of the thread actors: the thread, swarm and fork operations of a product's ports as Effects on a
 // client of the Rivet host, one actor per thread, with errors that say whether to try again.
 
-import type * as Approvals from "@gunta/pi-approvals-effect";
-import { type Action, type CallError, Client } from "@gunta/pi-durable-rivet-effect";
-import type * as Review from "@gunta/pi-review-effect";
-import * as Swarm from "@gunta/pi-swarm-effect";
+import type * as Approvals from "@effectified/pi-approvals";
+import { type Action, type CallError, Client } from "@effectified/pi-durable-rivet";
+import type * as Review from "@effectified/pi-review";
+import * as Swarm from "@effectified/pi-swarm";
 import { Context, Duration, Effect, Layer, Option, type Schedule } from "effect";
 import { type ReviewerSharesFamily, ThreadNotFound } from "../errors.ts";
 import type { Outcome } from "../outcome.ts";
@@ -153,7 +153,7 @@ export interface Service {
 }
 
 /** The operations on the thread actors of one definition. */
-export class Remote extends Context.Service<Remote, Service>()("@gunta/pi-thread-effect/Rivet/Remote") {}
+export class Remote extends Context.Service<Remote, Service>()("@effectified/pi-thread/Rivet/Remote") {}
 
 /** Options of `layer` and of `product`. */
 export interface Options {

@@ -2,8 +2,8 @@
 
 import type { JsonValue } from "@earendil-works/chord/json";
 import type { JsonObject, NextTaskState, TaskOutcome, TaskOutcomeError } from "@earendil-works/pi-durable";
-import type { StrictOmit } from "@gunta/pi-ai-effect";
-import type { SchemaConversionError, SchemaDecodeError } from "@gunta/pi-schema-effect";
+import type { StrictOmit } from "@effectified/pi-ai";
+import type { SchemaConversionError, SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect } from "effect";
 import * as Signal from "./signal.ts";
 

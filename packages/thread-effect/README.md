@@ -1,4 +1,4 @@
-# @gunta/pi-thread-effect
+# @effectified/pi-thread
 
 An agent thread for [Pi Durable](../durable) in Effect 4.1: a conversation that is guarded, budgeted, routed,
 recorded and reviewed, with approvals, subagents and swarms, worked to its end from one call and told to the product
@@ -20,17 +20,17 @@ one Rivet actor per thread. For `effect` 4.1 and Pi Durable 1.6.1.
 ## Install
 
 ```sh
-npm install @gunta/pi-thread-effect effect
+npm install @effectified/pi-thread effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`), and so is `rivetkit` (`~3.1.1`), which only the `/rivet` entry loads. The
-plugins come with the package; a product imports the ones whose ports it implements (`@gunta/pi-budget-effect` for
-`Lease`, `@gunta/pi-recorder-effect` for `RecordSink`, `@gunta/pi-approvals-effect` for `Inbox`).
+plugins come with the package; a product imports the ones whose ports it implements (`@effectified/pi-budget` for
+`Lease`, `@effectified/pi-recorder` for `RecordSink`, `@effectified/pi-approvals` for `Inbox`).
 
 | Entry | For | Holds |
 |---|---|---|
-| `@gunta/pi-thread-effect` | One process | `Composition`, the services `Threads` and `Swarms`, `Outcome`, `OutcomeEvent`, the port `OutcomeSink`, and the parts a host builds one by one |
-| `@gunta/pi-thread-effect/rivet` | Rivet actors | `ThreadActor` (the actor a host registers), `Remote` (the client service a product binds its ports to), `SwarmId`, `ForkAgent` |
+| `@effectified/pi-thread` | One process | `Composition`, the services `Threads` and `Swarms`, `Outcome`, `OutcomeEvent`, the port `OutcomeSink`, and the parts a host builds one by one |
+| `@effectified/pi-thread/rivet` | Rivet actors | `ThreadActor` (the actor a host registers), `Remote` (the client service a product binds its ports to), `SwarmId`, `ForkAgent` |
 
 **What a product supplies.** As data, a `Composition.Config`: its tools, the guard's policy, the approval policy,
 the providers and the route table with its prices, the review policy and checks, the subagents and swarms. As
@@ -38,12 +38,12 @@ services, its ports:
 
 | Port | Of | Called |
 |---|---|---|
-| `Lease`, `Estimator`, `Prices` | `@gunta/pi-budget-effect` | To reserve and settle every model request; `Prices` is `priceRows(routes)` of the router |
-| `RecordSink` | `@gunta/pi-recorder-effect` | With every record of what the harness committed |
+| `Lease`, `Estimator`, `Prices` | `@effectified/pi-budget` | To reserve and settle every model request; `Prices` is `priceRows(routes)` of the router |
+| `RecordSink` | `@effectified/pi-recorder` | With every record of what the harness committed |
 | `OutcomeSink` | this package | With every outcome event of a thread ([Outcomes are delivered](#outcomes-are-delivered)); `OutcomeSink.none` for a product that asks instead |
-| `Approvals.Inbox` | `@gunta/pi-approvals-effect` | With every call parked for a person |
-| `PiTelemetry` | `@gunta/pi-telemetry-effect` | For Pi's spans |
-| A `HarnessStorage` | `@gunta/pi-durable-effect` | In one process; in a Rivet actor the host gives the actor's SQLite |
+| `Approvals.Inbox` | `@effectified/pi-approvals` | With every call parked for a person |
+| `PiTelemetry` | `@effectified/pi-telemetry` | For Pi's spans |
+| A `HarnessStorage` | `@effectified/pi-durable` | In one process; in a Rivet actor the host gives the actor's SQLite |
 | What its own tools, rules and checks need | The product | Such as a `Review.Citations.Verifier`, a `SearchProvider` |
 
 This README also holds what a product that replaces a hand-written agent loop needs to know: the
@@ -54,10 +54,10 @@ This README also holds what a product that replaces a hand-written agent loop ne
 
 ```ts
 import { Effect, Layer } from "effect";
-import { Prices } from "@gunta/pi-budget-effect";
-import { Storage } from "@gunta/pi-durable-effect";
-import { priceRows } from "@gunta/pi-router-effect";
-import { Composition, Threads } from "@gunta/pi-thread-effect";
+import { Prices } from "@effectified/pi-budget";
+import { Storage } from "@effectified/pi-durable";
+import { priceRows } from "@effectified/pi-router";
+import { Composition, Threads } from "@effectified/pi-thread";
 
 const live = Composition.open({
 	extensions: [App, SearchTools.extension()], // the product's tools
@@ -90,7 +90,7 @@ const outcome = Threads.Threads.use((threads) =>
 ```
 
 `Composition.open` is three parts a host can also build one by one, which is what a Rivet actor takes
-(`Actor.make({ layer, harness, services })` of `@gunta/pi-durable-rivet-effect`):
+(`Actor.make({ layer, harness, services })` of `@effectified/pi-durable-rivet`):
 
 | Part | Built | Requires | Provides |
 |---|---|---|---|
@@ -105,7 +105,7 @@ The storage and the host seams stay outside: `Composition.open` requires a `Harn
 | Choice | A fork is | A fork's money |
 |---|---|---|
 | `Forks.conversations` (the default) | A conversation of the harness the swarm runs in: the swarm's in-storage driver. In one process, and in an actor alike | The stored share of its conversation, one read |
-| `Accounts.forks(options)` of `@gunta/pi-thread-effect/rivet` | A fork of the Rivet actor the composition runs in: the swarm's Rivet driver | The share in the fork actor's storage, asked of the fork, and kept in the swarm's storage before the fork is destroyed |
+| `Accounts.forks(options)` of `@effectified/pi-thread/rivet` | A fork of the Rivet actor the composition runs in: the swarm's Rivet driver | The share in the fork actor's storage, asked of the fork, and kept in the swarm's storage before the fork is destroyed |
 
 A choice is two Layers: `driver`, built before the harness, and `attach`, built on it. Pass the same one to `layer`
 and to `services`, as `Composition.open` and `ThreadActor.make` do.
@@ -256,7 +256,7 @@ A product does not ask a thread whether it has ended: the process that works the
 
 ```ts
 import { Effect, Layer } from "effect";
-import { type OutcomeEvent, OutcomeSink, OutcomeSinkError } from "@gunta/pi-thread-effect";
+import { type OutcomeEvent, OutcomeSink, OutcomeSinkError } from "@effectified/pi-thread";
 
 const Outcomes = Layer.succeed(OutcomeSink, {
 	// One event. Success means it is stored; the same event may come again, so key it by `event.id`.
@@ -358,14 +358,14 @@ None for a fork that was gone or never made.
 
 ## The Rivet form
 
-`@gunta/pi-thread-effect/rivet` hosts the composition in Rivet actors: one actor per thread (the first consumer's
-unit `thread:{threadId}`), on [`@gunta/pi-durable-rivet-effect`](../durable-rivet-effect), with swarms as actor
-forks through [`@gunta/pi-swarm-effect/rivet`](../swarm-effect).
+`@effectified/pi-thread/rivet` hosts the composition in Rivet actors: one actor per thread (the first consumer's
+unit `thread:{threadId}`), on [`@effectified/pi-durable-rivet`](../durable-rivet-effect), with swarms as actor
+forks through [`@effectified/pi-swarm/rivet`](../swarm-effect).
 
 ```ts
 import { Effect, Layer, Schedule } from "effect";
-import { ActorInfo, Client, Host } from "@gunta/pi-durable-rivet-effect";
-import { Remote, ThreadActor } from "@gunta/pi-thread-effect/rivet";
+import { ActorInfo, Client, Host } from "@effectified/pi-durable-rivet";
+import { Remote, ThreadActor } from "@effectified/pi-thread/rivet";
 
 // The product's ports as one Layer, built in each actor at each wake. It may read the actor it is built in.
 const ports = Layer.unwrap(ActorInfo.use((actor) => Effect.succeed(productPorts(actor))));
@@ -444,7 +444,7 @@ and the message of what failed. Nothing checks who calls an action: authenticate
 The fixed actions are all a thread needs. What a product needs beside them is its own: the first is a way to give
 an actor its work before `start`. An actor is created by its key alone, and the first thing its Layers read is its
 own database, so what a product's ports work from (a task, a reservation, a grant) has to be there before a thread
-is admitted. `options.actions` is a record of `Action`s of `@gunta/pi-durable-rivet-effect`, registered beside the
+is admitted. `options.actions` is a record of `Action`s of `@effectified/pi-durable-rivet`, registered beside the
 fixed ones:
 
 ```ts

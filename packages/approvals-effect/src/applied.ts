@@ -6,7 +6,7 @@ import {
 	type ToolExecutionResult,
 	ToolResultEntry,
 } from "@earendil-works/pi-durable";
-import { Hook } from "@gunta/pi-durable-effect";
+import { Hook } from "@effectified/pi-durable";
 import { Effect, Option, Predicate, Schema } from "effect";
 import * as Asks from "./asks.ts";
 import { MalformedState } from "./errors.ts";

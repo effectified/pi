@@ -1,6 +1,6 @@
 // One wake's scoped runtime: what a Layer builds, what runs on it, and that closing leaves nothing behind.
 
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Context, Effect, Exit, Fiber, FiberSet, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Generation from "../src/generation.ts";

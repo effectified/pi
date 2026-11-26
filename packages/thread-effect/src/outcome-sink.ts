@@ -28,7 +28,7 @@ export interface OutcomeSinkService {
  * works the thread.
  */
 export class OutcomeSink extends Context.Service<OutcomeSink, OutcomeSinkService>()(
-	"@gunta/pi-thread-effect/OutcomeSink",
+	"@effectified/pi-thread/OutcomeSink",
 ) {
 	/**
 	 * A sink that takes every event and keeps none: for a product that asks instead (`Threads.outcome`, `ended`,

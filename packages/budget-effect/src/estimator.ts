@@ -10,7 +10,7 @@ export interface EstimatorService {
 }
 
 /** The rule a budget's reservations are sized by. The product provides it. */
-export class Estimator extends Context.Service<Estimator, EstimatorService>()("@gunta/pi-budget-effect/Estimator") {
+export class Estimator extends Context.Service<Estimator, EstimatorService>()("@effectified/pi-budget/Estimator") {
 	/** The same amount for every request, such as the product's ninetieth percentile of a call. */
 	static fixed(micros: bigint): Layer.Layer<Estimator> {
 		return Layer.succeed(Estimator, { estimate: () => Effect.succeed(micros) });

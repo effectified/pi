@@ -6,14 +6,14 @@
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { createExpectAssertions, createStorageConformance, type ExpectLike } from "@earendil-works/pi-durable/testing";
-import { Doc, Extension, Gate, Harness, Hook, Registry, Storage, Task, Tool } from "@gunta/pi-durable-effect";
+import { Doc, Extension, Gate, Harness, Hook, Registry, Storage, Task, Tool } from "@effectified/pi-durable";
 import {
 	answer,
 	type FauxResponseFactory,
 	ScriptedModels,
 	TestHarness,
 	toolCall,
-} from "@gunta/pi-durable-effect/testing";
+} from "@effectified/pi-durable/testing";
 import { Context, Deferred, Effect, Fiber, FiberSet, Layer, Option, Schema, Semaphore } from "effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { type ActorContext, type AnyActorDefinition, actor } from "rivetkit";

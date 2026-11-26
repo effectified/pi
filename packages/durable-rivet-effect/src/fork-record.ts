@@ -1,7 +1,7 @@
 // The durable record that a fork's hygiene ran, and for which fork: a table of this host in the actor's database.
 
 import { validateSqliteSchemaPrefix } from "@earendil-works/chord/sqlite";
-import { type DurableError, UnexpectedError } from "@gunta/pi-durable-effect";
+import { type DurableError, UnexpectedError } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";

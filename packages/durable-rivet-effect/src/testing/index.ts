@@ -125,7 +125,7 @@ export interface Hosted {
 
 /**
  * Starts a local engine with `options` and builds a client of it, for the scope: what an engine test does once
- * before its tests. `serve` is the `serve` of the runtime's entry, `@gunta/pi-durable-rivet-effect/node` or `/bun`,
+ * before its tests. `serve` is the `serve` of the runtime's entry, `@effectified/pi-durable-rivet/node` or `/bun`,
  * which this entry does not import: it has no platform code.
  */
 export function hosted<Options>(

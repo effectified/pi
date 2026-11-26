@@ -1,9 +1,9 @@
 // Test helper: a swarm definition, a scripted model that answers by what it is asked, and the harness both run in.
 
 import type { TaskId } from "@earendil-works/pi-durable";
-import { conditions } from "@gunta/pi-ai-effect/testing";
-import { type Conversation, Doc, type DurableError, Harness, type Storage } from "@gunta/pi-durable-effect";
-import { answer, type FauxResponseFactory, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { conditions } from "@effectified/pi-ai/testing";
+import { type Conversation, Doc, type DurableError, Harness, type Storage } from "@effectified/pi-durable";
+import { answer, type FauxResponseFactory, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Schema, Stream } from "effect";
 import * as Swarm from "../src/index.ts";
 

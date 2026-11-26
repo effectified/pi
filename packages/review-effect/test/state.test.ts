@@ -1,7 +1,7 @@
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import type { TaskId } from "@earendil-works/pi-durable";
-import { Extension, Harness, Hook } from "@gunta/pi-durable-effect";
-import { answer, held, TestHarness } from "@gunta/pi-durable-effect/testing";
+import { Extension, Harness, Hook } from "@effectified/pi-durable";
+import { answer, held, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {

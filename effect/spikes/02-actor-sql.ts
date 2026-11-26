@@ -21,9 +21,9 @@
 //   Effect's wrapper (within the run-to-run noise of a loaded machine).
 // The host's `ActorSql` (packages/durable-rivet-effect/src/actor-sql.ts) drives Rivet's transaction with Effect's.
 
-import { Client, type EngineUnavailable } from "@gunta/pi-durable-rivet-effect";
-import type * as LocalEngine from "@gunta/pi-durable-rivet-effect/node";
-import * as Testing from "@gunta/pi-durable-rivet-effect/testing";
+import { Client, type EngineUnavailable } from "@effectified/pi-durable-rivet";
+import type * as LocalEngine from "@effectified/pi-durable-rivet/node";
+import * as Testing from "@effectified/pi-durable-rivet/testing";
 import { Context, Deferred, Duration, Effect, Exit, Fiber, Schedule, type Scope, Semaphore, Stream } from "effect";
 import * as Reactivity from "effect/reactivity/Reactivity";
 import * as SqlClient from "effect/sql/SqlClient";

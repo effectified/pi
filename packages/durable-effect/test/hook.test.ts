@@ -10,7 +10,7 @@ import {
 	type TaskId,
 	ToolTask,
 } from "@earendil-works/pi-durable";
-import { type SchemaConversionError, toJsonSchema } from "@gunta/pi-schema-effect";
+import { type SchemaConversionError, toJsonSchema } from "@effectified/pi-schema";
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

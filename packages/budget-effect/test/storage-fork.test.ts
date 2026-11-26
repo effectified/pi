@@ -1,8 +1,8 @@
 // `onStorageFork` on one storage, which stands in for a copy of itself here: the suite on a copied SQLite file is in
 // sqlite-suites.ts.
 
-import { Harness } from "@gunta/pi-durable-effect";
-import { answer, ScriptedModels } from "@gunta/pi-durable-effect/testing";
+import { Harness } from "@effectified/pi-durable";
+import { answer, ScriptedModels } from "@effectified/pi-durable/testing";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { onStorageFork, ShareDocument, Shares } from "../src/index.ts";

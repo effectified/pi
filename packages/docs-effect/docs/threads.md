@@ -1,6 +1,6 @@
 # Build an Agent Thread
 
-`@gunta/pi-thread-effect` is the pi-effect plugins composed in the order their READMEs require. A product gives it
+`@effectified/pi-thread` is the pi-effect plugins composed in the order their READMEs require. A product gives it
 data and ports, and gets `Threads` and `Swarms`: a thread is worked to its end from one call, and its outcome is
 delivered to the product. Read [How pi-effect Works](how-it-works.md) first if the packages are new to you.
 
@@ -15,10 +15,10 @@ services. It requires a `HarnessStorage`, `PiTelemetry` and the product's ports.
 
 ```ts
 import { Effect, Layer } from "effect";
-import { Prices } from "@gunta/pi-budget-effect";
-import { Storage } from "@gunta/pi-durable-effect";
-import { priceRows } from "@gunta/pi-router-effect";
-import { Composition, Threads } from "@gunta/pi-thread-effect";
+import { Prices } from "@effectified/pi-budget";
+import { Storage } from "@effectified/pi-durable";
+import { priceRows } from "@effectified/pi-router";
+import { Composition, Threads } from "@effectified/pi-thread";
 
 const live = Composition.open({
 	extensions: [App, SearchTools.extension()], // the product's tools
@@ -56,7 +56,7 @@ Steps, in this order:
    `models` (`providers`, `routes`, optional `router`), `review` (`policy`, `checks`), `subagents` (`subagents`,
    `maxDepth`, `maxLive`, `caps`), `swarms`. Optional: `forks`, `recorder`, `outcomes` (the retry of the outcome
    sink), `settings` (Pi's run policy).
-2. **Storage.** `Storage.sql()` of `@gunta/pi-durable-effect` over an Effect SQLite client
+2. **Storage.** `Storage.sql()` of `@effectified/pi-durable` over an Effect SQLite client
    ([Storage](../../durable-effect/README.md#storage)). Memory storage cannot be reopened: a product keeps a file.
 3. **Ports.** One `Layer` with every port below, and every service the product's tools, rules and checks need.
 4. **Prices.** Written once, in the route table. `priceRows(routes)` gives the budget's rows, as the last line of
@@ -130,7 +130,7 @@ The process that works a thread tells the product. The product does not poll.
 
 ```ts
 import { Effect, Layer } from "effect";
-import { type OutcomeEvent, OutcomeSink, OutcomeSinkError } from "@gunta/pi-thread-effect";
+import { type OutcomeEvent, OutcomeSink, OutcomeSinkError } from "@effectified/pi-thread";
 
 const Outcomes = Layer.succeed(OutcomeSink, {
 	// One event. Success means it is stored; the same event may come again, so key it by `event.id`.

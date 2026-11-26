@@ -1,6 +1,6 @@
 // The declarations of one extension, made ready once: each subagent by its name, its result schema compiled.
 
-import { SchemaConversionError } from "@gunta/pi-durable-effect";
+import { SchemaConversionError } from "@effectified/pi-durable";
 import { Effect, Option } from "effect";
 import { UnknownSubagent } from "./errors.ts";
 import * as Result from "./result.ts";

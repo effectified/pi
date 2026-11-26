@@ -1,7 +1,7 @@
 // The delivery cursors: one document that says, per conversation, through which entry its records are delivered.
 
 import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
-import { Doc, type DurableError, Entry, Harness } from "@gunta/pi-durable-effect";
+import { Doc, type DurableError, Entry, Harness } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 
 /** A complete copy of the document is stored after this many changes, which bounds what a reopen replays. */

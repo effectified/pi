@@ -1,6 +1,6 @@
 // A forked actor, as a product sees it: the hygiene it runs on the copied storage, and where the actor came from.
 
-import type { Harness } from "@gunta/pi-durable-effect";
+import type { Harness } from "@effectified/pi-durable";
 import { Effect, type Option, type Schema } from "effect";
 import { ActorInfo, type ActorSql, type ForkLink } from "./actor-context.ts";
 

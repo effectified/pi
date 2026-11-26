@@ -7,7 +7,7 @@ import {
 	withContextValue,
 } from "@earendil-works/chord/context";
 import { type ConversationId, ConversationBusy as PiConversationBusy } from "@earendil-works/pi-durable";
-import { runTest } from "@gunta/pi-ai-effect/testing";
+import { runTest } from "@effectified/pi-ai/testing";
 import { Cause, Effect, Exit, Fiber, Latch } from "effect";
 import { describe, expect, it } from "vitest";
 import { call, ParentContext, step } from "../src/call.ts";
