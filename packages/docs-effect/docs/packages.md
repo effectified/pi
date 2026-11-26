@@ -11,6 +11,7 @@ tests. [How pi-effect Works](how-it-works.md) says how the kinds layer.
 | The durable harness: conversations, commits, tools, hooks, gates, signals, tasks, documents, entries | `@effectified/pi-durable` | facade | `Harness`, `Registry`, `Extension`, `Tool`, `Hook`, `Gate`, `Signal`, `Task`, `Doc`, `Entry`, `Storage`; `/testing`: `TestHarness` | [durable](../../durable-effect/README.md) |
 | Models: requests as `Stream` and `Effect`, the two `effect/ai` bridges, the key of a request | `@effectified/pi-ai` | facade | `Models`, `getModel`, `stream`, `complete`, `PiLanguageModel`, `EffectProvider`, `requestKey`, `ANSWERED`; `/testing`: `ScriptedModels`, `runTest`, `conditions` | [ai](../../ai-effect/README.md) |
 | A short-lived agent: a prompt as an Effect, its events as a Stream, tools and hooks as Effects; the low-level loop | `@effectified/pi-agent` | facade | `Agent.make`, `Tool`, `AgentLoop`, `runToolCall`, `StreamFn`, `AgentBusy`, `CannotContinue` | [agent](../../agent-effect/README.md) |
+| A Pi extension written in Effect; a coding agent's sessions, tools, settings, resources and modes | `@effectified/pi-coding-agent` | facade | `Extension`, `Tool`, `Command`, `ExtensionApi`, `ExtensionContext`, `AgentSession`, `AgentSessionRuntime`, `SessionManager`, `SettingsManager`, `ModelRuntime`, `ResourceLoader`, `Builtin`, `McpTools`, `Compaction`, `Modes`, `RpcClient` | [coding agent](../../coding-agent-effect/README.md) |
 | Local and remote execution environments: commands, files, output streams, SSH, processes, terminals | `@effectified/pi-env` | facade | `Env`, `FileFailed`, `ExecFailed`, `RemoteFailed`; `/node`: `Connection`, `Local`, `Remote`, `Ssh`, `HostKey`, `Process`, `Terminal`, `RemoteWatch` | [env](../../env-effect/README.md) |
 | Effect `Schema` to and from the JSON Schema of tool parameters | `@effectified/pi-schema` | facade | `toJsonSchema`, `fromJsonSchema`, `decodeUnknown`, `encode`, `validator` | [schema](../../schema-effect/README.md) |
 | Pi's spans, metrics and events on Effect's tracer, metrics and logger | `@effectified/pi-telemetry` | facade | `PiTelemetry` | [telemetry](../../telemetry-effect/README.md) |
@@ -32,7 +33,7 @@ Modules are namespaces: `import { Harness, Tool } from "@effectified/pi-durable"
 `import * as Review from "@effectified/pi-review"`, `import * as Swarm from "@effectified/pi-swarm"`. Copy the
 import lines of the README example you start from.
 
-Being built: the facades of pi-codemode, pi-tui, pi-coding-agent and pi-evals. Not built: fixed-step
+Being built: the facades of pi-codemode, pi-tui and pi-evals. Not built: fixed-step
 workflows, a sandbox. Reach what a facade does not wrap through Pi's own objects (each README ends with "Not wrapped yet").
 
 ## Installing in a product

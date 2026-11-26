@@ -144,7 +144,7 @@ OpenRouter is therefore reachable twice: Pi's `openrouterProvider()` and `@effec
 | `mcp-effect`, `codemode-effect`, `agent-effect`, `env-effect` | the Pi package each wraps, and `durable-effect` where it adds tools | Pi |
 | `chord-effect` | `chord` | Pi |
 | `tui-effect` | `pi-tui` | Pi |
-| `coding-agent-effect` | `pi-coding-agent`, `agent-effect`, `ai-effect`, `tui-effect`, `durable-effect` where it adds tools | Pi |
+| `coding-agent-effect` | `pi-coding-agent`, `agent-effect`, `ai-effect`, `mcp-effect` (MCP tools as Pi tools), `env-effect` (where bash runs its commands), `schema-effect`; `tui-effect` for interactive mode once it is built | Pi |
 | `evals-effect` | `pi-evals`, `ai-effect` | Pi |
 | `recorder-effect`, `guard-effect`, `budget-effect`, `approvals-effect`, `subagent-effect`, `review-effect`, `workflow-effect` | `durable-effect` only | Pi, as extensions, or their own repository |
 | `router-effect` | `ai-effect` only | Its own repository; it is useful without a harness |
