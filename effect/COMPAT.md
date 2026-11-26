@@ -53,6 +53,7 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@effectified/pi-ai` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges, the key of a request, `runTest`, the forms the plugins share | 62 | Images, classifiers, OAuth login, deferred responses |
 | `@effectified/pi-telemetry` | facade | `@earendil-works/pi-telemetry` | 59 | `TelemetryStore`; histogram exemplars |
 | `@effectified/pi-chord` | facade | `@earendil-works/chord`: its context from the fiber, JSON, SQLite, delta, output | 42 | Chord's runtime (hosts, facets, links, store, clients, plugins, app kit, surfaces, sync); `Progress`; `/sqlite/cloudflare` |
+| `@effectified/pi-agent` | facade | `@earendil-works/pi-agent-core` | 54 | Changing the agent's settings and hooks after `make`; `Clock` for the timestamps Pi stamps itself |
 | `@effectified/pi-durable` | facade | `@earendil-works/pi-durable` | 442 | A task's own hooks, `setTimer`, prompt sections and wrappers, synchronous observers |
 | `@effectified/pi-durable-rivet` | host | A harness in a Rivet actor: storage, wake-ups, forks; a local engine in a kept directory; `ActorSql` | 239 | Several machines; an engine that dies |
 | `@effectified/pi-router` | plugin | Routes, fallback, limiter, prices, constraints | 181 | A real provider; image and classifier routing |
