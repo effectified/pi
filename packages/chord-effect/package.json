@@ -1,0 +1,85 @@
+{
+	"name": "@effectified/pi-chord",
+	"version": "0.1.0",
+	"description": "Chord in Effect: a Chord context from the calling fiber (cancellation, telemetry, values), and Chord's JSON, SQLite and delta values",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"source": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./context": {
+			"source": "./src/context.ts",
+			"types": "./dist/context.d.ts",
+			"import": "./dist/context.js"
+		},
+		"./delta": {
+			"source": "./src/delta.ts",
+			"types": "./dist/delta.d.ts",
+			"import": "./dist/delta.js"
+		},
+		"./json": {
+			"source": "./src/json.ts",
+			"types": "./dist/json.d.ts",
+			"import": "./dist/json.js"
+		},
+		"./output": {
+			"source": "./src/output.ts",
+			"types": "./dist/output.d.ts",
+			"import": "./dist/output.js"
+		},
+		"./sqlite": {
+			"source": "./src/sqlite.ts",
+			"types": "./dist/sqlite.d.ts",
+			"import": "./dist/sqlite.js"
+		},
+		"./sqlite/node": {
+			"source": "./src/node/sqlite.ts",
+			"types": "./dist/node/sqlite.d.ts",
+			"import": "./dist/node/sqlite.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"sideEffects": false,
+	"piEffect": {
+		"kind": "facade"
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "node ../../scripts/package-files.mjs clean dist",
+		"build": "tsc -p tsconfig.build.json",
+		"test": "vitest --run",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"keywords": [
+		"effect",
+		"pi"
+	],
+	"author": "Gunther Brunner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/effectified/pi.git",
+		"directory": "packages/chord-effect"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"dependencies": {
+		"@earendil-works/chord": "1.6.1"
+	},
+	"peerDependencies": {
+		"effect": "~4.1.5"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-telemetry": "1.6.1",
+		"effect": "4.1.5",
+		"vitest": "4.1.12"
+	}
+}
