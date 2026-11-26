@@ -1,7 +1,5 @@
 // The Pi Durable harness as a scoped service: opened by a Layer, closed with its scope, read through Effects.
 
-import { BACKGROUND_CONTEXT, type Context as ChordContext } from "@earendil-works/chord/context";
-import type { JsonValue } from "@earendil-works/chord/json";
 import {
 	type CommitOptions,
 	type ConversationId,
@@ -23,6 +21,8 @@ import {
 	type Wake,
 } from "@earendil-works/pi-durable";
 import { Models } from "@effectified/pi-ai";
+import { BACKGROUND_CONTEXT, type Context as ChordContext } from "@effectified/pi-chord/context";
+import type { JsonValue } from "@effectified/pi-chord/json";
 import type { SchemaDecodeError } from "@effectified/pi-schema";
 import { type Cause, Context, Effect, FiberSet, Layer, Option, PubSub, Queue, type Schema, Stream } from "effect";
 import * as Agent from "./agent.ts";

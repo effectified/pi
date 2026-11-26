@@ -1,7 +1,5 @@
 // Durable tasks in Effect: input, state and result as Schemas, each phase an Effect, built into a Pi Durable task.
 
-import type { Context as ChordContext } from "@earendil-works/chord/context";
-import type { JsonValue } from "@earendil-works/chord/json";
 import {
 	defineTask,
 	type Task as PiTask,
@@ -11,6 +9,8 @@ import {
 	type TaskState,
 } from "@earendil-works/pi-durable";
 import type { StrictOmit } from "@effectified/pi-ai";
+import type { Context as ChordContext } from "@effectified/pi-chord/context";
+import type { JsonValue } from "@effectified/pi-chord/json";
 import { decodeUnknown, encode, type SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, type Schema } from "effect";
 import * as Ids from "./id.ts";

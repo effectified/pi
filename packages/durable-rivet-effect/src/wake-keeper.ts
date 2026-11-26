@@ -1,8 +1,7 @@
 // The wake keeper of one actor wake: it holds the actor awake while Pi has work that can run, and keeps one wake
 // action scheduled at the earliest time Pi asks for, as Pi's host contract says (specification section 5.6).
 
-import type { Wake } from "@earendil-works/pi-durable";
-import { type DurableError, Harness } from "@effectified/pi-durable";
+import { type DurableError, Harness, type Wake } from "@effectified/pi-durable";
 import { Clock, Context, Effect, Layer, Option, Semaphore, Stream } from "effect";
 
 /** The actor's side of the keeper: its schedule of wake actions, and whether it may sleep. */

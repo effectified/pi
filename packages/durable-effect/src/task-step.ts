@@ -1,8 +1,8 @@
 // Task steps: what a task commits for itself (its next state, a sleep, a wait, or its outcome), as a tagged union.
 
-import type { JsonValue } from "@earendil-works/chord/json";
 import type { JsonObject, NextTaskState, TaskOutcome, TaskOutcomeError } from "@earendil-works/pi-durable";
 import type { StrictOmit } from "@effectified/pi-ai";
+import type { JsonValue } from "@effectified/pi-chord/json";
 import type { SchemaConversionError, SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect } from "effect";
 import * as Signal from "./signal.ts";

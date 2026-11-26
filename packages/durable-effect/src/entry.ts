@@ -1,6 +1,5 @@
 // Typed entries in Effect: a transcript entry kind of your own whose data is an Effect Schema.
 
-import type { JsonValue } from "@earendil-works/chord/json";
 import {
 	defineEntry,
 	type EntryDraft,
@@ -9,6 +8,7 @@ import {
 	type Entry as PiEntry,
 } from "@earendil-works/pi-durable";
 import type { StrictOmit } from "@effectified/pi-ai";
+import type { JsonValue } from "@effectified/pi-chord/json";
 import { decodeUnknown, encode, type SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, Option, type Schema } from "effect";
 import * as Ids from "./id.ts";

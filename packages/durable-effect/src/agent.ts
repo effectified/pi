@@ -1,8 +1,7 @@
 // What a conversation runs with, in this package's terms: tools and extensions given as values or as names.
 
-import { MODEL_THINKING_LEVELS } from "@earendil-works/pi-ai/providers/model-schema";
 import type { AgentChange, ConversationCreateOptions, ConversationOwnership } from "@earendil-works/pi-durable";
-import { ModelRef as ModelRefSchema, type StrictOmit } from "@effectified/pi-ai";
+import { MODEL_THINKING_LEVELS, ModelRef as ModelRefSchema, type StrictOmit } from "@effectified/pi-ai";
 import { Schema } from "effect";
 
 /**

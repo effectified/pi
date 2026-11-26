@@ -1,7 +1,5 @@
 // Commits in Effect: Pi Durable's transaction as a value of Effects, and a commit whose body is an Effect.
 
-import type { Context as ChordContext } from "@earendil-works/chord/context";
-import type { JsonValue } from "@earendil-works/chord/json";
 import {
 	type CommitOptions,
 	type ConversationHandle,
@@ -25,6 +23,8 @@ import {
 	type TaskQuery,
 	type TaskRecord,
 } from "@earendil-works/pi-durable";
+import type { Context as ChordContext } from "@effectified/pi-chord/context";
+import type { JsonValue } from "@effectified/pi-chord/json";
 import type { SchemaDecodeError } from "@effectified/pi-schema";
 import { type Cause, Effect, Exit, Option, type Schema, type Stream } from "effect";
 import * as Agent from "./agent.ts";

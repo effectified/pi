@@ -1,6 +1,5 @@
 // Table scans as Streams: Pi Durable's paged scans of conversations and tasks, read page by page as they are pulled.
 
-import type { JsonValue } from "@earendil-works/chord/json";
 import type {
 	ConversationQuery,
 	ConversationRecord,
@@ -10,6 +9,7 @@ import type {
 	TaskQuery,
 	TaskRecord,
 } from "@earendil-works/pi-durable";
+import type { JsonValue } from "@effectified/pi-chord/json";
 import { Effect, Option, Stream } from "effect";
 import type { DurableError } from "./errors.ts";
 

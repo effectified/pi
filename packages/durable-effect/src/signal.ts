@@ -1,7 +1,5 @@
 // Signals in Effect: a typed value delivered to a live task from outside, its type an Effect Schema.
 
-import type { Context } from "@earendil-works/chord/context";
-import type { JsonValue } from "@earendil-works/chord/json";
 import {
 	defineSignal,
 	type HookApi,
@@ -9,6 +7,8 @@ import {
 	type SignalState,
 	type SignalToken,
 } from "@earendil-works/pi-durable";
+import type { Context } from "@effectified/pi-chord/context";
+import type { JsonValue } from "@effectified/pi-chord/json";
 import { decodeUnknown, encode, SchemaConversionError, SchemaDecodeError, toJsonSchema } from "@effectified/pi-schema";
 import { Effect, Option, Predicate, type Schema } from "effect";
 import { call } from "./call.ts";

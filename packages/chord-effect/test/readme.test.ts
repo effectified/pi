@@ -1,36 +1,46 @@
 // The examples of README.md as tests. The code under each "README:" comment is the README's, line for line; only the
 // imports differ (the README names the package, this file its sources), and what the README leaves to the reader
-// (`root`, `span`) is made here.
+// (`root`) is made here.
 
 import { sleep } from "@earendil-works/chord";
-import { InMemoryTelemetryContext, type TelemetrySpan } from "@earendil-works/pi-telemetry";
-import { Duration, Effect, Fiber } from "effect";
+import { traceIn } from "@earendil-works/chord/context";
+import { PiTelemetry } from "@effectified/pi-telemetry";
+import { Duration, Effect, Fiber, Option, Tracer } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-import {
-	BACKGROUND_CONTEXT,
-	ChordContext,
-	type Context,
-	createContextKey,
-	withContextValue,
-	withTelemetry,
-} from "../src/context.ts";
+import { BACKGROUND_CONTEXT, ChordContext, type Context, createContextKey, withContextValue } from "../src/context.ts";
 import { apply, decoder, encoder, type Op } from "../src/delta.ts";
 import { copyJson, isJsonValue, NotJson } from "../src/json.ts";
 import { openNodeSqliteDatabase } from "../src/node/sqlite.ts";
 import { applySqliteMigrations, validateSqliteSchemaPrefix } from "../src/sqlite.ts";
 import { run } from "./run.ts";
 
-/** A stand-in for a Pi Durable conversation: its submission waits on Chord's own `sleep` under the context it takes. */
+/**
+ * A stand-in for a Pi Durable conversation: its submission starts a span under the context it takes, as Pi's do, and
+ * waits on Chord's own `sleep` under that context.
+ */
 function conversation(ms: number) {
 	const contexts: Context[] = [];
 	const root = {
 		submit: (_input: { readonly type: "input"; readonly content: string }, context: Context) => {
 			contexts.push(context);
-			return sleep(ms, context).then(() => "submitted");
+			return traceIn({ name: "pi.durable.submit" }, (traced) => sleep(ms, traced), context).then(() => "submitted");
 		},
 	};
 	return { root, contexts };
+}
+
+/** Effect's own in-memory spans, kept in start order. */
+function recording(): { readonly tracer: Tracer.Tracer; readonly spans: Tracer.NativeSpan[] } {
+	const spans: Tracer.NativeSpan[] = [];
+	const tracer = Tracer.make({
+		span: (options) => {
+			const span = new Tracer.NativeSpan(options);
+			spans.push(span);
+			return span;
+		},
+	});
+	return { tracer, spans };
 }
 
 describe("README: A Chord context from the fiber", () => {
@@ -76,26 +86,38 @@ describe("README: A Chord context from the fiber", () => {
 		expect(reason).toMatchObject({ name: "TimeoutError" });
 	});
 
-	it("carries the telemetry span and values", async () => {
-		const telemetry = new InMemoryTelemetryContext();
-		const seen = await telemetry.startSpan({ name: "chat.turn" }, (span: TelemetrySpan) => {
-			// README: telemetry and values.
-			const Tenant = createContextKey<string>("app.tenant");
+	it("nests Pi's spans under the Effect span", async () => {
+		const { root } = conversation(0);
+		// README: telemetry.
+		// root: a conversation of a Pi Durable harness (`harness.root()`).
+		const turn = Effect.scoped(
+			Effect.gen(function* () {
+				const context = yield* ChordContext.scoped();
+				return yield* Effect.promise(() => root.submit({ type: "input", content: "Hello" }, context));
+			}),
+		).pipe(Effect.withSpan("chat.turn"), Effect.provide(PiTelemetry.layer));
+		// The trace: chat.turn > the spans Pi starts for the submission
 
-			// span: `PiTelemetry.currentSpan` of `@effectified/pi-telemetry`, read in the Effect span to continue.
-			const traced = Effect.scoped(
-				Effect.gen(function* () {
-					const context = yield* ChordContext.scoped(
-						withContextValue(Tenant, "acme", withTelemetry(span, BACKGROUND_CONTEXT)),
-					);
-					context.value(Tenant); // "acme"
-					return context.telemetry; // span: Pi's spans under this context are children of the Effect span
-				}),
-			);
+		const { tracer, spans } = recording();
+		await run(Effect.provideService(turn, Tracer.Tracer, tracer));
+		expect(spans.map((span) => [span.name, Option.getOrUndefined(span.parent)?.spanId])).toEqual([
+			["chat.turn", undefined],
+			["pi.durable.submit", spans[0]?.spanId],
+		]);
+	});
 
-			return run(traced).then((handle) => ({ handle, span }));
-		});
-		expect(seen.handle).toBe(seen.span);
+	it("carries values", async () => {
+		// README: values.
+		const Tenant = createContextKey<string>("app.tenant");
+
+		const tenant = Effect.scoped(
+			Effect.gen(function* () {
+				const context = yield* ChordContext.scoped(withContextValue(Tenant, "acme", BACKGROUND_CONTEXT));
+				return context.value(Tenant); // "acme"
+			}),
+		);
+
+		expect(await run(tenant)).toBe("acme");
 	});
 });
 

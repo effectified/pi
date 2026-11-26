@@ -1,7 +1,7 @@
 // Conversation init in Effect: what a new conversation gets in the commit that creates it.
 
-import type { Context as ChordContext } from "@earendil-works/chord/context";
 import type { ConversationId, ConversationInit } from "@earendil-works/pi-durable";
+import type { Context as ChordContext } from "@effectified/pi-chord/context";
 import type { Effect } from "effect";
 import type { DurableError } from "./errors.ts";
 import * as Tx from "./tx.ts";

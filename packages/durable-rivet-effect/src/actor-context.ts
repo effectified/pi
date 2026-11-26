@@ -1,8 +1,8 @@
 // What this host provides to every Effect that runs inside an actor: the actor's identity, its database, its way to
 // the engine, and Pi's storage on that database.
 
-import type { SqliteDatabase } from "@earendil-works/chord/sqlite";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
+import type { SqliteDatabase } from "@effectified/pi-chord/sqlite";
 import { type DurableError, Storage, UnexpectedError } from "@effectified/pi-durable";
 import { Context, Effect, type Layer, type Option, type Schema } from "effect";
 import type * as SqlClient from "effect/sql/SqlClient";

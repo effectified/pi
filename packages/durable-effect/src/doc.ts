@@ -1,8 +1,5 @@
 // Documents in Effect: typed JSON state stored beside the transcript, changed in commits, its value an Effect Schema.
 
-import type { Context as ChordContext } from "@earendil-works/chord/context";
-import type { Draft } from "@earendil-works/chord/delta";
-import type { JsonValue } from "@earendil-works/chord/json";
 import {
 	type CommonDocDefinition,
 	type ConversationId,
@@ -18,6 +15,9 @@ import {
 	type WatchHandle,
 } from "@earendil-works/pi-durable";
 import type { StrictOmit } from "@effectified/pi-ai";
+import type { Context as ChordContext } from "@effectified/pi-chord/context";
+import type { Draft } from "@effectified/pi-chord/delta";
+import type { JsonValue } from "@effectified/pi-chord/json";
 import { decodeUnknown, encode, type Issue, SchemaDecodeError } from "@effectified/pi-schema";
 import { Effect, type Option, Predicate, type Schema, Stream } from "effect";
 import { call, step } from "./call.ts";

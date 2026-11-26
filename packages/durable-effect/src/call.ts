@@ -1,6 +1,6 @@
 // The call bridge: one Pi Durable call run as an Effect, under the Chord context of the fiber that makes it.
 
-import { BACKGROUND_CONTEXT, type Context as ChordContext, withAbortSignal } from "@earendil-works/chord/context";
+import { BACKGROUND_CONTEXT, type Context as ChordContext, withAbortSignal } from "@effectified/pi-chord/context";
 import { Context, Effect } from "effect";
 import { Cancelled, type DurableError, fromRejection, type UnexpectedError } from "./errors.ts";
 
@@ -28,6 +28,8 @@ export function call<A>(
 ): Effect.Effect<A, DurableError> {
 	const under = (context: ChordContext) =>
 		Effect.mapError(
+			// Not `ChordContext.scoped`: a scope's signal aborts only when the scope closes, after the wait for Pi to
+			// settle, and it would put the fiber's span over the invocation's that `ParentContext` holds.
 			settled((signal) => run(withAbortSignal(signal, context))),
 			// Chord rejects a cancelled call with its signal's reason, whatever that is: a deadline's `TimeoutError` too.
 			(error) => (isReasonOf(context.abortSignal, error) ? new Cancelled({ cause: error.cause }) : error),

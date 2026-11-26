@@ -1,7 +1,6 @@
 // The built-in actions every actor of this host has beside the product's: their names, and what they answer.
 
-import { CompactionTask } from "@earendil-works/pi-durable";
-import { Harness } from "@effectified/pi-durable";
+import { CompactionTask, Harness } from "@effectified/pi-durable";
 import { Effect, Schema } from "effect";
 import * as Action from "./action.ts";
 import { lineage as lineageOfActor } from "./fork.ts";

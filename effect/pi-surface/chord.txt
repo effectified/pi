@@ -10,11 +10,11 @@ used by: chord-effect
 export function awaitWithContext<T>(promise: Promise<T>, context: Context): Promise<T>
 
 ## BACKGROUND_CONTEXT  chord/src/context/index.ts
-used by: chord-effect, durable-effect, env-effect
+used by: chord-effect
 export const BACKGROUND_CONTEXT: Context
 
 ## Context  chord/src/context/index.ts
-used by: chord-effect, durable-effect, env-effect; durable-rivet-effect via SqliteStorage
+used by: chord-effect; durable-effect via WatchHandle, durable-rivet-effect via SqliteStorage, env-effect via BinaryReader
 /** Immutable invocation-scoped values passed explicitly through operations. */
 export interface Context {
 	readonly abortSignal: AbortSignal | undefined;
@@ -24,7 +24,7 @@ export interface Context {
 }
 
 ## ContextKey  chord/src/context/index.ts
-used by: chord-effect; durable-effect via Context, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: chord-effect; durable-effect via WatchHandle, durable-rivet-effect via SqliteStorage, env-effect via BinaryReader
 /** Typed identity for one value carried by a {@link Context}. */
 export interface ContextKey<T> {
 	readonly token: symbol;
@@ -50,7 +50,7 @@ export function traceIn<T>(
 ): Promise<T>
 
 ## withAbortSignal  chord/src/context/index.ts
-used by: chord-effect, durable-effect, env-effect
+used by: chord-effect
 /**
  * Derive a context cancelled by either the parent signal or the supplied signal.
  * The parent context remains unchanged.
@@ -1401,7 +1401,7 @@ used by: chord-effect
 export function diffRevisions(before: JsonValue, after: JsonValue): Op[]
 
 ## Draft  chord/src/delta/draft.ts
-used by: chord-effect, durable-effect; durable-rivet-effect via CompactionTask
+used by: chord-effect; durable-effect via Tx
 /** A mutable transaction-scoped view of a JSON value, preserving tuple positions. */
 export type Draft<T, Depth extends readonly unknown[] = []> = Depth["length"] extends 8
 	? T
@@ -3282,7 +3282,7 @@ export type JsonRepresentation<T> = IsAny<T> extends true
 					: never;
 
 ## JsonValue  chord/src/json.ts
-used by: chord-effect, durable-effect; durable-rivet-effect via SqliteStorage
+used by: chord-effect; durable-effect via defineDocFamily, durable-rivet-effect via SqliteStorage
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 ## binaryCodec  chord/src/link/binary.ts
@@ -3727,7 +3727,7 @@ export interface RegistryValue<V> extends NativeWatchable<V> {
 }
 
 ## SqliteDatabase  chord/src/sqlite/database.ts
-used by: chord-effect, durable-effect, durable-rivet-effect
+used by: chord-effect; durable-effect via SqliteStorage, durable-rivet-effect via SqliteStorage
 /**
  * Minimal portable SQLite database facade.
  *
@@ -3751,7 +3751,7 @@ export interface SqliteDatabase extends SqliteExecutor {
 }
 
 ## SqliteExecutor  chord/src/sqlite/database.ts
-used by: chord-effect, durable-effect, durable-rivet-effect
+used by: chord-effect; durable-effect via SqliteStorage, durable-rivet-effect via SqliteStorage
 /**
  * Asynchronous SQL operations shared by a database and its transaction handles.
  *
@@ -3770,7 +3770,7 @@ export interface SqliteExecutor {
 }
 
 ## SqliteValue  chord/src/sqlite/database.ts
-used by: chord-effect, durable-effect, durable-rivet-effect
+used by: chord-effect; durable-effect via SqliteStorage, durable-rivet-effect via SqliteStorage
 /** Values supported by the portable SQLite drivers. */
 export type SqliteValue = null | number | bigint | string | Uint8Array;
 
@@ -3845,7 +3845,7 @@ export async function openNodeSqliteDatabase(
 ): Promise<NodeSqliteDatabase>
 
 ## validateSqliteSchemaPrefix  chord/src/sqlite/schema.ts
-used by: chord-effect, durable-rivet-effect
+used by: chord-effect
 /** Validate a prefix before using it as part of a SQLite identifier. */
 export function validateSqliteSchemaPrefix(prefix: string): void
 
@@ -6434,7 +6434,7 @@ export interface Watchable<T> {
 }
 
 ## WatchCall  chord/src/watch.ts
-used by: durable-effect; chord-effect via FollowObserver, durable-rivet-effect via CompactionTask
+used by: durable-effect; chord-effect via FollowObserver
 /**
  * One call of a JSON watch's listener, and one frame a source hands its watch, tagged by `kind`:
  *
@@ -6452,7 +6452,7 @@ export type WatchCall<T> =
 	| { readonly kind: "failed"; readonly error: unknown };
 
 ## WatchEnd  chord/src/watch.ts
-used by: durable-effect; chord-effect via FollowObserver, durable-rivet-effect via CompactionTask
+used by: durable-effect; chord-effect via FollowObserver
 /**
  * Terminal result of one watch, tagged by `kind`. A watch ends only for good; a failure its source recovers from is a
  * `failed` call (`WatchCall`), and the watch stays open.
@@ -6469,7 +6469,7 @@ export type WatchEnd =
 	| { readonly kind: "failed"; readonly error: unknown };
 
 ## WatchHandle  chord/src/watch.ts
-used by: durable-effect; chord-effect via KeyedWatchable, durable-rivet-effect via CompactionTask
+used by: durable-effect; chord-effect via KeyedWatchable
 /**
  * Serialized observation of an immutable value: one listener call at a time; changes made meanwhile arrive folded into
  * the next call.

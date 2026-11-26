@@ -1,21 +1,28 @@
 // The call bridge: one call into Pi run as an Effect, cancelled through Pi's AbortSignal when the fiber is interrupted.
 
-import { BACKGROUND_CONTEXT, type Context as ChordContext, withAbortSignal } from "@earendil-works/chord/context";
 import type { Result } from "@earendil-works/pi-durable/env";
+import { ChordContext, type Context, withAbortSignal } from "@effectified/pi-chord/context";
 import { Effect } from "effect";
 
 /**
- * Runs an environment operation under a Chord context that is cancelled when the calling fiber is interrupted, and
- * fails with `onError` of Pi's error result. An interrupted fiber waits until Pi settled the call, so nothing of it
- * still runs when the interruption completes. Pi's environments return their failures; a rejection is a defect.
+ * Runs an environment operation under the Chord context of the calling fiber (`ChordContext.scoped`: its current
+ * span, when the program provides `PiTelemetry`), cancelled when the fiber is interrupted, and fails with `onError`
+ * of Pi's error result. An interrupted fiber waits until Pi settled the call, so nothing of it still runs when the
+ * interruption completes. Pi's environments return their failures; a rejection is a defect.
  */
 export function result<A, PiError, E>(
-	run: (context: ChordContext) => Promise<Result<A, PiError>>,
+	run: (context: Context) => Promise<Result<A, PiError>>,
 	onError: (error: PiError) => E,
 ): Effect.Effect<A, E> {
-	return Effect.flatMap(
-		abortable((signal) => run(withAbortSignal(signal, BACKGROUND_CONTEXT)), Effect.die),
-		(settled) => (settled.ok ? Effect.succeed(settled.value) : Effect.fail(onError(settled.error))),
+	return Effect.scoped(
+		Effect.flatMap(ChordContext.scoped(), (context) =>
+			Effect.flatMap(
+				// The fiber's signal, not only the scope's: the scope closes after the wait for Pi to settle, so its
+				// signal alone would never abort the call that wait is for.
+				abortable((signal) => run(withAbortSignal(signal, context)), Effect.die),
+				(settled) => (settled.ok ? Effect.succeed(settled.value) : Effect.fail(onError(settled.error))),
+			),
+		),
 	);
 }
 

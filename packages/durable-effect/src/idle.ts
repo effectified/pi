@@ -1,7 +1,7 @@
 // Idle without waiting: Pi Durable's idle rule applied to the live tasks of one inspection.
 
-import type { JsonValue } from "@earendil-works/chord/json";
 import type { ConversationId, ConversationRecord, TaskId, TaskRecord } from "@earendil-works/pi-durable";
+import type { JsonValue } from "@effectified/pi-chord/json";
 import { Effect, Option } from "effect";
 import type { DurableError } from "./errors.ts";
 

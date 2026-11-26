@@ -102,9 +102,12 @@ An application imports `@effectified/pi-*` and `effect`, never `@earendil-works/
   | pi-mcp | 0 |
   | pi-tui | 0 |
 
-- `check-deps.ts` enforces this rule. Plugins and the composition are written the way an application is, so they
-  import no `@earendil-works/*`. Every README and documentation page shows only effectified imports; an exception
-  would be listed in its `DOCUMENTED_PI_IMPORTS`, which is empty.
+- `check-deps.ts` enforces this rule: only the facade of a Pi package imports that package, in `src`. Plugins, hosts
+  and the composition are written the way an application is, and a facade reaches another Pi package through that
+  package's facade (durable-effect imports Chord's types from `@effectified/pi-chord`). What no facade offers yet is
+  listed, with why, in its `PI_IMPORTS_NOT_OFFERED`: `pi-durable/env` in env-effect and `pi-durable/storage/sqlite`
+  in durable-rivet-effect. Every README and documentation page shows only effectified imports; an exception would be
+  listed in its `DOCUMENTED_PI_IMPORTS`, which is empty.
 
 ## Bumping upstream
 

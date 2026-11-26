@@ -1,6 +1,7 @@
 import type { Result } from "@earendil-works/pi-durable/env";
 import { runLive } from "@effectified/pi-ai/testing";
-import { Deferred, Effect, Exit, Fiber } from "effect";
+import { PiTelemetry } from "@effectified/pi-telemetry";
+import { Deferred, Effect, Exit, Fiber, Option, Tracer } from "effect";
 import { describe, expect, it } from "vitest";
 import { abortable, result, unabortable } from "../src/call.ts";
 
@@ -45,6 +46,31 @@ describe("result", () => {
 			}),
 		);
 		expect(seen).toBe(true);
+	});
+
+	it("runs the call under the fiber's current span, so the spans Pi starts are its children", async () => {
+		const spans: Tracer.NativeSpan[] = [];
+		const tracer = Tracer.make({
+			span: (options) => {
+				const span = new Tracer.NativeSpan(options);
+				spans.push(span);
+				return span;
+			},
+		});
+		await runLive(
+			result(
+				(context) => context.telemetry.startSpan({ name: "pi.env.read" }, async () => ({ ok: true, value: 0 })),
+				String,
+			).pipe(
+				Effect.withSpan("app.read"),
+				Effect.provide(PiTelemetry.layer),
+				Effect.provideService(Tracer.Tracer, tracer),
+			),
+		);
+		expect(spans.map((span) => [span.name, Option.getOrUndefined(span.parent)?.spanId])).toEqual([
+			["app.read", undefined],
+			["pi.env.read", spans[0]?.spanId],
+		]);
 	});
 });
 
