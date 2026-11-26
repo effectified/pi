@@ -247,9 +247,14 @@ pre code {
 	gap: 0.35rem;
 }
 
+/* Each facade stands on the Pi package it wraps: the two rows share their columns, sized by the names in them. */
 .chips.columns {
 	display: grid;
-	grid-template-columns: repeat(4, minmax(0, 1fr));
+	grid-template-columns: 0.7fr 1.05fr 1fr 1.2fr;
+}
+
+.chips.columns .chip {
+	white-space: nowrap;
 }
 
 .chip {
@@ -715,6 +720,10 @@ details.contents li {
 
 	.chips.columns {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.chips.columns .chip {
+		white-space: normal;
 	}
 
 	td.name {

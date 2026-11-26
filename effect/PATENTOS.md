@@ -12,7 +12,7 @@ The goal of the PRD (section 4): PatentOS deletes its hand-written agent loop
 | | Where | State |
 |---|---|---|
 | The packages | This repository, branch `effect`, pushed to `origin` | Synced with upstream Pi 1.6.1. `npm run check` passes; the suites pass on Node and on Bun (versions and counts in `COMPAT.md`) |
-| The binding | PatentOS, branches `build/s0-foundations` and `main`, from commit `15c7a11` on | Merged and pushed. PatentOS's gate `bun run check:all` passed on `35910f7` (4,847 tests), which holds the packages at `8432e0340` |
+| The binding | PatentOS, branches `build/s0-foundations` and `main`, from commit `15c7a11` on | Merged and pushed. PatentOS's gate `bun run check:all` passed on `1b40bfc` (4,847 tests), which holds the packages at `49b6f04dd` |
 | The worktree to change it in | `/Volumes/Banana/GitHub/gunta/patentos-build-run/pi-effect-wt2`, branch `pi-effect/agent-thread-on-56fd828` | Kept level with the build's tip |
 
 PatentOS's shared checkout (`/Volumes/Banana/GitHub/gunta/patentos`) is never edited for this work: other
@@ -60,6 +60,10 @@ inside a monorepo; PatentOS's `repo-check` allows an exact version or `workspace
 `vendor/pi-effect/README.md` in PatentOS says the same.
 
 `effect/scripts/pack.ts` still makes tarballs, for a product that wants them.
+
+The vendoring also writes `docs-effect`: the packages explained as pages (`vendor/pi-effect/docs-effect/dist/index.html`)
+and as skills for agents. PatentOS links the five skills for building on the packages into `.claude/skills` and
+`.agents/skills` (`node vendor/pi-effect/docs-effect/bin/link-skills.mjs .`), so its agents' harnesses list them.
 
 ## 4. What the binding is
 
