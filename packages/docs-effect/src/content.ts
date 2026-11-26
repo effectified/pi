@@ -44,6 +44,8 @@ export const ROLES: Readonly<Record<string, string>> = {
 		"Pi's non-durable agent for short-lived uses: a prompt is an Effect, its events a Stream, its tools and hooks Effects.",
 	"env-effect":
 		"Local and remote execution environments in Effect: commands and files as Effects, output as Streams, and daemon connections, SSH, processes and terminals as scoped resources.",
+	"codemode-effect":
+		"Model-written JavaScript in a QuickJS sandbox whose only capability is your Effect tools: sandboxes as scoped resources, an execution as an Effect, a deterministic run's events as a Stream.",
 	"durable-effect":
 		"The durable harness as Layers: conversations, tools, hooks, tasks, documents and commits, with tagged errors and interruption that cancels.",
 	"durable-rivet-effect":
