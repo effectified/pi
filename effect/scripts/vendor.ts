@@ -53,10 +53,10 @@ for (const pkg of order.packages) {
 	});
 	dropSourceMapComments(join(out, "dist"));
 	cpSync(join(directory, "README.md"), join(out, "README.md"));
-	// The skills are read where they lie: their links to the READMEs are relative, and hold in a product as here.
-	// `bin` holds the script that links them into a project.
+	// The pages and the skills are read where they lie: their links to one another and to the READMEs are relative,
+	// and hold in a product as here. `bin` holds the script that links the skills into a project.
 	if (pkg.kind === "docs") {
-		for (const kept of ["skills", "bin"]) cpSync(join(directory, kept), join(out, kept), { recursive: true });
+		for (const kept of ["docs", "skills", "bin"]) cpSync(join(directory, kept), join(out, kept), { recursive: true });
 	}
 	writeFileSync(join(out, "package.json"), `${JSON.stringify(workspaceManifest(manifest), null, "\t")}\n`);
 	console.log(`Vendored ${pkg.name}@${pkg.version}`);

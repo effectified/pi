@@ -1,78 +1,73 @@
 # @gunta/pi-docs-effect
 
-The pi-effect packages explained, twice: as pages for people, and as skills for agents. It holds no library code,
-is private, and is never published.
+The documentation of the pi-effect packages, kept the way Pi keeps its own: a directory of Markdown pages and a catalog, `docs/docs.json`, whose navigation names every page. It holds no library code, is private, and is never published.
 
 | For | What | Where |
 |---|---|---|
-| People | A landing page: what the library is, the packages as the stack they form, what the composition rules out, the way of one piece of work through it | `dist/index.html` |
-| People | Every package's README as a page, with a rail of all of them | `dist/packages/<package>.html` |
-| Agents | Skills: which package and export to use, the order that must not change, what is not guaranteed | `skills/<name>/SKILL.md` |
-| Agents | An index of every package and skill, one line each (`llms.txt`) | `dist/llms.txt` |
+| People and agents | The pages: an overview, a quickstart, how the library works, guides by task, and the packages | `docs/*.md`, listed in `docs/docs.json` |
+| People | The pages as a site, with a landing page and every package's README as a page | `dist/index.html`, built |
+| Agents | Skills, each a pointer from a task to a page | `skills/<name>/SKILL.md` |
+| Agents | An index of every page, package and skill, one line each (`llms.txt`) | `dist/llms.txt`, built |
 
-## Build and open
+## The same system as Pi's documentation
+
+Upstream keeps its documentation in `packages/coding-agent/docs`: Markdown pages, and `docs.json` with a `navigation` of groups, each entry a `title` with a `path`, further `items`, or both. Its test `packages/coding-agent/test/documentation.test.ts` holds the catalog to rules. This package keeps the same files and the same rules (`src/node/catalog.ts`), so these pages could be put beside Pi's without a change:
+
+- The catalog has no field upstream's does not have, and a page's path is relative, normalized, inside the directory and ends in `.md`.
+- No page is named twice, every page named exists, and no two pages have one public address.
+- Every local Markdown link of a page leads to a file.
+- No page is orphaned: each is named by the navigation or linked from a page that is.
+
+The navigation has upstream's three groups: Get Started, Guides and Reference. As in upstream, a library's reference is its README: the page [Packages](docs/packages.md) lists all fifteen and links each one's.
+
+The skills follow the [Agent Skills specification](https://agentskills.io/specification), which Pi reads, and the manifest declares them under its `pi` key, as a Pi package does.
+
+## Read it
+
+Start at [docs/index.md](docs/index.md). Every page is plain Markdown and reads on a repository host as it is.
+
+For the site:
 
 ```sh
 npm run build --workspace packages/docs-effect
 open packages/docs-effect/dist/index.html
 ```
 
-`dist` is not committed. It is made from the tree, so a page cannot name a version, a count or a package the tree
-does not have: the packages, their kinds and descriptions come from the manifests, the test counts and runtimes from
-`effect/COMPAT.md`, the documentation from each README, and the example on the landing page from the composition's
-README, where a test runs it. A page opens from a file: its stylesheet is written into it, and it loads nothing.
+`dist` is not committed. The site's navigation is the catalog's, and its landing page is made from the tree: the packages, their kinds and descriptions come from the manifests, the test counts and runtimes from `effect/COMPAT.md`, and the example from the composition's README, where a test runs it. A page opens from a file: its stylesheet is written into it, and it loads nothing.
 
-What is written by hand is in `src/content.ts`: each package's role in one sentence, and what the composition rules
-out. A package without a role fails the build, so a new package cannot be left off the pages.
+What is written by hand for the landing page is in `src/content.ts`: each package's role in one sentence, and what the composition rules out. A package without a role fails the build, so a new package cannot be left off.
 
-## The skills
+## One text for people and agents
 
-| Skill | For |
+A page is the single place a rule is written. A skill does not repeat it: it is a name, a description that says when it applies, and a pointer to the page.
+
+| Skill | Leads to |
 |---|---|
-| `pi-effect` | The map: which package answers which need, how the kinds layer, what a product supplies |
-| `pi-effect-thread` | An agent thread in a product, in one process |
-| `pi-effect-rivet` | A harness or a thread in Rivet actors, and a local engine |
-| `pi-effect-extending` | A tool, a hook, a task, a stored document or a whole plugin |
-| `pi-effect-testing` | Tests without a network or a key, on Node and on Bun |
-| `pi-effect-contributing` | Work inside the pi-effect repository: the boundary, the gate, commits |
-| `pi-effect-upstream-sync` | Moving the packages to a new Pi version |
+| `pi-effect` | How pi-effect Works, Packages |
+| `pi-effect-thread` | Build an Agent Thread, Thread Recipes |
+| `pi-effect-rivet` | Host Threads in Rivet Actors |
+| `pi-effect-extending` | Write Tools, Hooks, and Plugins |
+| `pi-effect-testing` | Test Without a Network |
+| `pi-effect-contributing` | Work in the Repository |
+| `pi-effect-upstream-sync` | Keep Up with Pi |
 
-An agent finds a skill only where its harness looks. This links every skill into a project's `.claude/skills` and
-`.agents/skills`:
+[Give Agents the Skills](docs/agents.md) says how a project links them, and how Pi finds them.
 
-```sh
-node vendor/pi-effect/docs-effect/bin/link-skills.mjs .              # in a product that vendors the packages
-node packages/docs-effect/bin/link-skills.mjs . .claude/skills       # in this repository
-```
+## The contract
 
-A product gets the five skills for building on the packages. The two for work inside the pi-effect repository are
-linked only into that repository. There, name `.claude/skills` alone, as above: it is ignored by git, while
-`.agents/skills` would be a new path outside the fork's boundary. Agents that do not read `.claude/skills` find the
-skills here through `effect/AGENTS.md`, which lists them.
+A page that is wrong is worse than none, since an agent acts on it without checking. So the test of this package holds every page and every skill to a contract (`src/node/contract.ts`), and the gate fails when one breaks it:
 
-A link that exists and points elsewhere is replaced. A directory of that name that is no link is the project's own
-and is left alone, with exit code 1.
+- Every relative link leads to a page, to a package's README or to a file of the skills, the file exists, and the anchor is a heading there. So a page reads the same in a product, where the packages are built and have no `src`.
+- Every package and entry point named is one of the library's.
+- Every `ts` code block is a contiguous excerpt of a code block of a package's README. Those examples are run by each package's `test/readme.test.ts`; code written into a page would be run by nothing.
+- Every path of this repository named in backticks exists.
+- A skill's frontmatter is `name`, equal to its directory, and `description`, one line of at most 1,024 characters.
 
-### The contract of a skill
-
-A skill that is wrong is worse than none, since an agent acts on it without checking. So the test of this package
-holds every skill to a contract (`src/node/skills.ts`), and the gate fails when one breaks it:
-
-- Its frontmatter is `name`, equal to its directory, and `description`, one line of at most 1,024 characters.
-- Its body has at most 300 lines.
-- Every relative link leads to a package's README or to a file of the skills, the file exists, and the anchor is a
-  heading there. So a skill reads the same in a product, where the packages are built and have no `src`.
-- Every package and entry point it names is one of the library's.
-- Every `ts` code block is a contiguous excerpt of a code block of a package's README. Those examples are run by
-  each package's `test/readme.test.ts`; code written into a skill would be run by nothing.
-- Every path of this repository it names in backticks exists.
-
-So a README example that changes fails this package's test until the skills that quote it follow.
+So a README example that changes fails this package's test until the page that quotes it follows.
 
 ## In a product
 
-`node effect/scripts/vendor.ts <directory>` writes this package beside the others: its `dist`, its `skills`, its
-`bin` and this README. The links of the skills and of `llms.txt` are relative and hold there.
+`node effect/scripts/vendor.ts <directory>` writes this package beside the others: its `docs`, its `skills`, its `bin`, its built `dist` and this README. Every link of a page and of a skill is relative and holds there.
 
 ## Tests
 
@@ -81,9 +76,7 @@ node ../../node_modules/vitest/dist/cli.js --run
 bun test --conditions=source
 ```
 
-They build the site in memory and check that every package has a page and a place on the landing page, that every
-link between pages leads to a page and to a heading that exists, that `llms.txt` names every package and skill with
-links that resolve, that every skill keeps its contract, and that the linking script makes and repairs its links.
+They check the catalog against upstream's rules and show each rule a catalog that breaks it, hold every page and skill to the contract, build the site in memory and follow every link of it, and run the script that links the skills.
 
 ## License
 

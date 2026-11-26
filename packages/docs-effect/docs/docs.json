@@ -1,0 +1,84 @@
+{
+  "navigation": [
+    {
+      "title": "Get Started",
+      "items": [
+        {
+          "title": "Overview",
+          "path": "index.md"
+        },
+        {
+          "title": "Quickstart",
+          "path": "quickstart.md"
+        },
+        {
+          "title": "How pi-effect Works",
+          "path": "how-it-works.md"
+        }
+      ]
+    },
+    {
+      "title": "Guides",
+      "items": [
+        {
+          "title": "Build with the Packages",
+          "items": [
+            {
+              "title": "Build an Agent Thread",
+              "path": "threads.md",
+              "items": [
+                {
+                  "title": "Thread Recipes",
+                  "path": "thread-recipes.md"
+                }
+              ]
+            },
+            {
+              "title": "Host Threads in Rivet Actors",
+              "path": "rivet.md"
+            },
+            {
+              "title": "Write Tools, Hooks, and Plugins",
+              "path": "extending.md"
+            },
+            {
+              "title": "Test Without a Network",
+              "path": "testing.md"
+            }
+          ]
+        },
+        {
+          "title": "Work with Agents",
+          "items": [
+            {
+              "title": "Give Agents the Skills",
+              "path": "agents.md"
+            }
+          ]
+        },
+        {
+          "title": "Maintain the Library",
+          "items": [
+            {
+              "title": "Work in the Repository",
+              "path": "contributing.md"
+            },
+            {
+              "title": "Keep Up with Pi",
+              "path": "upstream-sync.md"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Reference",
+      "items": [
+        {
+          "title": "Packages",
+          "path": "packages.md"
+        }
+      ]
+    }
+  ]
+}

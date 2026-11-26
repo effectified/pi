@@ -10,7 +10,7 @@ only after the whole suite ran on those versions (`npm run check`, each package'
 Also installed and run outside this repository beside the published `@earendil-works/*` 1.6.0 (the quick start of
 `durable-effect`, from packed tarballs, on Node and on Bun with its isolated linker). `rivetkit` 3.1.1 is the peer of
 `durable-rivet-effect`; its engine tests run on macOS and, since 2026-11-26, on Linux in CI (x64) on Node and on Bun. Node 22.19.0 is the lowest version the packages declare:
-all fifteen suites passed on it on Pi 1.6.0 (1,747 tests, 2026-11-25). On Pi 1.6.1 they pass on Node 26.13.1 (1,934
+all fifteen suites passed on it on Pi 1.6.0 (1,747 tests, 2026-11-25). On Pi 1.6.1 they pass on Node 26.13.1 (1,950
 tests, 2026-11-26, by `node effect/scripts/gate.ts`) and on Bun (2026-11-26); between the two versions Pi Durable changed only its Node environment (shell lookup,
 line reader). Not yet run against a real model provider.
 
@@ -59,7 +59,7 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@gunta/pi-swarm-effect` | plugin | Keyed forks under a cap, in storage and as actor forks | 154 | |
 | `@gunta/pi-search-effect` | plugin | Search and fetch tools, Exa adapter | 60 | A real Exa call |
 | `@gunta/pi-thread-effect` | composition | An agent thread made of all of them, in process and as a Rivet actor | 141 | See its README, "Gaps" |
-| `@gunta/pi-docs-effect` | docs | All of them explained: a landing page and each README as a page for people, skills and `llms.txt` for agents | 22 | |
+| `@gunta/pi-docs-effect` | docs | The documentation of all of them, as Pi keeps its own (`docs/`, `docs.json`), a site built from it, and skills that lead agents to its pages | 38 | |
 
 Not built: `mcp-effect`, `codemode-effect`, `agent-effect`, `env-effect`, `workflow-effect`, `sandbox-effect`
 (PRD priorities P2 and P3).

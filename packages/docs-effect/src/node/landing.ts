@@ -3,7 +3,7 @@
 
 import { GUARANTEES, KIND_MEANING, KINDS, type Kind, STEPS } from "../content.ts";
 import type { Facts, Package } from "./facts.ts";
-import { packagePage, shell, skillPage } from "./layout.ts";
+import { docsPage, packagePage, shell } from "./layout.ts";
 import { safe } from "./markdown.ts";
 import type { Skill } from "./skills.ts";
 
@@ -17,6 +17,7 @@ export function landing(facts: Facts, skills: ReadonlyArray<Skill>, example: str
 <h1>Pi's durable agents, as Effect layers</h1>
 <p class="lede">pi-effect puts Pi's agent harness into Effect, and adds what a product otherwise writes by hand around an agent loop: what a thread may call, what it may spend, which model serves it, what is recorded, and who reads the answer before it stands.</p>
 <p>One call works a thread to its end. A process that is killed on the way picks the thread up where it stopped.</p>
+<p class="go"><a class="primary" href="${docsPage("quickstart.md")}">Read the Quickstart</a><a href="${docsPage("index.md")}">All documentation</a></p>
 <p class="ground">${count} packages, ${tests.toLocaleString("en-US")} tests on Node ${safe(facts.ranOn.node)} and Bun ${safe(facts.ranOn.bun)}. For Pi ${safe(facts.pi)} and Effect ${safe(facts.effect.replace(/^~/, ""))}.</p>
 </div>
 ${stack(facts)}
@@ -40,7 +41,7 @@ ${STEPS.map((step) => `<li><div><h3>${safe(step.title)}</h3><p>${safe(step.text)
 
 <section id="packages">
 <h2>The packages</h2>
-<p class="intro">Every package stands alone and depends only on what is below it. Each name leads to its documentation, which is its README: the examples in it are run by the package's own tests.</p>
+<p class="intro">Every package stands alone and depends only on what is below it. Each name leads to its reference, which is its README: the examples in it are run by the package's own tests. <a href="${docsPage("packages.md")}">Packages</a> lists their entry points.</p>
 ${KINDS.map((kind) => group(facts, kind)).join("\n")}
 </section>
 
@@ -57,19 +58,19 @@ ${KINDS.map((kind) => group(facts, kind)).join("\n")}
 <div>
 <h3>In one process</h3>
 <p><code>Composition.open</code> runs a harness on a storage the product gives, such as a SQLite file. A swarm's forks are conversations of that storage.</p>
-<p><a href="${packagePage("thread-effect")}#the-composition">The composition</a></p>
+<p><a href="${docsPage("threads.md")}">Build an Agent Thread</a></p>
 </div>
 <div>
 <h3>As one actor per thread</h3>
 <p><code>ThreadActor</code> runs the same composition in a Rivet actor. The actor's SQLite is the storage, its schedule wakes sleeping work, and a swarm's fork is a fork of the actor. A local engine runs beside the process for development.</p>
-<p><a href="${packagePage("thread-effect")}#the-rivet-form">The Rivet form</a>, <a href="${packagePage("durable-rivet-effect")}">the host</a></p>
+<p><a href="${docsPage("rivet.md")}">Host Threads in Rivet Actors</a></p>
 </div>
 </div>
 </section>
 
 <section id="upstream">
 <h2>Keeping up with Pi</h2>
-<p class="intro">Pi changes often. A change there reaches these packages through its types, or stops the build and names what moved. It does not pass in silence.</p>
+<p class="intro">Pi changes often. A change there reaches these packages through its types, or stops the build and names what moved. It does not pass in silence. <a href="${docsPage("upstream-sync.md")}">Keep Up with Pi</a> is the procedure.</p>
 <dl class="means">
 <div><dt>Types come from Pi's</dt><dd>A type that Pi defines is taken from Pi with <code>Pick</code>, <code>Extract</code> or a mapped type. A choice over a Pi union is exhaustive, so a member Pi adds does not compile until someone decides what to do with it.</dd></div>
 <div><dt>What stays hand-written is asserted</dt><dd>A package that mirrors a Pi type by hand has a type-only conformance file, which holds its schemas and its list of wrapped methods against Pi's.<br><code>packages/&lt;name&gt;/test/pi-conformance.ts</code></dd></div>
@@ -81,18 +82,16 @@ ${KINDS.map((kind) => group(facts, kind)).join("\n")}
 
 <section id="agents">
 <h2>For agents</h2>
-<p class="intro">A coding agent needs different things from a person: which package, which export, the order that must not change, and what is not guaranteed. The skills say that and lead into the READMEs. Each one is checked: its links resolve, the names in it exist, and its code is code a README's test runs.</p>
+<p class="intro">A coding agent needs different things from a person: which package, which export, the order that must not change, and what is not guaranteed. The documentation is written to serve both. A skill is how an agent finds the right page of it: a name, a description that says when it applies, and a pointer to the page.</p>
 <div class="table wide"><table>
 <thead><tr><th>Skill</th><th>Read it when</th></tr></thead>
 <tbody>
-${skills.map((skill) => `<tr><td class="name"><a href="${safe(skillPage(skill.path))}">${safe(skill.name)}</a></td><td>${safe(skill.description)}</td></tr>`).join("\n")}
+${skills.map((skill) => `<tr><td class="name"><code>${safe(skill.name)}</code></td><td>${safe(skill.description)}</td></tr>`).join("\n")}
 </tbody>
 </table></div>
 <div class="prose">
-<p>A skill is found by an agent only where its harness looks. This links every skill into a project's <code>.claude/skills</code> and <code>.agents/skills</code>:</p>
-<pre><code>node vendor/pi-effect/docs-effect/bin/link-skills.mjs .          # in a product that vendors the packages
-node packages/docs-effect/bin/link-skills.mjs . .claude/skills   # in the pi-effect repository</code></pre>
-<p>An agent that reads a site first can start from <a href="llms.txt"><code>llms.txt</code></a>: every package and every skill, with one line each and a link to the Markdown.</p>
+<p><a href="${docsPage("agents.md")}">Give Agents the Skills</a> links them into a project, where an agent's harness looks. The skills follow the Agent Skills specification, and the package declares them as a Pi package does, so Pi reads them too.</p>
+<p>An agent that reads a site first can start from <a href="llms.txt"><code>llms.txt</code></a>: every page, every package and every skill, one line each, with a link to its Markdown.</p>
 </div>
 </section>
 </main>

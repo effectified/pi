@@ -5,9 +5,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { KIND_MEANING, KINDS } from "../content.ts";
+import type { Catalog, Item } from "./catalog.ts";
 import type { Facts } from "./facts.ts";
 import { safe } from "./markdown.ts";
-import type { Skill } from "./skills.ts";
 
 /** What a page is, apart from its content. */
 export interface Page {
@@ -24,15 +24,14 @@ export function hrefFrom(from: string, to: string): string {
 	return relative(dirname(from), to).split("\\").join("/");
 }
 
-/** The page of a library package. */
+/** The page of a library package's README. */
 export function packagePage(directory: string): string {
 	return `packages/${directory}.html`;
 }
 
-/** The page of a skill's file: `SKILL.md` is the skill's page, a further file a page beside it. */
-export function skillPage(file: string): string {
-	const [, directory = "", name = ""] = /skills\/([^/]+)\/(.+)\.md$/.exec(file) ?? [];
-	return name === "SKILL" ? `skills/${directory}.html` : `skills/${directory}.${name.replaceAll("/", ".")}.html`;
+/** The page of a page of the documentation, by its path in the catalog: `threads.md` is `docs/threads.html`. */
+export function docsPage(path: string): string {
+	return `docs/${path.slice(0, -".md".length)}.html`;
 }
 
 /** A whole HTML document: `body` between the bar and the foot. */
@@ -53,10 +52,10 @@ ${CSS}</style>
 <header class="top">
 <a class="mark" href="${to("index.html")}">pi-effect</a>
 <nav aria-label="Site">
-<a href="${to("index.html")}#packages">Packages</a>
-<a href="${to("index.html")}#thread">A thread in a product</a>
-<a href="${to("index.html")}#upstream">Keeping up with Pi</a>
-<a href="${to("index.html")}#agents">For agents</a>
+<a href="${to(docsPage("index.md"))}">Documentation</a>
+<a href="${to(docsPage("quickstart.md"))}">Quickstart</a>
+<a href="${to(docsPage("packages.md"))}">Packages</a>
+<a href="${to(docsPage("agents.md"))}">For agents</a>
 <a href="${safe(facts.repository)}/tree/${safe(facts.branch)}">Source</a>
 </nav>
 </header>
@@ -69,33 +68,35 @@ ${body}
 `;
 }
 
-/** A page of documentation: the rail, and `article` beside it. `kind` colours what belongs to a kind of package. */
-export function docPage(
-	page: Page,
-	article: string,
-	facts: Facts,
-	skills: ReadonlyArray<Skill>,
-	kind: string | undefined,
-): string {
+/**
+ * A page beside the rail: the catalog's navigation as it is written, then every package's README by kind. `kind`
+ * colours what belongs to a kind of package.
+ */
+export function docPage(page: Page, article: string, facts: Facts, catalog: Catalog, kind: string | undefined): string {
 	const link = (path: string, label: string) =>
-		`<li><a href="${safe(hrefFrom(page.path, path))}"${path === page.path ? ' aria-current="page"' : ""}>${safe(label)}</a></li>`;
-	const groups = KINDS.map((known) => {
+		`<a href="${safe(hrefFrom(page.path, path))}"${path === page.path ? ' aria-current="page"' : ""}>${safe(label)}</a>`;
+	const entries = (items: ReadonlyArray<Item>): string =>
+		`<ul>\n${items
+			.map((item) => {
+				const head =
+					item.path === undefined ? `<span>${safe(item.title)}</span>` : link(docsPage(item.path), item.title);
+				return `<li>${head}${item.items.length === 0 ? "" : `\n${entries(item.items)}`}</li>`;
+			})
+			.join("\n")}\n</ul>`;
+	const navigation = catalog.groups.map(
+		(group) => `<div><h2>${safe(group.title)}</h2>\n${entries(group.items)}</div>`,
+	);
+	const readmes = KINDS.map((known) => {
 		const members = facts.packages.filter((pkg) => pkg.kind === known);
-		return `<div data-kind="${known}"><h2>${safe(KIND_MEANING[known].plural)}</h2>
+		return `<div class="readmes" data-kind="${known}"><h2>${safe(KIND_MEANING[known].plural)}</h2>
 <ul>
-${members.map((pkg) => link(packagePage(pkg.directory), pkg.directory)).join("\n")}
+${members.map((pkg) => `<li>${link(packagePage(pkg.directory), pkg.directory)}</li>`).join("\n")}
 </ul></div>`;
 	});
 	const body = `<div class="frame">
 <nav class="rail" aria-label="Pages">
-<ul>
-${link("index.html", "Overview")}
-</ul>
-${groups.join("\n")}
-<div><h2>Skills for agents</h2>
-<ul>
-${skills.map((skill) => link(skillPage(skill.path), skill.name)).join("\n")}
-</ul></div>
+${navigation.join("\n")}
+${readmes.join("\n")}
 </nav>
 <article${kind === undefined ? "" : ` data-kind="${safe(kind)}"`}>
 ${article}

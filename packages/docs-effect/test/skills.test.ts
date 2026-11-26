@@ -1,4 +1,5 @@
-// The skills keep their contract, and the checker of the contract can fail: each rule is shown a skill that breaks it.
+// The skills keep their contract and each leads to a page of the documentation, and the checker of the contract can
+// fail: each rule is shown a skill that breaks it.
 
 import { spawnSync } from "node:child_process";
 import {
@@ -15,8 +16,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { readCatalog } from "../src/node/catalog.ts";
+import { DISK, type Tree } from "../src/node/contract.ts";
 import { HERE, read } from "../src/node/facts.ts";
-import { DISK, LIMITS, parse, problems, readSkills, type Tree } from "../src/node/skills.ts";
+import { LIMITS, parse, problems, readSkills } from "../src/node/skills.ts";
 
 const facts = read();
 const skills = readSkills();
@@ -46,6 +49,21 @@ describe("the skills of this package", () => {
 
 	it("each keep the contract", () => {
 		expect(skills.flatMap((skill) => problems(skill, facts))).toEqual([]);
+	});
+
+	it("each are a pointer: a short body that leads to pages of the catalog, and no code of their own", () => {
+		const catalog = new Set(readCatalog().pages.map((page) => page.path));
+		for (const skill of skills) {
+			const targets = [...skill.body.matchAll(/\]\(\.\.\/\.\.\/docs\/([\w-]+\.md)\)/g)].map(([, page]) => page);
+			expect(targets.length, skill.name).toBeGreaterThanOrEqual(2);
+			expect(
+				targets.filter((page) => page === undefined || !catalog.has(page)),
+				skill.name,
+			).toEqual([]);
+			expect(skill.body.split("\n").length, skill.name).toBeLessThan(20);
+			expect(skill.body, skill.name).not.toContain("```");
+			expect(skill.files, skill.name).toEqual([skill.path]);
+		}
 	});
 
 	it("each say when to use them, in a description an agent's harness can take", () => {
@@ -100,7 +118,7 @@ See [the composition](../../../thread-effect/README.md#the-composition) of \`@gu
 
 	it("names a link that leaves the READMEs and the skills, one to no file, and one to no heading", () => {
 		expect(broken(`${HEAD}[The source](../../../thread-effect/src/index.ts)\n`)).toEqual([
-			expect.stringContaining("leads to neither a package's README nor a file of the skills"),
+			expect.stringContaining("leads to neither a page, a package's README nor a file of the skills"),
 		]);
 		expect(broken(`${HEAD}[Another skill](../no-such-skill/SKILL.md)\n`)).toEqual([
 			expect.stringContaining("leads to no file"),

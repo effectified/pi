@@ -21,9 +21,9 @@ the packages and their state are in `effect/COMPAT.md`; the first consumer's bin
 
 - One facade per Pi package, named `<pi package>-effect`; plugins and hosts are separate packages (PRD section 5).
   `package.json` says which in `piEffect.kind`: `facade`, `plugin` or `host`.
-  `packages/docs-effect` is the one `docs` package: no library code, the others explained as pages for people
-  (`npm run build --workspace packages/docs-effect`, then `dist/index.html`) and as skills for agents. A new
-  package needs a role in its `src/content.ts` and a row in `effect/COMPAT.md`, or the pages do not build.
+  `packages/docs-effect` is the one `docs` package: no library code, the documentation of the others
+  (`docs/`, and `npm run build --workspace packages/docs-effect` for the site in `dist/`). A new package needs a
+  role in its `src/content.ts`, a row in its `docs/packages.md` and a row in `effect/COMPAT.md`, or its test fails.
   `packages/thread-effect` is the one `composition`: an agent thread made of all of them as a product composes
   them, in one process and as a Rivet actor. Nothing depends on it. A change to a plugin is done when its tests and
   the composition's pass.
@@ -106,22 +106,28 @@ every core.
   `tsconfig.json`, listed in `effect/boundary.json`.
 - A test file that needs one runtime is named for it (`*.node.test.ts`, `*.bun.test.ts`) and skipped on the other.
 
-## Skills
+## Documentation and skills
 
-`packages/docs-effect/skills/<name>/SKILL.md` are procedures and maps written for agents, each checked against the
-tree by that package's test. Read the one that matches the task before you start:
+`packages/docs-effect/docs/` is the documentation, kept as Pi keeps its own: Markdown pages and a catalog,
+`docs.json`, under the rules of upstream's `packages/coding-agent/test/documentation.test.ts`. A page is the one
+place a rule for users of the packages is written, for people and for agents. Read the page that matches the task
+before you start:
 
-| Task | Skill |
+| Task | Page |
 |---|---|
-| Any change in this repository: the order of work, what each gate failure means, adding a package | `pi-effect-contributing` |
-| Moving the packages to a new Pi version | `pi-effect-upstream-sync` |
-| Which package answers which need, and how the kinds layer | `pi-effect` |
-| A tool, a hook, a task, a stored document or a whole plugin | `pi-effect-extending` |
-| An agent thread in a product | `pi-effect-thread` |
-| A harness or a thread in Rivet actors, a local engine | `pi-effect-rivet` |
-| Tests without a network or a key, on Node and on Bun | `pi-effect-testing` |
+| Any change in this repository: the order of work, what each gate failure means, adding a package | `packages/docs-effect/docs/contributing.md` |
+| Moving the packages to a new Pi version | `packages/docs-effect/docs/upstream-sync.md` |
+| Which package answers which need, and how the kinds layer | `packages/docs-effect/docs/packages.md`, `packages/docs-effect/docs/how-it-works.md` |
+| A tool, a hook, a task, a stored document or a whole plugin | `packages/docs-effect/docs/extending.md` |
+| An agent thread in a product | `packages/docs-effect/docs/threads.md` |
+| A harness or a thread in Rivet actors, a local engine | `packages/docs-effect/docs/rivet.md` |
+| Tests without a network or a key, on Node and on Bun | `packages/docs-effect/docs/testing.md` |
 
-A change to a README example that a skill quotes fails `docs-effect`'s test until the skill follows.
+- A new page is a Markdown file there and an entry of `docs.json`; its links are relative `.md` links, and its
+  TypeScript is an excerpt of a README example. `docs-effect`'s test holds every page to that.
+- `packages/docs-effect/skills/<name>/SKILL.md` are pointers from a task to a page, for an agent's harness. A skill
+  holds no rule of its own.
+- A change to a README example that a page quotes fails `docs-effect`'s test until the page follows.
 
 ## Writing a plugin
 

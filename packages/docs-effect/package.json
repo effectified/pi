@@ -2,7 +2,7 @@
 	"name": "@gunta/pi-docs-effect",
 	"version": "0.1.0",
 	"private": true,
-	"description": "The pi-effect packages explained: a landing page and every README as a page for people, skills and an llms.txt for agents",
+	"description": "The documentation of the pi-effect packages, kept as Pi keeps its own: Markdown pages and a docs.json catalog, a site built from them, and skills that lead agents to the pages",
 	"type": "module",
 	"exports": {
 		"./package.json": "./package.json"
@@ -10,8 +10,14 @@
 	"piEffect": {
 		"kind": "docs"
 	},
+	"pi": {
+		"skills": [
+			"./skills"
+		]
+	},
 	"files": [
 		"dist",
+		"docs",
 		"skills",
 		"bin",
 		"README.md"
@@ -25,7 +31,8 @@
 		"effect",
 		"pi",
 		"docs",
-		"skills"
+		"skills",
+		"pi-package"
 	],
 	"author": "Gunther Brunner",
 	"license": "MIT",
