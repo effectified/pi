@@ -40,7 +40,7 @@ type AttributeDefinitionValue<Definition extends TelemetryAttributeDefinition> =
 											: readonly boolean[];
 
 ## AttributeValue  telemetry/src/index.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via Ctx, durable-effect via Context, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via Ctx, coding-agent-effect via ExtensionRunner, durable-effect via Context, durable-rivet-effect via SqliteStorage, env-effect via Context
 export type AttributeValue = string | number | boolean | readonly string[] | readonly number[] | readonly boolean[];
 
 ## createTypedSpanStarter  telemetry/src/index.ts
@@ -201,7 +201,7 @@ export type SchemaTelemetrySpan<
 };
 
 ## SpanAttributes  telemetry/src/index.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via Ctx, durable-effect via Context, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via Ctx, coding-agent-effect via ExtensionRunner, durable-effect via Context, durable-rivet-effect via SqliteStorage, env-effect via Context
 export interface SpanAttributes {
 	[name: string]: AttributeValue | undefined;
 }
@@ -218,7 +218,7 @@ type SpanInSchema<
 	: never;
 
 ## SpanLink  telemetry/src/index.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via Context, durable-effect via Context, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via Context, coding-agent-effect via ExtensionRunner, durable-effect via Context, durable-rivet-effect via SqliteStorage, env-effect via Context
 export interface SpanLink {
 	context: TelemetryContext;
 	attributes?: SpanAttributes;
@@ -235,7 +235,7 @@ used by: telemetry-effect via TypedSpanStarter
 type SpanNameInSchemas<Schemas extends TelemetrySchemaTuple> = SpanNameInSchema<Schemas[number]>;
 
 ## SpanOptions  telemetry/src/index.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via traceIn, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via traceIn, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
 export interface SpanOptions {
 	name: string;
 	attributes?: SpanAttributes;
@@ -254,7 +254,7 @@ type SpanStartAttributesInSchema<
 	: never;
 
 ## SpanStatus  telemetry/src/index.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via Context, durable-effect via Context, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via Context, coding-agent-effect via ExtensionRunner, durable-effect via Context, durable-rivet-effect via SqliteStorage, env-effect via Context
 export type SpanStatus = { status: "ok" } | { status: "error"; error?: { name: string; message: string } };
 
 ## StoredMetric  telemetry/src/index.ts
@@ -327,12 +327,12 @@ used by: telemetry-effect
 export type TelemetryAttributeType = "string" | "number" | "boolean" | "string[]" | "number[]" | "boolean[]";
 
 ## TelemetryCarrier  telemetry/src/index.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, durable-effect via TaskOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via TaskOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
 /** Opaque, JSON-serializable adapter-owned propagation data. */
 export type TelemetryCarrier = Record<string, string>;
 
 ## TelemetryContext  telemetry/src/index.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
 /** Adapter contract for trusted typed inputs; malformed input behavior is unspecified. */
 export interface TelemetryContext {
 	/** Adapter capabilities remain available on child spans and extracted parents. */
@@ -360,7 +360,7 @@ export type TelemetryParentDefinition =
 	| { kind: "spans"; spans: readonly string[] };
 
 ## TelemetryPropagation  telemetry/src/index.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
 /** Optional transport capability implemented by the application's telemetry adapter. */
 export interface TelemetryPropagation {
 	inject(context: TelemetryContext): TelemetryCarrier | undefined;
@@ -445,7 +445,7 @@ used by: telemetry-effect via TypedSpanStarter
 type TelemetrySchemaTuple = readonly [TelemetrySchemaDefinition, ...TelemetrySchemaDefinition[]];
 
 ## TelemetrySpan  telemetry/src/index.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via Context, durable-effect via Context, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via Context, coding-agent-effect via ExtensionRunner, durable-effect via Context, durable-rivet-effect via SqliteStorage, env-effect via Context
 export interface TelemetrySpan extends TelemetryContext {
 	addLink(link: SpanLink): void;
 	addEvent(name: string, attributes?: SpanAttributes): void;
@@ -640,14 +640,14 @@ type DuplicateMetricNames<
 	: never;
 
 ## HistogramOptions  telemetry/src/metrics.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
 export interface HistogramOptions extends InstrumentOptions {
 	/** Bucket hints; callers supply finite, strictly increasing values. */
 	boundaries?: readonly number[];
 }
 
 ## InstrumentOptions  telemetry/src/metrics.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
 export interface InstrumentOptions {
 	description?: string;
 	unit?: string;
@@ -728,13 +728,13 @@ export type SchemaTelemetryHistogram<Definition extends TelemetryMetricDefinitio
 };
 
 ## TelemetryCounter  telemetry/src/metrics.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
 export interface TelemetryCounter {
 	add(value: number, attributes?: SpanAttributes): void;
 }
 
 ## TelemetryHistogram  telemetry/src/metrics.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
 export interface TelemetryHistogram {
 	record(value: number, attributes?: SpanAttributes, context?: TelemetryContext): void;
 }
@@ -752,7 +752,7 @@ export type TelemetryMetricDefinition = {
 } & ({ kind: "counter" | "upDownCounter"; boundaries?: never } | { kind: "histogram"; boundaries?: readonly number[] });
 
 ## TelemetryMetrics  telemetry/src/metrics.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
 /**
  * Optional adapter capability with synchronous factories and recording methods.
  * Typed inputs are trusted; callers supply finite measurements and nonnegative counter increments.
@@ -765,7 +765,7 @@ export interface TelemetryMetrics {
 }
 
 ## TelemetryUpDownCounter  telemetry/src/metrics.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, durable-rivet-effect via SqliteStorage, env-effect via Context
 export interface TelemetryUpDownCounter {
 	add(value: number, attributes?: SpanAttributes): void;
 }

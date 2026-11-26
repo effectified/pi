@@ -161,6 +161,16 @@
 			}
 		]
 	},
-	"include": ["../packages/*-effect/src/**/*", "../packages/*-effect/test/**/*", "./scripts/**/*", "./spikes/**/*"],
+	// The ambient declarations of the upstream sources `paths` reaches (pi-coding-agent's highlight.js, codemode's
+	// Cloudflare and QuickJS modules): the root program includes them with their packages, this one names them.
+	"include": [
+		"../packages/*-effect/src/**/*",
+		"../packages/*-effect/test/**/*",
+		"./scripts/**/*",
+		"./spikes/**/*",
+		"../packages/coding-agent/src/utils/highlight-js.d.ts",
+		"../packages/coding-agent/src/bun/quickjs-wasm.d.ts",
+		"../packages/codemode/src/cloudflare-modules.d.ts"
+	],
 	"exclude": ["../**/dist/**"]
 }
