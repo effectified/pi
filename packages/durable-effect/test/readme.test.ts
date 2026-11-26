@@ -4,12 +4,12 @@
 
 import { type AssistantMessage, Models } from "@effectified/pi-ai";
 import { fauxAssistantMessage, fauxText, runTest } from "@effectified/pi-ai/testing";
+// The Chord facade by its sources, as this package by its own: durable-effect does not depend on it.
+import { ChordContext } from "@effectified/pi-chord/context";
 import { Context, Effect, Fiber, Latch, Layer, Option, Queue, Schedule, Schema, Stream } from "effect";
 import { Tool as AiTool, Toolkit } from "effect/ai";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-// The Chord facade by its sources, as this package by its own: durable-effect does not depend on it.
-import { ChordContext } from "@effectified/pi-chord/context";
 import type { ConversationId, EntryId, Report, TaskId, Wake } from "../src/index.ts";
 import {
 	BuiltinDoc,
