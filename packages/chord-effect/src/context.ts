@@ -15,3 +15,4 @@ export {
 	withTelemetry,
 } from "@earendil-works/chord/context";
 export * as ChordContext from "./chord-context.ts";
+export { ParentContext } from "./parent-context.ts";

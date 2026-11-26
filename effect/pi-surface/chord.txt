@@ -3444,6 +3444,14 @@ used by: chord-effect
  */
 export function webSocketLink(socket: WebSocketLike): Link
 
+## nodeCompression  chord/src/node/compression.ts
+used by: chord-effect
+/**
+ * Raw deflate at level 1 (`deflateRawSync`), and inflate bounded by `maxOutputLength` (`inflateRawSync`): past the
+ * limit `too_large`, data that is no raw deflate stream `corrupt`.
+ */
+export const nodeCompression: Compression
+
 ## BoundedOutput  chord/src/output.ts
 used by: chord-effect
 /** Retained output and what the limits dropped. */
@@ -3727,7 +3735,7 @@ export interface RegistryValue<V> extends NativeWatchable<V> {
 }
 
 ## DurableObjectSqliteDatabase  chord/src/sqlite/cloudflare.ts
-used by: durable-effect
+used by: chord-effect, durable-effect
 /**
  * `SqliteDatabase` adapter for the SQLite storage of a Cloudflare Durable Object. Adapters given the same storage
  * object share a queue; direct calls to the underlying storage bypass it. Integers are JavaScript numbers; binding a
@@ -3747,7 +3755,7 @@ export class DurableObjectSqliteDatabase extends DurableObjectSqliteExecutor imp
 }
 
 ## DurableObjectSqliteExecutor  chord/src/sqlite/cloudflare.ts
-used by: durable-effect via DurableObjectSqliteDatabase
+used by: chord-effect via DurableObjectSqliteDatabase, durable-effect via DurableObjectSqliteDatabase
 /** Executes SQL through `ctx.storage.sql`, which has no separate prepare step. */
 class DurableObjectSqliteExecutor implements SqliteExecutor {
 	constructor(storage: DurableObjectSqliteStorage)
@@ -3759,7 +3767,7 @@ class DurableObjectSqliteExecutor implements SqliteExecutor {
 }
 
 ## DurableObjectSqliteStorage  chord/src/sqlite/cloudflare.ts
-used by: durable-effect
+used by: chord-effect, durable-effect
 /**
  * The parts of a SQLite-backed Durable Object's `ctx.storage` this adapter uses, typed structurally so the package
  * needs no Workers type dependency.
@@ -3780,7 +3788,7 @@ export type DurableObjectSqliteStorage = {
 };
 
 ## DurableObjectSqlValue  chord/src/sqlite/cloudflare.ts
-used by: durable-effect via DurableObjectSqliteStorage
+used by: chord-effect via DurableObjectSqliteStorage, durable-effect via DurableObjectSqliteStorage
 /** Values a Durable Object SQL binding accepts and returns. */
 type DurableObjectSqlValue = ArrayBuffer | string | number | null;
 
@@ -3908,7 +3916,7 @@ used by: chord-effect
 export function validateSqliteSchemaPrefix(prefix: string): void
 
 ## Batch  chord/src/state/batch.ts
-used by: chord-effect via ChordStore
+used by: chord-effect via ChordStore, durable-effect via StoreStorage
 /** A host's batch: the reentrancy flag, the watched sources a commit changed, and where background errors go. */
 export class Batch {
 	/** Reports a throwing watch listener's error (to the host's `onError`); what watches get as their `report`. */
@@ -3965,14 +3973,14 @@ export class Batch {
 }
 
 ## BatchError  chord/src/state/batch.ts
-used by: chord-effect via HostError
+used by: chord-effect via HostError, durable-effect via StoreStorage
 /** What a batch reports: a watch listener that threw, or a frame delivery that threw (a derive's value is no JSON). */
 export type BatchError =
 	| { readonly kind: "listener_error"; readonly error: unknown }
 	| { readonly kind: "delivery_failed"; readonly error: unknown };
 
 ## Delivered  chord/src/state/batch.ts
-used by: chord-effect via ChordStore
+used by: chord-effect via ChordStore, durable-effect via StoreStorage
 /** What a commit lists to get its frame delivered: a watched source it changed (JSON or native). */
 export interface Delivered {
 	/** Delivers this batch's frame to its watches and subscribers; called once per batch that listed it. */
@@ -4096,7 +4104,7 @@ export class StoreOwnerTables {
 }
 
 ## IdAllocator  chord/src/store/allocator.ts
-used by: chord-effect via Step
+used by: chord-effect via Step, durable-effect via StoreStorage
 /**
  * The allocator: `value` is the next id it gives. An id raised to `Number.MAX_SAFE_INTEGER` is accepted, the value
  * stays there, and every later `mint` throws: no id past the safe range (it would stop counting exactly and repeat).
@@ -4123,7 +4131,7 @@ used by: chord-effect
 export function applyBatch(store: ChordStore, commits: readonly OutboxCommit[], context: Context): Promise<void>
 
 ## ArchiveManifest  chord/src/store/archive.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /**
  * The first part: the format, the store's schema version, its `lastSeq` and the allocator's next id (rule 24, D3);
  * `host` in a host's data archive (`exportHostData`): the address key whose records and rows it holds.
@@ -4138,7 +4146,7 @@ export type ArchiveManifest = {
 };
 
 ## ArchivePart  chord/src/store/archive.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /**
  * One part of an archive, in this order: the manifest; per table (by SQL name) its `table` write, its `put`s and its
  * `index` writes; per document record (by id, live and retired) its `document.create` without a base, then its kept
@@ -4165,7 +4173,7 @@ used by: chord-effect
 export function sqliteBackend(db: SqliteDatabase): Backend
 
 ## TableRecord  chord/src/store/catalog.ts
-used by: chord-effect via Step
+used by: chord-effect via Step, durable-effect via StoreStorage
 /** A table as the store records it, by its SQL name. */
 export type TableRecord = {
 	readonly table: string;
@@ -4240,7 +4248,7 @@ export type Column =
 	| { readonly name: string; readonly type: "json"; readonly optional: boolean; readonly json: JsonColumn };
 
 ## ColumnRecord  chord/src/store/columns.ts
-used by: chord-effect via TableDefinition
+used by: chord-effect via TableDefinition, durable-effect via StoreStorage
 /** A column as the `table` write records it (slice 6a §5): what a replica needs without the plugin's code. */
 export type ColumnRecord = {
 	readonly type: ColumnType;
@@ -4268,7 +4276,7 @@ export type ColumnSchema =
 	| Optional<ScalarSchema | JsonColumnSchema<unknown>>;
 
 ## ColumnType  chord/src/store/columns.ts
-used by: chord-effect via ColumnRef
+used by: chord-effect via ColumnRef, durable-effect via StoreStorage
 /** A column's type in the store. */
 export type ColumnType = "str" | "int" | "num" | "bool" | "json";
 
@@ -4347,7 +4355,7 @@ used by: chord-effect via PutRowOf
 export type ValueOf<S> = S extends Optional<infer I> ? ValueOf<I> : S extends Schema ? Static<S> : never;
 
 ## DocumentAddress  chord/src/store/engine.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /**
  * A document's address: the owner name, the adapter's namespace (claimed with the owner: Chord's `chord`, `chord.jobs`,
  * `chord.job-states`; Durable's scopes), the kind and, for a keyed document, its key; a singleton has none. The column
@@ -4361,12 +4369,12 @@ export type DocumentAddress = {
 };
 
 ## DocumentBase  chord/src/store/engine.ts
-used by: chord-effect via DocumentContent
+used by: chord-effect via DocumentContent, durable-effect via StoreStorage
 /** A base: a whole value at a version. */
 export type DocumentBase = { readonly version: number; readonly fingerprint: string; readonly value: JsonValue };
 
 ## DocumentContent  chord/src/store/engine.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** A change's content: a new base, or a delta on the current base's version. */
 export type DocumentContent =
 	| ({ readonly kind: "base" } & DocumentBase)
@@ -4381,7 +4389,7 @@ used by: chord-effect
 export type DocumentEntry = { readonly meta: string | null; readonly retired_at?: number | null };
 
 ## DocumentHistory  chord/src/store/engine.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /**
  * What a record keeps (R1), applied at a new base and at retirement: `none` (Chord) drops older revisions at a new base
  * and the row and its revisions at retirement; `latest` drops older revisions at a new base and its revisions at
@@ -4395,7 +4403,7 @@ used by: chord-effect
 export type DocumentPoint = number | "current";
 
 ## DocumentRecord  chord/src/store/engine.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** A stored record: one incarnation of an address, live from `createdAt` until `retiredAt` (half-open). */
 export type DocumentRecord = DocumentAddress & {
 	readonly id: number;
@@ -4416,7 +4424,7 @@ export type DocumentRecord = DocumentAddress & {
 };
 
 ## DocumentRevision  chord/src/store/engine.ts
-used by: chord-effect via ArchivePart
+used by: chord-effect via ArchivePart, durable-effect via StoreStorage
 /** One stored revision as archives carry it: its document, its seq, its content. */
 export type DocumentRevision = { readonly id: number; readonly seq: number; readonly content: RevisionContent };
 
@@ -4426,7 +4434,7 @@ used by: chord-effect
 export type DocumentScope = { readonly owner: string; readonly namespace: string; readonly kind?: string };
 
 ## DocumentWrite  chord/src/store/engine.ts
-used by: chord-effect via ArchivePart
+used by: chord-effect via ArchivePart, durable-effect via StoreStorage
 /**
  * The engine's writes as the outbox and archives record them. A creation carries its base in a commit (stored at
  * `createdAt`); in an archive it has none and its `document.revision`s follow it.
@@ -4546,7 +4554,7 @@ used by: chord-effect
 export async function retireRecord(step: Step, record: DocumentRecord): Promise<void>
 
 ## RevisionContent  chord/src/store/engine.ts
-used by: chord-effect via ArchivePart
+used by: chord-effect via ArchivePart, durable-effect via StoreStorage
 /** A stored revision's content: a base's value or a delta's ops, at a version (a revision keeps no fingerprint). */
 export type RevisionContent =
 	| { readonly kind: "base"; readonly version: number; readonly value: JsonValue }
@@ -4662,7 +4670,7 @@ used by: chord-effect
 export function existsNode<C extends Columns>(set: ColumnSet<C>, match: Match<C>, inner: unknown): Condition
 
 ## ExistsNode  chord/src/store/expression.ts
-used by: chord-effect via WhereNode
+used by: chord-effect via WhereNode, durable-effect via StoreStorage
 /** The data of an `exists`: the set's name, the matched pairs (set column, enclosing column), the inner condition. */
 export type ExistsNode = readonly [string, readonly (readonly [string, string])[], WhereNode | null];
 
@@ -4679,7 +4687,7 @@ export class Expression<T = unknown, K extends ColumnType = ColumnType> {
 }
 
 ## ExprNode  chord/src/store/expression.ts
-used by: chord-effect via OwnerTable
+used by: chord-effect via OwnerTable, durable-effect via StoreStorage
 /**
  * A compiled value expression: a literal (`null` clears), a column, a `json(...)` cell, or an operation. Untagged on
  * purpose, as `WhereNode`: the stored format.
@@ -4786,7 +4794,7 @@ used by: chord-effect via coalesce
 type ScalarType = Exclude<ColumnType, "json">;
 
 ## SetNode  chord/src/store/expression.ts
-used by: chord-effect via OwnerTable
+used by: chord-effect via OwnerTable, durable-effect via StoreStorage
 /** A compiled `set`: the new value of each changed column, every right side evaluated against the row before. */
 export type SetNode = { readonly [column: string]: ExprNode };
 
@@ -4817,7 +4825,7 @@ export function when<T, K extends ScalarType>(
 ): Expression<T, K>
 
 ## WhereNode  chord/src/store/expression.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /**
  * A compiled condition: column comparisons with checked operands, combined by `and`, `or`, `not`. A query's
  * condition may also test `exists` (slice 14 §5): `[set, [[setColumn, column], …], inner]`, true for a row when the
@@ -4995,7 +5003,7 @@ used by: chord-effect
 export async function* encodeJsonl(parts: AsyncIterable<ArchivePart>): AsyncIterable<Uint8Array>
 
 ## Outbox  chord/src/store/outbox.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** A store's outbox: its commits after the floor (the seq it was turned on at, advanced by `trim`). */
 export class Outbox {
 	constructor(store: ChordStore, floor: number)
@@ -5011,7 +5019,7 @@ export class Outbox {
 }
 
 ## OutboxCommit  chord/src/store/outbox.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** One commit as the outbox gives it: its seq, the allocator's value it persisted (D3) and its writes in applied order. */
 export type OutboxCommit = { readonly seq: number; readonly nextId: number; readonly writes: readonly StoreWrite[] };
 
@@ -5146,17 +5154,17 @@ export class RowCodec {
 }
 
 ## Scalar  chord/src/store/rows.ts
-used by: chord-effect via WhereNode
+used by: chord-effect via WhereNode, durable-effect via StoreStorage
 /** A scalar cell as the store keeps it in rows, writes and operands: a well-formed string, a number or a boolean. */
 export type Scalar = string | number | boolean;
 
 ## StoredRow  chord/src/store/rows.ts
-used by: chord-effect via EncodedRow
+used by: chord-effect via EncodedRow, durable-effect via StoreStorage
 /** A row as the outbox records it: the stored values, `opt(...)` columns absent when `NULL`. */
 export type StoredRow = { readonly [column: string]: Scalar | JsonValue };
 
 ## MetaRow  chord/src/store/schema.ts
-used by: chord-effect via ChordStore
+used by: chord-effect via ChordStore, durable-effect via StoreStorage
 /** The store's metadata row, as `openStore` reads it once. */
 export type MetaRow = {
 	readonly last_seq: number;
@@ -5217,7 +5225,7 @@ export class TableSql {
 }
 
 ## StagedWrite  chord/src/store/step.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** A write staged for the commit step: its order and what it does there, returning the writes as recorded. */
 export type StagedWrite = {
 	readonly order: WriteOrder;
@@ -5229,7 +5237,7 @@ export type StagedWrite = {
 };
 
 ## Step  chord/src/store/step.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /**
  * One commit step: its backend transaction, its seq, the store's id allocator (D3: ids are taken from it as the
  * writes apply, never copied), the ids of the documents it created, the table records it changed (the store's catalog
@@ -5263,7 +5271,7 @@ export class Step {
 }
 
 ## WriteOrder  chord/src/store/step.ts
-used by: chord-effect via StagedWrite
+used by: chord-effect via StagedWrite, durable-effect via StoreStorage
 /**
  * Where a staged write goes in its commit: retirements, creations, then everything else, each phase in staging order.
  * A retirement frees a live address before a creation takes it (the partial unique index); an adapter's composite
@@ -5272,7 +5280,7 @@ used by: chord-effect via StagedWrite
 export type WriteOrder = "retire" | "create" | "write";
 
 ## Attachment  chord/src/store/store.ts
-used by: chord-effect via ChordStore
+used by: chord-effect via ChordStore, durable-effect via StoreStorage
 /** What the open host gives the store: its `storage_failed` listener and its batch, in which adapters publish (§1.3). */
 export type Attachment = {
 	readonly failed: (error: unknown) => void;
@@ -5280,7 +5288,7 @@ export type Attachment = {
 };
 
 ## ChordStore  chord/src/store/store.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** The store behind `Store`, with what Chord's layers use: commits, guarded reads, the host's failure listener. */
 export class ChordStore implements Store {
 	/** The claims of its tables and documents (slice 6b). */
@@ -5394,7 +5402,7 @@ export class ChordStore implements Store {
 }
 
 ## CommitFence  chord/src/store/store.ts
-used by: chord-effect via ChordStore
+used by: chord-effect via ChordStore, durable-effect via StoreStorage
 /** The seal fence's two checks of a commit (§1.3), as the commit step calls them. */
 export type CommitFence = {
 	/** At the step's entry: `false` rejects the commit `released` and writes nothing. */
@@ -5415,7 +5423,7 @@ used by: chord-effect
 export async function openStore(backend: Backend, context: Context, options: StoreOptions = {}): Promise<Store>
 
 ## Replayed  chord/src/store/store.ts
-used by: chord-effect via ChordStore
+used by: chord-effect via ChordStore, durable-effect via StoreStorage
 /** Where a replayed batch leaves the store: its last commit's seq and allocator value, the tables it changed. */
 export type Replayed = {
 	readonly lastSeq: number;
@@ -5424,7 +5432,7 @@ export type Replayed = {
 };
 
 ## SeriesCommit  chord/src/store/store.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /**
  * One commit of a series (`ChordStore.commitSeries`): its own checks, which write nothing, and its writes. The checks
  * read through the commit's step, which sees what the series' earlier commits wrote.
@@ -5436,14 +5444,14 @@ export type SeriesCommit = {
 };
 
 ## SeriesResult  chord/src/store/store.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** What a series stored: how many of its commits (`stored`: all of them), and, when one was refused (`refused`), why. */
 export type SeriesResult =
 	| { readonly kind: "stored"; readonly stored: number }
 	| { readonly kind: "refused"; readonly stored: number; readonly refused: unknown };
 
 ## Store  chord/src/store/store.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** A store as apps hold it: opened by `openStore`, owned and closed by the app. */
 export interface Store {
 	/** The seq of the store's last commit (0 for a new store). */
@@ -5632,7 +5640,7 @@ used by: chord-effect
 export type TableOf<D> = D extends TableDefinition<infer C, infer K> ? Table<C, K> : never;
 
 ## AlterEdit  chord/src/store/table-history.ts
-used by: chord-effect via OwnerTable
+used by: chord-effect via OwnerTable, durable-effect via StoreStorage
 /** The column edits an `alter` write records. */
 export type AlterEdit = Extract<TableEdit, { readonly kind: "rename" | "add" | "drop" | "json" }>;
 
@@ -5665,7 +5673,7 @@ export type Migration = {
 };
 
 ## TableEdit  chord/src/store/table-history.ts
-used by: chord-effect via OwnerTable
+used by: chord-effect via OwnerTable, durable-effect via StoreStorage
 /** One edit of a migration as its writes record it (`alter`, `index`, `dropIndex`); the table is named when applied. */
 export type TableEdit =
 	| { readonly kind: "rename"; readonly from: string; readonly to: string }
@@ -5676,17 +5684,17 @@ export type TableEdit =
 	| { readonly kind: "dropIndex"; readonly name: string };
 
 ## ColumnVersions  chord/src/store/table-writes.ts
-used by: chord-effect via OwnerTable
+used by: chord-effect via OwnerTable, durable-effect via StoreStorage
 /** `json(...)` columns' versions written by a write, by column. */
 export type ColumnVersions = { readonly [column: string]: number };
 
 ## StoredKey  chord/src/store/table-writes.ts
-used by: chord-effect via OwnerTable
+used by: chord-effect via OwnerTable, durable-effect via StoreStorage
 /** A key as writes record it: the key columns' stored values. */
 export type StoredKey = { readonly [column: string]: Scalar };
 
 ## TableWrite  chord/src/store/table-writes.ts
-used by: chord-effect via OwnerTable
+used by: chord-effect via OwnerTable, durable-effect via StoreStorage
 /** The table writes as the outbox and archives record them. */
 export type TableWrite =
 	| {
@@ -5824,7 +5832,7 @@ used by: chord-effect
 export function compareText(a: string, b: string): number
 
 ## StoreWrite  chord/src/store/writes.ts
-used by: chord-effect
+used by: chord-effect; durable-effect via StoreStorage
 /** One change of the store, tagged by `kind`. */
 export type StoreWrite = DocumentWrite | TableWrite;
 
@@ -6430,6 +6438,68 @@ used by: chord-effect
 /** The kit's facet serving `Translations` on a host. */
 export function translationsFacet<P extends Principal>(): Facet<P>
 
+## TelemetryBatch  chord/src/telemetry-ingest/recorder.ts
+used by: chord-effect
+/** What a recorder hands its owner at once: settled spans and metric aggregates. */
+export type TelemetryBatch = { readonly spans: StoredSpan[]; readonly metrics: StoredMetric[] };
+
+## createSqliteTelemetry  chord/src/telemetry-sqlite/index.ts
+used by: chord-effect
+/** Portable, buffered SQLite recorder. Recording never performs SQL; flush runs every second.
+ * Only settled spans are stored, their times in microseconds (`telemetryNow`). Metrics aggregate count/sum/min/max per
+ * ten-second interval. A store of an older version in `db` is migrated (version 2: span times from milliseconds to
+ * microseconds, rows kept). A write failure permanently stops recording and is reported by flush and close. */
+export async function createSqliteTelemetry(
+	db: SqliteDatabase,
+	options: SqliteTelemetryOptions = {},
+): Promise<SqliteTelemetry>
+
+## SqliteTelemetry  chord/src/telemetry-sqlite/index.ts
+used by: chord-effect
+export interface SqliteTelemetry extends TelemetryContext, TelemetryStore {
+	readonly metrics: TelemetryMetrics;
+	readonly propagation: TelemetryPropagation;
+	readonly droppedSpans: number;
+	readonly droppedMeasurements: number;
+	/**
+	 * Queues finished spans and metric rows another process recorded, written with the next flush (a span whose id is
+	 * stored already is kept as it was); within the queue's bound, the rest dropped and counted. Returns how many
+	 * spans it queued. Callers check what they pass: the store writes it as it is.
+	 */
+	ingest(batch: TelemetryBatch): number;
+	/** Persist settled spans and completed ten-second metric intervals. */
+	flush(): Promise<void>;
+	/** Stop recording and drain, including partial metric intervals. Does not close the database. */
+	close(): Promise<void>;
+}
+
+## SqliteTelemetryOptions  chord/src/telemetry-sqlite/index.ts
+used by: chord-effect
+export interface SqliteTelemetryOptions {
+	/** Retain seven days by default. Cleanup runs in the flush transaction. */
+	readonly retentionMs?: number;
+	/** Settled spans awaiting commit, including the in-flight batch. Defaults to 10,000.
+	 * Also bounds pending metric interval/series pairs independently. */
+	readonly maxQueuedSpans?: number;
+}
+
+## openTelemetryStore  chord/src/telemetry-sqlite/node.ts
+used by: chord-effect
+/**
+ * Opens the telemetry store at `path` read-only (SQLite's read-only mode: it never writes the file, never migrates it,
+ * never creates it), while recorders of other processes write it or after. Rejects for a file that holds no store or
+ * a store of another version (a recorder, `createSqliteTelemetry`, migrates an older one).
+ */
+export async function openTelemetryStore(path: string): Promise<SqliteTelemetryStore>
+
+## SqliteTelemetryStore  chord/src/telemetry-sqlite/node.ts
+used by: chord-effect
+/** A telemetry store opened for reads: the store's reads, and the close of its file. */
+export interface SqliteTelemetryStore extends TelemetryStore {
+	/** Closes the file; reads after it reject. */
+	close(): Promise<void>;
+}
+
 ## CHORD_TELEMETRY_SCHEMA  chord/src/telemetry.ts
 used by: chord-effect
 /** Chord's span, event and metric vocabulary (§29). Ids (objects, holds, calls, address keys) are span attributes only. */
@@ -6440,8 +6510,35 @@ used by: chord-effect
 /** The names of Chord's spans. */
 export type ChordSpanName = TelemetrySchemaSpanName<typeof CHORD_TELEMETRY_SCHEMA>;
 
+## FailedCall  chord/src/watch.ts
+used by: chord-effect via NativeWatch
+/** A failure call, as both call types have it. */
+type FailedCall = { readonly kind: "failed"; readonly error: unknown };
+
+## Listener  chord/src/watch.ts
+used by: chord-effect via NativeWatch
+type Listener<C> = (call: C, context: Context) => Promise<void>;
+
+## NativeWatch  chord/src/watch.ts
+used by: chord-effect
+/**
+ * The watch handle of a native source: every value in order, one call each; past 100 pending values they collapse to
+ * one, `replace()` or by default the newest value. A failure (`fail()`) drops the pending values and waits as one
+ * `failed` call; a value after it replaces it. `detach` and `report` as for `Watch`.
+ */
+export class NativeWatch<T> extends WatchLifecycle<T, NativeWatchCall<T>> implements NativeWatchHandle<T> {
+	constructor(value: T, detach: () => void, report: (error: unknown) => void, replace?: () => T)
+	/** Queue `value`, the source's new value; it replaces a pending failure. */
+	advance(value: T, context: Context): void
+	/**
+	 * Queue a failure the source may recover from: the pending values are dropped (`value` keeps the last delivered
+	 * value), and the listener gets `{ kind: "failed", error }`.
+	 */
+	fail(error: unknown, context: Context): void
+}
+
 ## NativeWatchable  chord/src/watch.ts
-used by: chord-effect via Self, durable-effect via registryReader
+used by: chord-effect; durable-effect via registryReader
 /**
  * An in-process value that changes and can be watched (it may hold anything, errors and functions included): a change
  * is a new value by identity, delivered without ops.
@@ -6454,14 +6551,14 @@ export interface NativeWatchable<T> {
 }
 
 ## NativeWatchCall  chord/src/watch.ts
-used by: durable-effect; chord-effect via NativeObserver
+used by: chord-effect, durable-effect
 /** One call of a native watch's listener: the new value, or a failure its source may recover from, as in `WatchCall`. */
 export type NativeWatchCall<T> =
 	| { readonly kind: "value"; readonly value: T }
 	| { readonly kind: "failed"; readonly error: unknown };
 
 ## NativeWatchHandle  chord/src/watch.ts
-used by: chord-effect via Self, durable-effect via registryReader
+used by: chord-effect; durable-effect via registryReader
 /**
  * Serialized observation of an in-process value: as `WatchHandle`, but each new value is its own call, in order, without
  * ops.
@@ -6475,6 +6572,30 @@ export interface NativeWatchHandle<T> {
 	stop(): Promise<WatchEnd>;
 	/** Settle when the watch terminates; an already-running callback remains caller-owned. */
 	readonly closed: Promise<WatchEnd>;
+}
+
+## Watch  chord/src/watch.ts
+used by: chord-effect
+/**
+ * The watch handle of a JSON source. Frames that arrive before `start()` or while the listener runs wait in one
+ * `PendingOps` queue; the next call gets the newest value, the folded ops of every frame since the previous call (or
+ * `[["r", newest]]` after the queue overflowed), `retired` when any of them was a retirement, and the newest frame's
+ * context. A frame delivered alone is passed on as the source made it. A failure (`fail()`) drops the pending frames and
+ * waits as one `failed` call; a value after it replaces it, and the first value call after a failure is `[["r",
+ * value]]`. `detach` unsubscribes it from its source on termination; `report` gets a listener's throw, which also ends
+ * the watch.
+ */
+export class Watch<T> extends WatchLifecycle<T, WatchCall<T>> implements WatchHandle<T> {
+	/**
+	 * Queue the frame `call`. A value's ops turn the previous value into it, and `retired` says the document the watch
+	 * follows was retired, which the next value call reports however many frames it folds; a failure is `fail()`.
+	 */
+	advance(call: WatchCall<T>, context: Context): void
+	/**
+	 * Queue a failure the source may recover from: the pending frames are dropped (`value` keeps the last delivered
+	 * value), the listener gets `{ kind: "failed", error }`, and the next value arrives as `[["r", value]]`.
+	 */
+	fail(error: unknown, context: Context): void
 }
 
 ## Watchable  chord/src/watch.ts
@@ -6492,7 +6613,7 @@ export interface Watchable<T> {
 }
 
 ## WatchCall  chord/src/watch.ts
-used by: durable-effect; chord-effect via FollowObserver
+used by: chord-effect, durable-effect
 /**
  * One call of a JSON watch's listener, and one frame a source hands its watch, tagged by `kind`:
  *
@@ -6510,7 +6631,7 @@ export type WatchCall<T> =
 	| { readonly kind: "failed"; readonly error: unknown };
 
 ## WatchEnd  chord/src/watch.ts
-used by: durable-effect; chord-effect via FollowObserver
+used by: chord-effect, durable-effect
 /**
  * Terminal result of one watch, tagged by `kind`. A watch ends only for good; a failure its source recovers from is a
  * `failed` call (`WatchCall`), and the watch stays open.
@@ -6527,7 +6648,7 @@ export type WatchEnd =
 	| { readonly kind: "failed"; readonly error: unknown };
 
 ## WatchHandle  chord/src/watch.ts
-used by: durable-effect; chord-effect via KeyedWatchable
+used by: chord-effect, durable-effect
 /**
  * Serialized observation of an immutable value: one listener call at a time; changes made meanwhile arrive folded into
  * the next call.
@@ -6541,4 +6662,36 @@ export interface WatchHandle<T> {
 	stop(): Promise<WatchEnd>;
 	/** Settle when the watch terminates; an already-running callback remains caller-owned. */
 	readonly closed: Promise<WatchEnd>;
+}
+
+## WatchLifecycle  chord/src/watch.ts
+used by: chord-effect via NativeWatch
+/**
+ * The lifecycle both handles share: serialized delivery and termination. A source feeds it and ends it explicitly;
+ * termination drops every reference the watch holds into its source, so a stopped watch that is still referenced keeps
+ * nothing but its last value alive. Subclasses keep what is pending, each call apart from its frame's context, so the
+ * call a listener gets carries nothing but its data.
+ */
+abstract class WatchLifecycle<T, C extends { readonly kind: "value"; readonly value: T } | FailedCall> {
+	constructor(value: T, detach: () => void, report: (error: unknown) => void)
+	get value(): T
+	get closed(): Promise<WatchEnd>
+	start(listener: Listener<C>): void
+	stop(): Promise<WatchEnd>
+	/** End the watch `aborted` when `signal` aborts; installed once. */
+	observeAbort(signal: AbortSignal): void
+	/** End the watch `aborted`: its acquisition context was aborted. */
+	abort(): void
+	/**
+	 * End the watch with `end` at once, dropping what is pending: the source closed (`ended`), or failed for good
+	 * (`failed`). A failure the source may recover from is a `failed` call instead (`fail()`).
+	 */
+	end(end: WatchEnd): void
+	/**
+	 * The source sends nothing more after its last frames, such as a retirement: take no more frames, deliver what is
+	 * pending, then end `ended`, after the running call returns, if one runs. Until then the watch stays attached, so
+	 * `end()`, `stop()`, an abort, and a throwing listener still end it first; a watch never started keeps what is
+	 * pending until one of them or `start()`.
+	 */
+	endAfterDelivery(): void
 }

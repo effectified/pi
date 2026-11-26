@@ -76,6 +76,11 @@
 			"types": "./dist/storage/jsonl/node.d.ts",
 			"import": "./dist/storage/jsonl/node.js"
 		},
+		"./storage/store": {
+			"source": "./src/storage/store.ts",
+			"types": "./dist/storage/store.d.ts",
+			"import": "./dist/storage/store.js"
+		},
 		"./storage/sqlite": {
 			"source": "./src/storage/sqlite/index.ts",
 			"types": "./dist/storage/sqlite/index.d.ts",

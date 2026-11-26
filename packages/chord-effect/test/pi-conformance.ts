@@ -1,6 +1,8 @@
 // What chord-effect writes by hand that mirrors a Chord type, checked against Chord's own types. Type-only: nothing
 // here runs. Everything else of ours is derived from Chord (imported types, `Parameters`) where it is written.
 
+import type * as PiChord from "@earendil-works/chord";
+import type { ChordErrorCode, ChordErrorReason } from "@earendil-works/chord";
 import type * as PiDelta from "@earendil-works/chord/delta";
 import type {
 	Decoder as PiDecoder,
@@ -9,7 +11,7 @@ import type {
 } from "@earendil-works/chord/delta";
 import type { Assert, Conform } from "../../../effect/conformance.ts";
 import type { Decoder, PathError, UnsafePathError } from "../src/delta.ts";
-import type { DeltaErrorClass } from "../src/errors.ts";
+import type { CHORD_ERROR_CODES, CHORD_ERROR_REASONS, ChordErrorClass, DeltaErrorClass } from "../src/errors.ts";
 
 /** `PathError.path` is the Schema of what Chord's `PathError` names: a path, or a path id of the wire. */
 export type PathErrorPath = Assert<Conform<PathError["path"], PiPathError["path"]>>;
@@ -28,3 +30,15 @@ type PiDeltaErrorClass = {
 
 /** `fromDelta` has a tag for every error class of Chord's delta: a class Chord adds fails here until it has one. */
 export type DeltaErrorClasses = Assert<Conform<DeltaErrorClass, PiDeltaErrorClass>>;
+
+/** `ChordFailed` lists every code and every reason of Chord's `ChordError`, and no other. */
+export type ChordErrorCodes = Assert<Conform<(typeof CHORD_ERROR_CODES)[number], ChordErrorCode>>;
+export type ChordErrorReasons = Assert<Conform<(typeof CHORD_ERROR_REASONS)[number], ChordErrorReason>>;
+
+/** The names of the error classes Chord's root exports. */
+type PiChordErrorClass = {
+	[K in keyof typeof PiChord]: (typeof PiChord)[K] extends abstract new (...args: never[]) => Error ? K : never;
+}[keyof typeof PiChord];
+
+/** `fromChord` has a tag for every error class of Chord's root: a class Chord adds fails here until it has one. */
+export type ChordErrorClasses = Assert<Conform<ChordErrorClass, PiChordErrorClass>>;

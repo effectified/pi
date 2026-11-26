@@ -120,6 +120,53 @@ const parent = telemetry.propagation?.extract(carrier);
 - The sampled flag is carried both ways. A `tracestate` is carried from an extracted carrier to every carrier
   injected below it, unchanged.
 
+## Telemetry schemas
+
+A Pi telemetry schema (`defineTelemetrySchema`, offered as it is: serializable data) names spans, their attributes
+and events, and metrics. Its typed helpers take the place of pi-telemetry's `createTypedSpanStarter` and
+`createTypedMetrics`:
+
+```typescript
+import { Effect } from "effect";
+import { defineTelemetrySchema, TypedMetrics, TypedSpans } from "@effectified/pi-telemetry";
+
+const schema = defineTelemetrySchema({
+	version: 1,
+	spans: {
+		"example.read": {
+			description: "Read one resource",
+			parents: { kind: "any" },
+			startAttributes: { resource: { type: "string", required: true, description: "Resource kind" } },
+			endAttributes: { count: { type: "number", description: "Items read" } },
+			status: { default: "ok", errorWhen: "The read fails" },
+		},
+	},
+	metrics: {
+		"example.reads": { kind: "counter", description: "Reads", attributes: {} },
+	},
+} as const);
+
+const spans = TypedSpans.make([schema]);
+
+const read = Effect.gen(function* () {
+	const metrics = yield* TypedMetrics.make([schema]);
+	yield* metrics.counter("example.reads").add(1);
+	return yield* spans.withSpan("example.read", { resource: "account" }, (span) =>
+		Effect.as(span.setAttributes({ count: 3 }), 3),
+	);
+});
+```
+
+- `TypedSpans.make(schemas)` is a pure value. `withSpan(name, attributes, body)` runs `body` in an Effect span of
+  that name, a child of the current span, and ends it with `body`'s exit. The handle's `addEvent` and
+  `setAttributes` are Effects typed by the schema; events take the `Clock`'s time. Pi's spans started on
+  `PiTelemetry.currentSpan` inside `body` are its children.
+- `TypedMetrics.make(schemas)` needs `PiTelemetry`: it runs pi-telemetry's `createTypedMetrics` on the adapter's
+  metrics, so a measurement (an Effect) updates the Effect metric of that name, with the schema's description,
+  unit and boundaries.
+- Names, kinds and attributes are checked by TypeScript, and schemas that declare a name twice do not type-check.
+  As in Pi, nothing is checked at run time.
+
 ## Exporting with OTLP
 
 Effect ships OTLP exporters in `effect/observability` (`Otlp`, `OtlpTracer`, `OtlpMetrics`, `OtlpLogger`).
@@ -158,4 +205,5 @@ pi-telemetry's contract has no shutdown or flush step, and a span ends when its 
   ask an adapter to suppress backend failures.
 - **Sampling per Pi span.** Sampling follows Effect: `Tracer.MinimumTraceLevel`, the parent's sampled flag, and
   `References.TracerEnabled`. With tracing switched off nothing is recorded and every callback still runs.
-- **Effect spans from Pi schemas.** Nothing validates names or attributes against a Pi telemetry schema.
+- **Run-time checks of schemas.** `TypedSpans` and `TypedMetrics` check names and attributes in TypeScript only,
+  as pi-telemetry's helpers do.

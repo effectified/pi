@@ -1,8 +1,18 @@
 // The registry a harness resolves extensions from, as a service built from Effect extensions.
 
-import { createRegistry, defineExtension, type Registry as PiRegistry } from "@earendil-works/pi-durable";
+import {
+	createRegistry,
+	defineExtension,
+	type Registry as PiRegistry,
+	type RegistryReader,
+	type RegistrySnapshot,
+	registryReader,
+	type ToolRegistration,
+} from "@earendil-works/pi-durable";
+import type { RegistryValue } from "@effectified/pi-chord";
+import { ChordContext } from "@effectified/pi-chord/context";
 import type { SchemaConversionError } from "@effectified/pi-schema";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, type Scope } from "effect";
 import type * as Extension from "./extension.ts";
 
 /**
@@ -48,4 +58,15 @@ export function layer<const Extensions extends ReadonlyArray<Extension.Extension
 		// construction they need the union of what the tools, hooks and tasks need, which is `Extension.Services`.
 		build as Effect.Effect<PiRegistry, SchemaConversionError, Extension.Services<Extensions[number]>>,
 	);
+}
+
+/**
+ * Pi's `registryReader`: the registry a harness reads over a Chord registry value whose composition is a registry
+ * snapshot (`Host.registry` of `@effectified/pi-chord`), for `Harness.layerOn`. It reads the current composition (the
+ * last good one while Chord's `compose` fails) and wakes the harness at each new one, until the scope closes.
+ */
+export function reader<Tool extends ToolRegistration = ToolRegistration>(
+	value: RegistryValue<RegistrySnapshot<Tool>>,
+): Effect.Effect<RegistryReader<Tool>, never, Scope.Scope> {
+	return Effect.map(ChordContext.scoped(), (context) => registryReader(value, context));
 }

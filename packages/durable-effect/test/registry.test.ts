@@ -1,3 +1,11 @@
+import { createHost, defineFacet, defineRegistry } from "@earendil-works/chord";
+import {
+	createRegistry,
+	defineExtension,
+	type Extension as PiExtension,
+	type RegistrySnapshot,
+} from "@earendil-works/pi-durable";
+import { BACKGROUND_CONTEXT } from "@effectified/pi-chord/context";
 import type { SchemaConversionError } from "@effectified/pi-schema";
 import { Context, Effect, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
@@ -145,5 +153,58 @@ describe("layer", () => {
 			_tag: "SchemaConversionError",
 			reason: "Tool bad: Objects property names must be strings",
 		});
+	});
+});
+
+describe("Registry.reader", () => {
+	// A Chord app's registry of Pi extensions: each plugin contributes extensions, composed into one snapshot.
+	const Extensions = defineRegistry<PiExtension, RegistrySnapshot>("example.extensions", { version: 1 });
+	const provider = defineFacet((host) => {
+		host.serve(Extensions, {
+			compose: (table) => {
+				const registry = createRegistry();
+				for (const entry of table) registry.install(entry.value);
+				return registry.snapshot();
+			},
+		});
+	});
+	const contributor = (name: string) =>
+		defineFacet((_, self) => {
+			self.contribute(Extensions, defineExtension({ name }));
+		});
+
+	it("reads a Chord registry's composition and wakes at each new one until its scope closes", async () => {
+		const context = BACKGROUND_CONTEXT;
+		const host = createHost({ onError: () => {} });
+		const first = [
+			{ name: "@example/provider", facet: provider },
+			{ name: "@example/one", facet: contributor("one") },
+		];
+		await host.load(first, context);
+		const value = await host.registry(Extensions, context);
+		let wakes = 0;
+		const names = await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const reader = yield* Registry.reader(value);
+					reader.subscribe(() => {
+						wakes++;
+					});
+					yield* Effect.promise(() =>
+						host.reload([...first, { name: "@example/two", facet: contributor("two") }], context),
+					);
+					return reader
+						.snapshot()
+						.installed()
+						.map((extension) => extension.name);
+				}),
+			),
+		);
+		expect(names).toEqual(["one", "two"]);
+		expect(wakes).toBe(1);
+		// The scope closed: the reader's observation is detached, so a new composition wakes nothing.
+		await host.reload(first, context);
+		expect(wakes).toBe(1);
+		await host.close(context);
 	});
 });

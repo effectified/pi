@@ -492,6 +492,11 @@ built. By default every
 conversation selects every installed extension, in order; a task is found by its name whichever conversations select
 its extension. The service value is Pi's own registry, so Pi extensions can be installed in it as well.
 
+In a Chord app the extensions may come from plugins instead: a Chord registry whose composition is a Pi registry
+snapshot. `Registry.reader(value)` (Pi's `registryReader`) reads such a registry value (`Host.registry` of
+`@effectified/pi-chord`) for the life of the scope, and `Harness.layerOn(reader, options)` opens the harness on it in
+place of the `Registry` service. A new composition wakes the harness to reconsider blocked tasks.
+
 ### Prompt sections and wrappers
 
 A section is a part of the system prompt an extension renders before each request of a conversation that selects it.
@@ -1261,6 +1266,7 @@ SQLite are behind `node` subpaths.
 | `/storage/memory`, `/storage/indexeddb` | `memory`; `indexedDb(name, { indexedDB })` |
 | `/storage/jsonl`, `/storage/jsonl/node` | `jsonl(directory, fs, options)` on any environment, `nodeJsonl(directory, options)`; opening fails with `JsonlCorrupted` for a directory recovery cannot repair |
 | `/storage/sqlite`, `/storage/sqlite/node`, `/storage/sqlite/cloudflare` | `sqlite(database)` and `applyMigrations`; `nodeSqlite(path, options)`; `durableObject(ctx.storage, options)` and `database(ctx.storage)` |
+| `/storage/store` | `store(store, owner)`: Pi's storage in a Chord store (`Store.open` of `@effectified/pi-chord`) under an owner name; several harnesses share one store under distinct owners, and the store outlives the harness |
 
 ```ts
 import * as NodeEnv from "@effectified/pi-durable/env/node";
@@ -1289,8 +1295,6 @@ tool or a task):
 - A tool's running output.
 - A signal's `migrate`.
 - Raw submissions (`tx.pi.createSubmission`, `settleSubmission`, `placeSubmission`) and a scan of submissions.
-- `registryReader` and `/storage/store`: a registry over Chord's app runtime and Pi's storage on a Chord store, which
-  `@effectified/pi-chord` does not offer yet.
 
 ## License
 

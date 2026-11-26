@@ -1,9 +1,9 @@
 // A Chord context made from Effect: cancelled when its scope closes or after a span of the Clock, under the fiber's
 // current span, awaited as an Effect.
 
-import { BACKGROUND_CONTEXT, type Context, withAbortSignal, withTelemetry } from "@earendil-works/chord/context";
-import { PiTelemetry } from "@effectified/pi-telemetry";
-import { type Duration, Effect, Option, type Scope, Tracer } from "effect";
+import { BACKGROUND_CONTEXT, type Context, withAbortSignal } from "@earendil-works/chord/context";
+import { type Duration, Effect, type Scope } from "effect";
+import { traced } from "./traced.ts";
 
 /**
  * A child of `parent` (default: Chord's background context) that is cancelled when the current scope closes, so the
@@ -67,18 +67,4 @@ function controlled(
 			({ controller }) => Effect.sync(() => controller.abort()),
 		),
 	);
-}
-
-/**
- * `parent` with the Pi handle of the fiber's current Effect span (`PiTelemetry.currentSpan`) as its telemetry; `parent`
- * itself when the fiber is in no span or the program has no `PiTelemetry`. `PiTelemetry` is read as an option, so a
- * program without telemetry needs to provide nothing.
- */
-function traced(parent: Context): Effect.Effect<Context> {
-	return Effect.gen(function* () {
-		const telemetry = yield* Effect.serviceOption(PiTelemetry);
-		if (Option.isNone(telemetry) || Option.isNone(yield* Effect.serviceOption(Tracer.ParentSpan))) return parent;
-		const span = yield* Effect.provideService(PiTelemetry.currentSpan, PiTelemetry, telemetry.value);
-		return withTelemetry(span, parent);
-	});
 }
