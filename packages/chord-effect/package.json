@@ -41,6 +41,26 @@
 			"types": "./dist/node/sqlite.d.ts",
 			"import": "./dist/node/sqlite.js"
 		},
+		"./compression": {
+			"source": "./src/node/compression.ts",
+			"types": "./dist/node/compression.d.ts",
+			"import": "./dist/node/compression.js"
+		},
+		"./sqlite/cloudflare": {
+			"source": "./src/cloudflare/sqlite.ts",
+			"types": "./dist/cloudflare/sqlite.d.ts",
+			"import": "./dist/cloudflare/sqlite.js"
+		},
+		"./telemetry-sqlite": {
+			"source": "./src/telemetry-sqlite.ts",
+			"types": "./dist/telemetry-sqlite.d.ts",
+			"import": "./dist/telemetry-sqlite.js"
+		},
+		"./telemetry-sqlite/node": {
+			"source": "./src/node/telemetry-sqlite.ts",
+			"types": "./dist/node/telemetry-sqlite.d.ts",
+			"import": "./dist/node/telemetry-sqlite.js"
+		},
 		"./watch": {
 			"source": "./src/watch.ts",
 			"types": "./dist/watch.d.ts",
@@ -86,6 +106,8 @@
 	"devDependencies": {
 		"@earendil-works/pi-telemetry": "1.6.1",
 		"effect": "4.1.5",
+		"esbuild": "0.28.2",
+		"miniflare": "5.20261023.2-beta",
 		"vitest": "4.1.12"
 	}
 }

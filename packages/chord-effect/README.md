@@ -302,6 +302,17 @@ const greet = Effect.scoped(
   document, a derive, a reference's member, a registry's value): the value now, then its changes, folded while the
   consumer is busy. A failure of the source fails the Stream with `WatchFailed`.
 
+## SQLite on a Durable Object, compression, Chord's telemetry store
+
+- `database(ctx.storage)` of `@effectified/pi-chord/sqlite/cloudflare` is Chord's `SqliteDatabase` on a SQLite-backed
+  Durable Object, tested in workerd through Miniflare. Chord's store does not open on it in Chord 1.6.1: its schema
+  check (`PRAGMA encoding`) is not authorized in workerd.
+- `nodeCompression` of `@effectified/pi-chord/compression` is Chord's compressor for `Host.make({ compression })`.
+- `make(database, options?)` of `@effectified/pi-chord/telemetry-sqlite` is Chord's SQLite telemetry adapter,
+  recording for the life of a scope (a Pi `TelemetryContext` and a `TelemetryStore`); `flush`, `findTraces`,
+  `getTrace` and `findMetrics` are Effects, on it or on a store file another process writes, which
+  `openTelemetryStore(path)` of `@effectified/pi-chord/telemetry-sqlite/node` opens read-only for a scope.
+
 ## Errors
 
 One closed union, `ChordFailure`: `PathError`, `UnsafePathError`, `InvalidOp`, `NotJson`, `InvalidSchemaPrefix`,
@@ -318,11 +329,11 @@ state, job, table and query declarations, codecs, themes, messages and formats. 
 
 ## Not covered
 
-- **Chord's app kit.** Plugins, the app kit, HTTP, workers, the web,
-  terminal and React surfaces, session sync and Chord's own telemetry store. Each subpath's values are recorded `open`
-  in `test/index.test.ts` with the reason.
+- **Chord's app kit.** The app server (`/app`), HTTP, workers, plugins, the surfaces, the web, terminal and React
+  sides, session sync and telemetry ingest: 14 subpaths, each recorded `open` in `test/index.test.ts` with why.
 - **`Progress`** of `/output`: it paces promise-returning writes on its own timers.
-- **`/sqlite/cloudflare`**: it needs a Durable Object's storage, which only workerd provides.
+- **Timers of Chord's own** (the telemetry store's one-second flush, a host's heartbeats and timeouts) run on the real
+  clock, not the `Clock`; the client's connection loop does follow the `Clock`.
 - **The store's surface for adapters** (`findDocument`, `applyBatch`, ...): Chord marks it internal. Pi Durable's
   storage uses it; an application reaches it as `store` of `@effectified/pi-durable/storage/store`.
 - **A client page's stylesheets and telemetry** (`ClientOptions.styles`, `telemetry`): passed to Chord as they are.

@@ -3444,6 +3444,14 @@ used by: chord-effect
  */
 export function webSocketLink(socket: WebSocketLike): Link
 
+## nodeCompression  chord/src/node/compression.ts
+used by: chord-effect
+/**
+ * Raw deflate at level 1 (`deflateRawSync`), and inflate bounded by `maxOutputLength` (`inflateRawSync`): past the
+ * limit `too_large`, data that is no raw deflate stream `corrupt`.
+ */
+export const nodeCompression: Compression
+
 ## BoundedOutput  chord/src/output.ts
 used by: chord-effect
 /** Retained output and what the limits dropped. */
@@ -3727,7 +3735,7 @@ export interface RegistryValue<V> extends NativeWatchable<V> {
 }
 
 ## DurableObjectSqliteDatabase  chord/src/sqlite/cloudflare.ts
-used by: durable-effect
+used by: chord-effect, durable-effect
 /**
  * `SqliteDatabase` adapter for the SQLite storage of a Cloudflare Durable Object. Adapters given the same storage
  * object share a queue; direct calls to the underlying storage bypass it. Integers are JavaScript numbers; binding a
@@ -3747,7 +3755,7 @@ export class DurableObjectSqliteDatabase extends DurableObjectSqliteExecutor imp
 }
 
 ## DurableObjectSqliteExecutor  chord/src/sqlite/cloudflare.ts
-used by: durable-effect via DurableObjectSqliteDatabase
+used by: chord-effect via DurableObjectSqliteDatabase, durable-effect via DurableObjectSqliteDatabase
 /** Executes SQL through `ctx.storage.sql`, which has no separate prepare step. */
 class DurableObjectSqliteExecutor implements SqliteExecutor {
 	constructor(storage: DurableObjectSqliteStorage)
@@ -3759,7 +3767,7 @@ class DurableObjectSqliteExecutor implements SqliteExecutor {
 }
 
 ## DurableObjectSqliteStorage  chord/src/sqlite/cloudflare.ts
-used by: durable-effect
+used by: chord-effect, durable-effect
 /**
  * The parts of a SQLite-backed Durable Object's `ctx.storage` this adapter uses, typed structurally so the package
  * needs no Workers type dependency.
@@ -3780,7 +3788,7 @@ export type DurableObjectSqliteStorage = {
 };
 
 ## DurableObjectSqlValue  chord/src/sqlite/cloudflare.ts
-used by: durable-effect via DurableObjectSqliteStorage
+used by: chord-effect via DurableObjectSqliteStorage, durable-effect via DurableObjectSqliteStorage
 /** Values a Durable Object SQL binding accepts and returns. */
 type DurableObjectSqlValue = ArrayBuffer | string | number | null;
 
@@ -6429,6 +6437,68 @@ export const Translations: Registry<readonly Translation[], TranslationIndex>
 used by: chord-effect
 /** The kit's facet serving `Translations` on a host. */
 export function translationsFacet<P extends Principal>(): Facet<P>
+
+## TelemetryBatch  chord/src/telemetry-ingest/recorder.ts
+used by: chord-effect
+/** What a recorder hands its owner at once: settled spans and metric aggregates. */
+export type TelemetryBatch = { readonly spans: StoredSpan[]; readonly metrics: StoredMetric[] };
+
+## createSqliteTelemetry  chord/src/telemetry-sqlite/index.ts
+used by: chord-effect
+/** Portable, buffered SQLite recorder. Recording never performs SQL; flush runs every second.
+ * Only settled spans are stored, their times in microseconds (`telemetryNow`). Metrics aggregate count/sum/min/max per
+ * ten-second interval. A store of an older version in `db` is migrated (version 2: span times from milliseconds to
+ * microseconds, rows kept). A write failure permanently stops recording and is reported by flush and close. */
+export async function createSqliteTelemetry(
+	db: SqliteDatabase,
+	options: SqliteTelemetryOptions = {},
+): Promise<SqliteTelemetry>
+
+## SqliteTelemetry  chord/src/telemetry-sqlite/index.ts
+used by: chord-effect
+export interface SqliteTelemetry extends TelemetryContext, TelemetryStore {
+	readonly metrics: TelemetryMetrics;
+	readonly propagation: TelemetryPropagation;
+	readonly droppedSpans: number;
+	readonly droppedMeasurements: number;
+	/**
+	 * Queues finished spans and metric rows another process recorded, written with the next flush (a span whose id is
+	 * stored already is kept as it was); within the queue's bound, the rest dropped and counted. Returns how many
+	 * spans it queued. Callers check what they pass: the store writes it as it is.
+	 */
+	ingest(batch: TelemetryBatch): number;
+	/** Persist settled spans and completed ten-second metric intervals. */
+	flush(): Promise<void>;
+	/** Stop recording and drain, including partial metric intervals. Does not close the database. */
+	close(): Promise<void>;
+}
+
+## SqliteTelemetryOptions  chord/src/telemetry-sqlite/index.ts
+used by: chord-effect
+export interface SqliteTelemetryOptions {
+	/** Retain seven days by default. Cleanup runs in the flush transaction. */
+	readonly retentionMs?: number;
+	/** Settled spans awaiting commit, including the in-flight batch. Defaults to 10,000.
+	 * Also bounds pending metric interval/series pairs independently. */
+	readonly maxQueuedSpans?: number;
+}
+
+## openTelemetryStore  chord/src/telemetry-sqlite/node.ts
+used by: chord-effect
+/**
+ * Opens the telemetry store at `path` read-only (SQLite's read-only mode: it never writes the file, never migrates it,
+ * never creates it), while recorders of other processes write it or after. Rejects for a file that holds no store or
+ * a store of another version (a recorder, `createSqliteTelemetry`, migrates an older one).
+ */
+export async function openTelemetryStore(path: string): Promise<SqliteTelemetryStore>
+
+## SqliteTelemetryStore  chord/src/telemetry-sqlite/node.ts
+used by: chord-effect
+/** A telemetry store opened for reads: the store's reads, and the close of its file. */
+export interface SqliteTelemetryStore extends TelemetryStore {
+	/** Closes the file; reads after it reject. */
+	close(): Promise<void>;
+}
 
 ## CHORD_TELEMETRY_SCHEMA  chord/src/telemetry.ts
 used by: chord-effect

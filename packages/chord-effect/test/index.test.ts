@@ -2,17 +2,13 @@ import { readFileSync } from "node:fs";
 import * as PiChord from "@earendil-works/chord";
 import type * as PiApp from "@earendil-works/chord/app";
 import type * as PiAppFiles from "@earendil-works/chord/app/files";
-import type * as PiCompression from "@earendil-works/chord/compression";
 import type * as PiHttp from "@earendil-works/chord/http";
 import type * as PiPlugins from "@earendil-works/chord/plugins";
 import type * as PiPluginsRuntime from "@earendil-works/chord/plugins/runtime";
 import type * as PiReact from "@earendil-works/chord/react";
-import type * as PiSqliteCloudflare from "@earendil-works/chord/sqlite/cloudflare";
 import type * as PiSurfaces from "@earendil-works/chord/surfaces";
 import type * as PiSync from "@earendil-works/chord/sync";
 import type * as PiTelemetryIngest from "@earendil-works/chord/telemetry-ingest";
-import type * as PiTelemetrySqlite from "@earendil-works/chord/telemetry-sqlite";
-import type * as PiTelemetrySqliteNode from "@earendil-works/chord/telemetry-sqlite/node";
 import type * as PiTui from "@earendil-works/chord/tui";
 import type * as PiTuiLauncher from "@earendil-works/chord/tui/launcher";
 import type * as PiWeb from "@earendil-works/chord/web";
@@ -175,11 +171,13 @@ const COVERAGE = {
 } satisfies Record<keyof typeof PiChord, Coverage>;
 
 // The subpaths this package does not export. Each is recorded value by value, so a value Chord adds to one fails the
-// type check until it is decided; the reason is the subpath's. `/context`, `/delta`, `/json`, `/output`, `/sqlite`,
-// `/sqlite/node` and `/watch` are this package's subpaths, recorded in their own test files.
+// type check until it is decided; the reason is the subpath's. The subpaths in `WRAPPED` are this package's, each
+// recorded in the test file of its source.
 
 const HTTP = open(
-	"the HTTP component of a Chord app server: a fetch handler made of what plugins contribute to a host",
+	"the HTTP component of Chord's app server: a Web fetch handler composed from the routes, wraps and sockets " +
+		"plugins contribute, behind Chord's Node listener. Not wrapped yet: its Effect form serves that handler and runs " +
+		"the contributions as Effect handlers, a design of the app kit, which is not wrapped either",
 );
 const HTTP_COVERAGE = {
 	Authenticators: HTTP,
@@ -193,9 +191,11 @@ const HTTP_COVERAGE = {
 	readCookie: HTTP,
 	readSignedCookie: HTTP,
 } satisfies Record<keyof typeof PiHttp, Coverage>;
-const COMPRESSION_COVERAGE = { nodeCompression: HTTP } satisfies Record<keyof typeof PiCompression, Coverage>;
 
-const WORKERS = open("the forked worker processes of a Chord app's host kinds, started and stopped by its server");
+const WORKERS = open(
+	"forked worker processes of an app's host kinds, which Chord's app server starts and stops. Not wrapped yet, " +
+		"with the app kit (/app) they belong to",
+);
 const WORKERS_COVERAGE = {
 	createWorkers: WORKERS,
 	nodeBaseInputs: WORKERS,
@@ -207,7 +207,10 @@ const WORKERS_CHILD_COVERAGE = { processLock: WORKERS, workerMain: WORKERS } sat
 	Coverage
 >;
 
-const PLUGINS = open("Chord's plugins: found, built with esbuild, evaluated and hot-reloaded into a host's facets");
+const PLUGINS = open(
+	"plugin directories built with esbuild, evaluated and hot-reloaded into a host: the Node tooling of Chord's app " +
+		"kit. Not wrapped yet, with the app kit; a loaded set of built scripts is Facet.loadSet",
+);
 const PLUGINS_COVERAGE = {
 	PluginError: PLUGINS,
 	buildFacet: PLUGINS,
@@ -227,7 +230,8 @@ const PLUGINS_RUNTIME_COVERAGE = { PluginError: PLUGINS, createPluginRuntime: PL
 >;
 
 const APP = open(
-	"Chord's app kit: a server and its workers, sign-ins, files, export and import, built on the host runtime",
+	"Chord's app kit: a server and its workers, sign-ins, files, export and import per address. Not wrapped yet: " +
+		"it is the server, workers, plugins and surfaces together, the largest part of Chord",
 );
 const APP_COVERAGE = {
 	ARCHIVE_FORMAT: APP,
@@ -259,7 +263,10 @@ const APP_FILES_COVERAGE = {
 	privateStore: APP,
 } satisfies Record<keyof typeof PiAppFiles, Coverage>;
 
-const WEB = open("the browser side of Chord's web surface: a page that follows its host");
+const WEB = open(
+	"the browser side of the web surface (a page that follows its host and its themes). Not wrapped yet: it runs " +
+		"in a browser, where this package has no test lane",
+);
 const WEB_COVERAGE = {
 	followLanguage: WEB,
 	followThemes: WEB,
@@ -267,7 +274,10 @@ const WEB_COVERAGE = {
 	startPage: WEB,
 } satisfies Record<keyof typeof PiWeb, Coverage>;
 
-const SURFACES = open("the server side of Chord's client surfaces: bundles and scripts built for pages and terminals");
+const SURFACES = open(
+	"the server side of the client surfaces: base bundles and plugin scripts built with esbuild for Chord's app " +
+		"server. Not wrapped yet, with the app kit; the client they start is Client.start",
+);
 const SURFACES_COVERAGE = {
 	TUI_PREFIX: SURFACES,
 	WEB_PREFIX: SURFACES,
@@ -294,7 +304,10 @@ const REACT_COVERAGE = {
 	watchStore: REACT,
 } satisfies Record<keyof typeof PiReact, Coverage>;
 
-const TUI = open("the terminal surface of a Chord app: its sandboxed runtime and the launcher that starts it");
+const TUI = open(
+	"the terminal surface: a runtime in Chord's sandboxed Node process and the launcher that starts it. Not " +
+		"wrapped yet, with the app kit",
+);
 const TUI_COVERAGE = {
 	BridgeTerminal: TUI,
 	TerminalTheme: TUI,
@@ -308,7 +321,10 @@ const TUI_LAUNCHER_COVERAGE = {
 	terminalFile: TUI,
 } satisfies Record<keyof typeof PiTuiLauncher, Coverage>;
 
-const SYNC = open("session sync over the outbox of Chord's store, which is not wrapped");
+const SYNC = open(
+	"session sync over the store's outbox, experimental in Chord. Not wrapped yet: the outbox it reads is offered " +
+		"(Store.Store's outbox), the upload, pull and fold of sessions are not",
+);
 const SYNC_COVERAGE = {
 	APPLY_BYTES: SYNC,
 	BATCH_BYTES: SYNC,
@@ -339,23 +355,10 @@ const SYNC_COVERAGE = {
 	uploadSession: SYNC,
 } satisfies Record<keyof typeof PiSync, Coverage>;
 
-const SQLITE_CLOUDFLARE_COVERAGE = {
-	DurableObjectSqliteDatabase: open(
-		"needs a Durable Object's SQL storage, which only workerd provides; these tests run on Node and Bun",
-	),
-} satisfies Record<keyof typeof PiSqliteCloudflare, Coverage>;
-
 const TELEMETRY = open(
-	"Chord's own telemetry store and ingest; @effectified/pi-telemetry sends Pi telemetry to Effect's exporters instead",
+	"pages and workers sending their telemetry to the ingest facet of Chord's app server, and its recorder: the " +
+		"app kit's telemetry path. Not wrapped yet, with the app kit; the store it writes is /telemetry-sqlite",
 );
-const TELEMETRY_SQLITE_COVERAGE = { createSqliteTelemetry: TELEMETRY } satisfies Record<
-	keyof typeof PiTelemetrySqlite,
-	Coverage
->;
-const TELEMETRY_SQLITE_NODE_COVERAGE = { openTelemetryStore: TELEMETRY } satisfies Record<
-	keyof typeof PiTelemetrySqliteNode,
-	Coverage
->;
 const TELEMETRY_INGEST_COVERAGE = {
 	PAGE_BATCH_SPANS: TELEMETRY,
 	PAGE_SPANS_PER_MINUTE: TELEMETRY,
@@ -373,7 +376,6 @@ const TELEMETRY_INGEST_COVERAGE = {
 /** Every subpath this package does not export, by its name in Chord's `exports`. */
 const SUBPATHS: Record<string, Record<string, Coverage>> = {
 	"./http": HTTP_COVERAGE,
-	"./compression": COMPRESSION_COVERAGE,
 	"./workers": WORKERS_COVERAGE,
 	"./workers/child": WORKERS_CHILD_COVERAGE,
 	"./plugins": PLUGINS_COVERAGE,
@@ -386,14 +388,23 @@ const SUBPATHS: Record<string, Record<string, Coverage>> = {
 	"./tui": TUI_COVERAGE,
 	"./tui/launcher": TUI_LAUNCHER_COVERAGE,
 	"./sync": SYNC_COVERAGE,
-	"./sqlite/cloudflare": SQLITE_CLOUDFLARE_COVERAGE,
-	"./telemetry-sqlite": TELEMETRY_SQLITE_COVERAGE,
-	"./telemetry-sqlite/node": TELEMETRY_SQLITE_NODE_COVERAGE,
 	"./telemetry-ingest": TELEMETRY_INGEST_COVERAGE,
 };
 
 /** The subpaths this package exports, each recorded in the test file of its source. */
-const WRAPPED = ["./context", "./delta", "./json", "./output", "./sqlite", "./sqlite/node", "./watch"];
+const WRAPPED = [
+	"./compression",
+	"./context",
+	"./delta",
+	"./json",
+	"./output",
+	"./sqlite",
+	"./sqlite/cloudflare",
+	"./sqlite/node",
+	"./telemetry-sqlite",
+	"./telemetry-sqlite/node",
+	"./watch",
+];
 
 describe("the coverage of Chord", () => {
 	it("offers every value of Chord's root it records as offered, Chord's own and not copies", () => {

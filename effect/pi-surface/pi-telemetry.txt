@@ -117,7 +117,7 @@ export type InferStartAttributes<Definitions extends Record<string, TelemetrySta
 	InferRequiredAndOptionalAttributes<Definitions>;
 
 ## MetricQuery  telemetry/src/index.ts
-used by: telemetry-effect
+used by: telemetry-effect; chord-effect via SqliteTelemetry
 export interface MetricQuery {
 	readonly name: string;
 	/** Inclusive bounds on interval start time. */
@@ -258,7 +258,7 @@ used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequest
 export type SpanStatus = { status: "ok" } | { status: "error"; error?: { name: string; message: string } };
 
 ## StoredMetric  telemetry/src/index.ts
-used by: telemetry-effect
+used by: telemetry-effect; chord-effect via TelemetryBatch
 export interface StoredMetric {
 	readonly intervalMs: number;
 	readonly name: string;
@@ -272,7 +272,7 @@ export interface StoredMetric {
 }
 
 ## StoredSpan  telemetry/src/index.ts
-used by: telemetry-effect
+used by: telemetry-effect; chord-effect via TelemetryBatch
 /**
  * A settled span snapshot, independent of the recording adapter. Times are milliseconds at microsecond resolution;
  * event times are relative to span start.
@@ -296,7 +296,7 @@ export interface StoredSpan {
 }
 
 ## StoredTrace  telemetry/src/index.ts
-used by: telemetry-effect
+used by: telemetry-effect; chord-effect via SqliteTelemetry
 export interface StoredTrace {
 	readonly traceId: string;
 	readonly spans: readonly StoredSpan[];
@@ -327,7 +327,7 @@ used by: telemetry-effect
 export type TelemetryAttributeType = "string" | "number" | "boolean" | "string[]" | "number[]" | "boolean[]";
 
 ## TelemetryCarrier  telemetry/src/index.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via TaskOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via SqliteTelemetry, coding-agent-effect via ExtensionRunner, durable-effect via TaskOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
 /** Opaque, JSON-serializable adapter-owned propagation data. */
 export type TelemetryCarrier = Record<string, string>;
 
@@ -360,7 +360,7 @@ export type TelemetryParentDefinition =
 	| { kind: "spans"; spans: readonly string[] };
 
 ## TelemetryPropagation  telemetry/src/index.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via SqliteTelemetry, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
 /** Optional transport capability implemented by the application's telemetry adapter. */
 export interface TelemetryPropagation {
 	inject(context: TelemetryContext): TelemetryCarrier | undefined;
@@ -469,7 +469,7 @@ used by: telemetry-effect; chord-effect via ChordSpanName
 export type TelemetryStartAttributeDefinition = TelemetryAttributeDefinition & { required: boolean };
 
 ## TelemetryStore  telemetry/src/index.ts
-used by: telemetry-effect
+used by: telemetry-effect; chord-effect via SqliteTelemetry
 /** Read settled traces without depending on a storage backend. */
 export interface TelemetryStore {
 	findTraces(query?: TraceQuery): Promise<{ traces: readonly StoredTrace[]; cursor?: string }>;
@@ -478,7 +478,7 @@ export interface TelemetryStore {
 }
 
 ## TraceQuery  telemetry/src/index.ts
-used by: telemetry-effect
+used by: telemetry-effect; chord-effect via SqliteTelemetry
 export interface TraceQuery {
 	/** Name of the earliest stored span, with span ID breaking timestamp ties. */
 	readonly name?: string;
@@ -640,14 +640,14 @@ type DuplicateMetricNames<
 	: never;
 
 ## HistogramOptions  telemetry/src/metrics.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via SqliteTelemetry, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
 export interface HistogramOptions extends InstrumentOptions {
 	/** Bucket hints; callers supply finite, strictly increasing values. */
 	boundaries?: readonly number[];
 }
 
 ## InstrumentOptions  telemetry/src/metrics.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via SqliteTelemetry, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
 export interface InstrumentOptions {
 	description?: string;
 	unit?: string;
@@ -728,13 +728,13 @@ export type SchemaTelemetryHistogram<Definition extends TelemetryMetricDefinitio
 };
 
 ## TelemetryCounter  telemetry/src/metrics.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via SqliteTelemetry, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
 export interface TelemetryCounter {
 	add(value: number, attributes?: SpanAttributes): void;
 }
 
 ## TelemetryHistogram  telemetry/src/metrics.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via SqliteTelemetry, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
 export interface TelemetryHistogram {
 	record(value: number, attributes?: SpanAttributes, context?: TelemetryContext): void;
 }
@@ -752,7 +752,7 @@ export type TelemetryMetricDefinition = {
 } & ({ kind: "counter" | "upDownCounter"; boundaries?: never } | { kind: "histogram"; boundaries?: readonly number[] });
 
 ## TelemetryMetrics  telemetry/src/metrics.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via SqliteTelemetry, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
 /**
  * Optional adapter capability with synchronous factories and recording methods.
  * Typed inputs are trusted; callers supply finite measurements and nonnegative counter increments.
@@ -765,7 +765,7 @@ export interface TelemetryMetrics {
 }
 
 ## TelemetryUpDownCounter  telemetry/src/metrics.ts
-used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via HostOptions, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
+used by: telemetry-effect; agent-effect via Agent, ai-effect via ProviderRequestOptions, chord-effect via SqliteTelemetry, coding-agent-effect via ExtensionRunner, durable-effect via HarnessOptions, env-effect via LocalExecutionEnv, evals-effect via PiCodingAgentHarnessOptions
 export interface TelemetryUpDownCounter {
 	add(value: number, attributes?: SpanAttributes): void;
 }
