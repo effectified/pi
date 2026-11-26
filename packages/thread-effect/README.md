@@ -395,7 +395,7 @@ const program = Effect.gen(function* () {
 | What a product supplies | |
 |---|---|
 | `composition` | The composition's `Config`, as for one process. Where forks live is not a choice here: they are forks of the thread's actor |
-| `ports` | One Layer with its `Lease`, `Estimator`, `Prices`, `RecordSink`, `OutcomeSink`, `Approvals.Inbox`, `PiTelemetry`, and what its tools, rules and checks need. It may require `ActorInfo`, `ActorDatabase` and `ActorEngine`: a fork gets a lease and a record stream of its own from the actor it is built in |
+| `ports` | One Layer with its `Lease`, `Estimator`, `Prices`, `RecordSink`, `OutcomeSink`, `Approvals.Inbox`, `PiTelemetry`, and what its tools, rules and checks need. It may require `ActorInfo`, `ActorSql`, `ActorDatabase` (the deprecated promise form) and `ActorEngine`: a fork gets a lease and a record stream of its own from the actor it is built in |
 | `swarm` | Options of the swarm's Rivet driver: `pollMillis`, how often a coordinator asks its forks (default 1000) |
 | `actions` | The product's own actions, beside the fixed ones ([below](#product-actions)) |
 | `services` | A Layer of the product's own on the open harness, built after the composition's services at each wake and not while fork hygiene runs: what a product builds on `Composition.open` in one process. For what a port built before the harness needs of it: the recorder to flush before the product's own sender writes, the shares to read. It may use the harness, the composition's services and all the `ports` Layer provides; what it provides itself reaches nobody. Its failure is a harness that did not open |
@@ -463,7 +463,7 @@ const Thread = ThreadActor.make("thread", {
 ```
 
 - **What one runs with** (`ThreadActor.InActor`): the harness, the registry and the models; `ActorInfo`,
-  `ActorDatabase` and `ActorEngine`; what the composition provides (`Threads`, `Swarms`, the recorder, the guard, the
+  `ActorSql`, `ActorDatabase` and `ActorEngine`; what the composition provides (`Threads`, `Swarms`, the recorder, the guard, the
   shares); and everything the product's `ports` Layer provides, its own services included. An action that needs
   anything else does not type check.
 - **Its name is its own.** A record with the name of a fixed action, or with the host's `pi` or `destroy`, does not

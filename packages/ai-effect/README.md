@@ -182,6 +182,12 @@ const program = Effect.gen(function* () {
 test waits for a fake of its own without the clock: the fake calls `changed()` after each change of its state, and
 the test waits with `when(() => fake.calls.length === 2)`.
 
+`runTest(effect)` runs a test's Effect as a promise, in a scope, on Effect's `TestClock` and `TestConsole`: time
+stands still until the test moves it with `TestClock.adjust`, so a sleep, a timeout or a deadline passes without a
+wait, and a test that forgets to move the clock hangs until its runner's limit. `runLive(effect)` is the same on the
+real clock, for a test of real processes or files. Both import no test runner, so they work under Vitest and under
+`bun test`: `@effect/vitest` needs Vitest 5 and does not load under `bun test`.
+
 ## Not wrapped yet
 
 - Image generation (`generateImages`) and classifiers (`classify`).

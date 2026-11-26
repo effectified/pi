@@ -350,10 +350,10 @@ const Agent = Actor.make("agent", {
 | Plugin | What the copy holds | Hygiene |
 |---|---|---|
 | recorder | Every conversation's `recorder.cursor`, and with it entries the source has not delivered yet | `onStorageFork`: moves every cursor to the copied head, so the fork delivers only what it commits itself. Do not drop the cursors. The pump belongs in `services` |
-| budget | The `budget.share` documents of capped conversations | An Effect of the product that retires them (`tx.retireDoc`); the plugin exports none today. The lease is a port of the product: give the fork its own in `layer`, from `ActorInfo` |
+| budget | The `budget.share` documents of capped conversations | `onStorageFork(copyName)` of `@gunta/pi-budget-effect`, with the fork's actor id as the name: what each share had settled becomes `inherited`, so a cap still counts it and a sum over storages does not count it twice. The lease is a port of the product: give the fork its own in `layer`, from `ActorInfo` |
 | approvals | Nothing pending: a parked call is live work, and a busy harness is not forked | None |
 | guard | The grants of its conversations, copied as they are | None; narrow a grant in an Effect of the product if the fork must hold less |
-| subagent | `subagent.child` documents, with the conversations they name | None |
+| subagent | `subagent.child` documents, with the conversations they name, and every run task that was live | `onStorageFork` of `@gunta/pi-subagent-effect`: ends every run the copy inherited live, with the reason `copied`, so no child works in both actors |
 | swarm | Every coordinator task, one of them live when a swarm forked the actor; the Rivet driver's record of forks | `forkHygiene` of `@gunta/pi-swarm-effect/rivet`: ends the copied coordinators and empties the record. Required in every actor that runs swarms on Rivet |
 
 What a fork inherits and nothing drops: the whole Pi storage (every conversation, entry, document, usage ledger and

@@ -165,7 +165,7 @@ and set what you use.
 `Guard.fromPolicy`, and so `Guard.layer`, fails with `InvalidPolicy` for a policy that contradicts itself: a ceiling
 that is no classification, a label or a model listed twice, an empty name, prefix or word.
 
-A matcher names tools in one of three ways:
+A matcher names tools in one of four ways:
 
 | Matcher | Names |
 |---|---|
