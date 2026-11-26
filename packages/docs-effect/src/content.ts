@@ -40,6 +40,8 @@ export const ROLES: Readonly<Record<string, string>> = {
 		"Pi's spans, metrics and events arrive on Effect's tracer, metrics and logger, with the trace context carried into Pi.",
 	"durable-effect":
 		"The durable harness as Layers: conversations, tools, hooks, tasks, documents and commits, with tagged errors and interruption that cancels.",
+	"mcp-effect":
+		"Connects to MCP servers as scoped clients whose calls are Effects, notifications are Streams and errors one tagged union, with OAuth sign-in.",
 	"durable-rivet-effect":
 		"Runs a harness inside a Rivet actor: the actor's SQLite is the storage, its schedule wakes sleeping work, its forks copy a conversation.",
 	"router-effect":

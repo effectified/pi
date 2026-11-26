@@ -52,6 +52,7 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@effectified/pi-schema` | facade | `@earendil-works/pi-schema` | 28 | |
 | `@effectified/pi-ai` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges, the key of a request, `runTest`, the forms the plugins share | 62 | Images, classifiers, OAuth login, deferred responses |
 | `@effectified/pi-telemetry` | facade | `@earendil-works/pi-telemetry` | 59 | `TelemetryStore`; histogram exemplars |
+| `@effectified/pi-mcp` | facade | `@earendil-works/pi-mcp`, its `oauth` and `testing` subpaths | 80 | Timers inside pi-mcp's transports and OAuth code run on the real clock |
 | `@effectified/pi-durable` | facade | `@earendil-works/pi-durable` | 442 | A task's own hooks, `setTimer`, prompt sections and wrappers, synchronous observers |
 | `@effectified/pi-durable-rivet` | host | A harness in a Rivet actor: storage, wake-ups, forks; a local engine in a kept directory; `ActorSql` | 239 | Several machines; an engine that dies |
 | `@effectified/pi-router` | plugin | Routes, fallback, limiter, prices, constraints | 181 | A real provider; image and classifier routing |
@@ -93,6 +94,7 @@ An application imports `@effectified/pi-*` and `effect`, never `@earendil-works/
   | pi-durable | 12 |
   | pi-telemetry | 3 |
   | pi-schema | 0 |
+  | pi-mcp | 0 |
 
 - `check-deps.ts` enforces this rule. Plugins and the composition are written the way an application is, so they
   import no `@earendil-works/*`. Every README and documentation page shows only effectified imports, except those
