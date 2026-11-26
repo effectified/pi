@@ -12,9 +12,10 @@ import type * as Extension from "./extension.ts";
 export class Registry extends Context.Service<Registry, PiRegistry>()("@effectified/pi-durable/Registry") {}
 
 /**
- * A fresh registry with `extensions` installed, in order. The Layer requires what the handlers of the tools, hooks
- * and tasks need and captures it when it is built: every handler runs with that context, so a registry whose tools,
- * hooks or task phases need a service does not build without it. Fails when a tool's parameters have no JSON Schema.
+ * A fresh registry with `extensions` installed, in order. The Layer requires what the handlers of the tools, hooks,
+ * tasks, sections and wrappers need and captures it when it is built: every handler runs with that context, so a
+ * registry whose handlers need a service does not build without it. Fails when a tool's parameters have no JSON
+ * Schema.
  */
 export function layer<const Extensions extends ReadonlyArray<Extension.Extension>>(
 	extensions: Extensions,

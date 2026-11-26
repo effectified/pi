@@ -11,7 +11,10 @@ import type * as Hook from "./hook.ts";
  */
 export type Handlers = { readonly [name: string]: (...args: never) => Effect.Effect<unknown, unknown> };
 
-/** The hooks of one task kind, typed by `H`: what an extension answers with `answer` and the task asks with `each`. */
+/**
+ * The hooks of one task kind, typed by `H`: what an extension answers with `answer` and the task asks with
+ * `api.eachHook`.
+ */
 export interface TaskHooks<H extends Handlers> {
 	/** The name of the task kind that asks them, which Pi matches the answers by. */
 	readonly task: string;
