@@ -3,7 +3,9 @@
 // So installing the release URL of one tarball (npm, pnpm or Bun) installs it with every pi-effect package it needs,
 // and Pi and `effect` from npm. A release is made from a clean tree whose HEAD is pushed, and never replaced: a new
 // release needs a new version (`node effect/scripts/sync.ts bump` moves Pi; the packages' own version moves by hand).
-// Usage: node effect/scripts/release.ts
+// Usage: node effect/scripts/release.ts [--unreleased-pi]
+//   `--unreleased-pi` is passed to `pack.ts`: the packages are built against Pi sources their version did not release
+//   (upstream's `main` past the tag), which `SOURCE.json`, and so the release notes, then record.
 
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -32,7 +34,12 @@ if (spawnSync("gh", ["release", "view", tag, "--repo", REPOSITORY], { stdio: "ig
 }
 
 const packed = mkdtempSync(join(tmpdir(), "pi-effect-packed-"));
-run("pack.ts", "node", [join(ROOT, "effect/scripts/pack.ts"), packed], ROOT);
+run(
+	"pack.ts",
+	"node",
+	[join(ROOT, "effect/scripts/pack.ts"), packed, ...process.argv.slice(2).filter((arg) => arg === "--unreleased-pi")],
+	ROOT,
+);
 const released = mkdtempSync(join(tmpdir(), "pi-effect-release-"));
 for (const tarball of readdirSync(packed).filter((file) => file.endsWith(".tgz"))) {
 	repack(join(packed, tarball), released, withReleaseDependencies);
@@ -73,7 +80,7 @@ function withReleaseDependencies(manifest: Manifest): Manifest {
 	return { ...manifest, dependencies: Object.fromEntries(dependencies) };
 }
 
-/** The file `npm pack` writes for `name` at this version: `@effectified/pi-ai` is `effectified-pi-ai-0.1.0.tgz`. */
+/** The file `npm pack` writes for `name` at this version: `@effectified/pi-ai` is `effectified-pi-ai-0.2.0.tgz`. */
 function tarballName(name: string): string {
 	return `${name.slice(1).replace("/", "-")}-${version}.tgz`;
 }

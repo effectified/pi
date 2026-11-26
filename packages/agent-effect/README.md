@@ -16,8 +16,8 @@ whose state survives a restart, use [`@effectified/pi-durable`](../durable-effec
 
 ```sh
 # the pi-effect packages come from their GitHub release, not npm
-R=https://github.com/effectified/pi/releases/download/v0.1.0
-npm install --allow-remote=all $R/effectified-pi-agent-0.1.0.tgz $R/effectified-pi-ai-0.1.0.tgz $R/effectified-pi-schema-0.1.0.tgz effect
+R=https://github.com/effectified/pi/releases/download/v0.2.0
+npm install --allow-remote=all $R/effectified-pi-agent-0.2.0.tgz $R/effectified-pi-ai-0.2.0.tgz $R/effectified-pi-schema-0.2.0.tgz effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`), so the application has one copy.

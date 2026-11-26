@@ -1,6 +1,6 @@
 {
 	"name": "@effectified/pi-search",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Search and fetch tools for Pi agents in Effect, behind a provider port, with an Exa adapter",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -53,7 +53,7 @@
 	},
 	"dependencies": {
 		"@earendil-works/pi-durable": "1.6.1",
-		"@effectified/pi-durable": "0.1.0"
+		"@effectified/pi-durable": "0.2.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5"
@@ -61,7 +61,7 @@
 	"devDependencies": {
 		"@effect/sql-sqlite-bun": "4.1.5",
 		"@effect/sql-sqlite-node": "4.1.5",
-		"@effectified/pi-ai": "0.1.0",
+		"@effectified/pi-ai": "0.2.0",
 		"effect": "4.1.5",
 		"vitest": "4.1.12"
 	}

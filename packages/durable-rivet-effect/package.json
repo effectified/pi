@@ -1,6 +1,6 @@
 {
 	"name": "@effectified/pi-durable-rivet",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "A Pi Durable harness inside a Rivet actor in Effect: actor SQLite as storage, actor schedules as wake-ups, actor forks with onFork hygiene",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -59,9 +59,9 @@
 	"dependencies": {
 		"@earendil-works/pi-ai": "1.6.1",
 		"@effect/platform-node-shared": "4.1.5",
-		"@effectified/pi-ai": "0.1.0",
-		"@effectified/pi-chord": "0.1.0",
-		"@effectified/pi-durable": "0.1.0"
+		"@effectified/pi-ai": "0.2.0",
+		"@effectified/pi-chord": "0.2.0",
+		"@effectified/pi-durable": "0.2.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5",

@@ -1,6 +1,6 @@
 {
 	"name": "@effectified/pi-swarm",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Swarms for Pi Durable agents in Effect: prime once, fork per job under a cap with keyed forks, typed fan-in, and cleanup",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -53,11 +53,11 @@
 	},
 	"dependencies": {
 		"@earendil-works/pi-durable": "1.6.1",
-		"@effectified/pi-durable": "0.1.0"
+		"@effectified/pi-durable": "0.2.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5",
-		"@effectified/pi-durable-rivet": "0.1.0"
+		"@effectified/pi-durable-rivet": "0.2.0"
 	},
 	"peerDependenciesMeta": {
 		"@effectified/pi-durable-rivet": {
@@ -67,8 +67,8 @@
 	"devDependencies": {
 		"@effect/sql-sqlite-bun": "4.1.5",
 		"@effect/sql-sqlite-node": "4.1.5",
-		"@effectified/pi-ai": "0.1.0",
-		"@effectified/pi-durable-rivet": "0.1.0",
+		"@effectified/pi-ai": "0.2.0",
+		"@effectified/pi-durable-rivet": "0.2.0",
 		"effect": "4.1.5",
 		"vitest": "4.1.12"
 	}

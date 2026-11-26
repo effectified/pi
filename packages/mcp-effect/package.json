@@ -1,6 +1,6 @@
 {
 	"name": "@effectified/pi-mcp",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "pi-mcp in Effect: MCP clients and transports as scoped resources, requests as Effects, notifications as Streams, OAuth sign-in, and one tagged error union",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -60,7 +60,7 @@
 		"effect": "~4.1.5"
 	},
 	"devDependencies": {
-		"@effectified/pi-ai": "0.1.0",
+		"@effectified/pi-ai": "0.2.0",
 		"effect": "4.1.5",
 		"vitest": "4.1.12"
 	}

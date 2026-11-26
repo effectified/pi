@@ -5,7 +5,13 @@ only after the whole suite ran on those versions (`npm run check`, each package'
 
 | pi-effect | Pi packages (`@earendil-works/*`) | `effect` | Node | Bun | Tested at upstream commit |
 |---|---|---|---|---|---|
-| 0.1.0 (unreleased) | 1.6.1 | 4.1.5 (peer `~4.1.5`) | 26.13.1 (22.19.0 and 24.22.0 ran earlier states, on Pi 1.6.0) | 1.4.5 | `745338811` |
+| 0.2.0 | 1.6.1 | 4.1.5 (peer `~4.1.5`) | 26.13.1 | 1.4.5 | `745338811` |
+| 0.1.0 | 1.6.1 | 4.1.5 (peer `~4.1.5`) | 26.13.1 (22.19.0 and 24.22.0 ran earlier states, on Pi 1.6.0) | 1.4.5 | `745338811` |
+
+0.2.0 gives every Pi package a facade (24 packages). On 2026-11-26 `node effect/scripts/gate.ts` passed every package's
+tests: 2,987 on Node 26.13.1 and 2,939 on Bun 1.4.5, none failed, with `node effect/scripts/build.ts` emitting every
+package. It is built with `--unreleased-pi`: upstream's `main` holds two coding-agent fixes past v1.6.1 (interactive
+mode's hints and a selection, no export changed), and the packages install the published 1.6.1.
 
 Also installed and run outside this repository beside the published `@earendil-works/*` 1.6.0 (the quick start of
 `durable-effect`, from packed tarballs, on Node and on Bun with its isolated linker). `rivetkit` 3.1.1 is the peer of
@@ -43,7 +49,7 @@ own workflows are disabled in the fork (`gh workflow enable <name>` brings one b
 `output-file-failures`), and the same three fail on an untouched copy of `main` at `f8149d1ab` in the same
 environment. Every other upstream suite and every pi-effect suite passes in it.
 
-## Packages in 0.1.0
+## Packages in 0.2.0
 
 Tests are counted per lane: the same files run under Vitest on Node and under `bun test`.
 

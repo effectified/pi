@@ -24,8 +24,8 @@ and why a value is not wrapped yet.
 
 ```bash
 # the pi-effect packages come from their GitHub release, not npm
-R=https://github.com/effectified/pi/releases/download/v0.1.0
-npm install --allow-remote=all $R/effectified-pi-chord-0.1.0.tgz effect
+R=https://github.com/effectified/pi/releases/download/v0.2.0
+npm install --allow-remote=all $R/effectified-pi-chord-0.2.0.tgz effect
 ```
 
 ## A Chord context from the fiber
