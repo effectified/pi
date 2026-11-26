@@ -29,10 +29,10 @@ describe("make", () => {
 					Effect.promise(() => env.readTextFile("note.txt", BACKGROUND_CONTEXT)),
 					fromResult,
 				);
-				let stdout = "";
+				const stdout: string[] = [];
 				const run = yield* Effect.flatMap(
 					Effect.promise(() =>
-						env.exec("echo $((6 * 7))", { onOutput: (chunk) => void (stdout += chunk) }, BACKGROUND_CONTEXT),
+						env.exec("echo $((6 * 7))", { onOutput: (chunk) => void stdout.push(chunk) }, BACKGROUND_CONTEXT),
 					),
 					fromResult,
 				);
@@ -41,7 +41,7 @@ describe("make", () => {
 					cwd: env.cwd,
 					text,
 					exit: run.exitCode,
-					stdout: stdout.trim(),
+					stdout: stdout.join("").trim(),
 				};
 			}),
 		);
