@@ -5,6 +5,7 @@
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
 		"paths": {
+			"@effectified/pi-chord/context": ["./packages/chord-effect/src/context.ts"],
 			"@effectified/pi-durable-rivet/bun": ["./packages/durable-rivet-effect/src/bun.ts"],
 			"@effectified/pi-durable-rivet/node": ["./packages/durable-rivet-effect/src/node.ts"],
 			"@effectified/pi-search/exa": ["./packages/search-effect/src/exa.ts"],

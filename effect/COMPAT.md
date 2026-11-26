@@ -94,10 +94,11 @@ An application imports `@effectified/pi-*` and `effect`, never `@earendil-works/
   | pi-durable | 12 |
   | pi-telemetry | 3 |
   | pi-schema | 0 |
+  | pi-chord | 167 (37 of Chord's app runtime at its root, `Progress`, and 129 in the 19 subpaths of its app runtime, which the facade does not export) |
 
 - `check-deps.ts` enforces this rule. Plugins and the composition are written the way an application is, so they
-  import no `@earendil-works/*`. Every README and documentation page shows only effectified imports, except those
-  listed in its `DOCUMENTED_PI_IMPORTS`: two Chord contexts, until Chord has a facade.
+  import no `@earendil-works/*`. Every README and documentation page shows only effectified imports; an exception
+  would be listed in its `DOCUMENTED_PI_IMPORTS`, which is empty.
 
 ## Bumping upstream
 

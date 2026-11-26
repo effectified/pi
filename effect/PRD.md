@@ -140,7 +140,7 @@ OpenRouter is therefore reachable twice: Pi's `openrouterProvider()` and `@effec
 | `schema-effect` | `pi-schema` | Pi |
 | `ai-effect` | `pi-ai`, `schema-effect` | Pi |
 | `telemetry-effect` | `pi-telemetry` | Pi |
-| `durable-effect` | `pi-durable`, `ai-effect`, `schema-effect` | Pi |
+| `durable-effect` | `pi-durable`, `ai-effect`, `schema-effect`, `chord-effect` (the Chord context of its calls) | Pi |
 | `mcp-effect`, `codemode-effect`, `agent-effect`, `env-effect` | the Pi package each wraps, and `durable-effect` where it adds tools | Pi |
 | `chord-effect` | `chord` | Pi |
 | `tui-effect` | `pi-tui` | Pi |
