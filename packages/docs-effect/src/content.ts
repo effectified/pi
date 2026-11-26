@@ -38,6 +38,8 @@ export const ROLES: Readonly<Record<string, string>> = {
 	"ai-effect": "Pi's models as a service, a Stream and an Effect, with bridges to effect/ai in both directions.",
 	"telemetry-effect":
 		"Pi's spans, metrics and events arrive on Effect's tracer, metrics and logger, with the trace context carried into Pi.",
+	"env-effect":
+		"Local and remote execution environments in Effect: commands and files as Effects, output as Streams, and daemon connections, SSH, processes and terminals as scoped resources.",
 	"durable-effect":
 		"The durable harness as Layers: conversations, tools, hooks, tasks, documents and commits, with tagged errors and interruption that cancels.",
 	"durable-rivet-effect":

@@ -94,8 +94,32 @@ used by: durable-effect
 /** User input: `model` is `[UserMessage]`. Written by submissions. */
 export const UserEntry: Entry<never>
 
+## rangeDecoder  durable/src/env/decode.ts
+used by: env-effect
+/**
+ * Decoding that matches `new TextDecoder().decode(bytes)` of the whole input when the input arrives in pieces. Node's
+ * streaming decoder with BOM handling can drop a U+FEFF that follows a chunk boundary, not only a leading byte-order
+ * mark, so these decoders turn BOM handling off and drop a leading mark themselves.
+ */
+
+/** A streaming decoder for a byte range; callers that start at the beginning of a file skip a leading mark themselves. */
+export function rangeDecoder(): InstanceType<typeof TextDecoder>
+
+## startsWithBom  durable/src/env/decode.ts
+used by: env-effect
+/** Whether decoding the whole input drops its first three bytes as a byte-order mark. */
+export function startsWithBom(firstBytes: Uint8Array): boolean
+
+## StreamDecoder  durable/src/env/decode.ts
+used by: env-effect
+/** Decodes one stream chunk by chunk exactly like decoding all of it at once. */
+export class StreamDecoder {
+	/** Text for `bytes`, holding back an incomplete character; without `bytes`, the end of the stream. */
+	decode(bytes?: Uint8Array): string
+}
+
 ## BinaryReader  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /** Positional reads from one opened regular file; all calls see the same file even if its path is renamed. */
 export interface BinaryReader {
 	/** Metadata of the opened file, not of whatever its path names now. */
@@ -112,7 +136,7 @@ export interface BinaryReader {
 }
 
 ## DirReader  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /** Pages of one directory's entries. */
 export interface DirReader {
 	/**
@@ -124,12 +148,16 @@ export interface DirReader {
 	close(context: Context): Promise<void>;
 }
 
+## err  durable/src/env/index.ts
+used by: env-effect
+export function err<TValue, TError>(error: TError): Result<TValue, TError>
+
 ## ExecutionEnv  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export interface ExecutionEnv extends FileSystem, Shell {}
 
 ## ExecutionError  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export class ExecutionError extends Error {
 	public code: ExecutionErrorCode
 	/** Spill file of a command that timed out or was aborted after its output crossed the spill thresholds. */
@@ -138,7 +166,7 @@ export class ExecutionError extends Error {
 }
 
 ## ExecutionErrorCode  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export type ExecutionErrorCode =
 	| "aborted"
 	| "timeout"
@@ -148,7 +176,7 @@ export type ExecutionErrorCode =
 	| "unknown";
 
 ## FileChange  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /**
  * What changed, tagged by `kind`:
  * - `paths`: something at or below each path may have changed (a directory path covers its whole subtree). Calls may be
@@ -163,7 +191,7 @@ export type FileChange =
 	| { readonly kind: "failed"; readonly error: FileError };
 
 ## FileError  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export class FileError extends Error {
 	public code: FileErrorCode
 	public path?: string
@@ -171,7 +199,7 @@ export class FileError extends Error {
 }
 
 ## FileErrorCode  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export type FileErrorCode =
 	| "aborted"
 	| "not_found"
@@ -183,7 +211,7 @@ export type FileErrorCode =
 	| "unknown";
 
 ## FileInfo  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export interface FileInfo {
 	name: string;
 	path: string;
@@ -193,11 +221,11 @@ export interface FileInfo {
 }
 
 ## FileKind  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export type FileKind = "file" | "directory" | "symlink";
 
 ## FileListEntry  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /** One entry of a `FileListing`. */
 export interface FileListEntry {
 	/** Relative to the listed directory, with `/` separators on every system. */
@@ -207,7 +235,7 @@ export interface FileListEntry {
 }
 
 ## FileListing  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export interface FileListing {
 	/** Depth first, parents before their entries, siblings in byte order of their names. */
 	entries: FileListEntry[];
@@ -216,7 +244,7 @@ export interface FileListing {
 }
 
 ## FileSystem  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /** Portable filesystem capability. Operations return failures rather than throwing. */
 export interface FileSystem {
 	/**
@@ -297,7 +325,7 @@ export interface FileSystem {
 }
 
 ## FileWatcher  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export interface FileWatcher {
 	/**
 	 * `native`: changes are reported within about two seconds. `polling`: the environment compares snapshots, because
@@ -309,8 +337,16 @@ export interface FileWatcher {
 	stop(context: Context): Promise<void>;
 }
 
+## getOrThrow  durable/src/env/index.ts
+used by: env-effect
+export function getOrThrow<TValue, TError>(result: Result<TValue, TError>): TValue
+
+## getOrUndefined  durable/src/env/index.ts
+used by: env-effect
+export function getOrUndefined<TValue extends object, TError>(result: Result<TValue, TError>): TValue | undefined
+
 ## LineScan  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /** Where lines of a file are, as `BinaryReader.scanLines` found them. */
 export interface LineScan {
 	/** Newline bytes in the whole file; it has `newlines + 1` lines. */
@@ -331,7 +367,7 @@ export interface LineScan {
 }
 
 ## ListFilesOptions  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /** What `FileSystem.listFiles` lists. */
 export interface ListFilesOptions {
 	/**
@@ -355,13 +391,17 @@ export interface ListFilesOptions {
 	timeoutMs?: number;
 }
 
+## ok  durable/src/env/index.ts
+used by: env-effect
+export function ok<TValue, TError>(value: TValue): Result<TValue, TError>
+
 ## Result  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /** Result of a fallible operation. Expected failures are returned instead of thrown. */
 export type Result<TValue, TError> = { ok: true; value: TValue } | { ok: false; error: TError };
 
 ## Shell  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export interface Shell {
 	/**
 	 * Run a command. A string runs through the environment's shell. An array runs `command[0]` directly with the rest
@@ -378,7 +418,7 @@ export interface Shell {
 }
 
 ## ShellExecOptions  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export interface ShellExecOptions {
 	cwd?: string;
 	env?: Record<string, string>;
@@ -398,7 +438,7 @@ export interface ShellExecOptions {
 }
 
 ## ShellExecResult  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export interface ShellExecResult {
 	exitCode: number;
 	/** Temporary file holding the complete raw output, when the spill thresholds were exceeded. */
@@ -406,7 +446,7 @@ export interface ShellExecResult {
 }
 
 ## ShellOutputInfo  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export interface ShellOutputInfo {
 	stream: "stdout" | "stderr";
 	/**
@@ -420,7 +460,7 @@ export interface ShellOutputInfo {
 }
 
 ## ShellOutputSkip  durable/src/env/index.ts
-used by: durable-effect via ToolExecutionApi, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via ToolExecutionApi, durable-rivet-effect via CompactionTask
 /**
  * Output an environment omitted, measured on the decoded text `onOutput` would have received: every U+FFFD counts as
  * three bytes, and no sanitizing is applied.
@@ -436,7 +476,7 @@ export interface ShellOutputSkip {
 }
 
 ## ShellOutputWindow  durable/src/env/index.ts
-used by: durable-effect via ToolExecutionApi, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via ToolExecutionApi, durable-rivet-effect via CompactionTask
 /**
  * The tail of the combined output a caller keeps, and how often it samples it. An environment that transfers output
  * over a slow link uses it to omit what the caller would drop anyway and to send no faster than the caller commits.
@@ -453,7 +493,7 @@ export interface ShellOutputWindow {
 }
 
 ## ShellSpillOptions  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /** Spill the complete output to a temporary file once it exceeds either threshold. */
 export interface ShellSpillOptions {
 	afterBytes: number;
@@ -462,21 +502,25 @@ export interface ShellSpillOptions {
 }
 
 ## TextLine  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export interface TextLine {
 	text: string;
 	terminated: boolean;
 }
 
 ## TextLineReader  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 export interface TextLineReader {
 	readLine(context: Context): Promise<Result<TextLine | undefined, FileError>>;
 	close(context: Context): Promise<void>;
 }
 
+## toError  durable/src/env/index.ts
+used by: env-effect
+export function toError(error: unknown): Error
+
 ## WatchTarget  durable/src/env/index.ts
-used by: durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
+used by: env-effect; durable-effect via HarnessOptions, durable-rivet-effect via CompactionTask
 /** A file or directory to watch. It may be missing; creating it is a change. */
 export interface WatchTarget {
 	path: string;
@@ -484,6 +528,94 @@ export interface WatchTarget {
 	recursive?: boolean;
 	/** Entries below `path` that are neither watched nor reported: names starting with `.`, or these names. */
 	exclude?: { hidden?: boolean; names?: readonly string[] };
+}
+
+## LineScanner  durable/src/env/line-scan.ts
+used by: env-effect
+/**
+ * Computes a `LineScan` from a file's bytes fed in order, so an environment can scan any size in bounded memory. Decoded
+ * sizes use the same streaming WHATWG decoder as decoding the whole file at once.
+ */
+export class LineScanner {
+	/** `startLine` and `endLine` must be non-negative integers with `endLine > startLine`; `endLine` absent: to the end. */
+	constructor(startLine: number, endLine = Number.POSITIVE_INFINITY)
+	push(chunk: Uint8Array): void
+	finish(): LineScan
+}
+
+## NodeWatchOptions  durable/src/env/node-watch.ts
+used by: env-effect via LocalExecutionEnv
+/** How `NodeExecutionEnv` watches. */
+export interface NodeWatchOptions {
+	/**
+	 * Force a mode. By default `polling` is chosen on Windows, where native watchers keep directories open and so block
+	 * renaming their parents, and for file systems that do not report remote changes.
+	 */
+	mode?: "native" | "polling";
+	/** Interval between snapshots in `polling` mode; default 2000 ms. */
+	pollIntervalMs?: number;
+	/** Most directories one watcher covers; default 10,000. */
+	maxDirectories?: number;
+}
+
+## NodeExecutionEnv  durable/src/env/node.ts
+used by: env-effect via LocalExecutionEnv
+export class NodeExecutionEnv implements ExecutionEnv {
+	/** Every local environment sees the same files. */
+	readonly id: string
+	cwd: string
+	constructor(options: { cwd: string; shellPath?: string; shellEnv?: NodeJS.ProcessEnv; watch?: NodeWatchOptions })
+	async watch(
+		targets: readonly WatchTarget[],
+		onChange: (change: FileChange) => void,
+		context: Context,
+	): Promise<Result<FileWatcher, FileError>>
+	async absolutePath(path: string, _context: Context): Promise<Result<string, FileError>>
+	async joinPath(parts: string[], _context: Context): Promise<Result<string, FileError>>
+	async exec(
+		command: string | readonly string[],
+		options: ShellExecOptions | undefined,
+		context: Context,
+	): Promise<Result<ShellExecResult, ExecutionError>>
+	async openTextLineReader(path: string, context: Context): Promise<Result<TextLineReader, FileError>>
+	async readTextFile(path: string, context: Context): Promise<Result<string, FileError>>
+	async readTextLines(
+		path: string,
+		options: { maxLines?: number } | undefined,
+		context: Context,
+	): Promise<Result<string[], FileError>>
+	async readBinaryFile(path: string, context: Context): Promise<Result<Uint8Array, FileError>>
+	async openBinaryReader(
+		path: string,
+		options: { noFollow?: boolean } | undefined,
+		context: Context,
+	): Promise<Result<BinaryReader, FileError>>
+	async writeFile(path: string, content: string | Uint8Array, context: Context): Promise<Result<void, FileError>>
+	async appendFile(path: string, content: string | Uint8Array, context: Context): Promise<Result<void, FileError>>
+	async truncateFile(path: string, size: number, context: Context): Promise<Result<void, FileError>>
+	async flushFile(path: string, context: Context): Promise<Result<void, FileError>>
+	async renameFile(sourcePath: string, destinationPath: string, context: Context): Promise<Result<void, FileError>>
+	async fileInfo(path: string, context: Context): Promise<Result<FileInfo, FileError>>
+	async listDir(path: string, context: Context): Promise<Result<FileInfo[], FileError>>
+	async openDirReader(path: string, context: Context): Promise<Result<DirReader, FileError>>
+	async canonicalPath(path: string, context: Context): Promise<Result<string, FileError>>
+	async exists(path: string, context: Context): Promise<Result<boolean, FileError>>
+	async createDir(
+		path: string,
+		options: { recursive?: boolean } | undefined,
+		context: Context,
+	): Promise<Result<void, FileError>>
+	async remove(
+		path: string,
+		options: { recursive?: boolean; force?: boolean } | undefined,
+		context: Context,
+	): Promise<Result<void, FileError>>
+	async createTempDir(prefix: string | undefined, context: Context): Promise<Result<string, FileError>>
+	async createTempFile(
+		options: { prefix?: string; suffix?: string } | undefined,
+		context: Context,
+	): Promise<Result<string, FileError>>
+	async cleanup(_context: Context): Promise<void>
 }
 
 ## ConversationBusy  durable/src/errors.ts

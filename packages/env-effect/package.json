@@ -1,0 +1,65 @@
+{
+	"name": "@effectified/pi-env",
+	"version": "0.1.0",
+	"description": "Pi's execution environments in Effect: local and remote environments, SSH, processes and terminals as scoped resources",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"source": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./node": {
+			"source": "./src/node.ts",
+			"types": "./dist/node.d.ts",
+			"import": "./dist/node.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"sideEffects": false,
+	"piEffect": {
+		"kind": "facade"
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "node ../../scripts/package-files.mjs clean dist",
+		"build": "tsc -p tsconfig.build.json",
+		"test": "vitest --run",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"keywords": [
+		"effect",
+		"pi",
+		"ssh",
+		"remote",
+		"execution-environment"
+	],
+	"author": "Gunther Brunner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/effectified/pi.git",
+		"directory": "packages/env-effect"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"dependencies": {
+		"@earendil-works/chord": "1.6.1",
+		"@earendil-works/pi-durable": "1.6.1",
+		"@earendil-works/pi-env": "1.6.1"
+	},
+	"peerDependencies": {
+		"effect": "~4.1.5"
+	},
+	"devDependencies": {
+		"@effectified/pi-ai": "0.1.0",
+		"effect": "4.1.5",
+		"vitest": "4.1.12"
+	}
+}
