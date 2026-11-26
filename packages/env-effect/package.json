@@ -50,14 +50,15 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@earendil-works/pi-durable": "1.6.1",
 		"@earendil-works/pi-env": "1.6.1",
-		"@effectified/pi-chord": "0.1.0"
+		"@effectified/pi-chord": "0.1.0",
+		"@effectified/pi-durable": "0.1.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5"
 	},
 	"devDependencies": {
+		"@earendil-works/pi-durable": "1.6.1",
 		"@effectified/pi-ai": "0.1.0",
 		"@effectified/pi-telemetry": "0.1.0",
 		"effect": "4.1.5",

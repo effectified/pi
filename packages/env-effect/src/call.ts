@@ -1,7 +1,7 @@
 // The call bridge: one call into Pi run as an Effect, cancelled through Pi's AbortSignal when the fiber is interrupted.
 
-import type { Result } from "@earendil-works/pi-durable/env";
 import { ChordContext, type Context, withAbortSignal } from "@effectified/pi-chord/context";
+import type { Result } from "@effectified/pi-durable/env";
 import { Effect } from "effect";
 
 /**

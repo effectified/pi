@@ -1,10 +1,9 @@
 // What this host provides to every Effect that runs inside an actor: the actor's identity, its database, its way to
 // the engine, and Pi's storage on that database.
 
-import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import type { SqliteDatabase } from "@effectified/pi-chord/sqlite";
-import { type DurableError, Storage, UnexpectedError } from "@effectified/pi-durable";
-import { Context, Effect, type Layer, type Option, type Schema } from "effect";
+import { type DurableError, Storage } from "@effectified/pi-durable";
+import { Context, type Effect, Layer, type Option, type Schema } from "effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import type { ClientRaw } from "rivetkit/client";
 
@@ -75,12 +74,6 @@ export interface StorageOptions {
  * `@effectified/pi-durable` over `ActorSql`, which a product may use; that path measured slower (README, "Storage").
  */
 export function storage(options: StorageOptions): Layer.Layer<Storage.HarnessStorage, DurableError, ActorDatabase> {
-	return Storage.custom(
-		ActorDatabase.use((database) =>
-			Effect.tryPromise({
-				try: () => SqliteStorage.open(database, { prefix: options.prefix }),
-				catch: (cause) => new UnexpectedError({ cause }),
-			}),
-		),
-	);
+	// The adapter's `close` does nothing, so the storage closing it leaves the actor's database open.
+	return Layer.unwrap(ActorDatabase.useSync((database) => Storage.sqlite(database, options)));
 }

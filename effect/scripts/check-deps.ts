@@ -24,16 +24,7 @@ const DOCUMENTED_PI_IMPORTS: ReadonlyMap<string, string> = new Map<string, strin
  * Imports of a Pi package that a package's `src` has although that package is not its own to wrap, each with why: what
  * no facade offers yet. Keyed by the importing package and the specifier.
  */
-const PI_IMPORTS_NOT_OFFERED: ReadonlyMap<string, string> = new Map<string, string>([
-	[
-		"@effectified/pi-durable-rivet @earendil-works/pi-durable/storage/sqlite",
-		"Pi Durable's own SqliteStorage on the actor's Chord SqliteDatabase; @effectified/pi-durable offers Storage.sql over an Effect SqlClient, not this one",
-	],
-	[
-		"@effectified/pi-env @earendil-works/pi-durable/env",
-		"Pi declares the environment contract pi-env implements (ExecutionEnv, Result, FileError, ...) in pi-durable; @effectified/pi-durable does not offer /env, and env-effect does not depend on it (PRD 5.4)",
-	],
-]);
+const PI_IMPORTS_NOT_OFFERED: ReadonlyMap<string, string> = new Map<string, string>([]);
 const notOfferedUsed = new Set<string>();
 
 for (const pkg of packages) {

@@ -11,6 +11,16 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
+		"./env": {
+			"source": "./src/env/index.ts",
+			"types": "./dist/env/index.d.ts",
+			"import": "./dist/env/index.js"
+		},
+		"./env/node": {
+			"source": "./src/env/node.ts",
+			"types": "./dist/env/node.d.ts",
+			"import": "./dist/env/node.js"
+		},
 		"./testing": {
 			"source": "./src/testing/index.ts",
 			"types": "./dist/testing/index.d.ts",

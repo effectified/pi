@@ -1,7 +1,7 @@
 // A watcher running in a pi-env daemon next to the files, as a scoped resource whose changes are a Stream.
 
-import type { WatchTarget } from "@earendil-works/pi-durable/env";
 import { RemoteWatcher, type RemoteWatchOptions } from "@earendil-works/pi-env";
+import type { WatchTarget } from "@effectified/pi-durable/env";
 import type { Effect, Scope } from "effect";
 import type { RemoteFailed } from "../errors.ts";
 import * as Watcher from "../watcher.ts";

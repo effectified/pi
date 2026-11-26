@@ -1,6 +1,6 @@
 // Commands of an environment: one run as an Effect of its exit, or as a Stream of its output that ends with its exit.
 
-import type { ExecutionEnv, ShellExecOptions, ShellExecResult, ShellOutputInfo } from "@earendil-works/pi-durable/env";
+import type { ExecutionEnv, ShellExecOptions, ShellExecResult, ShellOutputInfo } from "@effectified/pi-durable/env";
 import { Effect, Queue, Stream } from "effect";
 import * as Call from "./call.ts";
 import { type ExecFailed, fromExecutionError } from "./errors.ts";

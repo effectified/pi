@@ -1,5 +1,6 @@
 // Pi's file readers in Effect terms: lines and directory entries as Streams, a binary reader as a scoped resource.
 
+import { BACKGROUND_CONTEXT, type Context as ChordContext } from "@effectified/pi-chord/context";
 import type {
 	ExecutionEnv,
 	FileError,
@@ -8,8 +9,7 @@ import type {
 	BinaryReader as PiBinaryReader,
 	Result,
 	TextLine,
-} from "@earendil-works/pi-durable/env";
-import { BACKGROUND_CONTEXT, type Context as ChordContext } from "@effectified/pi-chord/context";
+} from "@effectified/pi-durable/env";
 import { Effect, Option, type Scope, Stream } from "effect";
 import * as Call from "./call.ts";
 import { type FileFailed, fromFileError } from "./errors.ts";
