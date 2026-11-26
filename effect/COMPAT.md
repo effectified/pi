@@ -53,6 +53,7 @@ Tests are counted per lane: the same files run under Vitest on Node and under `b
 | `@effectified/pi-ai` | facade | `@earendil-works/pi-ai`, both `effect/ai` bridges, the key of a request, `runTest`, the forms the plugins share | 62 | Images, classifiers, OAuth login, deferred responses |
 | `@effectified/pi-telemetry` | facade | `@earendil-works/pi-telemetry` | 59 | `TelemetryStore`; histogram exemplars |
 | `@effectified/pi-chord` | facade | `@earendil-works/chord`: its context from the fiber, JSON, SQLite, delta, output | 42 | Chord's runtime (hosts, facets, links, store, clients, plugins, app kit, surfaces, sync); `Progress`; `/sqlite/cloudflare` |
+| `@effectified/pi-tui` | facade | `@earendil-works/pi-tui`: a running TUI as a scoped service, input, keybindings and component callbacks as Streams, clipboard and autocomplete as Effects | 65 | pi-tui's own timers (render throttle, spinners, input timeouts) do not follow `Clock`; an `AutocompleteProvider` or `SlashCommand` written in Effect |
 | `@effectified/pi-durable` | facade | `@earendil-works/pi-durable` | 442 | A task's own hooks, `setTimer`, prompt sections and wrappers, synchronous observers |
 | `@effectified/pi-durable-rivet` | host | A harness in a Rivet actor: storage, wake-ups, forks; a local engine in a kept directory; `ActorSql` | 239 | Several machines; an engine that dies |
 | `@effectified/pi-router` | plugin | Routes, fallback, limiter, prices, constraints | 181 | A real provider; image and classifier routing |
@@ -95,6 +96,7 @@ An application imports `@effectified/pi-*` and `effect`, never `@earendil-works/
   | pi-telemetry | 3 |
   | pi-schema | 0 |
   | pi-chord | 167 (37 of Chord's app runtime at its root, `Progress`, and 129 in the 19 subpaths of its app runtime, which the facade does not export) |
+  | pi-tui | 0 |
 
 - `check-deps.ts` enforces this rule. Plugins and the composition are written the way an application is, so they
   import no `@earendil-works/*`. Every README and documentation page shows only effectified imports; an exception

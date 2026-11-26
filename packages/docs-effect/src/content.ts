@@ -40,6 +40,8 @@ export const ROLES: Readonly<Record<string, string>> = {
 		"Pi's spans, metrics and events arrive on Effect's tracer, metrics and logger, with the trace context carried into Pi.",
 	"chord-effect":
 		"The Chord context every Pi call takes, cancelled by the calling fiber's scope or the Clock, and Chord's JSON, SQLite and delta values.",
+	"tui-effect":
+		"The terminal UI as a scoped service: renders, focus and overlays as Effects, keys, keybindings and component callbacks as Streams.",
 	"durable-effect":
 		"The durable harness as Layers: conversations, tools, hooks, tasks, documents and commits, with tagged errors and interruption that cancels.",
 	"durable-rivet-effect":

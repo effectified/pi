@@ -247,7 +247,9 @@ class Graph {
 			for (const [index, symbol] of symbols.entries()) {
 				const key = symbol === undefined ? undefined : this.#enqueue(this.#target(symbol));
 				if (key !== undefined) roots.add(key);
-				else
+				// A Pi package's re-export of a dependency's value (pi-tui's `Marked`, from `marked`) has no Pi
+				// declaration to record; the dependency's version moves with Pi's own pin.
+				else if (symbol === undefined || !this.#fromDependency(this.#target(symbol)))
 					this.failures.push(`${where}: ${names[index].getText(file)} resolves to no declaration in Pi's sources`);
 			}
 		}
@@ -347,6 +349,12 @@ class Graph {
 		return specifier.startsWith(PI_SCOPE) && statement.exportClause === undefined && statement.isTypeOnly
 			? statement.moduleSpecifier
 			: undefined;
+	}
+
+	/** Whether every declaration of `symbol` is in an installed package (`node_modules`), not in Pi's or our sources. */
+	#fromDependency(symbol: PiSymbol): boolean {
+		const files = symbol.declarations.map((handle) => handle.resolve(this.#project)?.getSourceFile().fileName);
+		return files.length > 0 && files.every((name) => name?.split(/[\\/]/).includes("node_modules") === true);
 	}
 
 	#target(symbol: PiSymbol): PiSymbol {
