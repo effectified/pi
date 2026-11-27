@@ -7,10 +7,9 @@
 // directory names the commit and the Pi the packages were built against.
 // Usage: node effect/scripts/vendor.ts <directory> [--unreleased-pi]
 
-import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { withoutSource } from "./manifest.ts";
+import { buildClean, withoutSource } from "./manifest.ts";
 import { buildOrder, effectPackages, ROOT } from "./packages.ts";
 import { productPins, sourceRecord } from "./pins.ts";
 
@@ -44,11 +43,7 @@ for (const pkg of order.packages) {
 	// A private package is not a product's to install. The docs package is the exception: it is private because it
 	// is never published, and a product keeps its pages and its skills beside the packages they explain.
 	if (manifest.private === true && pkg.kind !== "docs") continue;
-	const result = spawnSync("npm", ["run", "build"], { cwd: directory, stdio: ["ignore", "ignore", "inherit"] });
-	if (result.status !== 0) {
-		console.error(`${pkg.name}: npm run build failed`);
-		process.exit(result.status ?? 1);
-	}
+	buildClean(pkg.name, directory);
 	const out = join(target, basename(pkg.directory));
 	mkdirSync(out);
 	cpSync(join(directory, "dist"), join(out, "dist"), {

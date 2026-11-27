@@ -11,7 +11,7 @@
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { repack, run, withoutSource } from "./manifest.ts";
+import { buildClean, repack, run, withoutSource } from "./manifest.ts";
 import { buildOrder, effectPackages, ROOT } from "./packages.ts";
 import { productPins, sourceRecord } from "./pins.ts";
 
@@ -34,7 +34,7 @@ if (order.kind === "cycle") {
 for (const pkg of order.packages) {
 	const directory = join(ROOT, pkg.directory);
 	if (pkg.private) continue;
-	run(pkg.name, "npm", ["run", "build"], directory);
+	buildClean(pkg.name, directory);
 	// Packed once as the repository has it, then again with the manifest a consumer gets: the package's own
 	// manifest is never rewritten, since other agents work in this tree.
 	const staging = mkdtempSync(join(tmpdir(), "pi-effect-pack-"));

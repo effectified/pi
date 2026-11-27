@@ -32,6 +32,15 @@ export function repack(tarball: string, destination: string, edit: (manifest: Ma
 	rmSync(staging, { recursive: true });
 }
 
+/**
+ * Builds the package in `directory` from nothing. A build alone leaves the output of sources that are gone in `dist`,
+ * and what leaves this repository would carry it.
+ */
+export function buildClean(name: string, directory: string): void {
+	run(name, "npm", ["run", "clean"], directory);
+	run(name, "npm", ["run", "build"], directory);
+}
+
 /** Runs `command` in `cwd` and ends the script when it fails; `name` says what the failure was about. */
 export function run(name: string, command: string, args: string[], cwd: string): void {
 	const result = spawnSync(command, args, { cwd, stdio: ["ignore", "ignore", "inherit"] });
