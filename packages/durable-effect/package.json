@@ -1,6 +1,6 @@
 {
 	"name": "@effectified/pi-durable",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Pi Durable in Effect: the durable agent harness as Layers, Effects and Streams",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -135,9 +135,9 @@
 	},
 	"dependencies": {
 		"@earendil-works/pi-durable": "1.6.1",
-		"@effectified/pi-ai": "0.2.0",
-		"@effectified/pi-chord": "0.2.0",
-		"@effectified/pi-schema": "0.2.0"
+		"@effectified/pi-ai": "0.3.0",
+		"@effectified/pi-chord": "0.3.0",
+		"@effectified/pi-schema": "0.3.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5"
@@ -148,7 +148,7 @@
 		"@earendil-works/pi-schema": "1.6.1",
 		"@effect/sql-sqlite-bun": "4.1.5",
 		"@effect/sql-sqlite-node": "4.1.5",
-		"@effectified/pi-codemode": "0.2.0",
+		"@effectified/pi-codemode": "0.3.0",
 		"effect": "4.1.5",
 		"esbuild": "0.28.2",
 		"fake-indexeddb": "6.2.6",

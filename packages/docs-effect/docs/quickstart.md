@@ -4,16 +4,15 @@ Get the packages into a product, compose one agent thread, and work it to its ou
 
 ## Get the packages
 
-The packages are released on GitHub, not on npm. Each release of [effectified/pi](https://github.com/effectified/pi/releases) holds one tarball per package, and a package's dependencies on the other pi-effect packages point at their tarballs in the same release, so one URL installs a package with everything of ours it needs. Pi and `effect` come from npm:
+The packages are on npm under `@effectified`, all at one version. Installing one brings the pi-effect packages and the Pi packages it depends on; `effect` is a peer dependency, so the product has one copy:
 
 ```sh
-R=https://github.com/effectified/pi/releases/download/v0.2.0
-npm install --allow-remote=all $R/effectified-pi-thread-0.2.0.tgz effect
-pnpm add --config.block-exotic-subdeps=false $R/effectified-pi-thread-0.2.0.tgz effect
-bun add $R/effectified-pi-thread-0.2.0.tgz effect
+npm install @effectified/pi-thread effect
+pnpm add @effectified/pi-thread effect
+bun add @effectified/pi-thread effect
 ```
 
-npm 12 fetches no URL dependency unless `allow-remote` allows it, and pnpm none below the top level while `blockExoticSubdeps` is on, so each needs the switch above (or the same setting in the project's `.npmrc` or `pnpm-workspace.yaml`); Bun needs none. `node effect/scripts/release.ts` makes a release from a clean, pushed tree.
+Each version is published by the repository's own workflow, with a provenance attestation that names the commit it was built from (`npm audit signatures` checks it).
 
 A product that keeps them in its own repository instead holds them as built workspace packages, written by a script of the pi-effect repository:
 

@@ -1,6 +1,6 @@
 {
 	"name": "@effectified/pi-router",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Model routes for Pi in Effect: fallback, a concurrency limiter with backoff, prices, and region and classification filters",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -43,7 +43,7 @@
 	},
 	"dependencies": {
 		"@earendil-works/pi-ai": "1.6.1",
-		"@effectified/pi-ai": "0.2.0"
+		"@effectified/pi-ai": "0.3.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5"

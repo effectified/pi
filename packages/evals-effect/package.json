@@ -1,6 +1,6 @@
 {
 	"name": "@effectified/pi-evals",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"private": true,
 	"description": "Pi's evals in Effect: the documentation-lift plan and report, the coding-agent eval harness and the container runner",
 	"type": "module",
@@ -51,7 +51,7 @@
 	},
 	"devDependencies": {
 		"@earendil-works/pi-ai": "1.6.1",
-		"@effectified/pi-ai": "0.2.0",
+		"@effectified/pi-ai": "0.3.0",
 		"effect": "4.1.5",
 		"vitest": "4.1.12"
 	}

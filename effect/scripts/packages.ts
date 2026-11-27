@@ -19,6 +19,8 @@ export interface EffectPackage {
 	readonly name: string;
 	readonly version: string;
 	readonly kind: PackageKind;
+	/** Whether the manifest says `private`: such a package is never published. */
+	readonly private: boolean;
 	readonly dependencies: Readonly<Record<string, string>>;
 	readonly peerDependencies: Readonly<Record<string, string>>;
 	readonly devDependencies: Readonly<Record<string, string>>;
@@ -46,6 +48,7 @@ export function effectPackages(): EffectPackage[] {
 				name: manifest.name,
 				version: manifest.version,
 				kind,
+				private: manifest.private === true,
 				dependencies: manifest.dependencies ?? {},
 				peerDependencies: manifest.peerDependencies ?? {},
 				devDependencies: manifest.devDependencies ?? {},

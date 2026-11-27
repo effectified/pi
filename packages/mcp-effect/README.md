@@ -15,9 +15,7 @@ It adds no behaviour of its own: what pi-mcp does is what happens. Built for pi-
 ## Install
 
 ```sh
-# the pi-effect packages come from their GitHub release, not npm
-R=https://github.com/effectified/pi/releases/download/v0.2.0
-npm install --allow-remote=all $R/effectified-pi-mcp-0.2.0.tgz effect
+npm install @effectified/pi-mcp effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`), so the application has one copy.

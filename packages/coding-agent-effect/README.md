@@ -28,9 +28,7 @@ It adds no behaviour of its own: what pi-coding-agent does is what happens. Buil
 ## Install
 
 ```sh
-# the pi-effect packages come from their GitHub release, not npm
-R=https://github.com/effectified/pi/releases/download/v0.2.0
-npm install --allow-remote=all $R/effectified-pi-coding-agent-0.2.0.tgz $R/effectified-pi-agent-0.2.0.tgz $R/effectified-pi-ai-0.2.0.tgz $R/effectified-pi-mcp-0.2.0.tgz $R/effectified-pi-env-0.2.0.tgz $R/effectified-pi-schema-0.2.0.tgz $R/effectified-pi-tui-0.2.0.tgz effect
+npm install @effectified/pi-coding-agent @effectified/pi-agent @effectified/pi-ai @effectified/pi-mcp @effectified/pi-env @effectified/pi-schema @effectified/pi-tui effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`), so the application has one copy.

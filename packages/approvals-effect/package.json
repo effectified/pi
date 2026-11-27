@@ -1,6 +1,6 @@
 {
 	"name": "@effectified/pi-approvals",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Human approval of tool calls for Pi Durable agents in Effect: a parking gate with typed requests and decisions bound to the arguments",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -43,7 +43,7 @@
 	},
 	"dependencies": {
 		"@earendil-works/pi-durable": "1.6.1",
-		"@effectified/pi-durable": "0.2.0"
+		"@effectified/pi-durable": "0.3.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5"
@@ -51,7 +51,7 @@
 	"devDependencies": {
 		"@effect/sql-sqlite-bun": "4.1.5",
 		"@effect/sql-sqlite-node": "4.1.5",
-		"@effectified/pi-ai": "0.2.0",
+		"@effectified/pi-ai": "0.3.0",
 		"effect": "4.1.5",
 		"vitest": "4.1.12"
 	}

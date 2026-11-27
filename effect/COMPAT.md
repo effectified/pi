@@ -5,8 +5,15 @@ only after the whole suite ran on those versions (`npm run check`, each package'
 
 | pi-effect | Pi packages (`@earendil-works/*`) | `effect` | Node | Bun | Tested at upstream commit |
 |---|---|---|---|---|---|
+| 0.3.0 | 1.6.1 | 4.1.5 (peer `~4.1.5`) | 26.13.1 | 1.4.5 | `745338811` |
 | 0.2.0 | 1.6.1 | 4.1.5 (peer `~4.1.5`) | 26.13.1 | 1.4.5 | `745338811` |
 | 0.1.0 | 1.6.1 | 4.1.5 (peer `~4.1.5`) | 26.13.1 (22.19.0 and 24.22.0 ran earlier states, on Pi 1.6.0) | 1.4.5 | `745338811` |
+
+0.3.0 is the first version on npm (`@effectified/pi-*`, see "Releasing"), with the packages made Effect-native
+throughout and checked by oxlint, oxfmt and tsrs. On 2026-11-28 `node effect/scripts/gate.ts` passed every package's
+tests: 3,070 on Node 26.13.1 and 3,022 on Bun 1.4.5, none failed, and `node effect/scripts/release.ts publish
+--dry-run` packed the 22 public packages and npm accepted each tarball. Like 0.2.0 it is built with
+`--unreleased-pi`, for the same two coding-agent fixes past v1.6.1.
 
 0.2.0 gives every Pi package a facade (24 packages). On 2026-11-26 `node effect/scripts/gate.ts` passed every package's
 tests: 2,987 on Node 26.13.1 and 2,939 on Bun 1.4.5, none failed, with `node effect/scripts/build.ts` emitting every
@@ -49,7 +56,7 @@ own workflows are disabled in the fork (`gh workflow enable <name>` brings one b
 `output-file-failures`), and the same three fail on an untouched copy of `main` at `f8149d1ab` in the same
 environment. Every other upstream suite and every pi-effect suite passes in it.
 
-## Packages in 0.2.0
+## Packages in 0.3.0
 
 Tests are counted per lane: the same files run under Vitest on Node and under `bun test`.
 
@@ -120,6 +127,14 @@ An application imports `@effectified/pi-*` and `effect`, never `@earendil-works/
   contract from `@effectified/pi-durable/env`). What no facade offers yet would be listed, with why, in its
   `PI_IMPORTS_NOT_OFFERED`, which is empty. Every README and documentation page shows only effectified imports; an
   exception would be listed in its `DOCUMENTED_PI_IMPORTS`, which is empty.
+
+## Releasing
+
+The packages are published on npm under `@effectified`, by `.github/workflows/effect-release.yml` and by nothing
+else: it publishes a version npm does not have yet once Effect CI passed on the pushed commit, with npm's trusted
+publishing (the workflow's identity, no token) and a provenance attestation per tarball. `node
+effect/scripts/version.ts` moves the version; `node effect/scripts/release.ts plan` says what a push would publish.
+0.1.0 and 0.2.0 were released as tarballs of GitHub releases and are not on npm.
 
 ## Bumping upstream
 

@@ -160,6 +160,8 @@ every core.
 | Record of the Pi declarations the packages use (`effect/pi-surface/`): write, or check | `node effect/scripts/pi-surface.ts [--check]` |
 | Pins, release, `COMPAT.md` row and surface record against the tree | `node effect/scripts/sync.ts check` |
 | A sync, after `git merge --no-commit --no-ff main` | `node effect/scripts/sync.ts bump` |
+| A new version of the packages, everywhere it is written; pushed, it is the release (`packages/docs-effect/docs/contributing.md`, "Releasing") | `node effect/scripts/version.ts <major\|minor\|patch> [--unreleased-pi]` |
+| What CI would publish on npm for this tree, and a check of every tarball without publishing | `node effect/scripts/release.ts plan`, `node effect/scripts/release.ts publish --dry-run` |
 | Every upstream and pi-effect test, offline | `./test.sh` |
 
 - After code changes: `node effect/scripts/gate.ts --changed`, and the whole gate before a commit that others build

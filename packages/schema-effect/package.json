@@ -1,6 +1,6 @@
 {
 	"name": "@effectified/pi-schema",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Effect Schema to and from Pi tool parameters (JSON Schema), with typed decode errors",
 	"type": "module",
 	"main": "./dist/index.js",

@@ -1,6 +1,6 @@
 {
 	"name": "@effectified/pi-docs",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"private": true,
 	"description": "The documentation of the pi-effect packages, kept as Pi keeps its own: Markdown pages and a docs.json catalog, a site built from them, and skills that lead agents to the pages",
 	"type": "module",

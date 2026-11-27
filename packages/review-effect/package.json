@@ -1,6 +1,6 @@
 {
 	"name": "@effectified/pi-review",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Review before an answer stands for Pi Durable agents in Effect: a second model of another family, a citation check, and a bounded number of corrective runs",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -44,8 +44,8 @@
 	"dependencies": {
 		"@earendil-works/pi-ai": "1.6.1",
 		"@earendil-works/pi-durable": "1.6.1",
-		"@effectified/pi-ai": "0.2.0",
-		"@effectified/pi-durable": "0.2.0"
+		"@effectified/pi-ai": "0.3.0",
+		"@effectified/pi-durable": "0.3.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5"

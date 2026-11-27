@@ -1,6 +1,6 @@
 {
 	"name": "@effectified/pi-ai",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Pi's models in Effect: Models as a service, streams and completions as Stream and Effect, and bridges to effect/ai in both directions",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -60,7 +60,7 @@
 	},
 	"dependencies": {
 		"@earendil-works/pi-ai": "1.6.1",
-		"@effectified/pi-schema": "0.2.0"
+		"@effectified/pi-schema": "0.3.0"
 	},
 	"peerDependencies": {
 		"effect": "~4.1.5"

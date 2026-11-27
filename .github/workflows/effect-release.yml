@@ -1,0 +1,100 @@
+name: Effect release
+
+# Publishes the pi-effect packages on npm when their version is one npm does not have yet, and does nothing on any
+# other push. So a release is a pushed version change (node effect/scripts/version.ts): nobody signs in to npm and no
+# token is stored. npm trusts this file by its name (each package's trusted publisher, set once by
+# effect/scripts/npm-bootstrap.ts), so a rename of it needs every package's trust set again.
+
+on:
+  push:
+    branches: [effect]
+  # Run again by hand after a run that stopped half way: what is on npm already is left as it is.
+  workflow_dispatch:
+
+# A release is never cancelled half way, and two never run at once.
+concurrency:
+  group: effect-release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  plan:
+    if: github.repository == 'effectified/pi'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      state: ${{ steps.plan.outputs.state }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # `released`, `ready` or `bootstrap`, from the manifests and npm. It installs and builds nothing.
+      - name: What is there to release
+        id: plan
+        run: node effect/scripts/release.ts plan
+
+  publish:
+    needs: plan
+    if: needs.plan.outputs.state == 'ready'
+    runs-on: ubuntu-latest
+    permissions:
+      # The GitHub release and its tag.
+      contents: write
+      # The workflow's identity, which npm takes instead of a token.
+      id-token: write
+      # Reading Effect CI's run of this commit.
+      actions: read
+    steps:
+      # Only a commit Effect CI passed is published. Its run starts with the same push; a newer push cancels it,
+      # and then this job fails and the newer commit's release publishes.
+      - name: Wait for Effect CI on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          run=""
+          for attempt in $(seq 1 30); do
+            run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow effect-ci.yml --commit "$SHA" --json databaseId --jq '.[0].databaseId // empty')
+            [ -n "$run" ] && break
+            sleep 10
+          done
+          if [ -z "$run" ]; then
+            echo "::error::Effect CI has no run for $SHA"
+            exit 1
+          fi
+          gh run watch "$run" --repo "$GITHUB_REPOSITORY" --exit-status --interval 30 > /dev/null
+          echo "Effect CI passed on $SHA: https://github.com/$GITHUB_REPOSITORY/actions/runs/$run"
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The packer compares the wrapped Pi sources with their release tag: it needs the tags and the history.
+          fetch-depth: 0
+
+      # Node 24 comes with an npm that publishes by the workflow's identity (11.5.1 or newer); release.ts checks.
+      # No cache in a release build, and no registry-url: with it setup-node writes a token line npm would read.
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # The pi-effect packages resolve Pi's dist.
+      - name: Build upstream
+        run: npm run build
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node effect/scripts/release.ts publish

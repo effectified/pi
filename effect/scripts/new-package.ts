@@ -6,7 +6,7 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ROOT } from "./packages.ts";
+import { effectPackages, ROOT } from "./packages.ts";
 
 const [directory, kind, description, ...dependencySpecs] = process.argv.slice(2);
 if (directory === undefined || !directory.endsWith("-effect") || description === undefined) {
@@ -38,7 +38,8 @@ for (const spec of dependencySpecs) {
 
 const manifest = {
 	name: `@effectified/pi-${directory.slice(0, -"-effect".length)}`,
-	version: "0.2.0",
+	// A new package joins the others at the version they share.
+	version: effectPackages()[0]?.version ?? "0.1.0",
 	description,
 	type: "module",
 	main: "./dist/index.js",

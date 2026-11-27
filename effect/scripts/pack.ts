@@ -1,5 +1,5 @@
-// Packs every public pi-effect package into one directory as tarballs: what `release.ts` attaches to a GitHub
-// release, and what a product installs before a release (`effect/PATENTOS.md`). Each package is built first, in
+// Packs every public pi-effect package into one directory as tarballs: what `release.ts` publishes on npm, and
+// what a product installs before a release (`effect/PATENTOS.md`). Each package is built first, in
 // dependency order, so a tarball never holds an older `dist` than its source. A tarball's manifest has no `source`
 // condition: it points at `src`, which a tarball does not hold. Upstream's `npm run build` must have run once (the
 // packages resolve Pi's `dist`).
@@ -8,7 +8,7 @@
 // directory names the commit and the Pi the packages were built against.
 // Usage: node effect/scripts/pack.ts <directory> [--unreleased-pi]
 
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { repack, run, withoutSource } from "./manifest.ts";
@@ -33,8 +33,7 @@ if (order.kind === "cycle") {
 
 for (const pkg of order.packages) {
 	const directory = join(ROOT, pkg.directory);
-	// Trust boundary: a manifest is a file, read as untyped JSON.
-	if (JSON.parse(readFileSync(join(directory, "package.json"), "utf8")).private === true) continue;
+	if (pkg.private) continue;
 	run(pkg.name, "npm", ["run", "build"], directory);
 	// Packed once as the repository has it, then again with the manifest a consumer gets: the package's own
 	// manifest is never rewritten, since other agents work in this tree.

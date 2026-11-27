@@ -1,6 +1,6 @@
 {
 	"name": "@effectified/pi-tui",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "The terminal UI in Effect: a running TUI and terminal as scoped resources, keyboard and terminal input as Streams, renders and updates as Effects",
 	"type": "module",
 	"main": "./dist/index.js",

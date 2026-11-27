@@ -20,9 +20,7 @@ verifier are yours.
 ## Install
 
 ```sh
-# the pi-effect packages come from their GitHub release, not npm
-R=https://github.com/effectified/pi/releases/download/v0.2.0
-npm install --allow-remote=all $R/effectified-pi-review-0.2.0.tgz $R/effectified-pi-durable-0.2.0.tgz effect
+npm install @effectified/pi-review @effectified/pi-durable effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`).

@@ -59,7 +59,8 @@ RivetKit and does not install in CI or in a worktree at another depth; a git dep
 inside a monorepo; PatentOS's `repo-check` allows an exact version or `workspace:*` and nothing else.
 `vendor/pi-effect/README.md` in PatentOS says the same.
 
-`effect/scripts/pack.ts` still makes tarballs, for a product that wants them.
+`effect/scripts/pack.ts` still makes tarballs, for a product that wants them before a release; the releases
+themselves are on npm (`effect/COMPAT.md`, "Releasing").
 
 The vendoring also writes `docs-effect`: the packages explained as pages (`vendor/pi-effect/docs-effect/dist/index.html`)
 and as skills for agents. PatentOS links the five skills for building on the packages into `.claude/skills` and

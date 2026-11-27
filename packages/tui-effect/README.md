@@ -19,9 +19,7 @@ value, what it offers as pi-tui has it and what it replaces with an Effect form.
 ## Installation
 
 ```bash
-# the pi-effect packages come from their GitHub release, not npm
-R=https://github.com/effectified/pi/releases/download/v0.2.0
-npm install --allow-remote=all $R/effectified-pi-tui-0.2.0.tgz effect
+npm install @effectified/pi-tui effect
 ```
 
 ## A running TUI

@@ -14,7 +14,7 @@ pi-evals', and are not wrapped here.
 
 ## Install
 
-pi-evals is private to Pi's workspace and not published, so this package is not in the GitHub release either: it
+pi-evals is private to Pi's workspace and not published, so this package is not published either: it
 works inside a checkout of [effectified/pi](https://github.com/effectified/pi), where npm links both.
 
 ```sh

@@ -15,9 +15,7 @@ The port needs no harness: `@effectified/pi-search/provider` imports only `effec
 ## Install
 
 ```sh
-# the pi-effect packages come from their GitHub release, not npm
-R=https://github.com/effectified/pi/releases/download/v0.2.0
-npm install --allow-remote=all $R/effectified-pi-search-0.2.0.tgz $R/effectified-pi-durable-0.2.0.tgz effect
+npm install @effectified/pi-search @effectified/pi-durable effect
 ```
 
 | Import | Holds |

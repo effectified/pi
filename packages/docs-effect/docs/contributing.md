@@ -73,6 +73,25 @@ half-written ones included.
 - The Linux runner is slower than a laptop, and engine tests that pass locally have failed there. Read the CI run
   after every push of package code. A new push cancels the run in progress.
 
+## Releasing
+
+The packages share one version and are published on npm by CI, with no token and nobody signed in.
+
+1. `node effect/scripts/version.ts <major|minor|patch>` writes the new version into every manifest, each
+   dependency of one package on another, `effect/COMPAT.md`, `effect/release.json` and the lockfile.
+2. Run the gate, complete the new row's prose in `effect/COMPAT.md`, commit, and push.
+3. Once Effect CI passed on that commit, `.github/workflows/effect-release.yml` publishes every package npm lacks
+   at that version, in dependency order, and makes the GitHub release `v<version>` with the notes.
+
+- A push that changes no version publishes nothing. `node effect/scripts/release.ts plan` says which it is.
+- A run that stopped half way is finished by running the workflow again: what is on npm is left as it is.
+- `node effect/scripts/release.ts publish --dry-run` packs every package and lets npm check each tarball.
+- npm trusts the workflow only for a package it knows. A new package is made known once, by a person signed in to
+  npm: `node effect/scripts/npm-bootstrap.ts`. Until then the release says which package is missing and publishes
+  nothing.
+- When upstream's `main` is past the pinned Pi version with no export changed, `version.ts --unreleased-pi` lets
+  that one version be built against it; the release notes then say so.
+
 ## Into a product
 
 `node effect/scripts/vendor.ts <directory>` builds every package and writes it there as a workspace package, with

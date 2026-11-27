@@ -20,9 +20,7 @@ order; and every fork nobody pinned is destroyed.
 ## Install
 
 ```sh
-# the pi-effect packages come from their GitHub release, not npm
-R=https://github.com/effectified/pi/releases/download/v0.2.0
-npm install --allow-remote=all $R/effectified-pi-swarm-0.2.0.tgz $R/effectified-pi-durable-0.2.0.tgz effect
+npm install @effectified/pi-swarm @effectified/pi-durable effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`).
@@ -536,9 +534,7 @@ copy-on-write copy of the actor's storage, with a harness of its own, in another
 imports.
 
 ```sh
-# the pi-effect packages come from their GitHub release, not npm
-R=https://github.com/effectified/pi/releases/download/v0.2.0
-npm install --allow-remote=all $R/effectified-pi-swarm-0.2.0.tgz $R/effectified-pi-durable-rivet-0.2.0.tgz rivetkit
+npm install @effectified/pi-swarm @effectified/pi-durable-rivet rivetkit
 ```
 
 It runs as it stands, because the model is scripted; the same code is the test

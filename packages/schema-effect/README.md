@@ -6,9 +6,7 @@ Effect `Schema` to and from the JSON Schema that Pi tool parameters are written 
 ## Installation
 
 ```bash
-# the pi-effect packages come from their GitHub release, not npm
-R=https://github.com/effectified/pi/releases/download/v0.2.0
-npm install --allow-remote=all $R/effectified-pi-schema-0.2.0.tgz effect
+npm install @effectified/pi-schema effect
 ```
 
 ## Effect Schema to tool parameters

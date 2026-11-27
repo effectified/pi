@@ -28,9 +28,7 @@ child processes (Bun runs them too), so its connections, processes, terminals, S
 ## Installation
 
 ```bash
-# the pi-effect packages come from their GitHub release, not npm
-R=https://github.com/effectified/pi/releases/download/v0.2.0
-npm install --allow-remote=all $R/effectified-pi-env-0.2.0.tgz effect
+npm install @effectified/pi-env effect
 ```
 
 `effect` is a peer dependency (`~4.1.5`). Built for pi-env 1.6.1, which ships the daemon for Linux, macOS, Android
