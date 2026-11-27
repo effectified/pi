@@ -7,6 +7,8 @@ on:
     branches: [effect]
   pull_request:
     branches: [effect]
+  # Run on demand, without a commit: `gh workflow run "Effect CI" --ref effect`.
+  workflow_dispatch:
 
 concurrency:
   group: effect-ci-${{ github.ref }}
