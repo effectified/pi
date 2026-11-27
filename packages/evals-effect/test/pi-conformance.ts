@@ -27,6 +27,14 @@ export type ReportTyped = Assert<
 	Conform<Succeeds<typeof Report.readTaskObservation>, Returns<typeof PiReport.readTaskObservation>>
 >;
 
+/** `Report.EvalObservation` is Pi's `EvalObservation`, written as a Schema. */
+export type ObservationMirrored = Assert<Conform<Report.EvalObservation, PiReport.EvalObservation>>;
+
+/** `Plan.readDiscoveredCases` succeeds with what Pi's `parseDiscoveredCases` returns. */
+export type ReadDiscoveredCasesTyped = Assert<
+	Conform<Effect.Success<ReturnType<typeof Plan.readDiscoveredCases>>, Returns<typeof PiPlan.parseDiscoveredCases>>
+>;
+
 export type EnvironmentTyped = Assert<
 	Conform<
 		[Succeeds<typeof Environment.modelSelection>, Succeeds<typeof Environment.documentationVariant>],

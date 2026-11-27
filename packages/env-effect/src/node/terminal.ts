@@ -24,7 +24,7 @@ export interface Terminal {
 	 * the program is in front. Fails once the terminal has ended.
 	 */
 	readonly foreground: Effect.Effect<Option.Option<TerminalForeground>, RemoteFailed>;
-	/** The exit code. Fails with the daemon's error, with code `aborted` once its scope closed. */
+	/** The exit code, an integer. Fails with the daemon's error, with code `aborted` once its scope closed. */
 	readonly exited: Effect.Effect<number, RemoteFailed>;
 }
 
@@ -32,21 +32,22 @@ export interface Terminal {
  * Starts a program, by default the user's login shell, in a new pseudo-terminal of the daemon behind `connection`;
  * closing the scope kills it and everything in its session. Not supported on Windows yet.
  */
-export function open(connection: Connection, options: Options): Effect.Effect<Terminal, RemoteFailed, Scope.Scope> {
-	return Effect.map(
-		Program.acquire(["output"] as const, (write) =>
-			openTerminal(connection.pi, { ...options, onData: (bytes) => write("output", bytes) }),
-		),
-		({ pi, output, exited }) => ({
-			pid: pi.pid,
-			output: output("output"),
-			write: (data) => Effect.sync(() => pi.write(data)),
-			resize: (cols, rows) => Effect.sync(() => pi.resize(cols, rows)),
-			foreground: Effect.map(
-				remote(() => pi.foreground()),
-				Option.fromUndefinedOr,
-			),
-			exited,
-		}),
+export const open = Effect.fn("Terminal.open")(function* (
+	connection: Connection,
+	options: Options,
+): Effect.fn.Return<Terminal, RemoteFailed, Scope.Scope> {
+	const { pi, output, exited } = yield* Program.acquire(["output"], (write) =>
+		openTerminal(connection.pi, { ...options, onData: (bytes) => write("output", bytes) }),
 	);
-}
+	return {
+		pid: pi.pid,
+		output: output("output"),
+		write: (data) => Effect.sync(() => pi.write(data)),
+		resize: (cols, rows) => Effect.sync(() => pi.resize(cols, rows)),
+		foreground: Effect.map(
+			remote(() => pi.foreground()),
+			Option.fromUndefinedOr,
+		),
+		exited,
+	};
+});

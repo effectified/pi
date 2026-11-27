@@ -6,21 +6,17 @@ import { Action, type ActorInfo, type ActorSql } from "@effectified/pi-durable-r
 import { Effect, Schema } from "effect";
 import { JobStatus } from "../driver.ts";
 import type { ForkSetup } from "../fork-setup.ts";
+import { RequestId } from "../ids.ts";
 import * as Job from "./job.ts";
 
 /** What `swarmRun` takes: one request of the job the actor was forked for. */
-const RunInput = Schema.Struct({
-	swarmId: Schema.String,
-	jobKey: Schema.String,
-	requestId: Schema.String,
-	prompt: Schema.String,
-});
+const RunInput = Job.Request;
 
 /** What `swarmRun` answers: the conversation of the fork actor's harness the job runs in. */
 const RunOutput = Schema.Struct({ conversationId: Conversation.Id });
 
 /** What `swarmJob` takes: the request to read. */
-const JobInput = Schema.Struct({ requestId: Schema.String });
+const JobInput = Schema.Struct({ requestId: RequestId });
 
 /**
  * The actions of the Rivet fork driver, by the names a fork actor serves them under. A type alias, not an interface:
@@ -56,8 +52,13 @@ export const actions: Actions = {
 		handler: (request) =>
 			Job.accept(request).pipe(
 				Effect.map((conversationId) => ({ conversationId })),
-				// A failing harness is a defect of this call: the caller asks again.
-				Effect.catch((error) => (error._tag === "SwarmJobRefused" ? Effect.fail(error) : Effect.die(error))),
+				// A refusal is the action's own error; a failing harness or record is a defect of this call, and the caller
+				// asks again.
+				Effect.catchTag(
+					"SwarmJobRefused",
+					(refused) => Effect.fail(refused),
+					(broken) => Effect.die(broken),
+				),
 			),
 	}),
 	swarmJob: Action.make({

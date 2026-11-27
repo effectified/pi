@@ -1,11 +1,11 @@
 // Granting: a conversation's grant written in the commit that creates or configures it, with Pi's offer made to match.
 
-import type { ConversationId, ConversationOwnership, ConversationRecord } from "@effectified/pi-durable";
+import type { ConversationId, ConversationOwnership, ConversationRecord, ToolName } from "@effectified/pi-durable";
 import { BuiltinDoc, type Conversation, type Doc, type DurableError, Harness, type Tx } from "@effectified/pi-durable";
-import { Effect, Option } from "effect";
+import { Array as Arr, Effect, Option } from "effect";
 import * as Classification from "./classification.ts";
 import * as Enforced from "./enforced.ts";
-import { type ModelNotCleared, Unguarded, UnknownClassification } from "./errors.ts";
+import { type ModelNotCleared, Unguarded, UnguardedReason, UnknownClassification } from "./errors.ts";
 import * as Grant from "./grant.ts";
 import { Guard } from "./guard.ts";
 import type { Policy } from "./policy.ts";
@@ -35,26 +35,28 @@ export type GrantError = UnknownClassification | ModelNotCleared | Unguarded | D
  * writes: on a conversation the commit just created or forked, and in `conversationCreated`. It replaces the grant
  * the conversation had, a fork's inherited one too.
  *
- * - It fails with `Unguarded` (`no-registry`), before anything is written, when the guard built no registry: no hook
+ * - It fails with `Unguarded` (`NoRegistry`), before anything is written, when the guard built no registry: no hook
  *   would enforce the grant.
  * - With `mode: "narrow"` the tools given are the intersection described at `Options.mode`.
  * - A conversation a task owns is never labelled below its owner (see `created`, which records the owner): the
  *   classification stored is the higher of the grant's and the one the owner holds in this commit, and `model` is
  *   checked against that.
  */
-export function grantIn(
+export const grantIn: (
 	tx: Tx.Tx,
 	conversationId: ConversationId,
 	grant: Grant.Grant,
 	options?: Options,
-): Effect.Effect<void, GrantError, Guard> {
-	return Effect.gen(function* () {
+) => Effect.Effect<void, GrantError, Guard> = Effect.fn("Conversations.grantIn")(
+	function* (tx, conversationId, grant, options) {
 		const guard = yield* Guard;
-		if (!Enforced.any(guard)) return yield* new Unguarded({ conversationId, reason: "no-registry" });
+		if (!Enforced.any(guard)) {
+			return yield* Unguarded.make({ conversationId, reason: UnguardedReason.cases.NoRegistry.make({}) });
+		}
 		const { policy } = guard;
 		const asked = Grant.normalize(grant);
-		if (asked.classification !== undefined && !policy.classifications.includes(asked.classification)) {
-			return yield* new UnknownClassification({ classification: asked.classification });
+		if (asked.classification !== undefined && !Arr.contains(policy.classifications, asked.classification)) {
+			return yield* UnknownClassification.make({ classification: asked.classification });
 		}
 		const document = yield* tx.doc(Grant.Document, conversationId);
 		const stored = yield* document.get;
@@ -65,33 +67,33 @@ export function grantIn(
 			options?.mode === "narrow" ? yield* narrowed(tx, conversationId, bounded.tools, stored.grant) : bounded.tools;
 		yield* document.set({ ...stored, grant: { ...bounded, tools } });
 		yield* tx.configure(conversationId, { tools, ...(model === undefined ? {} : { model }) });
-	});
-}
+	},
+);
 
 /**
  * Gives an existing conversation `grant`, in one commit of its own. Fails with `Unguarded`, before anything is
  * written, when the conversation does not ask the guard's own extension first.
  */
-export function grant(
+export const grant: (
 	conversation: Conversation.Conversation,
 	given: Grant.Grant,
 	options?: Options,
-): Effect.Effect<void, GrantError, Guard> {
-	return Effect.andThen(
-		guarded(conversation),
-		conversation.commit((tx) => grantIn(tx, conversation.id, given, options)),
-	);
-}
+) => Effect.Effect<void, GrantError, Guard> = Effect.fn("Conversations.grant")(
+	function* (conversation, given, options) {
+		yield* guarded(conversation);
+		yield* conversation.commit((tx) => grantIn(tx, conversation.id, given, options));
+	},
+);
 
 /**
- * A new conversation with `grant`, created in one commit. Fails with `Unguarded`: `no-registry`, and nothing is
- * created, when the guard built no registry; `not-selected`, when the harness runs on a registry the guard did not
+ * A new conversation with `grant`, created in one commit. Fails with `Unguarded`: `NoRegistry`, and nothing is
+ * created, when the guard built no registry; `NotSelected`, when the harness runs on a registry the guard did not
  * build: the conversation then exists, with its grant, and nothing would enforce it.
  */
-export function create(
+export const create: (
 	options: Pick<Options, "model"> & { readonly ownership: ConversationOwnership; readonly grant: Grant.Grant },
-): Effect.Effect<Conversation.Conversation, GrantError, Guard | Harness.Harness> {
-	return Effect.gen(function* () {
+) => Effect.Effect<Conversation.Conversation, GrantError, Guard | Harness.Harness> = Effect.fn("Conversations.create")(
+	function* (options) {
 		const id = yield* Harness.commit((tx) =>
 			Effect.gen(function* () {
 				const record = yield* tx.createConversation({ ownership: options.ownership });
@@ -99,18 +101,13 @@ export function create(
 				return record.id;
 			}),
 		);
-		const conversation = yield* Effect.flatMap(
-			Harness.conversation(id),
-			Option.match({
-				// The commit above stored the conversation, so the harness has it.
-				onNone: () => Effect.die(new Error(`Conversation ${id} is missing after its creating commit`)),
-				onSome: (found) => Effect.succeed(found),
-			}),
-		);
-		yield* guarded(conversation);
-		return conversation;
-	});
-}
+		const found = yield* Harness.conversation(id);
+		// The commit above stored the conversation, so the harness has it.
+		if (Option.isNone(found)) return yield* Effect.die(`Conversation ${id} is missing after its creating commit`);
+		yield* guarded(found.value);
+		return found.value;
+	},
+);
 
 /**
  * For `Harness.layer`'s `conversationCreated`: makes Pi's offer match the guard in every commit that creates or
@@ -123,8 +120,8 @@ export function create(
  * swarm's fork): the owner's classification then bounds every grant given to it, and a fork's inherited grant is
  * raised to it here. Pi names the owner only in the creating commit, so without this hook no grant is bounded.
  */
-export function created(tx: Tx.Tx, conversation: ConversationRecord): Effect.Effect<void, Doc.Failure, Guard> {
-	return Effect.gen(function* () {
+export const created: (tx: Tx.Tx, conversation: ConversationRecord) => Effect.Effect<void, Doc.Failure, Guard> =
+	Effect.fn("Conversations.created")(function* (tx, conversation) {
 		const { policy } = yield* Guard;
 		const owner = conversation.owner?.conversationId;
 		// Only a fork holds a grant already (its copy of the parent's document), and only an owned conversation gets an
@@ -139,37 +136,41 @@ export function created(tx: Tx.Tx, conversation: ConversationRecord): Effect.Eff
 		yield* document.set({ ...owned, grant: inherited });
 		yield* tx.configure(conversation.id, { tools: Grant.effective(owned, policy.ungranted).tools });
 	});
-}
 
 /**
  * The grant that holds for a conversation now, its tools and its classification: the stored one, or the policy's for
  * a conversation without one. A read outside a commit, which needs no checked registry: what another part of a
  * product asks to learn what a conversation holds, such as the constraints a router filters its routes by.
  */
-export function granted(
+export const granted: (
 	conversationId: ConversationId,
-): Effect.Effect<Grant.Grant, Doc.Failure, Guard | Harness.Harness> {
-	return Effect.gen(function* () {
+) => Effect.Effect<Grant.Grant, Doc.Failure, Guard | Harness.Harness> = Effect.fn("Conversations.granted")(
+	function* (conversationId) {
 		const { policy } = yield* Guard;
 		const stored = yield* Harness.snapshot(Grant.Document, conversationId);
 		return Grant.effective(Option.getOrUndefined(stored), policy.ungranted);
-	});
-}
+	},
+);
 
 /**
  * Succeeds when Pi asks the guard's own extension first for this conversation; fails with `Unguarded` otherwise. The
  * extension is compared as the object a registry this guard built holds: a harness on another registry, and an
- * extension installed under the guard's name, are `not-selected`.
+ * extension installed under the guard's name, are `NotSelected`.
  */
-export function guarded(conversation: Conversation.Conversation): Effect.Effect<void, Unguarded | DurableError, Guard> {
-	return Effect.gen(function* () {
+export const guarded: (
+	conversation: Conversation.Conversation,
+) => Effect.Effect<void, Unguarded | DurableError, Guard> = Effect.fn("Conversations.guarded")(
+	function* (conversation) {
 		const guard = yield* Guard;
 		const { extensions } = yield* conversation.agent;
 		if (Enforced.owns(guard, extensions[0])) return;
-		const reason = extensions.some((extension) => Enforced.owns(guard, extension)) ? "not-first" : "not-selected";
-		return yield* new Unguarded({ conversationId: conversation.id, reason });
-	});
-}
+		const { NotFirst, NotSelected } = UnguardedReason.cases;
+		const reason = Arr.some(extensions, (extension) => Enforced.owns(guard, extension))
+			? NotFirst.make({})
+			: NotSelected.make({});
+		return yield* Unguarded.make({ conversationId: conversation.id, reason });
+	},
+);
 
 /**
  * `grant` as a conversation `owner` owns may hold it: with the higher of its classification and the one the owner's
@@ -177,22 +178,31 @@ export function guarded(conversation: Conversation.Conversation): Effect.Effect<
  * and models the policy keeps from its owner. An absent label is above every other, and so is one the policy does
  * not list. Unchanged without an owner, and under a policy without classifications.
  */
-function underOwner(
+const underOwner = Effect.fn("Conversations.underOwner")(function* (
 	tx: Tx.Tx,
 	policy: Policy,
 	grant: Grant.Grant,
 	owner: ConversationId | undefined,
-): Effect.Effect<Grant.Grant, Doc.Failure> {
+) {
 	const labels = policy.classifications;
-	if (owner === undefined || labels.length === 0) return Effect.succeed(grant);
-	return Effect.gen(function* () {
-		const document = yield* tx.doc(Grant.Document, owner);
-		const held = Grant.effective(yield* document.get, policy.ungranted).classification;
-		const asked = grant.classification === undefined ? -1 : labels.indexOf(grant.classification);
-		const bound = held === undefined ? -1 : labels.indexOf(held);
-		if (asked < 0 || (bound >= 0 && asked >= bound)) return grant;
-		return Grant.normalize({ tools: grant.tools, classification: bound < 0 ? undefined : held });
-	});
+	if (owner === undefined || Arr.isReadonlyArrayEmpty(labels)) return grant;
+	const document = yield* tx.doc(Grant.Document, owner);
+	const stored = yield* document.get;
+	const held = Grant.effective(stored, policy.ungranted).classification;
+	const asked = rank(labels, grant.classification);
+	const bound = rank(labels, held);
+	if (asked < 0 || (bound >= 0 && asked >= bound)) return grant;
+	return Grant.normalize({ tools: grant.tools, classification: bound < 0 ? undefined : held });
+});
+
+/** The place of `label` in `labels` from 0, or -1 for an absent label and one that is not listed. */
+function rank(labels: ReadonlyArray<string>, label: string | undefined): number {
+	return label === undefined
+		? -1
+		: Option.getOrElse(
+				Arr.findFirstIndex(labels, (listed) => listed === label),
+				() => -1,
+			);
 }
 
 /**
@@ -200,20 +210,16 @@ function underOwner(
  * the conversation has a grant, that grant lists. A stored agent without a list enables every tool, less those it
  * removes.
  */
-function narrowed(
+const narrowed = Effect.fn("Conversations.narrowed")(function* (
 	tx: Tx.Tx,
 	conversationId: ConversationId,
-	tools: ReadonlyArray<string>,
+	tools: ReadonlyArray<ToolName>,
 	had: Grant.Grant | null,
-): Effect.Effect<ReadonlyArray<string>, Doc.Failure> {
-	return Effect.gen(function* () {
-		const agent = yield* tx.doc(BuiltinDoc.agent, conversationId);
-		const enabled = (yield* agent.get).tools;
-		return tools.filter(
-			(name) =>
-				(enabled === undefined ||
-					(Array.isArray(enabled) ? enabled.includes(name) : !enabled.remove.includes(name))) &&
-				(had === null || had.tools.includes(name)),
-		);
-	});
-}
+) {
+	const agent = yield* tx.doc(BuiltinDoc.agent, conversationId);
+	const enabled = (yield* agent.get).tools;
+	const allowed = (name: ToolName): boolean =>
+		enabled === undefined ||
+		(Arr.isArray(enabled) ? Arr.contains(enabled, name) : !Arr.contains(enabled.remove, name));
+	return Arr.filter(tools, (name) => allowed(name) && (had === null || Arr.contains(had.tools, name)));
+});

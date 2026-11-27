@@ -18,7 +18,12 @@ import * as ForkAgent from "../src/rivet/fork-agent.ts";
 function piTakes(change: AgentChange): Effect.Effect<boolean> {
 	// A stand-in: `configure` calls only `doc` of the commit.
 	const tx = { doc: async () => ({}) } as unknown as Tx;
-	return Effect.map(Effect.exit(Effect.tryPromise(() => configure(tx, 1 as ConversationId, change))), Exit.isSuccess);
+	const configured = Effect.tryPromise({
+		try: () => configure(tx, 1 as ConversationId, change),
+		// Only whether Pi refused counts here, not why.
+		catch: () => "refused" as const,
+	});
+	return Effect.map(Effect.exit(configured), Exit.isSuccess);
 }
 
 /** Our verdict on `change`: whether the wire schema decodes it. */

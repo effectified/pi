@@ -5,6 +5,7 @@ import { Effect } from "effect";
 import { type CodingAgentFailure, fromPi } from "./errors.ts";
 
 /** Copies `text` to the clipboard, as Pi's `/copy` does. */
-export function copyToClipboard(text: string): Effect.Effect<void, CodingAgentFailure> {
-	return Effect.tryPromise({ try: () => piCopyToClipboard(text), catch: fromPi });
-}
+export const copyToClipboard = Effect.fn("Clipboard.copyToClipboard")(
+	(text: string): Effect.Effect<void, CodingAgentFailure> =>
+		Effect.tryPromise({ try: () => piCopyToClipboard(text), catch: fromPi }),
+);

@@ -2,7 +2,7 @@
 // or a redirect URL the user pastes.
 
 import { runLive } from "@effectified/pi-ai/testing";
-import { Effect, Fiber } from "effect";
+import { Effect, Fiber, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	completeMcpSignIn,
@@ -19,8 +19,8 @@ describe("listenForLoopbackSignIn and waitForLoopbackSignIn", () => {
 	it("receive the browser's redirect on loopback and complete the sign-in; the scope closes the server", async () => {
 		const seen = await runLive(
 			Effect.gen(function* () {
-				const server = yield* authorizationServer();
-				const store = yield* memoryOAuthStore();
+				const server = yield* authorizationServer;
+				const store = yield* memoryOAuthStore;
 				const { redirectUrl, signedIn } = yield* Effect.scoped(
 					Effect.gen(function* () {
 						const loopback = yield* listenForLoopbackSignIn({ serverUrl: server.serverUrl, store, settings: {} });
@@ -42,7 +42,7 @@ describe("listenForLoopbackSignIn and waitForLoopbackSignIn", () => {
 						yield* Effect.promise(() => fetch(location).then((response) => response.text()));
 						const response = yield* Fiber.join(waiting);
 						yield* completeMcpSignIn({ ...options, authorization: started, response });
-						return { redirectUrl: loopback.redirectUrl, signedIn: yield* store.load };
+						return { redirectUrl: loopback.redirectUrl, signedIn: Option.getOrUndefined(yield* store.load) };
 					}),
 				);
 				const closed = yield* Effect.promise(() =>
@@ -62,8 +62,8 @@ describe("listenForLoopbackSignIn and waitForLoopbackSignIn", () => {
 	it("takes the redirect URL the user pastes when the prompt answers first", async () => {
 		const response = await runLive(
 			Effect.gen(function* () {
-				const server = yield* authorizationServer();
-				const store = yield* memoryOAuthStore();
+				const server = yield* authorizationServer;
+				const store = yield* memoryOAuthStore;
 				const loopback = yield* listenForLoopbackSignIn({ serverUrl: server.serverUrl, store, settings: {} });
 				const started = yield* startMcpSignIn({
 					serverUrl: server.serverUrl,
@@ -88,8 +88,8 @@ describe("listenForLoopbackSignIn and waitForLoopbackSignIn", () => {
 	it("cancels the sign-in when the user pastes nothing", async () => {
 		const error = await runLive(
 			Effect.gen(function* () {
-				const server = yield* authorizationServer();
-				const store = yield* memoryOAuthStore();
+				const server = yield* authorizationServer;
+				const store = yield* memoryOAuthStore;
 				const loopback = yield* listenForLoopbackSignIn({ serverUrl: server.serverUrl, store, settings: {} });
 				const authorization = {
 					kind: "redirect" as const,

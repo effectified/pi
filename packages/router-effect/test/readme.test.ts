@@ -2,9 +2,19 @@
 // line for line; only the imports differ (the README names the packages, this file the sources and stand-ins), and
 // the providers are scripted.
 
-import { type AssistantMessage, complete, getModel, Models } from "@effectified/pi-ai";
+import {
+	type AssistantMessage,
+	complete,
+	fromPiModelRef,
+	getModel,
+	ModelId,
+	Models,
+	type ProviderId,
+	type RequestKey,
+	type SessionId,
+} from "@effectified/pi-ai";
 import { fauxAssistantMessage, fauxProvider } from "@effectified/pi-ai/testing";
-import { Context, Effect, Layer, Stream } from "effect";
+import { Context, Effect, Layer, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	AttemptSettlement,
@@ -17,10 +27,11 @@ import {
 	Router,
 	type RouteTable,
 } from "../src/index.ts";
-import { context, failing } from "./scripted.ts";
+import { AUTHOR, context, failing } from "./scripted.ts";
 
 // README: the route table
-const table: RouteTable = {
+// The table as a product writes or stores it: plain text and numbers. The router decodes it.
+const table: typeof RouteTable.Encoded = {
 	// The product's labels, lowest to highest. The router has none of its own.
 	classifications: ["public", "internal", "secret"],
 	// Every concurrency key a route names: how many requests may be in flight on it.
@@ -71,13 +82,19 @@ function providers() {
 	return { openrouter, local, models: Models.layer([openrouter.provider, local.provider]) };
 }
 
-/** A stand-in for the `Spend` of `@effectified/pi-budget`, which this package does not import: its signature. */
+/**
+ * Stand-ins for the `Spend` and `SpendKey` of `@effectified/pi-budget`, which this package does not import: their
+ * signatures, with the budget's own brand key, so the README's example is checked against the budget's types.
+ */
+const SpendKey = Schema.String.pipe(Schema.brand("@effectified/pi-budget/SpendKey"));
+
+/** What the budget's `Spend.record` takes. */
 interface Spent {
-	readonly key: string;
-	readonly provider: string;
-	readonly model: string;
-	readonly session?: string | undefined;
-	readonly requestKey?: string | undefined;
+	readonly key: typeof SpendKey.Type;
+	readonly provider: ProviderId;
+	readonly model: ModelId;
+	readonly session?: SessionId | undefined;
+	readonly requestKey?: RequestKey | undefined;
 	readonly usage: {
 		readonly input: number;
 		readonly output: number;
@@ -95,14 +112,18 @@ class Spend extends Context.Service<Spend, { readonly record: (spent: Spent) => 
  * The README's table with a price on its free route, so that only being a request's last attempt keeps an attempt
  * that served on it away from the budget.
  */
-function pricedTable(): RouteTable {
+function pricedTable(): typeof RouteTable.Encoded {
 	const [author] = table.aliases;
 	const [first, second] = author.routes;
 	return { ...table, aliases: [{ ...author, routes: [first, { ...second, price: first.price }] }] };
 }
 
 /** The router of the README's section "With a budget", over what a test gives it under the README's names. */
-function routedWithBudget(table: RouteTable, providers: Layer.Layer<Models>, budgeted: Layer.Layer<Spend>) {
+function routedWithBudget(
+	table: typeof RouteTable.Encoded,
+	providers: Layer.Layer<Models>,
+	budgeted: Layer.Layer<Spend>,
+) {
 	// README: with a budget
 	/** Charges each attempt another route takes over to the budget, before that route is tried. */
 	const SettleAttempts = Layer.effect(
@@ -112,7 +133,7 @@ function routedWithBudget(table: RouteTable, providers: Layer.Layer<Models>, bud
 			return AttemptSettlement.of({
 				settle: (event) =>
 					spend.record({
-						key: `${event.requestId}#${event.attempt}`,
+						key: SpendKey.make(`${event.requestId}#${event.attempt}`),
 						provider: event.route.provider,
 						model: event.route.model,
 						session: event.sessionId,
@@ -141,13 +162,14 @@ describe("the README", () => {
 					routes.map((route) => route.provider);
 				// README: Router.resolve
 				const router = yield* Router;
-				const everything = yield* router.resolve("author", { classification: "public" }); // both routes, in table order
-				const secret = yield* router.resolve("author", { classification: "secret" }); // the local route only
-				const kept = yield* router.resolve("author", {
+				const author = ModelId.make("author"); // the alias: the id of its model under the router's provider
+				const everything = yield* router.resolve(author, { classification: "public" }); // both routes, in table order
+				const secret = yield* router.resolve(author, { classification: "secret" }); // the local route only
+				const kept = yield* router.resolve(author, {
 					classification: "public",
 					requires: ["zero-data-retention"],
 				}); // the local route
-				const nowhere = yield* Effect.flip(router.resolve("author", { classification: "secret", regions: ["us"] })); // fails: NoRouteAvailable
+				const nowhere = yield* Effect.flip(router.resolve(author, { classification: "secret", regions: ["us"] })); // fails: NoRouteAvailable
 				return { everything: names(everything), secret: names(secret), kept: names(kept), nowhere };
 			}).pipe(Effect.provide(Layer.provideMerge(Router.layer(table), models))),
 		);
@@ -176,9 +198,8 @@ describe("the README", () => {
 		const PerConversation = Layer.succeed(ConstraintSource, {
 			constraintsOf: ({ alias, sessionId }) =>
 				// A session the product does not know is not served: the request is refused.
-				Effect.mapError(
-					Effect.fromNullishOr(sessionId === undefined ? undefined : bySession.get(sessionId)),
-					() => new ConstraintsUnavailable({ alias, reason: `no constraints for session ${sessionId}` }),
+				Effect.mapError(Effect.fromNullishOr(sessionId === undefined ? undefined : bySession.get(sessionId)), () =>
+					ConstraintsUnavailable.make({ alias, reason: `no constraints for session ${sessionId}` }),
 				),
 		});
 
@@ -186,7 +207,7 @@ describe("the README", () => {
 
 		const result = await Effect.runPromise(
 			Effect.gen(function* () {
-				const model = yield* getModel({ provider: "router", modelId: "author" });
+				const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "author" }));
 				// The alias's default says `internal`. Neither request says anything of itself.
 				const ask = (sessionId: string) => complete(model, context, { sessionId });
 				return {
@@ -236,9 +257,9 @@ describe("the README", () => {
 					const router = yield* Router;
 					const constraints = { classification: "public" };
 					// The first route fails and the second takes over; then the first route serves a request alone.
-					yield* router.complete("author", context, { constraints, sessionId: "0197-session-of-a-public-thread" });
+					yield* router.complete(AUTHOR, context, { constraints, sessionId: "0197-session-of-a-public-thread" });
 					log.push("caller: has the first message");
-					yield* router.complete("author", context, { constraints });
+					yield* router.complete(AUTHOR, context, { constraints });
 					return yield* Stream.runCollect(Stream.take(events, 3));
 				}),
 			).pipe(Effect.provide(routed)),
@@ -283,7 +304,7 @@ describe("the README", () => {
 					const events = yield* RouteEvents.use((hub) => hub.subscribe);
 					const taken = Stream.filter(events, (event) => event.fallback && event.cost.micros > 0n);
 					yield* Router.use((router) =>
-						router.complete("author", context, { constraints: { classification: "public" } }),
+						router.complete(AUTHOR, context, { constraints: { classification: "public" } }),
 					);
 					return yield* Stream.runCollect(Stream.take(taken, 1));
 				}),
@@ -320,7 +341,7 @@ describe("the README", () => {
 
 				// README: prices for a budget
 				// { currency: "USD", prices: [{ provider, model, input, output, cacheRead, cacheWrite }, ...] }
-				const rows = yield* priceRows(table); // or priceRows(table, "routes") for a router built with { id: "routes" }
+				const rows = yield* priceRows(table); // or priceRows(table, id) for a router built with { id }
 				return { charged, tieredCharge, rows };
 			}),
 		);

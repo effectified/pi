@@ -25,27 +25,28 @@ export const detectCapabilities: Effect.Effect<TerminalCapabilities> = Effect.sy
 export const getCapabilities: Effect.Effect<TerminalCapabilities> = Effect.sync(piGetCapabilities);
 
 /** Replaces the cached capabilities, until `resetCapabilitiesCache` or `setCapabilityOverrides`. */
-export function setCapabilities(capabilities: TerminalCapabilities): Effect.Effect<void> {
-	return Effect.sync(() => piSetCapabilities(capabilities));
-}
+export const setCapabilities = Effect.fn("Tui.setCapabilities")((capabilities: TerminalCapabilities) =>
+	Effect.sync(() => piSetCapabilities(capabilities)),
+);
 
 /** Overrides some detected capabilities, such as a user's setting to show no images; detection runs again. */
-export function setCapabilityOverrides(overrides: Partial<TerminalCapabilities>): Effect.Effect<void> {
-	return Effect.sync(() => piSetCapabilityOverrides(overrides));
-}
+export const setCapabilityOverrides = Effect.fn("Tui.setCapabilityOverrides")(
+	(overrides: Partial<TerminalCapabilities>) => Effect.sync(() => piSetCapabilityOverrides(overrides)),
+);
 
 /** Drops the cached capabilities, so the next render detects them again. */
 export const resetCapabilitiesCache: Effect.Effect<void> = Effect.sync(piResetCapabilitiesCache);
 
 /** The color mode text is styled for: `"truecolor"` when `capabilities` (default: the cached ones) has true color. */
-export function getTerminalColorMode(capabilities?: TerminalCapabilities): Effect.Effect<TerminalColorMode> {
-	return Effect.sync(() => piGetTerminalColorMode(capabilities));
-}
+export const getTerminalColorMode: (capabilities?: TerminalCapabilities) => Effect.Effect<TerminalColorMode> =
+	Effect.fn("Tui.getTerminalColorMode")((capabilities?: TerminalCapabilities) =>
+		Effect.sync(() => piGetTerminalColorMode(capabilities)),
+	);
 
 /** The size of one terminal cell in pixels, which images are scaled by; a running TUI asks the terminal for it. */
 export const getCellDimensions: Effect.Effect<CellDimensions> = Effect.sync(piGetCellDimensions);
 
 /** Sets the size of one terminal cell in pixels. */
-export function setCellDimensions(dimensions: CellDimensions): Effect.Effect<void> {
-	return Effect.sync(() => piSetCellDimensions(dimensions));
-}
+export const setCellDimensions = Effect.fn("Tui.setCellDimensions")((dimensions: CellDimensions) =>
+	Effect.sync(() => piSetCellDimensions(dimensions)),
+);

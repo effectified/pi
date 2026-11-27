@@ -29,10 +29,13 @@ export const Job = Doc.make({
 });
 
 /** The job `key` has its fork already. */
-export class AlreadyForked extends Schema.TaggedError<AlreadyForked>()("AlreadyForked", {
-	key: Schema.String,
-	conversationId: Schema.Number,
-}) {}
+export class AlreadyForked extends Schema.TaggedError<AlreadyForked, { readonly brand: unique symbol }>()(
+	"AlreadyForked",
+	{
+		key: Schema.String,
+		conversationId: Schema.Number,
+	},
+) {}
 
 /**
  * Forks `parent` at its head for the job `key`. `init` runs in the creating commit: it fails the commit, so no fork is

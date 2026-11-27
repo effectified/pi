@@ -70,6 +70,10 @@ describe("Records.Record", () => {
 		const { derived: _derived, ...plain } = call;
 		expect(decode(plain)).toEqual(plain);
 		expect(() => decode({ ...call, derived: { from: "1:21:entry" } })).toThrow();
+		// A record exported before 0.3.0 holds a provider's NaN as the string "NaN": it reads as 0, as one is recorded now.
+		const exported = { ...call, usage: { ...call.usage, input: "NaN" }, cost: { ...call.cost, total: "NaN" } };
+		const read = Schema.decodeUnknownSync(Schema.toCodecJson(Records.Record))(exported);
+		expect(read._tag === "ModelCall" ? [read.usage?.input, read.cost?.total] : []).toEqual([0, 0]);
 	});
 
 	it("holds the record of an entry without a model message, with or without data and time", () => {
@@ -87,6 +91,9 @@ describe("Records.Record", () => {
 		expect(decode(JSON.parse(JSON.stringify(entry)))).toEqual(entry);
 		const bare = { ...entry, data: null, task: null, time: null };
 		expect(decode(JSON.parse(JSON.stringify(bare)))).toEqual(bare);
+		// A record exported before 0.3.0 kept a fractional time as it found it.
+		const fractional = { ...entry, time: 10.5 };
+		expect(decode(JSON.parse(JSON.stringify(fractional)))).toEqual(fractional);
 		expect(() => decode({ ...entry, advisory: true })).toThrow();
 		expect(() => decode({ ...entry, kind: undefined })).toThrow();
 	});

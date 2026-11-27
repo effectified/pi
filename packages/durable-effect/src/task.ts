@@ -12,9 +12,9 @@ import type { StrictOmit } from "@effectified/pi-ai";
 import type { Context as ChordContext } from "@effectified/pi-chord/context";
 import type { JsonValue } from "@effectified/pi-chord/json";
 import { decodeUnknown, encode, type SchemaDecodeError } from "@effectified/pi-schema";
-import { Effect, type Schema } from "effect";
+import { Effect, Match, Record, type Schema } from "effect";
 import * as Ids from "./id.ts";
-import { type Invoke, invoker } from "./invocation.ts";
+import { built, type Invoke, invoker } from "./invocation.ts";
 import * as TaskApi from "./task-api.ts";
 import type * as Step from "./task-step.ts";
 
@@ -139,8 +139,10 @@ export interface Kind<in I, out A> {
 }
 
 /** A task made by `make`: its kind, its schemas, and what installs it. `R` is what its handlers need. */
-export interface Task<I extends ValueSchema, S extends StateSchema, A extends ValueSchema, R>
-	extends Kind<I["Type"], A["Type"]> {
+export interface Task<I extends ValueSchema, S extends StateSchema, A extends ValueSchema, R> extends Kind<
+	I["Type"],
+	A["Type"]
+> {
 	readonly version: number;
 	readonly input: I;
 	readonly state: S;
@@ -222,8 +224,8 @@ export function make<
 		encodeInput: codec.encodeInput,
 		outcome: (outcome) => decodeOutcome(outcome, decodeResult),
 		registration: Effect.map(Effect.context<R | PhaseServices<Ph>>(), (context) => {
-			const invoke = invoker(context);
-			return definition(options, codec, (handler) => bound(invoke, handler, codec));
+			const invoke = invoker(built(context));
+			return definition(options, codec, (handler, span) => bound(invoke, handler, codec, span));
 		}),
 	};
 }
@@ -245,22 +247,27 @@ export function record<A>(
 	task: Kind<never, A>,
 	found: TaskRecord<JsonValue, JsonValue, unknown>,
 ): Effect.Effect<TaskRecord<JsonValue, JsonValue, A>, SchemaDecodeError> {
-	const state = found.state;
-	switch (state.status) {
-		case "pending":
-		case "running":
-		case "waiting":
-		case "sleeping":
-			// No outcome yet, so nothing of the result's type: the record is one of any result.
-			return Effect.succeed(found as TaskRecord<JsonValue, JsonValue, never>);
-		case "completing":
-		case "terminal":
-			return Effect.map(
-				task.outcome(state.outcome),
-				// TypeScript does not narrow a record by the status of its state: one that holds an outcome has no memos.
-				(outcome) => ({ ...found, state: { ...state, outcome } }) as TaskRecord<JsonValue, JsonValue, A>,
-			);
-	}
+	// No outcome yet, so nothing of the result's type: the record is one of any result.
+	const open = (): Effect.Effect<TaskRecord<JsonValue, JsonValue, A>, SchemaDecodeError> =>
+		Effect.succeed(found as TaskRecord<JsonValue, JsonValue, never>);
+	const ended = (
+		state: Extract<TaskRecord<JsonValue, JsonValue, unknown>["state"], { readonly outcome: unknown }>,
+	): Effect.Effect<TaskRecord<JsonValue, JsonValue, A>, SchemaDecodeError> =>
+		Effect.map(
+			task.outcome(state.outcome),
+			// TypeScript does not narrow a record by the status of its state: one that holds an outcome has no memos.
+			(outcome) => ({ ...found, state: { ...state, outcome } }) as TaskRecord<JsonValue, JsonValue, A>,
+		);
+	return Match.value(found.state).pipe(
+		Match.discriminatorsExhaustive("status")({
+			pending: open,
+			running: open,
+			waiting: open,
+			sleeping: open,
+			completing: ended,
+			terminal: ended,
+		}),
+	);
 }
 
 /** A task's codecs: the JSON Pi stores to and from the values the handlers get. */
@@ -305,7 +312,7 @@ function definition<
 >(
 	options: Options<I, S, A, Ph, R>,
 	codec: Compiled<I["Type"], S["Type"], A["Type"]>,
-	bind: (handler: Handler<I["Type"], S["Type"], A["Type"], R | PhaseServices<Ph>>) => PiHandler,
+	bind: (handler: Handler<I["Type"], S["Type"], A["Type"], R | PhaseServices<Ph>>, span: HandlerSpan) => PiHandler,
 ): Token {
 	// Pi picks the handler by the stored `phase`, so each gets the state of its own phase, and each needs some of the
 	// services of `PhaseServices`: the map's type says both per key, which a walk over its entries loses.
@@ -320,8 +327,8 @@ function definition<
 		name: options.name,
 		version: options.version,
 		initial: (input) => checkpoint(options.initial(Effect.runSync(codec.input(input)))),
-		phases: Object.fromEntries(Object.entries(phases).map(([phase, handler]) => [phase, bind(handler)])),
-		abort: bind(options.abort),
+		phases: Record.map(phases, (handler) => bind(handler, "Task.phase")),
+		abort: bind(options.abort, "Task.abort"),
 		...(migrate === undefined
 			? {}
 			: {
@@ -336,23 +343,41 @@ function definition<
 	});
 }
 
+/** The span a handler runs in: a phase's, or the abort handler's. */
+type HandlerSpan = "Task.phase" | "Task.abort";
+
 /**
- * `handler` as Pi calls it, run with `invoke`'s context. Pi aborts an invocation through its context: that interrupts
- * the handler's fiber, and the rejection that follows is what Pi expects of an aborted handler. A step the handler
- * returns is committed here; a failure rejects, which is how a throwing handler reaches Pi.
+ * `handler` as Pi calls it, run with `invoke`'s context, in a span that names the task, its kind, its phase and its
+ * conversation: a task runs once per step, never per token. Pi aborts an invocation through its context: that
+ * interrupts the handler's fiber, and the rejection that follows is what Pi expects of an aborted handler. A step the
+ * handler returns is committed here; a failure rejects, which is how a throwing handler reaches Pi.
  */
-function bound<I, S, A, R>(invoke: Invoke<R>, handler: Handler<I, S, A, R>, codec: TaskApi.Codec<I, S, A>): PiHandler {
+function bound<I, S, A, R>(
+	invoke: Invoke<R>,
+	handler: Handler<I, S, A, R>,
+	codec: TaskApi.Codec<I, S, A>,
+	span: HandlerSpan,
+): PiHandler {
 	return (current, runtime, context) => {
 		const api = TaskApi.fromPi(runtime, codec);
-		return invoke(
-			TaskApi.running(current, codec).pipe(
-				Effect.flatMap((task) => handler(task, api)),
-				Effect.flatMap((step) =>
-					step._tag === "Committed" ? Effect.void : Effect.asVoid(api.commit(() => Effect.succeed(step))),
-				),
+		const run = TaskApi.running(current, codec).pipe(
+			// A handler may fail with anything (`Phases`), and Pi takes a failure as a rejection, as it takes a defect: the
+			// invoker rejects with the error itself either way, and Pi ends the task `faulted` with its message.
+			// @effect-diagnostics-next-line anyUnknownInErrorContext:off The failure is made a defect on this line.
+			Effect.flatMap((task) => Effect.orDie(handler(task, api))),
+			Effect.flatMap((step) =>
+				step._tag === "Committed" ? Effect.void : Effect.asVoid(api.commit(() => Effect.succeed(step))),
 			),
-			context,
+			Effect.withSpan(span, {
+				attributes: {
+					task: current.kind,
+					phase: current.state.checkpoint.phase,
+					taskId: current.id,
+					conversationId: current.conversationId,
+				},
+			}),
 		);
+		return invoke(run, context);
 	};
 }
 
@@ -367,20 +392,23 @@ function decodeOutcome<A>(
 	outcome: TaskOutcome<unknown>,
 	decode: (result: unknown) => Effect.Effect<A, SchemaDecodeError>,
 ): Effect.Effect<TaskOutcome<A>, SchemaDecodeError> {
-	switch (outcome.status) {
-		case "completed":
-			return Effect.map(decode(outcome.result), (result) => ({ status: "completed", result }));
-		case "failed":
-		case "aborted": {
-			const { result, ...rest } = outcome;
-			return result === undefined
-				? Effect.succeed(rest)
-				: Effect.map(decode(result), (decoded) => ({ ...rest, result: decoded }));
-		}
-		case "orphaned":
-		case "faulted":
-			return Effect.succeed(outcome);
-	}
+	type Decoded = Effect.Effect<TaskOutcome<A>, SchemaDecodeError>;
+	const withResult = (decided: Extract<TaskOutcome<unknown>, { readonly status: "failed" | "aborted" }>): Decoded => {
+		const { result, ...rest } = decided;
+		return result === undefined
+			? Effect.succeed(rest)
+			: Effect.map(decode(result), (decoded) => ({ ...rest, result: decoded }));
+	};
+	return Match.value(outcome).pipe(
+		Match.discriminatorsExhaustive("status")({
+			completed: (completed): Decoded =>
+				Effect.map(decode(completed.result), (result) => ({ status: "completed", result })),
+			failed: withResult,
+			aborted: withResult,
+			orphaned: (orphaned): Decoded => Effect.succeed(orphaned),
+			faulted: (faulted): Decoded => Effect.succeed(faulted),
+		}),
+	);
 }
 
 /** JSON as Pi takes it. A decode boundary: Effect types JSON read-only, Chord types the same values mutable. */

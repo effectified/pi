@@ -1,21 +1,36 @@
 // The Exa provider: the search port on Exa's HTTP API (`POST /search`, `POST /contents`) through Effect's
 // `HttpClient`. A provider is one file like this one: it exports `layer`, which gives `SearchProvider`.
 
-import { Config, DateTime, Effect, Layer, Option, Predicate, Redacted, Schema } from "effect";
+import {
+	Array as Arr,
+	Config,
+	DateTime,
+	Effect,
+	Layer,
+	Number as Num,
+	Option,
+	pipe,
+	Predicate,
+	Redacted,
+	Schema,
+	String as Str,
+} from "effect";
 import { Headers, HttpClient, type HttpClientError, HttpClientRequest, type HttpClientResponse } from "effect/http";
 import {
 	type FetchOptions,
 	type Hit,
+	ProviderName,
 	type Retrieval,
 	type SearchError,
 	type SearchOptions,
 	SearchProvider,
 	SearchProviderFailure,
+	type SearchProviderService,
 	SearchRateLimited,
 	SearchResponseInvalid,
 	SearchTransportFailure,
 	SearchUnauthorized,
-	type Unfetched,
+	Unfetched,
 } from "./provider/index.ts";
 
 /** What `layer` takes. Everything here is fixed for the provider's life; nothing of it comes from a caller. */
@@ -33,28 +48,35 @@ export interface Options {
 }
 
 /** The provider's name in results and errors. */
-export const name = "exa";
+export const name: ProviderName = ProviderName.make("exa");
 
 /**
  * The search port on Exa. Building it reads the configuration, so a missing key fails here and not at the first
- * call. A call sends one request and does not retry; interrupting it aborts the request.
+ * call. A call sends one request and does not retry; interrupting it aborts the request. Each call is a span,
+ * `Exa.search` or `Exa.fetch`. Nothing is cached: each answer is evidence of its own call.
  */
 export function layer(options: Options = {}): Layer.Layer<SearchProvider, Config.ConfigError, HttpClient.HttpClient> {
-	return Layer.effect(
-		SearchProvider,
-		Effect.gen(function* () {
-			const apiKey = yield* options.apiKey ?? Config.Redacted("EXA_API_KEY");
-			const baseUrl = yield* options.baseUrl ?? Config.withDefault(Config.String("EXA_BASE_URL"), DEFAULT_BASE_URL);
-			const post = poster(yield* HttpClient.HttpClient, apiKey, baseUrl.replace(/\/+$/, ""));
-			return {
-				search: (query, asked = {}) => post("/search", searchBody(query, asked, options)),
-				fetch: (urls, asked = {}) => post("/contents", contentsBody(urls, asked, options)),
-			};
-		}),
-	);
+	return Layer.effect(SearchProvider, make(options));
 }
 
 const DEFAULT_BASE_URL = "https://api.exa.ai";
+
+/** The provider: its configuration read once, its calls on the `HttpClient` of the context it is built in. */
+const make = Effect.fn("Exa.make")(function* (options: Options) {
+	const apiKey = yield* options.apiKey ?? Config.Redacted("EXA_API_KEY");
+	const configured = yield* options.baseUrl ?? Config.withDefault(Config.String("EXA_BASE_URL"), DEFAULT_BASE_URL);
+	const client = yield* HttpClient.HttpClient;
+	const post = poster(client, apiKey, pipe(configured, Str.replace(/\/+$/, "")));
+	const service: SearchProviderService = {
+		search: Effect.fn("Exa.search")(function* (query: string, asked: SearchOptions = {}) {
+			return yield* post("/search", searchBody(query, asked, options));
+		}),
+		fetch: Effect.fn("Exa.fetch")(function* (urls: ReadonlyArray<string>, asked: FetchOptions = {}) {
+			return yield* post("/contents", contentsBody(urls, asked, options));
+		}),
+	};
+	return service;
+});
 
 /** One call: the request with the key, the response classified, the body kept as it came and normalised. */
 function poster(
@@ -64,41 +86,41 @@ function poster(
 ): (path: string, body: Schema.JsonObject) => Effect.Effect<Retrieval, SearchError> {
 	const secret = Redacted.value(apiKey);
 	// Exa may quote the key it was sent in an error body: nothing that leaves this file may hold it.
-	const scrub = (text: string) => (secret === "" ? text : text.replaceAll(secret, "<redacted>"));
+	const scrub = (text: string) => (secret === "" ? text : pipe(text, Str.replaceAll(secret, "<redacted>")));
 	const unreachable = (error: HttpClientError.HttpClientError) =>
-		new SearchTransportFailure({ provider: name, detail: scrub(transportDetail(error)) });
-	return (path, body) =>
-		Effect.gen(function* () {
-			const url = `${baseUrl}${path}`;
-			const request = HttpClientRequest.post(url).pipe(
-				HttpClientRequest.setHeader("x-api-key", secret),
-				HttpClientRequest.acceptJson,
-				HttpClientRequest.bodyJsonUnsafe(body),
-			);
-			const response = yield* client.execute(request).pipe(
-				// A client that fails on a status (`HttpClient.filterStatusOk`) still holds the response to classify.
-				Effect.catch((error) =>
-					error.response === undefined ? Effect.fail(unreachable(error)) : Effect.succeed(error.response),
-				),
-			);
-			const raw = yield* Effect.mapError(response.text, unreachable);
-			const retrievedAt = yield* DateTime.now;
-			if (response.status < 200 || response.status >= 300) {
-				return yield* Effect.fail(failure(response, scrub(raw), retrievedAt));
-			}
-			const decoded = yield* Effect.mapError(
-				decodeResponse(raw),
-				(error) => new SearchResponseInvalid({ provider: name, detail: brief(scrub(error.message)) }),
-			);
-			return {
-				provider: name,
-				request: { method: "POST", url, body },
-				retrievedAt,
-				raw,
-				hits: decoded.results.map(toHit),
-				unfetched: (decoded.statuses ?? []).filter((status) => status.status === "error").map(toUnfetched),
-			};
-		});
+		SearchTransportFailure.make({ provider: name, detail: scrub(transportDetail(error)) });
+	// Untraced: the span of the port's call (`Exa.search`, `Exa.fetch`) covers it.
+	return Effect.fnUntraced(function* (path: string, body: Schema.JsonObject) {
+		const url = `${baseUrl}${path}`;
+		const request = HttpClientRequest.post(url).pipe(
+			HttpClientRequest.setHeader("x-api-key", secret),
+			HttpClientRequest.acceptJson,
+			HttpClientRequest.bodyJsonUnsafe(body),
+		);
+		const response = yield* client.execute(request).pipe(
+			// A client that fails on a status (`HttpClient.filterStatusOk`) still holds the response to classify.
+			Effect.catch((error) =>
+				error.response === undefined ? Effect.fail(unreachable(error)) : Effect.succeed(error.response),
+			),
+		);
+		const raw = yield* Effect.mapError(response.text, unreachable);
+		const retrievedAt = yield* DateTime.now;
+		if (response.status < 200 || response.status >= 300) return yield* failure(response, scrub(raw), retrievedAt);
+		// The HTTP boundary: Exa's body, decoded with the schema of what this file reads of it.
+		const decoded = yield* Effect.mapError(decodeResponse(raw), (error) =>
+			SearchResponseInvalid.make({ provider: name, detail: brief(scrub(error.message)) }),
+		);
+		const failed = Arr.filter(decoded.statuses ?? [], (status) => status.status === "error");
+		const unfetched = Arr.map(failed, toUnfetched);
+		return {
+			provider: name,
+			request: { method: "POST", url, body },
+			retrievedAt,
+			raw,
+			hits: Arr.map(decoded.results, toHit),
+			unfetched,
+		};
+	});
 }
 
 /** The body of `POST /search`. Snippets are Exa's highlights: excerpts chosen for the query. */
@@ -109,10 +131,10 @@ function searchBody(query: string, asked: SearchOptions, options: Options): Sche
 		...(options.category === undefined ? {} : { category: options.category }),
 		...(asked.maxResults === undefined ? {} : { numResults: asked.maxResults }),
 		// An empty list is no filter: Exa would read `[]` as one.
-		...(asked.includeDomains === undefined || asked.includeDomains.length === 0
+		...(asked.includeDomains === undefined || Arr.isReadonlyArrayEmpty(asked.includeDomains)
 			? {}
 			: { includeDomains: asked.includeDomains }),
-		...(asked.excludeDomains === undefined || asked.excludeDomains.length === 0
+		...(asked.excludeDomains === undefined || Arr.isReadonlyArrayEmpty(asked.excludeDomains)
 			? {}
 			: { excludeDomains: asked.excludeDomains }),
 		...(asked.publishedAfter === undefined ? {} : { startPublishedDate: DateTime.formatIso(asked.publishedAfter) }),
@@ -143,24 +165,27 @@ function transportDetail(error: HttpClientError.HttpClientError): string {
 function failure(response: HttpClientResponse.HttpClientResponse, body: string, now: DateTime.Utc): SearchError {
 	const status = response.status;
 	if (status === 429) {
-		return new SearchRateLimited({
+		return SearchRateLimited.make({
 			provider: name,
 			retryAfterMillis: Option.getOrUndefined(retryAfterMillis(response.headers, now)),
 		});
 	}
 	// 401: no key or a wrong one. 403: the key may not use the feature, or policy blocked the request.
-	if (status === 401 || status === 403) return new SearchUnauthorized({ provider: name, status });
-	return new SearchProviderFailure({ provider: name, status, detail: Option.getOrUndefined(said(body)) });
+	if (status === 401 || status === 403) return SearchUnauthorized.make({ provider: name, status });
+	return SearchProviderFailure.make({ provider: name, status, detail: Option.getOrUndefined(said(body)) });
 }
 
 /** `Retry-After` as milliseconds from `now`: Exa documents seconds; HTTP also allows a date. */
 function retryAfterMillis(headers: Headers.Headers, now: DateTime.Utc): Option.Option<number> {
-	return Option.flatMap(Headers.get(headers, "retry-after"), (value) => {
-		const seconds = Number(value);
-		if (value.trim() !== "" && Number.isFinite(seconds)) return Option.some(Math.max(0, seconds * 1000));
-		const at = Date.parse(value);
-		return Number.isFinite(at) ? Option.some(Math.max(0, at - DateTime.toEpochMillis(now))) : Option.none();
-	});
+	return Option.flatMap(Headers.get(headers, "retry-after"), (value) =>
+		Option.match(Option.filter(Num.parse(value), Number.isFinite), {
+			onSome: (seconds) => Option.some(Math.max(0, seconds * 1000)),
+			onNone: () =>
+				Option.map(DateTime.make(value), (at) =>
+					Math.max(0, DateTime.toEpochMillis(at) - DateTime.toEpochMillis(now)),
+				),
+		}),
+	);
 }
 
 /** Exa's error body, `{ requestId, error, tag }`. A decode boundary: wire input, read leniently. */
@@ -170,17 +195,17 @@ const ErrorBody = Schema.fromJsonString(
 
 /** What Exa said went wrong: its message and tag, else the start of whatever it sent; none for an empty body. */
 function said(body: string): Option.Option<string> {
-	const text = Option.match(Schema.decodeUnknownOption(ErrorBody)(body), {
+	const text = Option.match(Schema.decodeOption(ErrorBody)(body), {
 		onNone: () => body,
 		onSome: ({ error, tag }) => (error === undefined ? body : tag === undefined ? error : `${error} (${tag})`),
 	});
-	return text.trim() === "" ? Option.none() : Option.some(brief(text));
+	return Str.isEmpty(Str.trim(text)) ? Option.none() : Option.some(brief(text));
 }
 
 /** `text` on one line, cut to what an error message should carry. */
 function brief(text: string): string {
-	const line = text.replace(/\s+/g, " ").trim();
-	return line.length > MAX_DETAIL ? `${line.slice(0, MAX_DETAIL)}...` : line;
+	const line = pipe(text, Str.replace(/\s+/g, " "), Str.trim);
+	return line.length > MAX_DETAIL ? `${pipe(line, Str.slice(0, MAX_DETAIL))}...` : line;
 }
 
 const MAX_DETAIL = 300;
@@ -194,7 +219,7 @@ const ExaResult = Schema.Struct({
 	title: Schema.optional(Schema.NullOr(Schema.String)),
 	publishedDate: Schema.optional(Schema.NullOr(Schema.String)),
 	author: Schema.optional(Schema.NullOr(Schema.String)),
-	score: Schema.optional(Schema.NullOr(Schema.Number)),
+	score: Schema.optional(Schema.NullOr(Schema.Finite)),
 	text: Schema.optional(Schema.NullOr(Schema.String)),
 	highlights: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
 });
@@ -207,13 +232,13 @@ const ExaStatus = Schema.Struct({
 		Schema.NullOr(
 			Schema.Struct({
 				tag: Schema.optional(Schema.NullOr(Schema.String)),
-				httpStatusCode: Schema.optional(Schema.NullOr(Schema.Number)),
+				httpStatusCode: Schema.optional(Schema.NullOr(Schema.Finite)),
 			}),
 		),
 	),
 });
 
-const decodeResponse = Schema.decodeUnknownEffect(
+const decodeResponse = Schema.decodeEffect(
 	Schema.fromJsonString(
 		Schema.Struct({
 			results: Schema.Array(ExaResult),
@@ -224,7 +249,7 @@ const decodeResponse = Schema.decodeUnknownEffect(
 
 /** A hit of Exa's in the port's shape: empty and `null` fields are absent, highlights become the snippet. */
 function toHit(result: typeof ExaResult.Type): Hit {
-	const snippet = (result.highlights ?? []).join("\n");
+	const snippet = Arr.join(result.highlights ?? [], "\n");
 	return {
 		url: result.url,
 		...(present(result.title) ? { title: result.title } : {}),
@@ -245,6 +270,7 @@ function present(value: string | null | undefined): value is string {
 function toUnfetched(status: typeof ExaStatus.Type): Unfetched {
 	const tag = status.error?.tag ?? undefined;
 	const code = status.error?.httpStatusCode ?? undefined;
-	const reason = [tag, code === undefined ? undefined : `HTTP ${code}`].filter(Predicate.isNotUndefined).join(", ");
-	return { url: status.id, reason: reason === "" ? "not readable" : reason };
+	const parts = Arr.filter([tag, code === undefined ? undefined : `HTTP ${code}`], Predicate.isNotUndefined);
+	const reason = Arr.join(parts, ", ");
+	return Unfetched.make({ url: status.id, reason: reason === "" ? "not readable" : reason });
 }

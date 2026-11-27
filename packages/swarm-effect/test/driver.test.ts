@@ -3,11 +3,12 @@ import { Effect, Layer, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Port from "../src/driver.ts";
 import { fake } from "./fake-driver.ts";
+import { ForkId, JobKey, SwarmId } from "../src/ids.ts";
 
 describe("the driver port", () => {
-	it("imports nothing but effect, the durable facade and the type of the fork setup", () => {
+	it("imports nothing but effect, the durable facade, the package's ids and the type of the fork setup", () => {
 		const source = readFileSync(new URL("../src/driver.ts", import.meta.url), "utf8");
-		const imports = [...source.matchAll(/^import (type )?.* from "([^"]+)";$/gm)].map((match) => [
+		const imports = [...source.matchAll(/^import (type )?[^;]* from "([^"]+)";$/gm)].map((match) => [
 			match[2],
 			match[1] ?? "",
 		]);
@@ -15,12 +16,18 @@ describe("the driver port", () => {
 			["@effectified/pi-durable", ""],
 			["effect", ""],
 			["./fork-setup.ts", "type "],
+			["./ids.ts", ""],
 		]);
 	});
 
 	it("tells retry later from gone by the error's tag, each with a message that names what failed", () => {
 		const later = new Port.ForkRetryLater({ operation: "run", reason: "the actor is waking", afterMillis: 50 });
-		const gone = new Port.ForkGone({ what: "fork", swarmId: "s", jobKey: "k", reason: "It was destroyed" });
+		const gone = new Port.ForkGone({
+			what: "fork",
+			swarmId: SwarmId.make("s"),
+			jobKey: JobKey.make("k"),
+			reason: "It was destroyed",
+		});
 		expect([later._tag, later.message, later.afterMillis]).toEqual([
 			"ForkRetryLater",
 			"run: the actor is waking",
@@ -31,6 +38,9 @@ describe("the driver port", () => {
 		// A busy source is "retry later" too, marked: the coordinator waits it out and does not count it.
 		expect(new Port.ForkRetryLater({ operation: "fork", reason: "busy", sourceBusy: true }).sourceBusy).toBe(true);
 		expect(later.sourceBusy).toBeUndefined();
+		// A caller chooses between the two with the union's own match.
+		const kind = Port.ForkFailure.match({ ForkRetryLater: () => "later", ForkGone: (failure) => failure.what });
+		expect([kind(later), kind(gone)]).toEqual(["later", "fork"]);
 	});
 
 	it("has its data as schemas, so a driver can send it across a process boundary", () => {
@@ -66,14 +76,22 @@ describe("the driver port", () => {
 	it("is a service a product provides with a Layer", async () => {
 		const driver = fake();
 		const listed = await Effect.runPromise(
-			Port.ForkDriver.use((service) => service.list("s")).pipe(
+			Port.ForkDriver.use((service) => service.list(SwarmId.make("s"))).pipe(
 				Effect.provide(Layer.succeed(Port.ForkDriver, driver.driver)),
 			),
 		);
 		expect(listed).toEqual([]);
 		expect(
 			Option.isNone(
-				(await Effect.runPromise(driver.driver.destroy({ swarmId: "s", jobKey: "k", forkId: "x" }))).bytesWritten,
+				(
+					await Effect.runPromise(
+						driver.driver.destroy({
+							swarmId: SwarmId.make("s"),
+							jobKey: JobKey.make("k"),
+							forkId: ForkId.make("x"),
+						}),
+					)
+				).bytesWritten,
 			),
 		).toBe(true);
 	});

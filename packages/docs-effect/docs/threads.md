@@ -15,15 +15,16 @@ services. It requires a `HarnessStorage`, `PiTelemetry` and the product's ports.
 
 ```ts
 import { Effect, Layer } from "effect";
+import { fromPiModelRef } from "@effectified/pi-ai";
 import { Prices } from "@effectified/pi-budget";
-import { Storage } from "@effectified/pi-durable";
+import { Storage, ToolName } from "@effectified/pi-durable";
 import { priceRows } from "@effectified/pi-router";
-import { Composition, Threads } from "@effectified/pi-thread";
+import { Composition, ThreadKey, Threads } from "@effectified/pi-thread";
 
 const live = Composition.open({
 	extensions: [App, SearchTools.extension()], // the product's tools
 	guard: { policy, rules },
-	approvals: { tools: ["transfer"], expiresAfter: "1 day" },
+	approvals: { tools: [ToolName.make("transfer")], expiresAfter: "1 day" },
 	models: { providers, routes },
 	review: { policy: reviewPolicy, checks: [Cited] },
 	subagents: { subagents: [Researcher], maxDepth: 1, maxLive: 2, caps: { researcher: 50_000n } },
@@ -39,10 +40,10 @@ const live = Composition.open({
 
 const outcome = Threads.Threads.use((threads) =>
 	threads.work({
-		thread: "thread-42", // the product's key, and the idempotency key
+		thread: ThreadKey.make("thread-42"), // the product's key, and the idempotency key
 		task: "What is record 42 called?",
-		model: { provider: "router", modelId: "author" },
-		grant: { tools: ["lookup"], classification: "internal" },
+		model: fromPiModelRef({ provider: "router", modelId: "author" }),
+		grant: { tools: [ToolName.make("lookup")], classification: "internal" },
 		cap: 1_000_000n, // micro units of the lease this thread may settle
 		routing: { regions: ["eu"], requires: ["zero-data-retention"] }, // optional
 		review: true, // optional; false ends an answered thread `Answered`, unreviewed
@@ -135,7 +136,7 @@ import { type OutcomeEvent, OutcomeSink, OutcomeSinkError } from "@effectified/p
 const Outcomes = Layer.succeed(OutcomeSink, {
 	// One event. Success means it is stored; the same event may come again, so key it by `event.id`.
 	deliver: (event: OutcomeEvent) =>
-		store.put(event.id, event).pipe(Effect.mapError((cause) => new OutcomeSinkError({ cause }))),
+		store.put(event.id, event).pipe(Effect.mapError((cause) => OutcomeSinkError.make({ cause }))),
 });
 ```
 

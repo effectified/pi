@@ -25,26 +25,26 @@ export type Emit<C> = <K extends keyof C>(kind: K) => (...args: Args<NonNullable
 /**
  * The component `make` builds with the callbacks of `emit`, and their calls as a Stream until the scope closes.
  * `release`, when given, stops what the component runs on its own (a timer, a request) when the scope closes.
+ * Untraced: the dialog or selector that makes the component is the span.
  */
-export function withEvents<A, C>(
+export const withEvents = Effect.fnUntraced(function* <A, C>(
 	make: (emit: Emit<C>) => A,
 	release?: (component: A) => void,
-): Effect.Effect<WithEvents<A, C>, never, Scope.Scope> {
-	return Effect.gen(function* () {
-		// Ended, not shut down, when the scope closes: the events stream ends, and what was not taken yet stays to take.
-		const queue = yield* Effect.acquireRelease(Queue.unbounded<ComponentEvent<C>, Cause.Done>(), Queue.end);
-		// `{ kind, args }` is the member of `ComponentEvent<C>` for `kind`; TypeScript cannot pick it from the union.
-		const emit: Emit<C> =
-			(kind) =>
-			(...args) =>
-				void Queue.offerUnsafe(queue, { kind, args } as unknown as ComponentEvent<C>);
-		const component =
-			release === undefined
-				? make(emit)
-				: yield* Effect.acquireRelease(
-						Effect.sync(() => make(emit)),
-						(made) => Effect.sync(() => release(made)),
-					);
-		return { component, events: Stream.fromQueue(queue) };
-	});
-}
+): Effect.fn.Return<WithEvents<A, C>, never, Scope.Scope> {
+	// Ended, not shut down, when the scope closes: the events stream ends, and what was not taken yet stays to take.
+	// Unbounded: Pi's callbacks cannot wait.
+	const queue = yield* Effect.acquireRelease(Queue.unbounded<ComponentEvent<C>, Cause.Done>(), Queue.end);
+	// `{ kind, args }` is the member of `ComponentEvent<C>` for `kind`; TypeScript cannot pick it from the union.
+	const emit: Emit<C> =
+		(kind) =>
+		(...args) =>
+			void Queue.offerUnsafe(queue, { kind, args } as unknown as ComponentEvent<C>);
+	const component =
+		release === undefined
+			? make(emit)
+			: yield* Effect.acquireRelease(
+					Effect.sync(() => make(emit)),
+					(made) => Effect.sync(() => release(made)),
+				);
+	return { component, events: Stream.fromQueue(queue) };
+});

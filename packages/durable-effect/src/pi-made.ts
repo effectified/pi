@@ -8,12 +8,13 @@ import type {
 	ToolRegistration,
 	Wrap,
 } from "@earendil-works/pi-durable";
-import { Effect } from "effect";
+import { Array as Arr, Effect } from "effect";
 import type { Extension } from "./extension.ts";
+import { ToolName } from "./tool-name.ts";
 
 /** One of Pi's own tools: its name, and what builds its registration, which may need the services `R`. */
 export interface PiTool<R = never> {
-	readonly name: string;
+	readonly name: ToolName;
 	readonly registration: Effect.Effect<ToolRegistration, never, R>;
 }
 
@@ -28,18 +29,17 @@ interface PiSection extends Registered<PromptSection> {
 }
 
 /** An extension Pi made, in this package's form: what it holds needs no service. */
-export interface PiMade
-	extends Extension<
-		ReadonlyArray<PiTool>,
-		ReadonlyArray<Registered<HookRegistration>>,
-		readonly [],
-		ReadonlyArray<PiSection>,
-		ReadonlyArray<Registered<Wrap>>
-	> {}
+export interface PiMade extends Extension<
+	ReadonlyArray<PiTool>,
+	ReadonlyArray<Registered<HookRegistration>>,
+	readonly [],
+	ReadonlyArray<PiSection>,
+	ReadonlyArray<Registered<Wrap>>
+> {}
 
-/** `tool` as one of this package's. */
+/** `tool` as one of this package's: Pi's name, branded where it enters. */
 export function tool(registration: ToolRegistration): PiTool {
-	return { name: registration.name, registration: Effect.succeed(registration) };
+	return { name: ToolName.make(registration.name), registration: Effect.succeed(registration) };
 }
 
 /**
@@ -50,9 +50,12 @@ export function extension(made: PiExtension): PiMade {
 	return {
 		name: made.name,
 		...(made.namespace === undefined ? {} : { namespace: made.namespace }),
-		tools: (made.tools ?? []).map(tool),
-		hooks: (made.hooks ?? []).map((hook) => ({ registration: Effect.succeed(hook) })),
-		sections: (made.sections ?? []).map((section) => ({ key: section.key, registration: Effect.succeed(section) })),
-		wraps: (made.wraps ?? []).map((wrap) => ({ registration: Effect.succeed(wrap) })),
+		tools: Arr.map(made.tools ?? [], tool),
+		hooks: Arr.map(made.hooks ?? [], (hook) => ({ registration: Effect.succeed(hook) })),
+		sections: Arr.map(made.sections ?? [], (section) => ({
+			key: section.key,
+			registration: Effect.succeed(section),
+		})),
+		wraps: Arr.map(made.wraps ?? [], (wrap) => ({ registration: Effect.succeed(wrap) })),
 	};
 }

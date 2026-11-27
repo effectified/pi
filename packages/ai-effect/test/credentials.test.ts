@@ -7,6 +7,7 @@ import { toPiStore } from "../src/credentials.ts";
 import {
 	CredentialStoreError,
 	Credentials,
+	ProviderId,
 	type RedactedOAuthCredential,
 	redactCredential,
 	revealCredential,
@@ -14,7 +15,9 @@ import {
 import { currentRunner } from "../src/run-in-pi.ts";
 import { runTest } from "../src/testing/index.ts";
 
-class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
+class Refused extends Schema.TaggedError<Refused, { readonly brand: unique symbol }>()("Refused", {}) {}
+
+const P = ProviderId.make("p");
 
 const OAUTH: Credential = { type: "oauth", access: "access", refresh: "refresh", expires: 10, accountId: "acct" };
 
@@ -35,15 +38,15 @@ describe("Credentials.layerMemory", () => {
 		const result = await runTest(
 			Effect.gen(function* () {
 				const credentials = yield* Credentials;
-				const empty = yield* credentials.read("p");
-				const written = yield* credentials.modify("p", () =>
+				const empty = yield* credentials.read(P);
+				const written = yield* credentials.modify(P, () =>
 					Effect.succeed(Option.some(redactCredential({ type: "api_key", key: "k" }))),
 				);
-				const read = yield* credentials.read("p");
-				const kept = yield* credentials.modify("p", () => Effect.succeed(Option.none()));
+				const read = yield* credentials.read(P);
+				const kept = yield* credentials.modify(P, () => Effect.succeed(Option.none()));
 				const listed = yield* credentials.list;
-				yield* credentials.delete("p");
-				return { empty, written, read, kept, listed, deleted: yield* credentials.read("p") };
+				yield* credentials.delete(P);
+				return { empty, written, read, kept, listed, deleted: yield* credentials.read(P) };
 			}).pipe(Effect.provide(Credentials.layerMemory)),
 		);
 		const key = (credential: typeof result.read) =>
@@ -62,9 +65,9 @@ describe("Credentials.layerMemory", () => {
 		const result = await runTest(
 			Effect.gen(function* () {
 				const credentials = yield* Credentials;
-				yield* credentials.modify("p", () => Effect.succeed(Option.some(redactCredential(OAUTH))));
-				const failure = yield* Effect.flip(credentials.modify("p", () => Effect.fail(new Refused())));
-				return { failure, still: yield* credentials.read("p") };
+				yield* credentials.modify(P, () => Effect.succeed(Option.some(redactCredential(OAUTH))));
+				const failure = yield* Effect.flip(credentials.modify(P, () => Effect.fail(new Refused())));
+				return { failure, still: yield* credentials.read(P) };
 			}).pipe(Effect.provide(Credentials.layerMemory)),
 		);
 		expect(result.failure).toBeInstanceOf(Refused);
@@ -84,10 +87,10 @@ describe("Credentials.fromPiStore", () => {
 			Effect.gen(function* () {
 				const credentials = Credentials.fromPiStore(broken);
 				return [
-					yield* Effect.flip(credentials.read("p")),
+					yield* Effect.flip(credentials.read(P)),
 					yield* Effect.flip(credentials.list),
-					yield* Effect.flip(credentials.modify("p", () => Effect.succeed(Option.none()))),
-					yield* Effect.flip(credentials.delete("p")),
+					yield* Effect.flip(credentials.modify(P, () => Effect.succeed(Option.none()))),
+					yield* Effect.flip(credentials.delete(P)),
 				];
 			}),
 		);

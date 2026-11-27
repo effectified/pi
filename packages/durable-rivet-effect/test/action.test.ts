@@ -5,7 +5,9 @@ import { Context, Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Action from "../src/action.ts";
 
-class TooLate extends Schema.TaggedError<TooLate>()("TooLate", { by: Schema.Number }) {}
+class TooLate extends Schema.TaggedError<TooLate, { readonly brand: unique symbol }>()("TooLate", {
+	by: Schema.Number,
+}) {}
 
 class Calendar extends Context.Service<Calendar, { readonly today: Date }>()("test/Calendar") {}
 

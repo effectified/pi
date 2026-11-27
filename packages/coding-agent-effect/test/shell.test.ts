@@ -18,12 +18,12 @@ describe("getShellConfig", () => {
 
 describe("getPowerShellConfig", () => {
 	it.skipIf(process.platform !== "win32")("finds PowerShell on Windows", async () => {
-		const config = await runLive(getPowerShellConfig());
+		const config = await runLive(getPowerShellConfig);
 		expect(config.shell).toMatch(/pwsh|powershell/i);
 	});
 
 	it.skipIf(process.platform === "win32")("fails off Windows with Pi's error, as a CodingAgentError", async () => {
-		const failure = await runLive(Effect.flip(getPowerShellConfig()));
+		const failure = await runLive(Effect.flip(getPowerShellConfig));
 		expect(failure).toMatchObject({
 			_tag: "CodingAgentError",
 			message: "The powershell tool is only available on Windows.",

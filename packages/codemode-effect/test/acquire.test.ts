@@ -130,8 +130,8 @@ describe("tools and globals", () => {
 				yield* sandbox.register(lookup);
 				const names = (yield* sandbox.tools).map((tool) => tool.name);
 				const duplicate = yield* Effect.flip(sandbox.register(greet));
-				const removed = yield* sandbox.unregister("greet");
-				const again = yield* sandbox.unregister("greet");
+				const removed = yield* sandbox.unregister(greet.name);
+				const again = yield* sandbox.unregister(greet.name);
 				const result = yield* sandbox.execute(`return Object.keys(tools);`);
 				return [names, duplicate, removed, again, result.ok ? result.value : undefined] as const;
 			}).pipe(Effect.provide(records)),

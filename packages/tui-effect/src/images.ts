@@ -12,9 +12,9 @@ import { Effect } from "effect";
  * whole process; `undefined` removes it, and such images render as text. pi-tui calls it while rendering: it must be
  * synchronous, and return the PNG's base64 data or `null` when it cannot convert.
  */
-export function setImageTranscoder(transcoder: ImageTranscoder | undefined): Effect.Effect<void> {
-	return Effect.sync(() => piSetImageTranscoder(transcoder));
-}
+export const setImageTranscoder = Effect.fn("Tui.setImageTranscoder")((transcoder: ImageTranscoder | undefined) =>
+	Effect.sync(() => piSetImageTranscoder(transcoder)),
+);
 
 /** A fresh random Kitty image id, for an `Image` that is replaced in place (`ImageOptions.imageId`). */
 export const allocateImageId: Effect.Effect<number> = Effect.sync(piAllocateImageId);

@@ -84,8 +84,9 @@ describe("TypedMetrics.make", () => {
 		const series = await measure(
 			Effect.gen(function* () {
 				const metrics = yield* TypedMetrics.make([schema]);
-				// Made and returned, never run.
-				return metrics.counter("example.reads").add(1, { resource: "account" });
+				// Made, never run.
+				const unrun = metrics.counter("example.reads").add(1, { resource: "account" });
+				expect(Effect.isEffect(unrun)).toBe(true);
 			}),
 		);
 		expect(series).toEqual([]);

@@ -1,5 +1,7 @@
 // Pi's methods as Effects under Pi's own names: what the facades of pi-coding-agent's managers (sessions, settings)
 // are made of. The lists of methods are each facade's, checked against Pi's types in `test/pi-conformance.ts`.
+// Untraced: they are Pi's methods one for one, most of them getters a program reads often, where a span per call
+// would cost more than the call; the operations of this package's own (a prompt, a session made) are the spans.
 
 import { Effect } from "effect";
 import { type CodingAgentFailure, fromPi } from "./errors.ts";
@@ -57,11 +59,11 @@ export function awaits<T, const K extends MethodKeys<T>>(pi: T, keys: ReadonlyAr
 	return lift(pi, keys, (call) => Effect.tryPromise({ try: () => Promise.resolve(call()), catch: fromPi }));
 }
 
-/** Each method of `keys` as a function of its arguments that gives `effect` of the call. */
-function lift<T, K extends MethodKeys<T>, M>(
+/** Each method of `keys` as a function of its arguments that gives `effect` of the call, failing with `E`. */
+function lift<T, K extends MethodKeys<T>, M, E>(
 	pi: T,
 	keys: ReadonlyArray<K>,
-	effect: (call: () => unknown) => Effect.Effect<unknown, unknown>,
+	effect: (call: () => unknown) => Effect.Effect<unknown, E>,
 ): M {
 	const lifted: Record<PropertyKey, unknown> = {};
 	for (const key of keys) {

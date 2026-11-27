@@ -8,7 +8,7 @@ import {
 	type EnvConformanceOptions,
 	type ExpectLike,
 } from "@earendil-works/pi-durable/testing";
-import { Effect, type Layer, type Scope } from "effect";
+import { Array as Arr, Effect, type Layer, type Scope } from "effect";
 import { HarnessStorage } from "../storage.ts";
 
 /** One case of a conformance suite: a test of its name runs `run`, within `timeoutMs` when it says. */
@@ -30,16 +30,20 @@ export function storageConformance<E>(
 	expect: ExpectLike,
 ): Effect.Effect<ReadonlyArray<Case>> {
 	return Effect.sync(() =>
-		createStorageConformance({
-			assertions: createExpectAssertions(expect),
-			withStorage: (use) =>
-				Effect.runPromise(
-					Effect.provide(
-						HarnessStorage.use((opened) => Effect.promise(() => use(opened))),
-						storage,
+		Arr.map(
+			createStorageConformance({
+				assertions: createExpectAssertions(expect),
+				// Pi runs each case and calls this from it: a run of its own, on a fresh build of the Layer.
+				withStorage: (use) =>
+					Effect.runPromise(
+						Effect.provide(
+							HarnessStorage.use((opened) => Effect.promise(() => use(opened))),
+							storage,
+						),
 					),
-				),
-		}).map((testCase) => ({ name: testCase.name, run: Effect.promise(() => testCase.run()) })),
+			}),
+			(testCase): Case => ({ name: testCase.name, run: Effect.promise(() => testCase.run()) }),
+		),
 	);
 }
 
@@ -57,15 +61,19 @@ export function envConformance<E>(
 	options?: EnvOptions,
 ): Effect.Effect<ReadonlyArray<Case>> {
 	return Effect.sync(() =>
-		createEnvConformance({
-			...options,
-			assertions: createExpectAssertions(expect),
-			withEnv: (use) =>
-				Effect.runPromise(Effect.scoped(Effect.flatMap(env, (opened) => Effect.promise(() => use(opened))))),
-		}).map((testCase) => ({
-			name: testCase.name,
-			...(testCase.timeoutMs === undefined ? {} : { timeoutMs: testCase.timeoutMs }),
-			run: Effect.promise(() => testCase.run()),
-		})),
+		Arr.map(
+			createEnvConformance({
+				...options,
+				assertions: createExpectAssertions(expect),
+				// Pi runs each case and calls this from it: a run of its own, in a scope of its own.
+				withEnv: (use) =>
+					Effect.runPromise(Effect.scoped(Effect.flatMap(env, (opened) => Effect.promise(() => use(opened))))),
+			}),
+			(testCase): Case => ({
+				name: testCase.name,
+				...(testCase.timeoutMs === undefined ? {} : { timeoutMs: testCase.timeoutMs }),
+				run: Effect.promise(() => testCase.run()),
+			}),
+		),
 	);
 }

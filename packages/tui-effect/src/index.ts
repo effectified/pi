@@ -91,13 +91,13 @@ export {
 } from "./capabilities.ts";
 export { type Clipboard, nativeClipboard } from "./clipboard.ts";
 export { parseColor } from "./colors.ts";
-export { AutocompleteError, ClipboardError, InvalidColor, type TuiError } from "./errors.ts";
+export { AutocompleteError, ClipboardError, InvalidColor, TuiError } from "./errors.ts";
 export { type EventKey, type EventOf, events } from "./events.ts";
 export { allocateImageId, setImageTranscoder } from "./images.ts";
 export { getKeybindings, setKeybindings } from "./keybindings.ts";
 export { isKittyProtocolActive, setKittyProtocolActive } from "./kitty-protocol.ts";
 export { cancellableLoader, type LoaderArgs, loader, untilCancelled } from "./loader.ts";
-export { type SettingsListEvent, type SettingsListOf, settingsList } from "./settings-list.ts";
-export { type InputSequence, splitInput } from "./split-input.ts";
+export { SettingsListEvent, type SettingsListOf, settingsList } from "./settings-list.ts";
+export { InputSequence, splitInput } from "./split-input.ts";
 export * as Tui from "./tui.ts";
 export { isAppleTerminalSession } from "./tui-terminal.ts";

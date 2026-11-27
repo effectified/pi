@@ -4,11 +4,12 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { runLive } from "@effectified/pi-ai/testing";
-import { Effect, Queue, Ref } from "effect";
+import { Effect, Option, Queue, Redacted, Ref } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	type JsonRpcRequest,
 	McpClient,
+	McpToolName,
 	pipeTransport,
 	stdioTransport,
 	streamableHttpTransport,
@@ -42,7 +43,7 @@ describe("stdioTransport", () => {
 						});
 						const client = yield* McpClient.connect(transport, CLIENT);
 						const tools = yield* client.listTools();
-						const result = yield* client.callTool("echo", { text: "over stdio" });
+						const result = yield* client.callTool(McpToolName.make("echo"), { text: "over stdio" });
 						return { pid: transport.pid ?? 0, server: client.initialize.serverInfo, tools, result };
 					}),
 				);
@@ -102,7 +103,10 @@ describe("streamableHttpTransport", () => {
 						const transport = yield* streamableHttpTransport({
 							url: `${origin}/mcp`,
 							openGetStream: false,
-							auth: { token: Ref.get(token), onUnauthorized: () => Ref.set(token, "new") },
+							auth: {
+								token: Effect.map(Ref.get(token), (value) => Option.some(Redacted.make(value))),
+								onUnauthorized: () => Ref.set(token, "new"),
+							},
 						});
 						const client = yield* McpClient.connect(transport, CLIENT);
 						return yield* client.listTools();
@@ -126,7 +130,7 @@ describe("streamableHttpTransport", () => {
 				const origin = yield* mcpServer([]);
 				const transport = yield* streamableHttpTransport({ url: `${origin}/mcp`, openGetStream: false });
 				const client = yield* McpClient.connect(transport, CLIENT);
-				return yield* Effect.flip(client.callTool("search"));
+				return yield* Effect.flip(client.callTool(McpToolName.make("search")));
 			}),
 		);
 		expect(error).toMatchObject({ _tag: "McpHttpError", status: 500 });
@@ -163,7 +167,7 @@ describe("pipeTransport", () => {
 								}),
 						});
 						const client = yield* McpClient.connect(transport, CLIENT);
-						return yield* client.callTool("echo", { text: "over a pipe" });
+						return yield* client.callTool(McpToolName.make("echo"), { text: "over a pipe" });
 					}),
 				);
 				return { result, stderr: yield* Queue.take(stderr), exits };

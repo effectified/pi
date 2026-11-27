@@ -235,6 +235,8 @@ describe("fromEntry", () => {
 			return record?._tag === "Entry" ? [record.data, record.task, record.time] : undefined;
 		};
 		expect(timed({ text: "shown", time: 7 })).toEqual([{ text: "shown", time: 7 }, null, 7]);
+		// A fraction stays one, as it did before 0.3.0; the record id does not depend on it.
+		expect(timed({ time: 10.5 })).toEqual([{ time: 10.5 }, null, 10.5]);
 		expect(timed({ text: "shown" })).toEqual([{ text: "shown" }, null, null]);
 		expect(timed({ time: "yesterday" })).toEqual([{ time: "yesterday" }, null, null]);
 		expect(timed([1, 2])).toEqual([[1, 2], null, null]);

@@ -20,13 +20,11 @@ export function scoped(parent: Context = BACKGROUND_CONTEXT): Effect.Effect<Cont
 /**
  * A child of `parent` that is cancelled after `duration` of the `Clock`, with the reason `AbortSignal.timeout` gives
  * (a `DOMException` named `TimeoutError`), or when the current scope closes, whichever comes first. A test moves the
- * deadline with `TestClock.adjust`. Its telemetry is the fiber's current span, as for `scoped`.
+ * deadline with `TestClock.adjust`. Its telemetry is the fiber's current span, as for `scoped`. Untraced, as every
+ * function here: a span of its own would be the span the context carries, ended before the context is used.
  */
-export function timeout(
-	duration: Duration.Input,
-	parent: Context = BACKGROUND_CONTEXT,
-): Effect.Effect<Context, never, Scope.Scope> {
-	return Effect.gen(function* () {
+export const timeout: (duration: Duration.Input, parent?: Context) => Effect.Effect<Context, never, Scope.Scope> =
+	Effect.fnUntraced(function* (duration: Duration.Input, parent: Context = BACKGROUND_CONTEXT) {
 		const { context, controller } = yield* controlled(parent);
 		yield* Effect.forkScoped(
 			Effect.andThen(
@@ -37,7 +35,6 @@ export function timeout(
 		);
 		return context;
 	});
-}
 
 /**
  * Completes with the abort reason once `context` is cancelled, at once when it already is, and never when it cannot

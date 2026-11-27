@@ -1,3 +1,4 @@
+import { ToolName } from "@effectified/pi-agent";
 import { fauxAssistantMessage, fauxToolCall, runTest } from "@effectified/pi-ai/testing";
 import { Deferred, Effect, Fiber, Latch, Schema } from "effect";
 import { describe, expect, it } from "vitest";
@@ -46,7 +47,7 @@ const relay = Tool.make("relay", {
 	handler: () =>
 		Effect.gen(function* () {
 			const tools = yield* ToolContext;
-			const outcome = yield* tools.executeTool("echo", { text: "nested" });
+			const outcome = yield* tools.executeTool(ToolName.make("echo"), { text: "nested" });
 			return outcome.result.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
 		}),
 });

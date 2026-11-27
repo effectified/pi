@@ -9,7 +9,7 @@ import { Effect, Layer, Option, Schema, Stream } from "effect";
 import * as Swarm from "../src/index.ts";
 import * as Records from "../src/rivet/records.ts";
 import * as Rivet from "../src/rivet.ts";
-import { asked, Granted, jobsOf, Measure, measured, model, noSetup, recordingSetup } from "./support.ts";
+import { asked, Granted, jobsOf, keys, Measure, measured, model, noSetup, recordingSetup } from "./support.ts";
 
 /** How often the suite's coordinators ask a fork for its job: short, so the tests do not wait on the interval. */
 const POLL_MILLIS = 100;
@@ -116,6 +116,7 @@ const recordFork: Fork.Hygiene<never> = ActorInfo.use((info) =>
 	Effect.sync(() => void forked.push(JSON.stringify(info.key))),
 );
 
+// The suite's wire input is plain text, as a product's would be: each handler brands the ids it is given.
 const SwarmId = Schema.Struct({ id: Schema.String });
 
 const Job = Schema.Struct({ swarmId: Schema.String, jobKey: Schema.String });
@@ -184,7 +185,14 @@ const actions = {
 		handler: ({ id, words, cap, onFailure, pins, from }) =>
 			Effect.gen(function* () {
 				const source = from === "root" ? yield* TestHarness.root : Option.getOrThrow(yield* Rivet.jobConversation);
-				const plan = { id, source: source.id, jobs: jobsOf(words), cap, onFailure, pins };
+				const plan = {
+					id: Swarm.SwarmId.make(id),
+					source: source.id,
+					jobs: jobsOf(words),
+					cap,
+					onFailure,
+					pins: keys(...pins),
+				};
 				const started = yield* Swarm.start(Measure, plan);
 				return { taskId: started.taskId, created: started.created };
 			}).pipe(Effect.orDie),
@@ -199,7 +207,7 @@ const actions = {
 		}),
 		handler: ({ id }) =>
 			Effect.orDie(
-				Effect.map(Swarm.status(id), ({ running, phase, jobs }) => ({
+				Effect.map(Swarm.status(Swarm.SwarmId.make(id)), ({ running, phase, jobs }) => ({
 					running,
 					phase,
 					jobs: jobs.map(({ key, status }) => ({ key, status })),
@@ -211,7 +219,9 @@ const actions = {
 		input: SwarmId,
 		output: Schema.Array(Schema.Struct({ key: Schema.String, ran: Schema.Option(Swarm.Place) })),
 		handler: ({ id }) =>
-			Effect.orDie(Effect.map(Swarm.status(id), ({ jobs }) => jobs.map(({ key, ran }) => ({ key, ran })))),
+			Effect.orDie(
+				Effect.map(Swarm.status(Swarm.SwarmId.make(id)), ({ jobs }) => jobs.map(({ key, ran }) => ({ key, ran }))),
+			),
 	}),
 	/** Admits an input to the root conversation that the model holds (`holdSource`), and returns: the actor is busy. */
 	holdOn: Action.make({
@@ -240,7 +250,7 @@ const actions = {
 	cancel: Action.make({
 		input: SwarmId,
 		output: Schema.String,
-		handler: ({ id }) => Effect.orDie(Swarm.cancel(id)),
+		handler: ({ id }) => Effect.orDie(Swarm.cancel(Swarm.SwarmId.make(id))),
 	}),
 	/** `Swarm.result`: it waits for the coordinator's end, so a test calls it for a swarm that has ended. */
 	result: Action.make({
@@ -248,7 +258,7 @@ const actions = {
 		output: Outcome,
 		error: Swarm.SwarmFaulted,
 		handler: ({ id }) =>
-			Effect.catch(Swarm.result(Measure, id), (error) =>
+			Effect.catch(Swarm.result(Measure, Swarm.SwarmId.make(id)), (error) =>
 				error._tag === "SwarmFaulted" ? Effect.fail(error) : Effect.die(error),
 			),
 	}),
@@ -256,20 +266,24 @@ const actions = {
 	destroyFork: Action.make({
 		input: Schema.Struct({ id: Schema.String, jobKey: Schema.String }),
 		output: Schema.Struct({ bytesWritten: Schema.Option(Schema.Number) }),
-		handler: ({ id, jobKey }) => Effect.orDie(Swarm.destroyFork(id, jobKey)),
+		handler: ({ id, jobKey }) => Effect.orDie(Swarm.destroyFork(Swarm.SwarmId.make(id), Swarm.JobKey.make(jobKey))),
 	}),
 	/** `Swarm.events`, collected: `<tag>:<job key>` each. */
 	events: Action.make({
 		input: SwarmId,
 		output: Schema.Array(Schema.String),
 		handler: ({ id }) =>
-			Effect.orDie(Stream.runCollect(Stream.map(Swarm.events(id), (event) => `${event._tag}:${event.key}`))),
+			Effect.orDie(
+				Stream.runCollect(
+					Stream.map(Swarm.events(Swarm.SwarmId.make(id)), (event) => `${event._tag}:${event.key}`),
+				),
+			),
 	}),
 	/** The driver's `list`: the forks of a swarm that exist, as the actor's own driver knows them. */
 	forks: Action.make({
 		input: SwarmId,
 		output: Schema.Array(Swarm.Fork),
-		handler: ({ id }) => Effect.orDie(Swarm.ForkDriver.use((driver) => driver.list(id))),
+		handler: ({ id }) => Effect.orDie(Swarm.ForkDriver.use((driver) => driver.list(Swarm.SwarmId.make(id)))),
 	}),
 	/** The driver's `fork` for a job of the root conversation at its newest entry, as `told` says it. */
 	fork: Action.make({
@@ -282,8 +296,8 @@ const actions = {
 				const driver = yield* Swarm.ForkDriver;
 				return yield* told(
 					driver.fork({
-						swarmId,
-						jobKey,
+						swarmId: Swarm.SwarmId.make(swarmId),
+						jobKey: Swarm.JobKey.make(jobKey),
 						coordinatorTaskId: Task.Id.make(0),
 						sourceConversationId: root.id,
 						at,
@@ -298,13 +312,23 @@ const actions = {
 	drop: Action.make({
 		input: Schema.Struct({ swarmId: Schema.String, jobKey: Schema.String, forkId: Schema.String }),
 		output: Schema.Struct({ bytesWritten: Schema.Option(Schema.Number) }),
-		handler: (fork) => Effect.orDie(Swarm.ForkDriver.use((driver) => driver.destroy(fork))),
+		handler: ({ swarmId, jobKey, forkId }) =>
+			Effect.orDie(
+				Swarm.ForkDriver.use((driver) =>
+					driver.destroy({
+						swarmId: Swarm.SwarmId.make(swarmId),
+						jobKey: Swarm.JobKey.make(jobKey),
+						forkId: Swarm.ForkId.make(forkId),
+					}),
+				),
+			),
 	}),
 	/** Writes the driver's intent record of a fork and asks the engine for nothing: a fork call that never returned. */
 	intend: Action.make({
 		input: Job,
 		output: Schema.Null,
-		handler: ({ swarmId, jobKey }) => Effect.as(Effect.orDie(Records.intend(swarmId, jobKey)), null),
+		handler: ({ swarmId, jobKey }) =>
+			Effect.as(Effect.orDie(Records.intend(Swarm.SwarmId.make(swarmId), Swarm.JobKey.make(jobKey))), null),
 	}),
 	/** The model context of the actor's job conversation, `<role>: <text>` each; empty when it has none. */
 	jobTranscript: Action.make({

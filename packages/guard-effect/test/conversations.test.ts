@@ -1,5 +1,6 @@
 import type { ConversationId, EntryId } from "@earendil-works/pi-durable";
-import { type Conversation, Extension, Harness, Registry, Storage, Tool } from "@effectified/pi-durable";
+import { fromPiModelRef } from "@effectified/pi-ai";
+import { type Conversation, Extension, Harness, Registry, Storage, Tool, ToolName } from "@effectified/pi-durable";
 import { answer, ScriptedModels, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Exit, Layer, Option, PubSub, Schema } from "effect";
 import { describe, expect, it } from "vitest";
@@ -18,6 +19,7 @@ import {
 	brief,
 	guardedHarness,
 	harnessOn,
+	names,
 	offering,
 	recorded,
 	toolResults,
@@ -28,7 +30,7 @@ import {
 
 const ownerless = { kind: "ownerless" } as const;
 
-const labelled: Policy.Policy = {
+const labelled: Policy.Encoded = {
 	...Policy.empty,
 	classifications: ["public", "internal", "confidential"],
 	// The scripted provider's model, cleared up to `internal`.
@@ -66,7 +68,7 @@ describe("create", () => {
 				const before = yield* conversations;
 				const conversation = yield* Conversations.create({
 					ownership: ownerless,
-					grant: { tools: ["read", "search", "read"], classification: "internal" },
+					grant: { tools: names("read", "search", "read"), classification: "internal" },
 					model,
 				});
 				const agent = yield* conversation.agent;
@@ -81,7 +83,7 @@ describe("create", () => {
 		);
 		expect(seen.model).toEqual({ provider: "faux", modelId: "faux-1" });
 		expect(seen.made).toBe(1);
-		expect(seen.granted).toEqual({ tools: ["read", "search"], classification: "internal" });
+		expect(seen.granted).toEqual({ tools: names("read", "search"), classification: "internal" });
 		expect(seen.offered).toEqual(["read", "search"]);
 		expect(seen.runs).toEqual(seen.model);
 	});
@@ -103,7 +105,7 @@ describe("create", () => {
 					Conversations.create({
 						ownership: ownerless,
 						grant: { tools: [], classification: "public" },
-						model: { provider: "other", modelId: "large" },
+						model: fromPiModelRef({ provider: "other", modelId: "large" }),
 					}),
 				);
 				const unclassified = yield* Effect.flip(
@@ -116,20 +118,27 @@ describe("create", () => {
 			}).pipe(Effect.provide(layer)),
 		);
 		expect(seen.above).toEqual(
-			new ModelNotCleared({
-				provider: "faux",
-				modelId: "faux-1",
+			ModelNotCleared.make({
+				...fromPiModelRef({ provider: "faux", modelId: "faux-1" }),
 				classification: "confidential",
 				ceiling: "internal",
 			}),
 		);
 		expect(seen.unlisted).toEqual(
-			new ModelNotCleared({ provider: "other", modelId: "large", classification: "public", ceiling: undefined }),
+			ModelNotCleared.make({
+				...fromPiModelRef({ provider: "other", modelId: "large" }),
+				classification: "public",
+				ceiling: undefined,
+			}),
 		);
 		expect(seen.unclassified).toEqual(
-			new ModelNotCleared({ provider: "faux", modelId: "faux-1", classification: undefined, ceiling: "internal" }),
+			ModelNotCleared.make({
+				...fromPiModelRef({ provider: "faux", modelId: "faux-1" }),
+				classification: undefined,
+				ceiling: "internal",
+			}),
 		);
-		expect(seen.unknown).toEqual(new UnknownClassification({ classification: "secret" }));
+		expect(seen.unknown).toEqual(UnknownClassification.make({ classification: "secret" }));
 		expect(seen.unknown.message).toBe("The policy has no classification secret");
 		expect(seen.made).toBe(0);
 	});
@@ -152,13 +161,13 @@ describe("create", () => {
 			),
 		);
 		const error = await Effect.runPromise(
-			Effect.flip(Conversations.create({ ownership: ownerless, grant: { tools: ["search"] } })).pipe(
+			Effect.flip(Conversations.create({ ownership: ownerless, grant: { tools: names("search") } })).pipe(
 				Effect.provide(unguarded),
 				Effect.provide(guard),
 			),
 		);
 		expect(error).toBeInstanceOf(Unguarded);
-		expect(error).toMatchObject({ _tag: "Unguarded", reason: "not-selected" });
+		expect(error).toMatchObject({ _tag: "Unguarded", reason: { _tag: "NotSelected" } });
 		expect(error.message).toMatch(/^Conversation \d+ does not select the guard's extension$/);
 	});
 });
@@ -180,12 +189,12 @@ describe("a guard that built no registry", () => {
 				const root = yield* Harness.root;
 				const before = yield* conversations;
 				const created = yield* Effect.flip(
-					Conversations.create({ ownership: ownerless, grant: { tools: ["search"] } }),
+					Conversations.create({ ownership: ownerless, grant: { tools: names("search") } }),
 				);
 				const inCommit = yield* Effect.flip(
-					Harness.commit((tx) => Conversations.grantIn(tx, root.id, { tools: ["search"] })),
+					Harness.commit((tx) => Conversations.grantIn(tx, root.id, { tools: names("search") })),
 				);
-				const existing = yield* Effect.flip(Conversations.grant(root, { tools: ["search"] }));
+				const existing = yield* Effect.flip(Conversations.grant(root, { tools: names("search") }));
 				return {
 					id: root.id,
 					created,
@@ -198,12 +207,12 @@ describe("a guard that built no registry", () => {
 				};
 			}).pipe(Effect.provide(unchecked())),
 		);
-		expect(seen.created).toMatchObject({ _tag: "Unguarded", reason: "no-registry" });
-		expect(seen.inCommit).toEqual(new Unguarded({ conversationId: seen.id, reason: "no-registry" }));
+		expect(seen.created).toMatchObject({ _tag: "Unguarded", reason: { _tag: "NoRegistry" } });
+		expect(seen.inCommit).toEqual(Unguarded.make({ conversationId: seen.id, reason: { _tag: "NoRegistry" } }));
 		expect(seen.inCommit.message).toBe(
 			`This guard built no registry: nothing would enforce a grant of conversation ${seen.id}`,
 		);
-		expect(seen.existing).toEqual(new Unguarded({ conversationId: seen.id, reason: "not-selected" }));
+		expect(seen.existing).toEqual(Unguarded.make({ conversationId: seen.id, reason: { _tag: "NotSelected" } }));
 		expect(seen.made).toBe(0);
 		expect(seen.granted).toEqual({ tools: [] });
 		expect(seen.offered).toEqual([]);
@@ -216,13 +225,13 @@ describe("a guard that built no registry", () => {
 				const root = yield* Harness.root;
 				const refusals = yield* PubSub.unbounded<Refusal.Refusal>();
 				return yield* Effect.flip(
-					Harness.commit((tx) => Conversations.grantIn(tx, root.id, { tools: ["search"] })).pipe(
+					Harness.commit((tx) => Conversations.grantIn(tx, root.id, { tools: names("search") })).pipe(
 						Effect.provideService(Guard.Guard, { policy: Policy.empty, refusals }),
 					),
 				);
 			}).pipe(Effect.provide(layer)),
 		);
-		expect(error).toMatchObject({ _tag: "Unguarded", reason: "no-registry" });
+		expect(error).toMatchObject({ _tag: "Unguarded", reason: { _tag: "NoRegistry" } });
 	});
 });
 
@@ -236,14 +245,14 @@ describe("grant", () => {
 			Effect.gen(function* () {
 				const root = yield* Harness.rootWith({ agent: yield* TestHarness.agent });
 				const before = yield* Conversations.granted(root.id);
-				yield* Conversations.grant(root, { tools: ["search"] });
-				yield* Conversations.grant(root, { tools: ["write"] });
+				yield* Conversations.grant(root, { tools: names("search") });
+				yield* Conversations.grant(root, { tools: names("write") });
 				yield* root.prompt("Write a.");
 				yield* root.waitForIdle;
 				return { before, after: yield* Conversations.granted(root.id) };
 			}).pipe(Effect.provide(layer)),
 		);
-		expect(seen).toEqual({ before: { tools: [] }, after: { tools: ["write"] } });
+		expect(seen).toEqual({ before: { tools: [] }, after: { tools: names("write") } });
 		expect(offered).toEqual([["write"]]);
 		expect(ran).toEqual(["write:a"]);
 	});
@@ -254,28 +263,27 @@ describe("grant", () => {
 			Effect.gen(function* () {
 				const { model } = yield* TestHarness.agent;
 				const root = yield* Harness.root;
-				yield* Conversations.grant(root, { tools: ["read"], classification: "public" });
+				yield* Conversations.grant(root, { tools: names("read"), classification: "public" });
 				const unknown = yield* Effect.flip(
-					Conversations.grant(root, { tools: ["write"], classification: "secret" }),
+					Conversations.grant(root, { tools: names("write"), classification: "secret" }),
 				);
 				const above = yield* Effect.flip(
-					Conversations.grant(root, { tools: ["write"], classification: "confidential" }, { model }),
+					Conversations.grant(root, { tools: names("write"), classification: "confidential" }, { model }),
 				);
-				yield* Conversations.grant(root, { tools: ["search"], classification: "internal" }, { model });
+				yield* Conversations.grant(root, { tools: names("search"), classification: "internal" }, { model });
 				const agent = yield* root.agent;
 				return { unknown, above, granted: yield* Conversations.granted(root.id), runs: agent.model, model };
 			}).pipe(Effect.provide(layer)),
 		);
-		expect(seen.unknown).toEqual(new UnknownClassification({ classification: "secret" }));
+		expect(seen.unknown).toEqual(UnknownClassification.make({ classification: "secret" }));
 		expect(seen.above).toEqual(
-			new ModelNotCleared({
-				provider: "faux",
-				modelId: "faux-1",
+			ModelNotCleared.make({
+				...fromPiModelRef({ provider: "faux", modelId: "faux-1" }),
 				classification: "confidential",
 				ceiling: "internal",
 			}),
 		);
-		expect(seen.granted).toEqual({ tools: ["search"], classification: "internal" });
+		expect(seen.granted).toEqual({ tools: names("search"), classification: "internal" });
 		expect(seen.runs).toEqual(seen.model);
 	});
 
@@ -286,14 +294,14 @@ describe("grant", () => {
 				const root = yield* Harness.root;
 				yield* Conversations.guarded(root);
 				yield* root.configure({ extensions: ["app"] });
-				const dropped = yield* Effect.flip(Conversations.grant(root, { tools: ["search"] }));
+				const dropped = yield* Effect.flip(Conversations.grant(root, { tools: names("search") }));
 				yield* root.configure({ extensions: ["app", "guard"] });
-				const late = yield* Effect.flip(Conversations.grant(root, { tools: ["search"] }));
+				const late = yield* Effect.flip(Conversations.grant(root, { tools: names("search") }));
 				return { id: root.id, dropped, late, granted: yield* Conversations.granted(root.id) };
 			}).pipe(Effect.provide(layer)),
 		);
-		expect(seen.dropped).toEqual(new Unguarded({ conversationId: seen.id, reason: "not-selected" }));
-		expect(seen.late).toEqual(new Unguarded({ conversationId: seen.id, reason: "not-first" }));
+		expect(seen.dropped).toEqual(Unguarded.make({ conversationId: seen.id, reason: { _tag: "NotSelected" } }));
+		expect(seen.late).toEqual(Unguarded.make({ conversationId: seen.id, reason: { _tag: "NotFirst" } }));
 		expect(seen.late.message).toBe(`Conversation ${seen.id} asks another extension before the guard's`);
 		expect(seen.granted).toEqual({ tools: [] });
 	});
@@ -301,14 +309,14 @@ describe("grant", () => {
 
 describe("granted", () => {
 	it("is the policy's grant for a conversation that has none, and for one that does not exist", async () => {
-		const { layer } = scene({ policy: { ...Policy.empty, ungranted: { tools: ["read"] } } });
+		const { layer } = scene({ policy: { ...Policy.empty, ungranted: { tools: names("read") } } });
 		const seen = await Effect.runPromise(
 			Effect.gen(function* () {
 				const root = yield* Harness.root;
 				return [yield* Conversations.granted(root.id), yield* Conversations.granted(999 as ConversationId)];
 			}).pipe(Effect.provide(layer)),
 		);
-		expect(seen).toEqual([{ tools: ["read"] }, { tools: ["read"] }]);
+		expect(seen).toEqual([{ tools: names("read") }, { tools: names("read") }]);
 	});
 });
 
@@ -332,13 +340,13 @@ describe("a fork", () => {
 					const { model } = yield* TestHarness.agent;
 					const parent = yield* Conversations.create({
 						ownership: ownerless,
-						grant: { tools: ["search", "read"] },
+						grant: { tools: names("search", "read") },
 						model,
 					});
 					yield* parent.prompt("Hello.");
 					yield* parent.waitForIdle;
 					const at = Option.getOrThrow(yield* parent.head);
-					yield* Conversations.grant(parent, { tools: ["read"] });
+					yield* Conversations.grant(parent, { tools: names("read") });
 					const fork = yield* parent.fork({ at, ownership: ownerless });
 					const inherited = yield* Conversations.granted(fork.id);
 					// The fork's grant is its own from here on.
@@ -362,8 +370,8 @@ describe("a fork", () => {
 		expect(await forked(true)).toEqual({
 			ran: ["read:b"],
 			offered: [["read"]],
-			inherited: { tools: ["read"] },
-			kept: { tools: ["read"] },
+			inherited: { tools: names("read") },
+			kept: { tools: names("read") },
 			results: [
 				["search", UNAVAILABLE("search")],
 				["read", "read did b"],
@@ -376,8 +384,8 @@ describe("a fork", () => {
 		expect(await forked(false)).toEqual({
 			ran: ["read:b"],
 			offered: [["search", "read"]],
-			inherited: { tools: ["read"] },
-			kept: { tools: ["read"] },
+			inherited: { tools: names("read") },
+			kept: { tools: names("read") },
 			results: [
 				["search", BLOCKED("search")],
 				["read", "read did b"],
@@ -390,12 +398,15 @@ describe("a fork", () => {
 		const { layer } = scene();
 		const seen = await Effect.runPromise(
 			Effect.gen(function* () {
-				const parent = yield* Conversations.create({ ownership: ownerless, grant: { tools: ["search", "read"] } });
+				const parent = yield* Conversations.create({
+					ownership: ownerless,
+					grant: { tools: names("search", "read") },
+				});
 				const note = yield* parent.commit((tx) => tx.appendEntry(parent.id, { kind: "app.note" }));
 				const id = yield* Harness.commit((tx) =>
 					Effect.gen(function* () {
 						const fork = yield* tx.forkConversation(parent.id, note.id, { ownership: ownerless });
-						yield* Conversations.grantIn(tx, fork.id, { tools: ["read"] });
+						yield* Conversations.grantIn(tx, fork.id, { tools: names("read") });
 						return fork.id;
 					}),
 				);
@@ -407,13 +418,17 @@ describe("a fork", () => {
 				};
 			}).pipe(Effect.provide(layer)),
 		);
-		expect(seen).toEqual({ granted: { tools: ["read"] }, offered: ["read"], parent: { tools: ["search", "read"] } });
+		expect(seen).toEqual({
+			granted: { tools: names("read") },
+			offered: ["read"],
+			parent: { tools: names("search", "read") },
+		});
 	});
 });
 
 describe("a fork a task owns", () => {
 	it("inherits its parent's grant with the classification raised to its owner's", async () => {
-		const policy: Policy.Policy = { ...Policy.empty, classifications: ["public", "internal"] };
+		const policy: Policy.Encoded = { ...Policy.empty, classifications: ["public", "internal"] };
 		const { Search } = tools();
 		const forks: ConversationId[] = [];
 		// What the tool forks: a conversation labelled `public`, at its newest entry.
@@ -442,13 +457,13 @@ describe("a fork a task owns", () => {
 			Effect.gen(function* () {
 				const open = yield* Conversations.create({
 					ownership: ownerless,
-					grant: { tools: ["search"], classification: "public" },
+					grant: { tools: names("search"), classification: "public" },
 				});
 				source.id = open.id;
 				source.at = (yield* open.commit((tx) => tx.appendEntry(open.id, { kind: "app.note" }))).id;
 				const owner = yield* Conversations.create({
 					ownership: ownerless,
-					grant: { tools: ["fork"], classification: "internal" },
+					grant: { tools: names("fork"), classification: "internal" },
 				});
 				yield* owner.configure(yield* TestHarness.agent);
 				yield* owner.prompt("Fork it.");
@@ -459,14 +474,14 @@ describe("a fork a task owns", () => {
 				};
 			}).pipe(Effect.provide(layer)),
 		);
-		expect(seen.fork).toEqual({ tools: ["search"], classification: "internal" });
-		expect(seen.source).toEqual({ tools: ["search"], classification: "public" });
+		expect(seen.fork).toEqual({ tools: names("search"), classification: "internal" });
+		expect(seen.source).toEqual({ tools: names("search"), classification: "public" });
 	});
 });
 
 describe("a task-owned child conversation", () => {
 	/** A parent granted spawn and search whose `spawn` tool creates a child and has it call search. */
-	const spawned = (options: { readonly created: boolean; readonly grant?: ReadonlyArray<string> }) => {
+	const spawned = (options: { readonly created: boolean; readonly grant?: ReadonlyArray<ToolName> }) => {
 		const { ran, Search } = tools();
 		const offered: string[][] = [];
 		const children: ConversationId[] = [];
@@ -508,7 +523,7 @@ describe("a task-owned child conversation", () => {
 					const { model } = yield* TestHarness.agent;
 					const parent = yield* Conversations.create({
 						ownership: ownerless,
-						grant: { tools: ["spawn", "search"] },
+						grant: { tools: names("spawn", "search") },
 						model,
 					});
 					yield* parent.prompt("Delegate.");
@@ -547,10 +562,10 @@ describe("a task-owned child conversation", () => {
 	});
 
 	it("gets exactly the grant its creator gives it in the creating commit", async () => {
-		expect(await spawned({ created: true, grant: ["search"] })).toEqual({
+		expect(await spawned({ created: true, grant: names("search") })).toEqual({
 			ran: ["search:c"],
 			offered: [["search"]],
-			granted: { tools: ["search"] },
+			granted: { tools: names("search") },
 			results: [["search", "search did c"]],
 			refusals: [],
 		});
@@ -564,21 +579,21 @@ describe("a grant that only narrows", () => {
 			Effect.gen(function* () {
 				const conversation = yield* Conversations.create({
 					ownership: ownerless,
-					grant: { tools: ["search", "read"] },
+					grant: { tools: names("search", "read") },
 				});
-				yield* Conversations.grant(conversation, { tools: ["read", "write"] }, { mode: "narrow" });
+				yield* Conversations.grant(conversation, { tools: names("read", "write") }, { mode: "narrow" });
 				const first = [yield* Conversations.granted(conversation.id), yield* offeredTo(conversation)];
 				// Pi's choices widened behind the guard's back: the grant the conversation has still bounds the next one.
 				yield* conversation.configure({ tools: null });
-				yield* Conversations.grant(conversation, { tools: ["search", "read", "write"] }, { mode: "narrow" });
+				yield* Conversations.grant(conversation, { tools: names("search", "read", "write") }, { mode: "narrow" });
 				const second = [yield* Conversations.granted(conversation.id), yield* offeredTo(conversation)];
 				// The default replaces, as before.
-				yield* Conversations.grant(conversation, { tools: ["search", "write"] });
+				yield* Conversations.grant(conversation, { tools: names("search", "write") });
 				return { first, second, replaced: yield* offeredTo(conversation) };
 			}).pipe(Effect.provide(layer)),
 		);
-		expect(seen.first).toEqual([{ tools: ["read"] }, ["read"]]);
-		expect(seen.second).toEqual([{ tools: ["read"] }, ["read"]]);
+		expect(seen.first).toEqual([{ tools: names("read") }, ["read"]]);
+		expect(seen.second).toEqual([{ tools: names("read") }, ["read"]]);
 		expect(seen.replaced).toEqual(["search", "write"]);
 	});
 
@@ -588,13 +603,15 @@ describe("a grant that only narrows", () => {
 		const narrowedFrom = (tools: Parameters<Conversation.Conversation["configure"]>[0]["tools"]) =>
 			Effect.gen(function* () {
 				const conversation = yield* Harness.createConversation({ ownership: ownerless, agent: { tools } });
-				yield* Conversations.grant(conversation, { tools: ["write", "search"] }, { mode: "narrow" });
+				yield* Conversations.grant(conversation, { tools: names("write", "search") }, { mode: "narrow" });
 				return [(yield* Conversations.granted(conversation.id)).tools, yield* offeredTo(conversation)];
 			});
 		const seen = await Effect.runPromise(
-			Effect.all([narrowedFrom(["search", "read"]), narrowedFrom(null), narrowedFrom({ remove: ["write"] })]).pipe(
-				Effect.provide(layer),
-			),
+			Effect.all([
+				narrowedFrom([ToolName.make("search"), ToolName.make("read")]),
+				narrowedFrom(null),
+				narrowedFrom({ remove: [ToolName.make("write")] }),
+			]).pipe(Effect.provide(layer)),
 		);
 		expect(seen).toEqual([
 			[["search"], ["search"]],
@@ -609,7 +626,7 @@ describe("a grant that only narrows", () => {
 });
 
 describe("a child set to its declaration, then granted", () => {
-	const withCeilings: Policy.Policy = {
+	const withCeilings: Policy.Encoded = {
 		...Policy.empty,
 		classifications: ["public", "internal"],
 		toolCeilings: { search: "public" },
@@ -624,7 +641,7 @@ describe("a child set to its declaration, then granted", () => {
 	 * exactly `declared`, then the product's grant, in one commit. The child is asked to search and to write.
 	 */
 	const delegated = (options: {
-		readonly policy?: Policy.Policy;
+		readonly policy?: Policy.Encoded;
 		readonly created?: boolean;
 		readonly parent?: Grant.Grant;
 		readonly declared: ReadonlyArray<string>;
@@ -645,7 +662,7 @@ describe("a child set to its declaration, then granted", () => {
 						api.commit((tx) =>
 							Effect.gen(function* () {
 								const child = yield* tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
-								yield* tx.configure(child.id, { tools: options.declared });
+								yield* tx.configure(child.id, { tools: options.declared.map((name) => ToolName.make(name)) });
 								yield* Conversations.grantIn(tx, child.id, options.grant, options.with);
 								return child.id;
 							}),
@@ -677,7 +694,7 @@ describe("a child set to its declaration, then granted", () => {
 			Effect.gen(function* () {
 				const parent = yield* Conversations.create({
 					ownership: ownerless,
-					grant: options.parent ?? { tools: ["spawn"] },
+					grant: options.parent ?? { tools: names("spawn") },
 				});
 				// The model is Pi's own choice here, so a parent without a classification can run too.
 				yield* parent.configure(yield* TestHarness.agent);
@@ -698,10 +715,10 @@ describe("a child set to its declaration, then granted", () => {
 	};
 
 	it("is offered more than its declaration by a wider grant that replaces, the default", async () => {
-		expect(await delegated({ declared: ["search"], grant: { tools: ["search", "write"] } })).toEqual({
+		expect(await delegated({ declared: ["search"], grant: { tools: names("search", "write") } })).toEqual({
 			ran: ["search:c", "write:d"],
 			offered: [["search", "write"]],
-			granted: { tools: ["search", "write"] },
+			granted: { tools: names("search", "write") },
 			enabled: ["search", "write"],
 			records: [
 				["search", undefined],
@@ -712,10 +729,12 @@ describe("a child set to its declaration, then granted", () => {
 
 	it("is offered the intersection by a grant that narrows, and its stored grant is that intersection", async () => {
 		const narrow = { mode: "narrow" } as const;
-		expect(await delegated({ declared: ["search"], grant: { tools: ["search", "write"] }, with: narrow })).toEqual({
+		expect(
+			await delegated({ declared: ["search"], grant: { tools: names("search", "write") }, with: narrow }),
+		).toEqual({
 			ran: ["search:c"],
 			offered: [["search"]],
-			granted: { tools: ["search"] },
+			granted: { tools: names("search") },
 			enabled: ["search"],
 			records: [
 				["search", undefined],
@@ -723,10 +742,12 @@ describe("a child set to its declaration, then granted", () => {
 			],
 		});
 		// A grant narrower than the declaration takes tools away, as it always did.
-		expect(await delegated({ declared: ["search", "write"], grant: { tools: ["write"] }, with: narrow })).toEqual({
+		expect(
+			await delegated({ declared: ["search", "write"], grant: { tools: names("write") }, with: narrow }),
+		).toEqual({
 			ran: ["write:d"],
 			offered: [["write"]],
-			granted: { tools: ["write"] },
+			granted: { tools: names("write") },
 			enabled: ["write"],
 			records: [
 				["search", { rule: "unavailable" }],
@@ -736,13 +757,13 @@ describe("a child set to its declaration, then granted", () => {
 	});
 
 	it("is never labelled below its owner: the owner's classification bounds its tools and its model", async () => {
-		const parent = { tools: ["spawn"], classification: "internal" };
+		const parent = { tools: names("spawn"), classification: "internal" };
 		// Labelled `public`, the child could search, which the policy keeps from its `internal` owner.
-		const lower = { tools: ["search", "write"], classification: "public" };
+		const lower = { tools: names("search", "write"), classification: "public" };
 		expect(await delegated({ policy: withCeilings, parent, declared: ["search", "write"], grant: lower })).toEqual({
 			ran: ["write:d"],
 			offered: [["search", "write"]],
-			granted: { tools: ["search", "write"], classification: "internal" },
+			granted: { tools: names("search", "write"), classification: "internal" },
 			enabled: ["search", "write"],
 			records: [
 				["search", { rule: "ceiling" }],
@@ -750,7 +771,7 @@ describe("a child set to its declaration, then granted", () => {
 			],
 		});
 		// A model cleared for the label the grant names, and not for the owner's, is refused: no child exists.
-		const small = { provider: "other", modelId: "small" };
+		const small = fromPiModelRef({ provider: "other", modelId: "small" });
 		const refused = await delegated({
 			policy: withCeilings,
 			parent,
@@ -760,33 +781,35 @@ describe("a child set to its declaration, then granted", () => {
 		});
 		expect(refused).toEqual({
 			ran: [],
-			failures: [new ModelNotCleared({ ...small, classification: "internal", ceiling: "public" })],
+			failures: [ModelNotCleared.make({ ...small, classification: "internal", ceiling: "public" })],
 		});
 	});
 
 	it("keeps a label at or above its owner's, and is unlabelled under an unlabelled owner", async () => {
 		const run = (parent: Grant.Grant, grant: Grant.Grant) =>
 			delegated({ policy: withCeilings, parent, declared: ["write"], grant }).then((seen) => seen.granted);
-		const spawn = ["spawn"];
+		const spawn = names("spawn");
 		expect(
-			await run({ tools: spawn, classification: "public" }, { tools: ["write"], classification: "internal" }),
-		).toEqual({ tools: ["write"], classification: "internal" });
-		expect(await run({ tools: spawn, classification: "internal" }, { tools: ["write"] })).toEqual({
-			tools: ["write"],
+			await run({ tools: spawn, classification: "public" }, { tools: names("write"), classification: "internal" }),
+		).toEqual({ tools: names("write"), classification: "internal" });
+		expect(await run({ tools: spawn, classification: "internal" }, { tools: names("write") })).toEqual({
+			tools: names("write"),
 		});
 		// An owner without a classification is above every label, so its child is too.
-		expect(await run({ tools: spawn }, { tools: ["write"], classification: "public" })).toEqual({ tools: ["write"] });
+		expect(await run({ tools: spawn }, { tools: names("write"), classification: "public" })).toEqual({
+			tools: names("write"),
+		});
 	});
 
 	it("is not bounded without `created`, which is what records its owner", async () => {
 		const seen = await delegated({
 			policy: withCeilings,
 			created: false,
-			parent: { tools: ["spawn"], classification: "internal" },
+			parent: { tools: names("spawn"), classification: "internal" },
 			declared: ["search"],
-			grant: { tools: ["search"], classification: "public" },
+			grant: { tools: names("search"), classification: "public" },
 		});
-		expect(seen.granted).toEqual({ tools: ["search"], classification: "public" });
+		expect(seen.granted).toEqual({ tools: names("search"), classification: "public" });
 		expect(seen.ran).toEqual(["search:c"]);
 	});
 });
@@ -794,7 +817,7 @@ describe("a child set to its declaration, then granted", () => {
 describe("created", () => {
 	it("makes Pi offer a new conversation what the policy gives one without a grant", async () => {
 		const run = (created: boolean) => {
-			const { layer } = scene({ created, policy: { ...Policy.empty, ungranted: { tools: ["read"] } } });
+			const { layer } = scene({ created, policy: { ...Policy.empty, ungranted: { tools: names("read") } } });
 			return Effect.runPromise(
 				Effect.gen(function* () {
 					const root = yield* Harness.root;

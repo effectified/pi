@@ -55,7 +55,7 @@ describe("start", () => {
 			Effect.gen(function* () {
 				const root = yield* primed(2);
 				const plan = {
-					id: "once",
+					id: Swarm.SwarmId.make("once"),
 					source: root.id,
 					jobs: jobsOf(["a", "bb", "ccc"]),
 					cap: 2,
@@ -64,7 +64,7 @@ describe("start", () => {
 				const first = yield* Swarm.start(Measure, plan);
 				// The same id again, also with another plan: the first one stands.
 				const second = yield* Swarm.start(Measure, { ...plan, jobs: jobsOf(["zzz"]), cap: 9 });
-				const result = yield* Swarm.result(Measure, "once");
+				const result = yield* Swarm.result(Measure, Swarm.SwarmId.make("once"));
 				const third = yield* Swarm.start(Measure, plan);
 				return { first, second, third, result, tasks: yield* coordinators, stored: (yield* conversations).length };
 			}),
@@ -94,12 +94,18 @@ describe("start", () => {
 		const error = await play(
 			Effect.gen(function* () {
 				const root = yield* primed(1);
-				const plan = { id: "held", source: root.id, jobs: jobsOf(["a"]), cap: 1, onFailure: "collect" as const };
+				const plan = {
+					id: Swarm.SwarmId.make("held"),
+					source: root.id,
+					jobs: jobsOf(["a"]),
+					cap: 1,
+					onFailure: "collect" as const,
+				};
 				yield* Swarm.start(Measure, plan);
 				return yield* Effect.flip(Swarm.start(Other, plan));
 			}),
 		);
-		expect(error).toEqual(new Swarm.SwarmIdTaken({ swarmId: "held", heldBy: "measure" }));
+		expect(error).toEqual(new Swarm.SwarmIdTaken({ swarmId: Swarm.SwarmId.make("held"), heldBy: "measure" }));
 	});
 
 	it("refuses a plan it cannot run, and stores nothing of it", async () => {
@@ -107,7 +113,7 @@ describe("start", () => {
 			Effect.gen(function* () {
 				const root = yield* primed(1);
 				const plan = {
-					id: "bad",
+					id: Swarm.SwarmId.make("bad"),
 					source: root.id,
 					jobs: jobsOf(["a", "b"]),
 					cap: 2,
@@ -118,16 +124,16 @@ describe("start", () => {
 						error._tag === "InvalidPlan" ? error.reason : error._tag,
 					);
 				return {
-					noId: yield* refusal({ id: "" }),
+					noId: yield* refusal({ id: Swarm.SwarmId.make("") }),
 					noCap: yield* refusal({ cap: 0 }),
 					halfCap: yield* refusal({ cap: 1.5 }),
 					twice: yield* refusal({ jobs: jobsOf(["a", "a"]) }),
-					noKey: yield* refusal({ jobs: [{ key: "", input: { word: "a" } }] }),
-					strayPin: yield* refusal({ pins: ["job-z"] }),
+					noKey: yield* refusal({ jobs: [{ key: Swarm.JobKey.make(""), input: { word: "a" } }] }),
+					strayPin: yield* refusal({ pins: [Swarm.JobKey.make("job-z")] }),
 					noSource: yield* refusal({ source: 999 as never }),
 					// Pi's `configure` would refuse it in every fork's creating commit.
 					noTurns: yield* refusal({ agent: { maxTurns: 0 } }),
-					status: yield* Effect.flip(Swarm.status("bad")),
+					status: yield* Effect.flip(Swarm.status(Swarm.SwarmId.make("bad"))),
 					tasks: yield* coordinators,
 				};
 			}),
@@ -141,7 +147,7 @@ describe("start", () => {
 			strayPin: "The pin job-z names no job",
 			noSource: "No conversation 999",
 			noTurns: expect.stringMatching(/^The agent change of the forks: /),
-			status: new Swarm.SwarmNotFound({ swarmId: "bad" }),
+			status: new Swarm.SwarmNotFound({ swarmId: Swarm.SwarmId.make("bad") }),
 			tasks: [],
 		});
 	});
@@ -151,13 +157,13 @@ describe("an id nothing was started under", () => {
 	it("fails every operation with SwarmNotFound", async () => {
 		const errors = await play(
 			Effect.all([
-				Effect.flip(Swarm.status("none")),
-				Effect.flip(Swarm.cancel("none")),
-				Effect.flip(Swarm.result(Measure, "none")),
-				Effect.flip(Swarm.destroyFork("none", "job-a")),
+				Effect.flip(Swarm.status(Swarm.SwarmId.make("none"))),
+				Effect.flip(Swarm.cancel(Swarm.SwarmId.make("none"))),
+				Effect.flip(Swarm.result(Measure, Swarm.SwarmId.make("none"))),
+				Effect.flip(Swarm.destroyFork(Swarm.SwarmId.make("none"), Swarm.JobKey.make("job-a"))),
 			]),
 		);
-		expect(errors).toEqual(errors.map(() => new Swarm.SwarmNotFound({ swarmId: "none" })));
+		expect(errors).toEqual(errors.map(() => new Swarm.SwarmNotFound({ swarmId: Swarm.SwarmId.make("none") })));
 	});
 });
 
@@ -167,13 +173,13 @@ describe("result", () => {
 			Effect.gen(function* () {
 				const root = yield* primed(1);
 				const started = yield* Swarm.start(Measure, {
-					id: "typed",
+					id: Swarm.SwarmId.make("typed"),
 					source: root.id,
 					jobs: jobsOf(["ccc", "a", "bb"]),
 					cap: 3,
 					onFailure: "collect",
 				});
-				const result = yield* Swarm.result(Measure, "typed");
+				const result = yield* Swarm.result(Measure, Swarm.SwarmId.make("typed"));
 				const settled = yield* Harness.waitForTaskOf(Measure.task, started.taskId);
 				const stored = settled.state.outcome.status === "completed" ? settled.state.outcome.result : undefined;
 				return {
@@ -197,13 +203,13 @@ describe("result", () => {
 			Effect.gen(function* () {
 				const root = yield* primed(1);
 				yield* Swarm.start(Measure, {
-					id: "fix",
+					id: Swarm.SwarmId.make("fix"),
 					source: root.id,
 					jobs: jobsOf(["a", "bb"]),
 					cap: 2,
 					onFailure: "collect",
 				});
-				return yield* Swarm.result(Measure, "fix");
+				return yield* Swarm.result(Measure, Swarm.SwarmId.make("fix"));
 			}),
 			counts,
 			(word, attempt) => ({
@@ -226,17 +232,19 @@ describe("status", () => {
 			Effect.gen(function* () {
 				const root = yield* primed(1);
 				const started = yield* Swarm.start(Measure, {
-					id: "probe",
+					id: Swarm.SwarmId.make("probe"),
 					source: root.id,
 					jobs: jobsOf(["a", "hold1", "hold2", "d"]),
 					cap: 2,
 					onFailure: "collect",
 				});
-				yield* until(Effect.map(tally("probe"), (now) => now.succeeded === 1 && now.running === 2));
-				const during = yield* Swarm.status("probe");
-				yield* Swarm.cancel("probe");
-				yield* Swarm.result(Measure, "probe");
-				return { started, during, after: yield* Swarm.status("probe") };
+				yield* until(
+					Effect.map(tally(Swarm.SwarmId.make("probe")), (now) => now.succeeded === 1 && now.running === 2),
+				);
+				const during = yield* Swarm.status(Swarm.SwarmId.make("probe"));
+				yield* Swarm.cancel(Swarm.SwarmId.make("probe"));
+				yield* Swarm.result(Measure, Swarm.SwarmId.make("probe"));
+				return { started, during, after: yield* Swarm.status(Swarm.SwarmId.make("probe")) };
 			}),
 			asked(),
 			(word) => ({ text: JSON.stringify(measured(word)), afterMillis: word.startsWith("hold") ? Infinity : 1 }),
@@ -271,19 +279,27 @@ describe("cancel", () => {
 			Effect.gen(function* () {
 				const root = yield* primed(1);
 				yield* Swarm.start(Measure, {
-					id: "stop",
+					id: Swarm.SwarmId.make("stop"),
 					source: root.id,
 					jobs: jobsOf(["a", "hold1", "hold2", "d", "e"]),
 					cap: 2,
 					onFailure: "collect",
 				});
-				yield* until(Effect.map(tally("stop"), (now) => now.succeeded === 1 && now.running === 2));
-				const first = yield* Swarm.cancel("stop");
-				const result = yield* Swarm.result(Measure, "stop");
-				const again = yield* Swarm.cancel("stop");
+				yield* until(
+					Effect.map(tally(Swarm.SwarmId.make("stop")), (now) => now.succeeded === 1 && now.running === 2),
+				);
+				const first = yield* Swarm.cancel(Swarm.SwarmId.make("stop"));
+				const result = yield* Swarm.result(Measure, Swarm.SwarmId.make("stop"));
+				const again = yield* Swarm.cancel(Swarm.SwarmId.make("stop"));
 				const driver = yield* Swarm.ForkDriver;
 				yield* Harness.waitForIdle;
-				return { first, again, result, listed: yield* driver.list("stop"), stored: (yield* conversations).length };
+				return {
+					first,
+					again,
+					result,
+					listed: yield* driver.list(Swarm.SwarmId.make("stop")),
+					stored: (yield* conversations).length,
+				};
 			}),
 			counts,
 			(word) => ({ text: JSON.stringify(measured(word)), afterMillis: word.startsWith("hold") ? Infinity : 1 }),
@@ -323,22 +339,22 @@ describe("destroyFork", () => {
 			Effect.gen(function* () {
 				const root = yield* primed(1);
 				yield* Swarm.start(Measure, {
-					id: "keep",
+					id: Swarm.SwarmId.make("keep"),
 					source: root.id,
 					jobs: jobsOf(["a", "bb"]),
 					cap: 2,
 					onFailure: "collect",
-					pins: ["job-bb"],
+					pins: [Swarm.JobKey.make("job-bb")],
 				});
-				const result = yield* Swarm.result(Measure, "keep");
+				const result = yield* Swarm.result(Measure, Swarm.SwarmId.make("keep"));
 				const driver = yield* Swarm.ForkDriver;
-				const kept = yield* driver.list("keep");
+				const kept = yield* driver.list(Swarm.SwarmId.make("keep"));
 				// A pinned fork is a conversation the product goes on with.
 				const pinned = Option.getOrThrow(yield* Harness.conversation(Number(kept[0].forkId) as never));
 				const more = yield* pinned.prompt("Prime again");
-				const released = yield* Swarm.destroyFork("keep", "job-bb");
-				const again = yield* Swarm.destroyFork("keep", "job-bb");
-				const unpinned = yield* Swarm.destroyFork("keep", "job-a");
+				const released = yield* Swarm.destroyFork(Swarm.SwarmId.make("keep"), Swarm.JobKey.make("job-bb"));
+				const again = yield* Swarm.destroyFork(Swarm.SwarmId.make("keep"), Swarm.JobKey.make("job-bb"));
+				const unpinned = yield* Swarm.destroyFork(Swarm.SwarmId.make("keep"), Swarm.JobKey.make("job-a"));
 				const own = yield* writtenBy(pinned);
 				return {
 					result,
@@ -348,7 +364,7 @@ describe("destroyFork", () => {
 					again,
 					unpinned,
 					own,
-					after: yield* driver.list("keep"),
+					after: yield* driver.list(Swarm.SwarmId.make("keep")),
 				};
 			}),
 		);
@@ -376,16 +392,19 @@ describe("destroyFork", () => {
 				const root = yield* Harness.root;
 				yield* root.commit((tx) => tx.appendEntry(root.id, { kind: "test.primed" }));
 				yield* Swarm.start(Measure, {
-					id: "keep",
+					id: Swarm.SwarmId.make("keep"),
 					source: root.id,
 					jobs: jobsOf(["a"]),
 					cap: 1,
 					onFailure: "collect",
-					pins: ["job-a"],
+					pins: [Swarm.JobKey.make("job-a")],
 				});
-				yield* Swarm.result(Measure, "keep");
-				const released = yield* Swarm.destroyFork("keep", "job-a");
-				return { released, again: yield* Swarm.destroyFork("keep", "job-a") };
+				yield* Swarm.result(Measure, Swarm.SwarmId.make("keep"));
+				const released = yield* Swarm.destroyFork(Swarm.SwarmId.make("keep"), Swarm.JobKey.make("job-a"));
+				return {
+					released,
+					again: yield* Swarm.destroyFork(Swarm.SwarmId.make("keep"), Swarm.JobKey.make("job-a")),
+				};
 			}).pipe(
 				Effect.provide(
 					TestHarness.layer({ extensions: [Swarm.extension([Measure])] }).pipe(Layer.provideMerge(driver.layer)),

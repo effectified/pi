@@ -1,21 +1,22 @@
 import type { ConversationId } from "@earendil-works/pi-durable";
+import { ToolCallId, ToolName } from "@effectified/pi-durable";
 import { Context, Effect, Exit, Fiber } from "effect";
 import { describe, expect, it } from "vitest";
 import type { Call, Policy } from "../src/index.ts";
 import { needsApproval } from "../src/policy.ts";
 
 const call = (tool: string): Call => ({
-	tool,
+	tool: ToolName.make(tool),
 	arguments: { text: "hi" },
 	conversation: 1 as ConversationId,
-	callId: "call-1",
+	callId: ToolCallId.make("call-1"),
 });
 
 describe("needsApproval", () => {
 	it("is true for a tool the policy names, without asking the rule", async () => {
 		let asked = 0;
 		const policy: Policy = {
-			tools: ["write", "delete"],
+			tools: [ToolName.make("write"), ToolName.make("delete")],
 			expiresAfter: "1 hour",
 			rule: () =>
 				Effect.sync(() => {
@@ -57,7 +58,7 @@ describe("needsApproval", () => {
 	});
 
 	it("is true when the rule fails, dies or throws: it fails closed", async () => {
-		const rules: ReadonlyArray<NonNullable<Policy["rule"]>> = [
+		const rules: ReadonlyArray<NonNullable<Policy<never, unknown>["rule"]>> = [
 			() => Effect.fail("no answer"),
 			() => Effect.die(new Error("broken")),
 			() => {

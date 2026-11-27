@@ -154,6 +154,87 @@ describe("stream and subscribe", () => {
 		expect(events.at(-1)?.type).toBe("agent_end");
 	});
 
+	it("stream settles when a consumer that lags behind a full buffer is interrupted, and the agent is idle", async () => {
+		const state = await runTest(
+			Effect.gen(function* () {
+				const agent = yield* agentWith([fauxAssistantMessage("word ".repeat(400))]);
+				const reading = yield* Latch.make();
+				// The consumer takes one event and never another, so the run fills the buffer and waits.
+				const lagging = Stream.runForEach(agent.stream("talk"), () =>
+					Effect.andThen(Latch.open(reading), Effect.never),
+				);
+				const fiber = yield* Effect.forkChild(lagging, { startImmediately: true });
+				yield* reading.await;
+				// Pi's loop runs on microtasks: by now it has filled the buffer and waits for the consumer.
+				yield* Effect.repeat(Effect.yieldNow, { times: 50 });
+				yield* Fiber.interrupt(fiber);
+				return yield* agent.state;
+			}).pipe(Effect.provide(scripted)),
+		);
+		expect(state.isStreaming).toBe(false);
+	});
+
+	it("closing its scope settles a run whose stream consumer stopped reading, and the agent is idle", async () => {
+		const state = await runTest(
+			Effect.gen(function* () {
+				const scope = yield* Scope.make();
+				const agent = yield* Scope.provide(agentWith([fauxAssistantMessage("word ".repeat(400))]), scope);
+				const reading = yield* Latch.make();
+				// The consumer takes one event and never another, and nothing interrupts it: only the agent's scope closes.
+				const lagging = Stream.runForEach(agent.stream("talk"), () =>
+					Effect.andThen(Latch.open(reading), Effect.never),
+				);
+				yield* Effect.forkChild(lagging, { startImmediately: true });
+				yield* reading.await;
+				yield* Effect.repeat(Effect.yieldNow, { times: 50 });
+				yield* Scope.close(scope, Exit.void);
+				return yield* agent.state;
+			}).pipe(Effect.provide(scripted)),
+		);
+		expect(state.isStreaming).toBe(false);
+	});
+
+	it("stream holds every event for a consumer that lags, though the run is aborted meanwhile", async () => {
+		const events = await runTest(
+			Effect.gen(function* () {
+				const agent = yield* agentWith([fauxAssistantMessage("word ".repeat(400))]);
+				const reading = yield* Latch.make();
+				const resume = yield* Latch.make();
+				const collected = yield* Effect.forkChild(
+					Stream.runCollect(
+						Stream.mapEffect(agent.stream("talk"), (event) =>
+							Effect.as(Effect.andThen(Latch.open(reading), resume.await), event),
+						),
+					),
+					{ startImmediately: true },
+				);
+				yield* reading.await;
+				yield* Effect.repeat(Effect.yieldNow, { times: 50 });
+				yield* agent.abort;
+				yield* Latch.open(resume);
+				return yield* Fiber.join(collected);
+			}).pipe(Effect.provide(scripted)),
+		);
+		expect(events[0]?.type).toBe("agent_start");
+		expect(events.at(-1)?.type).toBe("agent_end");
+	});
+
+	it("stream fails with AgentBusy while another run is going, without that run's events", async () => {
+		const result = await runTest(
+			Effect.gen(function* () {
+				const started = yield* Latch.make();
+				const agent = yield* agentWith([held(started)]);
+				yield* Effect.forkChild(agent.prompt("first"), { startImmediately: true });
+				yield* started.await;
+				const failure = yield* Effect.flip(Stream.runCollect(agent.stream("second")));
+				yield* agent.abort;
+				yield* agent.waitForIdle;
+				return failure;
+			}).pipe(Effect.provide(scripted)),
+		);
+		expect(result._tag).toBe("AgentBusy");
+	});
+
 	it("subscribe gives the events of every run until its scope closes", async () => {
 		const events = await runTest(
 			Effect.gen(function* () {

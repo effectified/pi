@@ -51,7 +51,7 @@ describe("make", () => {
 	it("kills the commands it still runs when the scope closes", async () => {
 		const exit = await runLive(
 			Effect.gen(function* () {
-				const running = yield* Effect.scoped(
+				const left = yield* Effect.scoped(
 					Effect.gen(function* () {
 						const env = yield* NodeEnv.make({ cwd: directory });
 						const started = Promise.withResolvers<void>();
@@ -62,10 +62,10 @@ describe("make", () => {
 							BACKGROUND_CONTEXT,
 						);
 						yield* Effect.promise(() => started.promise);
-						return running;
+						return { running };
 					}),
 				);
-				return yield* Effect.promise(() => running);
+				return yield* Effect.promise(() => left.running);
 			}),
 		);
 		expect(exit.ok ? exit.value.exitCode : exit.error.code).not.toBe(0);

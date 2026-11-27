@@ -7,7 +7,7 @@ import { runTest } from "@effectified/pi-ai/testing";
 import { Context, Effect, Fiber, Layer, Option, Schema, Semaphore, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-import { InlineSandbox, renderDeclarations, Source, Wasm, WorkerSandbox } from "../src/index.ts";
+import { AdmissionDenied, InlineSandbox, Run, renderDeclarations, Source, Wasm, WorkerSandbox } from "../src/index.ts";
 import { type CodemodeRemote, RemoteSandbox } from "../src/portable.ts";
 
 // README: quick start
@@ -133,9 +133,11 @@ const replayable = Effect.gen(function* () {
 	let seq = 0;
 	yield* Effect.forkScoped(
 		Stream.runForEach(run.events, (event) =>
-			event._tag === "Call"
-				? run.deliver({ seq: ++seq, id: event.call.id, outcome: { ok: true, value: "contents" } })
-				: Effect.void,
+			Run.Event.match(event, {
+				Call: ({ call }) => run.deliver({ seq: ++seq, id: call.id, outcome: { ok: true, value: "contents" } }),
+				Started: () => Effect.void,
+				Idle: () => Effect.void,
+			}),
 		),
 	);
 	return yield* run.result; // { ok: true, value: "contents", during: { seq: 1, issued: 1 }, ... }
@@ -157,7 +159,7 @@ const limited = Effect.gen(function* () {
 	return yield* WorkerSandbox.make({
 		tools: [Lookup],
 		acquireWorker: Effect.flatMap(workers.takeIfAvailable(1), (taken) =>
-			taken ? Effect.succeed(workers.release(1)) : Effect.fail(new Error("no free worker")),
+			taken ? Effect.succeed(workers.release(1)) : Effect.fail(AdmissionDenied.make({ message: "no free worker" })),
 		),
 	});
 });
@@ -189,6 +191,7 @@ describe("the Cloudflare Workers of the README", () => {
 		const [result, names] = await runTest(
 			Effect.gen(function* () {
 				const wasm = yield* Wasm.load();
+				const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
 				const names: Array<string> = [];
 				// In this process, the remote end stands in for the Durable Object a stub reaches over Workers RPC.
 				const env: Env = {
@@ -196,8 +199,7 @@ describe("the Cloudflare Workers of the README", () => {
 						getByName: (name) => {
 							names.push(name);
 							return {
-								execute: (request, exchange) =>
-									Effect.runPromise(RemoteSandbox.serve(request, exchange, { wasm })),
+								execute: (request, exchange) => runPromise(RemoteSandbox.serve(request, exchange, { wasm })),
 							};
 						},
 					},

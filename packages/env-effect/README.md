@@ -13,7 +13,11 @@ the pi-env daemon, SSH, processes and terminals. For `effect` 4.1.
 - **Interruption cancels.** Interrupting a fiber aborts Pi's call through its `AbortSignal` and waits until Pi settled
   it: a command's processes are killed, a daemon request is cancelled.
 - **One closed union of tagged errors.** `FileFailed`, `ExecFailed`, `RemoteFailed`, `HostKeyUnknown`,
-  `HostKeyChanged`, `SshFailed` and `UnexpectedError` (`EnvError`); the SSH and host-key ones are `SshError`.
+  `HostKeyChanged`, `SshFailed` and `UnexpectedError` (`EnvError`); the SSH and host-key ones are `SshError`. Both
+  are union schemas: `EnvError.match` picks a handler per tag, `EnvError.guards` tests for one.
+- **Results are Schemas, ids are brands.** A command's `ExecResult` and its output's `ExecEvent` (matched by `kind`,
+  encodable for a log), an environment's `Env.Id`, and a daemon's `Connection.RequestId` and `Connection.SessionId`,
+  so `kill(id, session)` cannot take them swapped.
 
 The root (`@effectified/pi-env`) is the environment in Effect terms and the errors. The environment contract itself
 (`ExecutionEnv`, its results, `FileFailed` and `ExecFailed`) is Pi Durable's, which
@@ -149,6 +153,7 @@ instead.
 
 ```typescript
 import { Effect } from "effect";
+import { Env } from "@effectified/pi-env";
 import { HostKey, Remote, Ssh } from "@effectified/pi-env/node";
 
 const trust = (target: Ssh.ConnectOptions) =>
@@ -162,7 +167,7 @@ const trust = (target: Ssh.ConnectOptions) =>
 const remote = (target: Ssh.ConnectOptions, cwd: string) =>
 	Effect.gen(function* () {
 		const { connection, remote } = yield* Ssh.connect(target);
-		const env = yield* Remote.make({ connection, id: `pi-env:${target.hostKeyAlias}`, cwd });
+		const env = yield* Remote.make({ connection, id: Env.Id.make(`pi-env:${target.hostKeyAlias}`), cwd });
 		const { exitCode } = yield* env.exec("test -d .");
 		return { platform: remote.platform, exitCode };
 	});
@@ -180,10 +185,11 @@ shared connections (`Ssh.args` gives its arguments).
   stops waiting at once, and the `ssh` run ends on its own, within pi-env's timeouts (60 s, 300 s for an upload).
 - Output of a process, a terminal or a watcher is buffered until read, without a bound: read it, or close its scope.
 - A connection's `logs` delivers what the daemon writes from when the stream runs; earlier lines are dropped.
-- Operations run under the Chord context that `ChordContext.scoped()` of
+- Every operation is a span named for it (`Env.readTextFile`, `Connection.request`, `Process.open`, `Ssh.connect`).
+  It runs under the Chord context that `ChordContext.scoped()` of
   [`@effectified/pi-chord`](../chord-effect/README.md#telemetry-and-values) makes for the calling fiber, with the
-  fiber's cancellation: when the program provides `PiTelemetry`, the spans Pi starts for an operation are children of the
-  Effect span that runs it. Closing a reader, stopping a watcher and `cleanup` run under Chord's background context,
+  fiber's cancellation: when the program provides `PiTelemetry`, the spans Pi starts for an operation are children of
+  that span. Closing a reader, stopping a watcher and `cleanup` run under Chord's background context,
   outside any caller's cancellation.
 - Not covered by the default tests: a real remote machine. Set `PI_ENV_SSH_HOST` (and `PI_ENV_SSH_USER`,
   `PI_ENV_SSH_PORT`, `PI_ENV_SSH_KEY`, `PI_ENV_SSH_PROGRAM` as for pi-env's own test) to run one over SSH.

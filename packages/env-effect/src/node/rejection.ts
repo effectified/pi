@@ -7,7 +7,7 @@ import {
 	SshError as PiSshError,
 	RemoteError,
 } from "@earendil-works/pi-env";
-import { Effect } from "effect";
+import { Effect, Match } from "effect";
 import * as Call from "../call.ts";
 import { HostKeyChanged, HostKeyUnknown, RemoteFailed, type SshError, SshFailed, UnexpectedError } from "../errors.ts";
 
@@ -17,24 +17,34 @@ import { HostKeyChanged, HostKeyUnknown, RemoteFailed, type SshError, SshFailed,
  */
 export const BY_CLASS = {
 	RemoteError: (error: RemoteError) =>
-		new RemoteFailed({
+		RemoteFailed.make({
 			code: error.code,
 			message: error.message,
 			...(error.path === undefined ? {} : { path: error.path }),
 			lost: isConnectionLost(error),
 		}),
-	HostKeyUnknownError: (error: HostKeyUnknownError) => new HostKeyUnknown({ message: error.message }),
-	HostKeyChangedError: (error: HostKeyChangedError) => new HostKeyChanged({ message: error.message }),
+	HostKeyUnknownError: (error: HostKeyUnknownError) => HostKeyUnknown.make({ message: error.message }),
+	HostKeyChangedError: (error: HostKeyChangedError) => HostKeyChanged.make({ message: error.message }),
 	SshError: (error: PiSshError) =>
-		new SshFailed({ message: error.message, exitCode: error.exitCode, stderr: error.stderr }),
+		SshFailed.make({ message: error.message, exitCode: error.exitCode, stderr: error.stderr }),
 };
 
 /** A rejection of pi-env's SSH and host-key functions as an `SshError`; one without a class is `UnexpectedError`. */
 export function fromSshRejection(cause: unknown): SshError {
-	if (cause instanceof HostKeyUnknownError) return BY_CLASS.HostKeyUnknownError(cause);
-	if (cause instanceof HostKeyChangedError) return BY_CLASS.HostKeyChangedError(cause);
-	if (cause instanceof PiSshError) return BY_CLASS.SshError(cause);
-	return new UnexpectedError({ cause });
+	return Match.value(cause).pipe(
+		Match.when(Match.instanceOf(HostKeyUnknownError), BY_CLASS.HostKeyUnknownError),
+		Match.when(Match.instanceOf(HostKeyChangedError), BY_CLASS.HostKeyChangedError),
+		Match.when(Match.instanceOf(PiSshError), BY_CLASS.SshError),
+		Match.orElse((other) => UnexpectedError.make({ cause: other })),
+	);
+}
+
+/**
+ * Awaits one of pi-env's SSH or host-key functions, which take no AbortSignal: interrupting the fiber stops waiting
+ * at once, and the `ssh` run ends within its timeout. Fails with `SshError`.
+ */
+export function ssh<A>(run: () => Promise<A>): Effect.Effect<A, SshError> {
+	return Call.unabortable(run, (cause) => Effect.fail(fromSshRejection(cause)));
 }
 
 /**
@@ -42,7 +52,7 @@ export function fromSshRejection(cause: unknown): SshError {
  * once. A `RemoteError` fails with `RemoteFailed`; anything else is a defect.
  */
 export function remote<A>(run: () => Promise<A>): Effect.Effect<A, RemoteFailed> {
-	return Effect.catch(Effect.tryPromise({ try: run, catch: (cause) => cause }), fromRemoteRejection);
+	return Call.unabortable(run, fromRemoteRejection);
 }
 
 /**

@@ -3,9 +3,13 @@
 
 import { Extension, Signal, Task } from "@effectified/pi-durable";
 import { Context, Deferred, Effect, Layer, Schema } from "effect";
+import { ThreadKey } from "./ids.ts";
 
 /** What a courier is created with: the thread whose events it delivers. */
-export const Input = Schema.Struct({ thread: Schema.String });
+export const Input = Schema.Struct({ thread: ThreadKey });
+
+/** A count of steps or of failures: an integer, 0 or more. */
+const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
 /**
  * Where a courier stands. It has one phase, which runs again after every wake:
@@ -16,8 +20,8 @@ export const Input = Schema.Struct({ thread: Schema.String });
  */
 export const State = Schema.Struct({
 	phase: Schema.Literal("deliver"),
-	turn: Schema.Number,
-	failures: Schema.Number,
+	turn: Count,
+	failures: Count,
 });
 
 /** The courier's own type: its phase needs the `Delivery` of the composition. */
@@ -40,7 +44,7 @@ export type Step = Task.Step<typeof State.Type, null> | Task.Committed;
 export class Delivery extends Context.Service<
 	Delivery,
 	Deferred.Deferred<(task: Running, api: Api) => Effect.Effect<Step>>
->()("@effectified/pi-thread/OutcomeCourier/Delivery") {}
+>()("@effectified/pi-thread/outcome-courier/Delivery") {}
 
 /** The place the delivery is given to: provide it under the registry. */
 export const holder: Layer.Layer<Delivery> = Layer.effect(

@@ -4,6 +4,7 @@ import type { SshTarget } from "@earendil-works/pi-env";
 import { runLive } from "@effectified/pi-ai/testing";
 import { Effect, Exit, Fiber, Option } from "effect";
 import { describe, expect, it } from "vitest";
+import * as Env from "../src/env.ts";
 import * as HostKey from "../src/node/host-key.ts";
 import * as Remote from "../src/node/remote.ts";
 import * as Ssh from "../src/node/ssh.ts";
@@ -75,7 +76,7 @@ describe.skipIf(daemon === undefined || process.platform === "win32")(
 					// The second deployment finds the same file and uploads nothing.
 					const again = yield* Ssh.deploy(target, remote, daemon);
 					const { connection } = yield* Ssh.connect({ ...target, binary: daemon });
-					const env = yield* Remote.make({ connection, id: "pi-env:fake", cwd: directory });
+					const env = yield* Remote.make({ connection, id: Env.Id.make("pi-env:fake"), cwd: directory });
 					const result = yield* env.exec("echo $HOME");
 					const info = yield* connection.info;
 					return { deployed, again, home, result, infoHome: info.home };
@@ -143,7 +144,7 @@ describe.skipIf(host === undefined || daemon === undefined)("a real SSH server (
 				};
 				yield* HostKey.accept(target, (yield* HostKey.scan(target)).lines);
 				const { connection, remote } = yield* Ssh.connect({ ...target, binary: daemon });
-				const env = yield* Remote.make({ connection, id: "pi-env:external", cwd: remote.home });
+				const env = yield* Remote.make({ connection, id: Env.Id.make("pi-env:external"), cwd: remote.home });
 				return yield* env.exec("echo ok");
 			}),
 		);

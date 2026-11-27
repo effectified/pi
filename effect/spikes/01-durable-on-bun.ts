@@ -63,10 +63,9 @@ async function run(label: string, open: () => Promise<Storage>, mode: "reopen" |
 
 	// Reopen: the same request id finds the same submission, the answer is still there, and nothing runs again.
 	harness = await Harness.open(await open(), { models, registry }, context);
-	const again = await (await harness.root(context)).submit(
-		{ type: "input", content: "Summarise record 42.", requestId: "s-42" },
-		context,
-	);
+	const again = await (
+		await harness.root(context)
+	).submit({ type: "input", content: "Summarise record 42.", requestId: "s-42" }, context);
 	const answer = answered
 		? await harness.commit((tx) => tx.entry(AssistantEntry, settled.answer), context)
 		: undefined;

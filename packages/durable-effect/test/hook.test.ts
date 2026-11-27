@@ -239,7 +239,9 @@ describe("the api of a hook", () => {
 });
 
 describe("a failing hook", () => {
-	class Refused extends Schema.TaggedError<Refused>()("Refused", { why: Schema.String }) {
+	class Refused extends Schema.TaggedError<Refused, { readonly brand: unique symbol }>()("Refused", {
+		why: Schema.String,
+	}) {
 		override get message(): string {
 			return `Refused: ${this.why}`;
 		}

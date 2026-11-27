@@ -11,7 +11,7 @@ import type {
 	TelemetrySchemaSpanStartAttributes,
 } from "@earendil-works/pi-telemetry";
 import { Clock, Effect, type Tracer } from "effect";
-import { toSpanAttributes } from "./attributes.ts";
+import { setSpanAttributes, toSpanAttributes } from "./attributes.ts";
 
 /** One or more telemetry schemas, as pi-telemetry's typed helpers take them. */
 export type Schemas = readonly [TelemetrySchemaDefinition, ...TelemetrySchemaDefinition[]];
@@ -27,34 +27,30 @@ export type SpanName<S extends Schemas> = S[number] extends infer Schema
 type SchemaOf<S extends Schemas, Name extends string> = Extract<S[number], { readonly spans: Record<Name, unknown> }>;
 
 /** The attributes a span of `Name` starts with: pi-telemetry's, required and optional as the schema declares. */
-export type StartAttributes<S extends Schemas, Name extends string> = Name extends TelemetrySchemaSpanName<
-	SchemaOf<S, Name>
->
-	? TelemetrySchemaSpanStartAttributes<SchemaOf<S, Name>, Name>
-	: never;
+export type StartAttributes<S extends Schemas, Name extends string> =
+	Name extends TelemetrySchemaSpanName<SchemaOf<S, Name>>
+		? TelemetrySchemaSpanStartAttributes<SchemaOf<S, Name>, Name>
+		: never;
 
 /** The attributes a span of `Name` may be given after its start. */
-export type EndAttributes<S extends Schemas, Name extends string> = Name extends TelemetrySchemaSpanName<
-	SchemaOf<S, Name>
->
-	? TelemetrySchemaSpanEndAttributes<SchemaOf<S, Name>, Name>
-	: never;
+export type EndAttributes<S extends Schemas, Name extends string> =
+	Name extends TelemetrySchemaSpanName<SchemaOf<S, Name>>
+		? TelemetrySchemaSpanEndAttributes<SchemaOf<S, Name>, Name>
+		: never;
 
 /** The events a span of `Name` declares. */
-export type EventName<S extends Schemas, Name extends string> = Name extends TelemetrySchemaSpanName<SchemaOf<S, Name>>
-	? TelemetrySchemaSpanEventName<SchemaOf<S, Name>, Name>
-	: never;
+export type EventName<S extends Schemas, Name extends string> =
+	Name extends TelemetrySchemaSpanName<SchemaOf<S, Name>>
+		? TelemetrySchemaSpanEventName<SchemaOf<S, Name>, Name>
+		: never;
 
 /** The attributes of the event `Event` of a span of `Name`. */
-export type EventAttributes<
-	S extends Schemas,
-	Name extends string,
-	Event extends string,
-> = Name extends TelemetrySchemaSpanName<SchemaOf<S, Name>>
-	? Event extends TelemetrySchemaSpanEventName<SchemaOf<S, Name>, Name>
-		? TelemetrySchemaSpanEventAttributes<SchemaOf<S, Name>, Name, Event>
-		: never
-	: never;
+export type EventAttributes<S extends Schemas, Name extends string, Event extends string> =
+	Name extends TelemetrySchemaSpanName<SchemaOf<S, Name>>
+		? Event extends TelemetrySchemaSpanEventName<SchemaOf<S, Name>, Name>
+			? TelemetrySchemaSpanEventAttributes<SchemaOf<S, Name>, Name, Event>
+			: never
+		: never;
 
 /** The attributes argument: required when the attributes have a required one, as pi-telemetry asks. */
 type AttributesArgument<A> = Record<string, never> extends A ? [attributes?: A] : [attributes: A];
@@ -108,10 +104,6 @@ function handle<S extends Schemas, Name extends string>(span: Tracer.Span): Span
 		span,
 		addEvent: (event, ...[attributes]) =>
 			Effect.map(Clock.currentTimeNanos, (now) => span.event(event, now, toSpanAttributes(attributes))),
-		setAttributes: (attributes) =>
-			Effect.sync(() => {
-				const defined = toSpanAttributes(attributes);
-				for (const name in defined) span.attribute(name, defined[name]);
-			}),
+		setAttributes: (attributes) => Effect.sync(() => setSpanAttributes(span, attributes)),
 	};
 }

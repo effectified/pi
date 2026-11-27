@@ -9,6 +9,7 @@ import {
 	type FetchOptions,
 	type Hit,
 	type Limits,
+	ProviderName,
 	type Retrieval,
 	type SearchError,
 	type SearchOptions,
@@ -40,7 +41,7 @@ function scripted(respond: (call: Call) => Effect.Effect<Script, SearchError>) {
 			calls.push(call);
 			const script = yield* respond(call);
 			return {
-				provider: "scripted",
+				provider: ProviderName.make("scripted"),
 				request: { method: "POST", url: `https://search.test${path}`, body },
 				retrievedAt: yield* DateTime.now,
 				raw: script.raw,
@@ -189,7 +190,7 @@ describe("web_search", () => {
 			],
 			// What the model never reads: the request, the body as it came, the provider, and when (the TestClock's time).
 			details: {
-				provider: "scripted",
+				provider: ProviderName.make("scripted"),
 				request: { method: "POST", url: "https://search.test/search", body: { query: "effect schema" } },
 				retrievedAt: "2026-11-25T12:00:00.000Z",
 				raw: RAW,
@@ -210,7 +211,7 @@ describe("web_search", () => {
 
 	it("turns a provider failure into an error result the model reads, and the run goes on", async () => {
 		const provider = scripted(() =>
-			Effect.fail(new SearchRateLimited({ provider: "scripted", retryAfterMillis: 7000 })),
+			Effect.fail(new SearchRateLimited({ provider: ProviderName.make("scripted"), retryAfterMillis: 7000 })),
 		);
 		const seen = await run("web_search", { query: "effect" }, {}, provider.layer);
 		expect(provider.calls).toHaveLength(1);
@@ -311,7 +312,7 @@ describe("web_fetch", () => {
 				},
 			],
 			details: {
-				provider: "scripted",
+				provider: ProviderName.make("scripted"),
 				request: {
 					method: "POST",
 					url: "https://search.test/fetch",
@@ -412,7 +413,7 @@ describe("replay", () => {
 		expect(results).toHaveLength(1);
 		expect(results[0]).toMatchObject({
 			isError: false,
-			details: { provider: "scripted", raw: RAW, retrievedAt: "2026-11-25T13:00:00.000Z" },
+			details: { provider: ProviderName.make("scripted"), raw: RAW, retrievedAt: "2026-11-25T13:00:00.000Z" },
 		});
 	});
 });

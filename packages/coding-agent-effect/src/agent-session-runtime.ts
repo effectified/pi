@@ -43,27 +43,28 @@ export interface Options<R> extends Omit<ServicesOptions<R>, "cwd" | "agentDir">
 
 /** A session runtime: the current session, and the replacements of it as Effects. */
 export interface AgentSessionRuntimeHandle
-	extends Fields<PiAgentSessionRuntime, (typeof FIELDS)[number]>,
+	extends
+		Fields<PiAgentSessionRuntime, (typeof FIELDS)[number]>,
 		Reads<PiAgentSessionRuntime, (typeof READS)[number]> {
 	/** Pi's runtime, for what takes one as it is: `runPrintMode`, `runRpcMode`. */
 	readonly pi: PiAgentSessionRuntime;
 	/** The current session. A replacement makes a new one: read it again after one. */
 	readonly session: Effect.Effect<AgentSessionHandle>;
 	/** Replaces the session with a new one; `setup` writes its first entries, `withSession` runs in it. */
-	readonly newSession: (options?: {
+	readonly newSession: <E = never>(options?: {
 		readonly parentSession?: string;
 		readonly setup?: (sessionManager: SessionManagerHandle) => Effect.Effect<void>;
-		readonly withSession?: InNewSession;
+		readonly withSession?: InNewSession<E>;
 	}) => Effect.Effect<Replacement, CodingAgentFailure>;
 	/** Replaces the session with the one stored in `sessionPath`. */
-	readonly switchSession: (
+	readonly switchSession: <E = never>(
 		sessionPath: string,
-		options?: { readonly cwdOverride?: string; readonly withSession?: InNewSession },
+		options?: { readonly cwdOverride?: string; readonly withSession?: InNewSession<E> },
 	) => Effect.Effect<Replacement, CodingAgentFailure>;
 	/** Replaces the session with a fork of it at `entryId`. */
-	readonly fork: (
+	readonly fork: <E = never>(
 		entryId: string,
-		options?: { readonly position?: "before" | "at"; readonly withSession?: InNewSession },
+		options?: { readonly position?: "before" | "at"; readonly withSession?: InNewSession<E> },
 	) => Effect.Effect<Awaited<ReturnType<PiAgentSessionRuntime["fork"]>>, CodingAgentFailure>;
 	/** Copies the session file `inputPath` into the session directory and replaces the session with it. */
 	readonly importFromJsonl: (
@@ -84,7 +85,7 @@ export interface AgentSessionRuntimeHandle
 
 /** The session runtime of the program. */
 export class AgentSessionRuntime extends Context.Service<AgentSessionRuntime, AgentSessionRuntimeHandle>()(
-	"@effectified/pi-coding-agent/AgentSessionRuntime",
+	"@effectified/pi-coding-agent/agent-session-runtime/AgentSessionRuntime",
 ) {
 	/** `AgentSessionRuntime.make(options)` as a Layer. */
 	static layer<R = never>(
@@ -98,32 +99,33 @@ export class AgentSessionRuntime extends Context.Service<AgentSessionRuntime, Ag
 	 * extensions and tools run with the services of the context this Effect runs in. Closing the scope disposes the
 	 * runtime as Pi's quit does: aborts, emits `session_shutdown`, disposes, and waits for credential writes.
 	 */
-	static make<R = never>(
+	static readonly make = Effect.fn("AgentSessionRuntime.make")(function* <R = never>(
 		options: Options<R>,
-	): Effect.Effect<AgentSessionRuntimeHandle, CodingAgentFailure | SchemaConversionError, R | Scope.Scope> {
-		return Effect.gen(function* () {
-			const run = runner(yield* Effect.context<R>());
-			const factory: CreateAgentSessionRuntimeFactory = (target) => run(created(options, target));
-			const pi = yield* Effect.acquireRelease(
-				Effect.tryPromise({
-					try: () =>
-						createAgentSessionRuntime(factory, {
-							cwd: options.cwd,
-							agentDir: options.agentDir,
-							sessionManager: options.sessionManager.pi,
-						}),
-					catch: fromPi,
-				}),
-				(runtime) => Effect.promise(() => runtime.dispose()),
-			);
-			return AgentSessionRuntime.fromPi(pi);
-		});
-	}
+	): Effect.fn.Return<AgentSessionRuntimeHandle, CodingAgentFailure | SchemaConversionError, R | Scope.Scope> {
+		const context = yield* Effect.context<R>();
+		const run = runner(context);
+		const factory: CreateAgentSessionRuntimeFactory = (target) => run(created(options, target));
+		const pi = yield* Effect.acquireRelease(
+			Effect.tryPromise({
+				try: () =>
+					createAgentSessionRuntime(factory, {
+						cwd: options.cwd,
+						agentDir: options.agentDir,
+						sessionManager: options.sessionManager.pi,
+					}),
+				catch: fromPi,
+			}),
+			(runtime) => Effect.promise(() => runtime.dispose()),
+		);
+		return AgentSessionRuntime.fromPi(pi);
+	});
 
 	/** Pi's runtime as a handle. It stays the caller's. */
 	static fromPi(pi: PiAgentSessionRuntime): AgentSessionRuntimeHandle {
-		const call = <A>(start: () => Promise<A>) => Effect.tryPromise({ try: start, catch: fromPi });
-		const inNew = (withSession: InNewSession | undefined) =>
+		// Pi's asynchronous members, each a span named for it.
+		const call = <A>(name: string, start: () => Promise<A>) =>
+			Effect.tryPromise({ try: start, catch: fromPi }).pipe(Effect.withSpan(`AgentSessionRuntime.${name}`));
+		const inNew = <E>(withSession: InNewSession<E> | undefined) =>
 			withSession === undefined ? {} : { withSession: inNewSession(withSession) };
 		return {
 			pi,
@@ -132,7 +134,7 @@ export class AgentSessionRuntime extends Context.Service<AgentSessionRuntime, Ag
 			session: Effect.sync(() => AgentSession.fromPi(pi.session)),
 			newSession: (options) => {
 				const setup = options?.setup;
-				return call(() =>
+				return call("newSession", () =>
 					pi.newSession({
 						...(options?.parentSession === undefined ? {} : { parentSession: options.parentSession }),
 						...(setup === undefined
@@ -143,20 +145,21 @@ export class AgentSessionRuntime extends Context.Service<AgentSessionRuntime, Ag
 				);
 			},
 			switchSession: (sessionPath, options) =>
-				call(() =>
+				call("switchSession", () =>
 					pi.switchSession(sessionPath, {
 						...(options?.cwdOverride === undefined ? {} : { cwdOverride: options.cwdOverride }),
 						...inNew(options?.withSession),
 					}),
 				),
 			fork: (entryId, options) =>
-				call(() =>
+				call("fork", () =>
 					pi.fork(entryId, {
 						...(options?.position === undefined ? {} : { position: options.position }),
 						...inNew(options?.withSession),
 					}),
 				),
-			importFromJsonl: (inputPath, cwdOverride) => call(() => pi.importFromJsonl(inputPath, cwdOverride)),
+			importFromJsonl: (inputPath, cwdOverride) =>
+				call("importFromJsonl", () => pi.importFromJsonl(inputPath, cwdOverride)),
 			setRebindSession: (rebind) =>
 				Effect.sync(() =>
 					pi.setRebindSession(
@@ -173,19 +176,24 @@ export class AgentSessionRuntime extends Context.Service<AgentSessionRuntime, Ag
 	}
 }
 
-/** One session of the runtime for Pi's factory: the services of `target`'s directory, then the session over them. */
-function created<R>(
+/**
+ * One session of the runtime for Pi's factory: the services of `target`'s directory, then the session over them. Pi
+ * calls the factory for the first session and for each replacement.
+ */
+const created = Effect.fn("AgentSessionRuntime.createSession")(function* <R>(
 	options: Options<R>,
 	target: Parameters<CreateAgentSessionRuntimeFactory>[0],
-): Effect.Effect<Awaited<ReturnType<CreateAgentSessionRuntimeFactory>>, CodingAgentFailure | SchemaConversionError, R> {
+): Effect.fn.Return<
+	Awaited<ReturnType<CreateAgentSessionRuntimeFactory>>,
+	CodingAgentFailure | SchemaConversionError,
+	R
+> {
 	const { cwd: _cwd, agentDir: _agentDir, sessionManager: _first, session, ...services } = options;
-	return Effect.gen(function* () {
-		const made = yield* createdServices({ ...services, cwd: target.cwd, agentDir: target.agentDir });
-		const result = yield* createdFromServices(made, {
-			...session,
-			sessionManager: SessionManager.fromPi(target.sessionManager),
-			...(target.sessionStartEvent === undefined ? {} : { sessionStartEvent: target.sessionStartEvent }),
-		});
-		return { ...result, services: made, diagnostics: made.diagnostics };
+	const made = yield* createdServices({ ...services, cwd: target.cwd, agentDir: target.agentDir });
+	const result = yield* createdFromServices(made, {
+		...session,
+		sessionManager: SessionManager.fromPi(target.sessionManager),
+		...(target.sessionStartEvent === undefined ? {} : { sessionStartEvent: target.sessionStartEvent }),
 	});
-}
+	return { ...result, services: made, diagnostics: made.diagnostics };
+});

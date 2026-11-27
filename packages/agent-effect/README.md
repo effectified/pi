@@ -95,16 +95,24 @@ const Search = Tool.make("search", {
 });
 ```
 
-- A handler's failure becomes Pi's error result, with the failure's message; the run goes on.
+- A tool's name is a `ToolName` (`Lookup.name`), and the handler gets the call's id as a `ToolCallId`
+  (`api.toolCallId`): branded strings, so the one is never passed for the other. `ToolName.make("lookup")` brands a
+  name you hold.
+- A handler's failure becomes Pi's error result, with the failure's message; the run goes on. The tool rejects Pi's
+  call with `ToolFailed`, whose `cause` is the failure.
 - `structured: true` declares the JSON Schema of `success` as Pi's `outputSchema` and passes the value as
   `structuredContent`.
 - `executionMode`, `replay`, `prepareArguments` and `constrainedSampling` are Pi's own, passed on unchanged.
 - Pi aborting a call (an interrupted run) interrupts the handler.
+- Each call has a span, `Tool.execute`, and so does each call of a hook (`Hooks.beforeToolCall`, ...).
+- The JSON Schemas are built once per tool and shared by every agent and loop given it.
 
 ## Events
 
 `agent.stream(input)` is the events of one run, from `agent_start` to `agent_end`. Ending the Stream early aborts the
-run. `agent.subscribe` gives every event of every run until its scope closes.
+run. Pi awaits each event it emits, so the Stream applies back-pressure: when its consumer is 16 events behind, the
+run waits. `agent.subscribe` gives every event of every run until its scope closes, in an unbounded buffer: a run
+never waits for a subscriber that reads later.
 
 ```ts
 import { Stream } from "effect";
@@ -118,6 +126,21 @@ const replies = Effect.gen(function* () {
 		Stream.map((update) => update.delta),
 	);
 	return (yield* Stream.runCollect(deltas)).join("");
+});
+```
+
+`AgentEvents.messages` is the Sink of what a run added (the messages of its `agent_end`), for a stream a consumer
+also reads:
+
+```ts
+import { AgentEvents } from "@effectified/pi-agent";
+
+const shown = Effect.gen(function* () {
+	const agent = yield* Agent.make({ initialState: { model: (yield* ScriptedModels).model } });
+	return yield* agent.stream("Say hello.").pipe(
+		Stream.tap((event) => (event.type === "message_end" ? Effect.log(event.message.role) : Effect.void)),
+		Stream.run(AgentEvents.messages),
+	);
 });
 ```
 
@@ -174,8 +197,9 @@ ends the run normally, with that message in the transcript.
 
 ## The low-level loop
 
-`AgentLoop` runs Pi's loop over a context you hold: `stream` and `streamContinue` give the events, `run` and
-`runContinue` the messages the run added. `convertToLlm` is required, as in Pi.
+`AgentLoop` runs Pi's loop over a context you hold: `stream` and `streamContinue` give the events (with the
+back-pressure of `agent.stream`), `run` and `runContinue` the messages the run added. `convertToLlm` is required, as
+in Pi. The run's tools and hooks are traced under the Stream's span.
 
 ```ts
 import { AgentLoop } from "@effectified/pi-agent";

@@ -11,15 +11,16 @@ import { Effect } from "effect";
 import { type CodingAgentFailure, fromPi } from "./errors.ts";
 
 /** The skills of the agent directory, the project and `options`' paths, as Pi's resource loader finds them. */
-export function loadSkills(
+// Written out: the declaration build cannot name Pi's `LoadSkillsOptions`, which its package does not export.
+export const loadSkills: (
 	options: Parameters<typeof piLoadSkills>[0],
-): Effect.Effect<LoadSkillsResult, CodingAgentFailure> {
-	return Effect.try({ try: () => piLoadSkills(options), catch: fromPi });
-}
+) => Effect.Effect<LoadSkillsResult, CodingAgentFailure> = Effect.fn("Skills.loadSkills")(
+	(options: Parameters<typeof piLoadSkills>[0]): Effect.Effect<LoadSkillsResult, CodingAgentFailure> =>
+		Effect.try({ try: () => piLoadSkills(options), catch: fromPi }),
+);
 
 /** The skills of one directory. */
-export function loadSkillsFromDir(
-	options: LoadSkillsFromDirOptions,
-): Effect.Effect<LoadSkillsResult, CodingAgentFailure> {
-	return Effect.try({ try: () => piLoadSkillsFromDir(options), catch: fromPi });
-}
+export const loadSkillsFromDir = Effect.fn("Skills.loadSkillsFromDir")(
+	(options: LoadSkillsFromDirOptions): Effect.Effect<LoadSkillsResult, CodingAgentFailure> =>
+		Effect.try({ try: () => piLoadSkillsFromDir(options), catch: fromPi }),
+);

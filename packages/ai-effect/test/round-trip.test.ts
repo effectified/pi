@@ -1,7 +1,7 @@
 import { Effect, Layer, Schema, type Scope, Stream } from "effect";
 import { LanguageModel, type Prompt, Tool, Toolkit } from "effect/ai";
 import { describe, expect, it } from "vitest";
-import { EffectProvider, Models, PiLanguageModel } from "../src/index.ts";
+import { EffectProvider, fromPiModelRef, ModelId, Models, PiLanguageModel, ProviderId } from "../src/index.ts";
 import { ScriptedLanguageModel, type ScriptedResponse } from "../src/testing/index.ts";
 
 const Lookup = Tool.make("lookup", {
@@ -35,11 +35,11 @@ function roundTrip<A, E>(program: Effect.Effect<A, E, LanguageModel.LanguageMode
 			Effect.gen(function* () {
 				const scripted = yield* ScriptedLanguageModel;
 				const provider = yield* EffectProvider.make({
-					id: "effect",
-					models: [{ id: "scripted", contextWindow: 1000, maxTokens: 100 }],
+					id: ProviderId.make("effect"),
+					models: [{ id: ModelId.make("scripted"), contextWindow: 1000, maxTokens: 100 }],
 					layer: Layer.succeed(LanguageModel.LanguageModel, yield* LanguageModel.LanguageModel),
 				});
-				const outer = PiLanguageModel.layer({ provider: "effect", modelId: "scripted" }).pipe(
+				const outer = PiLanguageModel.layer(fromPiModelRef({ provider: "effect", modelId: "scripted" })).pipe(
 					Layer.provide(Models.layer([provider])),
 				);
 				const result = yield* Effect.provide(program, outer);

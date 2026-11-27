@@ -2,40 +2,45 @@
 // findings as one JSON object. What its one request came to is kept in a memo of the review task.
 
 import type { Api, AssistantMessage, Message, Model, PiModels } from "@effectified/pi-ai";
-import { ANSWERED } from "@effectified/pi-ai";
+import { ANSWERED, ModelId, modelRefOf, ProviderId, reported } from "@effectified/pi-ai";
 import type { DurableError } from "@effectified/pi-durable";
-import { Effect, Option, Schema } from "effect";
-import type * as Check from "./check.ts";
+import { Array as Arr, Effect, Formatter, Match, Option, Result, Schema, String as Str } from "effect";
+import * as Check from "./check.ts";
 import { describe, ReviewerRequestFailed, UndecodableReview } from "./errors.ts";
 import { Finding } from "./finding.ts";
 import * as Kept from "./kept.ts";
-import type { Report } from "./report.ts";
+import type { ModelRef } from "./policy.ts";
+import { Report } from "./report.ts";
 import { Call } from "./verdict.ts";
 
 /** The name the model review has as a check: on its findings and its failures. */
-export const NAME = "review.model";
+export const NAME = Check.Name.make("review.model");
 
 /** What the reviewer answers with, as a JSON object and nothing else. */
 export const Findings = Schema.Struct({ findings: Schema.Array(Finding) });
 
 /**
- * What one request to the reviewer came to, with the request as a product records it (`call`):
+ * What one request to the reviewer came to, with the request as a product records it (`call`). `Reply.match` picks a
+ * handler per tag:
  *
  * - `Reviewed`: the reviewer answered with its findings.
  * - `Undecodable`: it answered, but not with the findings object. The answer under review was not judged.
  * - `Unanswered`: the request failed or was refused before an answer: nothing was said about the answer under
  *   review, so the same review can be asked again later.
  */
-export const Reply = Schema.Union([
-	Schema.TaggedStruct("Reviewed", { call: Call, findings: Schema.Array(Finding) }),
-	Schema.TaggedStruct("Undecodable", { call: Call, error: Schema.String }),
-	Schema.TaggedStruct("Unanswered", { call: Call, error: Schema.String }),
-]);
+export const Reply = Schema.TaggedUnion({
+	Reviewed: { call: Call, findings: Schema.Array(Finding) },
+	Undecodable: { call: Call, error: Schema.String },
+	Unanswered: { call: Call, error: Schema.String },
+});
 
 /** What one request to the reviewer came to. */
 export type Reply = typeof Reply.Type;
 
-/** What one request to the reviewer is made with. */
+/**
+ * What one request to the reviewer is made with. An interface, not a Schema: it holds pi-ai's models and model, which
+ * are services and functions, not data.
+ */
 export interface Request {
 	/** The harness's models (a task's `api.pi.models`): what wraps them, such as a budget, sees the request. */
 	readonly models: PiModels;
@@ -54,59 +59,54 @@ export interface Request {
  * refused or threw for is `Unanswered` with the provider's own error text in `call.error`, and an answer that is not
  * the findings object is `Undecodable`. An interruption, Pi aborting the task or closing, stays one.
  */
-export function ask(request: Request, subject: Check.Subject): Effect.Effect<Reply> {
-	const reviewer = { provider: request.model.provider, modelId: request.model.id };
-	const unanswered = (call: Call, reason: string): Reply => ({
-		_tag: "Unanswered",
-		call,
-		error: new ReviewerRequestFailed({ ...reviewer, reason }).message,
-	});
-	return Effect.tryPromise({
-		try: (signal) =>
-			request.models.completeSimple(
-				request.model,
-				{
-					systemPrompt: instructions(request.instructions),
-					messages: [{ role: "user", content: question(subject), timestamp: request.now }],
-				},
-				{ signal, ...(Option.isSome(request.sessionId) ? { sessionId: request.sessionId.value } : {}) },
-			),
-		catch: describe,
-	}).pipe(
-		Effect.flatMap((reply): Effect.Effect<Reply> => {
-			const call = callOf(reply);
-			// pi-ai resolves a request that gave no answer with its message too: one that failed or was aborted, or a
-			// response still pending or deferred, which Pi Durable does not take as an answer either.
-			if (!ANSWERED[reply.stopReason])
-				return Effect.succeed(unanswered(call, reply.errorMessage ?? reply.stopReason));
-			return decode(unfenced(textOf(reply))).pipe(
-				Effect.map((answered): Reply => ({ _tag: "Reviewed", call, findings: answered.findings })),
-				Effect.catch((error) =>
-					Effect.succeed<Reply>({
-						_tag: "Undecodable",
-						call,
-						error: new UndecodableReview({ ...reviewer, reason: error.message }).message,
-					}),
-				),
-			);
-		}),
-		// No response at all: the call is the request as it was sent, with what it was rejected with.
-		Effect.catch((reason) =>
-			Effect.succeed(
-				unanswered(
-					{
-						provider: reviewer.provider,
-						model: reviewer.modelId,
-						api: request.model.api,
-						stopReason: "error",
-						timestamp: request.now,
-						error: reason,
-					},
-					reason,
-				),
-			),
-		),
-	);
+export const ask: (request: Request, subject: Check.Subject) => Effect.Effect<Reply> = Effect.fn("ModelReview.ask")(
+	function* (request: Request, subject: Check.Subject) {
+		const reviewer = modelRefOf(request.model);
+		const response = yield* Effect.result(
+			Effect.tryPromise({
+				try: (signal) =>
+					request.models.completeSimple(
+						request.model,
+						{
+							systemPrompt: instructions(request.instructions),
+							messages: [{ role: "user", content: question(subject), timestamp: request.now }],
+						},
+						{ signal, ...(Option.isSome(request.sessionId) ? { sessionId: request.sessionId.value } : {}) },
+					),
+				catch: describe,
+			}),
+		);
+		if (Result.isFailure(response)) {
+			// No response at all: the call is the request as it was sent, with what it was rejected with.
+			const call = Call.make({
+				provider: reviewer.provider,
+				model: reviewer.modelId,
+				api: request.model.api,
+				stopReason: "error",
+				timestamp: request.now,
+				error: response.failure,
+			});
+			return unanswered(reviewer, call, response.failure);
+		}
+		const reply = response.success;
+		const call = callOf(reply);
+		// pi-ai resolves a request that gave no answer with its message too: one that failed or was aborted, or a
+		// response still pending or deferred, which Pi Durable does not take as an answer either.
+		if (!ANSWERED[reply.stopReason]) return unanswered(reviewer, call, reply.errorMessage ?? reply.stopReason);
+		return yield* Effect.match(decode(unfenced(textOf(reply))), {
+			onSuccess: ({ findings }): Reply => Reply.cases.Reviewed.make({ call, findings }),
+			onFailure: (error): Reply =>
+				Reply.cases.Undecodable.make({
+					call,
+					error: UndecodableReview.make({ ...reviewer, reason: error.message }).message,
+				}),
+		});
+	},
+);
+
+/** The reply of a request that got no answer from `reviewer`: `call` as it was recorded, and why. */
+function unanswered(reviewer: ModelRef, call: Call, reason: string): Reply {
+	return Reply.cases.Unanswered.make({ call, error: ReviewerRequestFailed.make({ ...reviewer, reason }).message });
 }
 
 /**
@@ -130,9 +130,11 @@ export function kept(memos: Kept.Memos, name: string): Effect.Effect<Option.Opti
 
 /** A reply as the report of the check `NAME`: its findings, or the failure it ended with instead. */
 export function report(reply: Reply): Report {
-	return reply._tag === "Reviewed"
-		? { _tag: "Found", findings: reply.findings }
-		: { _tag: "Failed", error: reply.error };
+	return Reply.match(reply, {
+		Reviewed: ({ findings }) => Report.cases.Found.make({ findings }),
+		Undecodable: ({ error }) => Report.cases.Failed.make({ error }),
+		Unanswered: ({ error }) => Report.cases.Failed.make({ error }),
+	});
 }
 
 /**
@@ -167,103 +169,110 @@ type Recorded = { [K in keyof typeof CALL]: (typeof CALL)[K] extends "recorded" 
 
 /**
  * A response as a product records a model call: who answered, through which api, how it ended, when and for how
- * long, and what it used and cost. pi-ai's optional fields stay absent when the response has none.
+ * long, and what it used and cost. pi-ai's optional fields stay absent when the response has none. The provider and
+ * model it names are pi-ai's plain strings, branded here where they enter.
  */
 function callOf(reply: Pick<AssistantMessage, Recorded>): Call {
 	const { usage } = reply;
-	return {
-		provider: reply.provider,
-		model: reply.model,
+	return Call.make({
+		provider: ProviderId.make(reply.provider),
+		model: ModelId.make(reply.model),
 		api: reply.api,
 		...(reply.responseModel === undefined ? {} : { responseModel: reply.responseModel }),
 		...(reply.responseId === undefined ? {} : { responseId: reply.responseId }),
 		stopReason: reply.stopReason,
-		timestamp: reply.timestamp,
-		...(reply.durationMs === undefined ? {} : { durationMs: reply.durationMs }),
+		timestamp: reported(reply.timestamp),
+		...(reply.durationMs === undefined ? {} : { durationMs: reported(reply.durationMs) }),
 		usage: {
-			input: usage.input,
-			output: usage.output,
-			cacheRead: usage.cacheRead,
-			cacheWrite: usage.cacheWrite,
-			...(usage.cacheWrite1h === undefined ? {} : { cacheWrite1h: usage.cacheWrite1h }),
-			...(usage.reasoning === undefined ? {} : { reasoning: usage.reasoning }),
-			totalTokens: usage.totalTokens,
-			cost: usage.cost.total,
+			input: reported(usage.input),
+			output: reported(usage.output),
+			cacheRead: reported(usage.cacheRead),
+			cacheWrite: reported(usage.cacheWrite),
+			...(usage.cacheWrite1h === undefined ? {} : { cacheWrite1h: reported(usage.cacheWrite1h) }),
+			...(usage.reasoning === undefined ? {} : { reasoning: reported(usage.reasoning) }),
+			totalTokens: reported(usage.totalTokens),
+			cost: reported(usage.cost.total),
 			costs: {
-				input: usage.cost.input,
-				output: usage.cost.output,
-				cacheRead: usage.cost.cacheRead,
-				cacheWrite: usage.cost.cacheWrite,
-				total: usage.cost.total,
+				input: reported(usage.cost.input),
+				output: reported(usage.cost.output),
+				cacheRead: reported(usage.cost.cacheRead),
+				cacheWrite: reported(usage.cost.cacheWrite),
+				total: reported(usage.cost.total),
 				...(usage.cost.totalFromProvider === undefined ? {} : { totalFromProvider: usage.cost.totalFromProvider }),
 			},
 		},
 		...(reply.errorMessage === undefined ? {} : { error: reply.errorMessage }),
-	};
+	});
 }
 
 /** The text of an assistant message: its text parts, joined. */
 export function textOf(message: AssistantMessage): string {
-	return message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
+	return Arr.join(
+		Arr.flatMap(message.content, (part) => (part.type === "text" ? [part.text] : [])),
+		"",
+	);
 }
 
-const INSTRUCTIONS = [
-	"You review the final answer another model gave to a task. You are given the task, the transcript of the run and the answer.",
-	"Report every problem of the answer as a finding. Judge the answer, not the run that led to it.",
-	'Answer with one JSON object and nothing else: {"findings":[{"severity":"block","text":"...","location":"..."}]}',
-	'"severity" is "block" for a problem that makes the answer wrong or unsafe to rely on, "warn" for one that should be fixed, and "info" for a remark.',
-	'"text" says what is wrong and what a correct answer needs. "location" is optional: the part of the answer the finding is about, quoted.',
-	'An answer without problems gets {"findings":[]}.',
-].join("\n");
+const INSTRUCTIONS = Arr.join(
+	[
+		"You review the final answer another model gave to a task. You are given the task, the transcript of the run and the answer.",
+		"Report every problem of the answer as a finding. Judge the answer, not the run that led to it.",
+		'Answer with one JSON object and nothing else: {"findings":[{"severity":"block","text":"...","location":"..."}]}',
+		'"severity" is "block" for a problem that makes the answer wrong or unsafe to rely on, "warn" for one that should be fixed, and "info" for a remark.',
+		'"text" says what is wrong and what a correct answer needs. "location" is optional: the part of the answer the finding is about, quoted.',
+		'An answer without problems gets {"findings":[]}.',
+	],
+	"\n",
+);
 
+/** The reviewer's system prompt: this package's instructions, then the policy's. */
 function instructions(added: Option.Option<string>): string {
 	return Option.isSome(added) ? `${INSTRUCTIONS}\n\n${added.value}` : INSTRUCTIONS;
 }
 
 /** The one message the reviewer gets: the task, the run, and the answer under review. */
 function question(subject: Check.Subject): string {
-	const task = subject.transcript.find((message) => message.role === "user");
-	return [
-		...(task === undefined ? [] : [`# Task\n\n${rendered(task)}`]),
-		`# Transcript of the run\n\n${subject.transcript.flatMap(line).join("\n\n")}`,
-		`# Answer under review\n\n${subject.answer}`,
-	].join("\n\n");
+	const task = Arr.findFirst(subject.transcript, (message) => message.role === "user");
+	return Arr.join(
+		[
+			...Option.toArray(Option.map(task, (message) => `# Task\n\n${rendered(message)}`)),
+			`# Transcript of the run\n\n${Arr.join(Arr.flatMap(subject.transcript, line), "\n\n")}`,
+			`# Answer under review\n\n${subject.answer}`,
+		],
+		"\n\n",
+	);
 }
 
 /** One message of the transcript as the reviewer reads it; nothing for a system message, which is no part of the run. */
-function line(message: Message): ReadonlyArray<string> {
-	switch (message.role) {
-		case "system":
-			return [];
-		case "user":
-			return [`User: ${rendered(message)}`];
-		case "assistant":
-			return [`Assistant: ${rendered(message)}`];
-		case "toolResult":
-			return [`Tool ${message.toolName}${message.isError ? " (error)" : ""}: ${rendered(message)}`];
-	}
-}
+const line: (message: Message) => ReadonlyArray<string> = Match.type<Message>().pipe(
+	Match.discriminatorsExhaustive("role")({
+		system: () => [],
+		user: (message) => [`User: ${rendered(message)}`],
+		assistant: (message) => [`Assistant: ${rendered(message)}`],
+		toolResult: (message) => [`Tool ${message.toolName}${message.isError ? " (error)" : ""}: ${rendered(message)}`],
+	}),
+);
+
+/** A message of the run: any but a system message. */
+type RunMessage = Exclude<Message, { readonly role: "system" }>;
 
 /** The content of a message as text: its text parts, its tool calls with their arguments, a mark for an image. */
-function rendered(message: Exclude<Message, { readonly role: "system" }>): string {
-	return typeof message.content === "string" ? message.content : message.content.flatMap(part).join("\n");
+function rendered(message: RunMessage): string {
+	return typeof message.content === "string" ? message.content : Arr.join(Arr.flatMap(message.content, part), "\n");
 }
 
-type Part = Exclude<Exclude<Message, { readonly role: "system" }>["content"], string>[number];
+/** One part of a message's content. */
+type Part = Exclude<RunMessage["content"], string>[number];
 
 /** One part of a message's content as the reviewer reads it; nothing for the author's thinking. */
-function part(content: Part): ReadonlyArray<string> {
-	switch (content.type) {
-		case "text":
-			return [content.text];
-		case "toolCall":
-			return [`[calls ${content.name} with ${JSON.stringify(content.arguments)}]`];
-		case "image":
-			return ["[image]"];
-		case "thinking":
-			return [];
-	}
-}
+const part: (content: Part) => ReadonlyArray<string> = Match.type<Part>().pipe(
+	Match.discriminatorsExhaustive("type")({
+		text: (content) => [content.text],
+		toolCall: (content) => [`[calls ${content.name} with ${Formatter.formatJson(content.arguments)}]`],
+		image: () => ["[image]"],
+		thinking: () => [],
+	}),
+);
 
 const decode = Schema.decodeUnknownEffect(Schema.fromJsonString(Findings));
 
@@ -271,6 +280,7 @@ const decodeReply = Schema.decodeUnknownEffect(Reply);
 
 /** `text` without the Markdown code fence models often put around JSON. */
 function unfenced(text: string): string {
-	const fenced = /^```[a-z]*\n([\s\S]*?)\n?```$/.exec(text.trim());
-	return fenced?.[1] ?? text.trim();
+	const trimmed = Str.trim(text);
+	const fenced = /^```[a-z]*\n([\s\S]*?)\n?```$/.exec(trimmed);
+	return fenced?.[1] ?? trimmed;
 }

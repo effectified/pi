@@ -7,7 +7,7 @@ import {
 	type RpcClientOptions,
 } from "@earendil-works/pi-coding-agent";
 import type { ImageContent } from "@effectified/pi-ai";
-import { Context, Effect, Fiber, Layer, Queue, type Scope, Stream } from "effect";
+import { Context, Effect, Fiber, Layer, Queue, type Scope, Sink, Stream } from "effect";
 import { type CodingAgentFailure, fromPi } from "./errors.ts";
 import { type Awaits, awaits, type Reads, reads } from "./lift.ts";
 
@@ -53,8 +53,7 @@ export const READS = ["getStderr"] as const;
 
 /** A connection to an agent process in RPC mode: every command of Pi's `RpcClient` as an Effect, under its name. */
 export interface RpcClientHandle
-	extends Awaits<PiRpcClient, (typeof AWAITS)[number]>,
-		Reads<PiRpcClient, (typeof READS)[number]> {
+	extends Awaits<PiRpcClient, (typeof AWAITS)[number]>, Reads<PiRpcClient, (typeof READS)[number]> {
 	/** Pi's client, for what takes one as it is. */
 	readonly pi: PiRpcClient;
 	/** The process's events from when the Stream starts until it ends. */
@@ -71,7 +70,16 @@ export interface RpcClientHandle
 }
 
 /** The agent process of the program, in RPC mode. */
-export class RpcClient extends Context.Service<RpcClient, RpcClientHandle>()("@effectified/pi-coding-agent/RpcClient") {
+export class RpcClient extends Context.Service<RpcClient, RpcClientHandle>()(
+	"@effectified/pi-coding-agent/rpc-client/RpcClient",
+) {
+	/**
+	 * The events of a process up to the next `agent_settled`, that one included, as a fold of its `events`: what
+	 * `collectEvents` runs. The rest of the stream is left unread.
+	 */
+	static readonly untilSettled: Sink.Sink<Array<JsonAgentSessionEvent>, JsonAgentSessionEvent, JsonAgentSessionEvent> =
+		Sink.takeUntil((event) => event.type === "agent_settled");
+
 	/** `RpcClient.make(options)` as a Layer. */
 	static layer(options?: RpcClientOptions): Layer.Layer<RpcClient, CodingAgentFailure> {
 		return Layer.effect(RpcClient, RpcClient.make(options));
@@ -81,28 +89,27 @@ export class RpcClient extends Context.Service<RpcClient, RpcClientHandle>()("@e
 	 * Starts `node <cliPath> --mode rpc` (Pi's `start`; `cliPath` default `dist/cli.js` of `cwd`) for the scope; closing
 	 * it stops the process as Pi does.
 	 */
-	static make(options?: RpcClientOptions): Effect.Effect<RpcClientHandle, CodingAgentFailure, Scope.Scope> {
-		return Effect.acquireRelease(
-			Effect.suspend(() => {
-				const pi = new PiRpcClient(options);
-				return Effect.as(Effect.tryPromise({ try: () => pi.start(), catch: fromPi }), pi);
-			}),
-			(pi) => Effect.promise(() => pi.stop()),
-		).pipe(Effect.map(RpcClient.fromPi));
-	}
+	static readonly make = Effect.fn("RpcClient.make")(
+		(options?: RpcClientOptions): Effect.Effect<RpcClientHandle, CodingAgentFailure, Scope.Scope> =>
+			Effect.acquireRelease(
+				Effect.suspend(() => {
+					const pi = new PiRpcClient(options);
+					return Effect.as(Effect.tryPromise({ try: () => pi.start(), catch: fromPi }), pi);
+				}),
+				(pi) => Effect.promise(() => pi.stop()),
+			).pipe(Effect.map(RpcClient.fromPi)),
+	);
 
 	/** Pi's client as a handle. It stays the caller's. */
 	static fromPi(pi: PiRpcClient): RpcClientHandle {
+		// The callback's buffer is unbounded: Pi's listener cannot wait for the Stream's consumer.
 		const events = Stream.callback<JsonAgentSessionEvent>((queue) =>
 			Effect.acquireRelease(
 				Effect.sync(() => pi.onEvent((event) => Queue.offerUnsafe(queue, event))),
 				(unsubscribe) => Effect.sync(unsubscribe),
 			),
 		);
-		const untilSettled = events.pipe(
-			Stream.takeUntil((event) => event.type === "agent_settled"),
-			Stream.runCollect,
-		);
+		const untilSettled = Stream.run(events, RpcClient.untilSettled);
 		return {
 			pi,
 			...awaits(pi, AWAITS),
@@ -110,12 +117,11 @@ export class RpcClient extends Context.Service<RpcClient, RpcClientHandle>()("@e
 			events,
 			waitForIdle: Effect.asVoid(untilSettled),
 			collectEvents: untilSettled,
-			promptAndWait: (message, images) =>
-				Effect.gen(function* () {
-					const collecting = yield* Effect.forkChild(untilSettled, { startImmediately: true });
-					yield* Effect.tryPromise({ try: () => pi.prompt(message, images), catch: fromPi });
-					return yield* Fiber.join(collecting);
-				}),
+			promptAndWait: Effect.fn("RpcClient.promptAndWait")(function* (message: string, images?: ImageContent[]) {
+				const collecting = yield* Effect.forkChild(untilSettled, { startImmediately: true });
+				yield* Effect.tryPromise({ try: () => pi.prompt(message, images), catch: fromPi });
+				return yield* Fiber.join(collecting);
+			}),
 		};
 	}
 }

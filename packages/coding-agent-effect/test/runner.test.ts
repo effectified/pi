@@ -4,7 +4,11 @@ import { runner } from "../src/runner.ts";
 
 class Name extends Context.Service<Name, string>()("test/Name") {}
 
-class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
+class Refused extends Schema.TaggedError<Refused, { readonly brand: unique symbol }>()("Refused", {}) {}
+
+class Broken extends Schema.TaggedError<Broken, { readonly brand: unique symbol }>()("Broken", {
+	message: Schema.String,
+}) {}
 
 const run = runner(Context.make(Name, "pi"));
 
@@ -14,11 +18,11 @@ describe("runner", () => {
 	});
 
 	it("rejects with the failure itself when it has a message", async () => {
-		await expect(run(Effect.fail(new Error("broken")))).rejects.toThrow("broken");
+		await expect(run(Effect.fail(Broken.make({ message: "broken" })))).rejects.toThrow("broken");
 	});
 
 	it("rejects with a formatted error when the failure's own message is empty", async () => {
-		await expect(run(Effect.fail(new Refused()))).rejects.toThrow("Refused");
+		await expect(run(Effect.fail(Refused.make({})))).rejects.toThrow("Refused");
 	});
 
 	it("interrupts the fiber when Pi's signal aborts", async () => {

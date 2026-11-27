@@ -42,7 +42,7 @@ describe("cancellableLoader and untilCancelled", () => {
 			Effect.gen(function* () {
 				const made = yield* cancellableLoader(plain, plain, "Searching");
 				yield* Tui.setFocus(made);
-				const fiber = yield* Effect.forkChild(untilCancelled(made, Effect.never), { startImmediately: true });
+				const fiber = yield* Effect.forkChild(untilCancelled(Effect.never, made), { startImmediately: true });
 				terminal.sendInput("\x1b");
 				return yield* Fiber.await(fiber);
 			}).pipe(Effect.provide(Tui.layer({ mode: "regular", terminal }))),
@@ -56,24 +56,20 @@ describe("cancellableLoader and untilCancelled", () => {
 			Effect.gen(function* () {
 				const made: CancellableLoader = yield* cancellableLoader(plain, plain);
 				const ran = yield* Ref.make(0);
+				// Data first, and in a pipe.
 				const result = yield* untilCancelled(
-					made,
 					Effect.as(
 						Ref.update(ran, (count) => count + 1),
 						"done",
 					),
+					made,
 				);
 				made.handleInput("\x1b");
-				const late = yield* Effect.exit(
-					untilCancelled(
-						made,
-						Ref.update(ran, (count) => count + 1),
-					),
-				);
-				return { result, late: Exit.hasInterrupts(late), aborted: made.aborted };
+				const late = yield* Effect.exit(Ref.update(ran, (count) => count + 1).pipe(untilCancelled(made)));
+				return { result, late: Exit.hasInterrupts(late), aborted: made.aborted, ran: yield* Ref.get(ran) };
 			}).pipe(Effect.provide(Tui.layer({ mode: "regular", terminal }))),
 		);
-		expect(seen).toEqual({ result: "done", late: true, aborted: true });
+		expect(seen).toEqual({ result: "done", late: true, aborted: true, ran: 1 });
 	});
 
 	it("stops the loader's animation when the scope closes", async () => {

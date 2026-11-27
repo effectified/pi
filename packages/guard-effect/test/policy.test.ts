@@ -1,10 +1,11 @@
+import { ToolName } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { InvalidPolicy, Matcher, Policy } from "../src/index.ts";
 
 const labels = ["public", "internal", "confidential"];
 
-const invalid = (policy: Policy.Policy) => Effect.runPromise(Effect.flip(Policy.validate(policy)));
+const invalid = (policy: Policy.Encoded) => Effect.runPromise(Effect.flip(Policy.decode(policy)));
 
 describe("Policy", () => {
 	it("is data: a policy written as JSON decodes to the value the guard takes", () => {
@@ -31,17 +32,24 @@ describe("Policy", () => {
 	});
 });
 
-describe("validate", () => {
+describe("validate and decode", () => {
+	const written: Policy.Encoded = {
+		denied: [Matcher.firstWord(["approve"])],
+		classifications: labels,
+		toolCeilings: { search: "public" },
+		modelCeilings: [{ provider: "acme", modelId: "small", ceiling: "internal" }],
+		ungranted: { tools: ["read"], classification: "confidential" },
+	};
+
 	it("gives back a policy that holds together", async () => {
-		const policy: Policy.Policy = {
-			denied: [Matcher.firstWord(["approve"])],
-			classifications: labels,
-			toolCeilings: { search: "public" },
-			modelCeilings: [{ provider: "acme", modelId: "small", ceiling: "internal" }],
-			ungranted: { tools: ["read"], classification: "confidential" },
-		};
+		const policy = Schema.decodeSync(Policy.Policy)(written);
 		expect(await Effect.runPromise(Policy.validate(policy))).toBe(policy);
 		expect(await Effect.runPromise(Policy.validate(Policy.empty))).toBe(Policy.empty);
+	});
+
+	it("decodes a policy as a product writes it, plain names and all, to the same value", async () => {
+		expect(await Effect.runPromise(Policy.decode(written))).toEqual(written);
+		expect(await Effect.runPromise(Policy.decode(Policy.empty))).toEqual(Policy.empty);
 	});
 
 	it("fails with InvalidPolicy naming the contradiction", async () => {
@@ -61,7 +69,7 @@ describe("validate", () => {
 			invalid({ ...base, ungranted: { tools: [], classification: "secret" } }),
 			invalid({ ...Policy.empty, toolCeilings: { search: "public" } }),
 			invalid({ ...base, denied: [Matcher.prefix("")] }),
-			invalid({ ...base, denied: [Matcher.exact("")] }),
+			invalid({ ...base, denied: [Matcher.exact(ToolName.make(""))] }),
 			invalid({ ...base, denied: [Matcher.firstWord(["sign", ""])] }),
 		]);
 		expect(reasons.every((error) => error instanceof InvalidPolicy)).toBe(true);
@@ -83,9 +91,12 @@ describe("validate", () => {
 describe("denying", () => {
 	it("gives the first matcher that names the tool, and none for a tool no matcher names", () => {
 		const verbs = Matcher.firstWord(["approve", "sign"]);
-		const policy = { ...Policy.empty, denied: [Matcher.exact("drop_table"), verbs, Matcher.prefix("sign")] };
+		const drop = Matcher.exact(ToolName.make("drop_table"));
+		const policy = { ...Policy.empty, denied: [drop, verbs, Matcher.prefix("sign")] };
 		expect(Policy.denying(policy, "signDocument")).toEqual(Option.some(verbs));
-		expect(Policy.denying(policy, "drop_table")).toEqual(Option.some(Matcher.exact("drop_table")));
+		expect(Policy.denying(policy, "drop_table")).toEqual(Option.some(drop));
+		// Data-last, as a pipe reads it.
+		expect(Option.isSome(Policy.denying("approve_claim")(policy))).toBe(true);
 		expect(Policy.denying(policy, "signature_lookup")).toEqual(Option.some(Matcher.prefix("sign")));
 		expect(Policy.denying(policy, "search")).toEqual(Option.none());
 		expect(Policy.denying(Policy.empty, "approve")).toEqual(Option.none());

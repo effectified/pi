@@ -38,20 +38,21 @@ describe("ChordContext.scoped", () => {
 	it("cancels the Chord call of a fiber that is interrupted", async () => {
 		const outcome = await run(
 			Effect.gen(function* () {
-				const started = yield* Deferred.make<Promise<void>>();
+				// The call's promise, handed over in a record: the Deferred holds it, it does not await it.
+				const started = yield* Deferred.make<{ readonly call: Promise<void> }>();
 				const fiber = yield* Effect.forkChild(
 					Effect.scoped(
 						Effect.gen(function* () {
 							const context = yield* ChordContext.scoped();
 							// Chord's own wait: a real timer of a minute, which only the context can end early.
 							const call = chordSleep(60_000, context);
-							yield* Deferred.succeed(started, call);
+							yield* Deferred.succeed(started, { call });
 							yield* Effect.promise(() => call);
 						}),
 					),
 					{ startImmediately: true },
 				);
-				const call = yield* Deferred.await(started);
+				const { call } = yield* Deferred.await(started);
 				yield* Fiber.interrupt(fiber);
 				return yield* Effect.promise(() =>
 					call.then(

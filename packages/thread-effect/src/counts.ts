@@ -14,8 +14,9 @@ import {
 } from "@effectified/pi-durable";
 import { type MalformedRefusal, Refused } from "@effectified/pi-guard";
 import * as Swarm from "@effectified/pi-swarm";
-import { Effect, Option, Stream } from "effect";
+import { Array as Arr, BigInt as Big, Effect, Option, Stream } from "effect";
 import * as Forks from "./forks.ts";
+import type { ThreadKey } from "./ids.ts";
 import type { Counts, Outcome } from "./outcome.ts";
 import type { Ending } from "./standing.ts";
 import * as StorageFork from "./storage-fork.ts";
@@ -27,43 +28,46 @@ import * as Thread from "./thread.ts";
  */
 export type Failure = Doc.Failure | MalformedRefusal | Swarm.SwarmFaulted;
 
+/** Subtrees of a thread's conversations, and swarms of a thread, read at once. */
+const CONCURRENT_READS = 8;
+
 /**
  * The counts of the thread `thread`, which runs in `conversation`, read from the harness storage, so they are the same
  * after a restart. One pass over the conversation's entries, then the money: `settled`, and `forked`.
  */
-export function of(
-	thread: string,
+export const of = Effect.fn("Counts.of")(function* (
+	thread: ThreadKey,
 	conversation: Conversation.Conversation,
 	shares: SharesService,
-): Effect.Effect<Counts, Failure, Harness.Harness | Forks.Accounts> {
-	return Effect.gen(function* () {
-		const entries = yield* Stream.runCollect(conversation.entries({ order: "ascending" }));
-		// The guard writes its record into the result of every call it kept from running: a block by another
-		// extension, such as a person's denial through the approval gate, has none.
-		const refused = yield* Effect.forEach(entries, Refused.of);
-		return {
-			turns: entries.filter(returned).length,
-			toolCalls: entries.filter((entry) => ToolResultEntry.is(entry)).length,
-			refusedToolCalls: refused.filter(Option.isSome).length,
-			settledMicros: (yield* settled(shares, conversation.id)) + (yield* forked(thread)),
-		};
-	});
-}
+): Effect.fn.Return<Counts, Failure, Harness.Harness | Forks.Accounts> {
+	const entries = yield* Stream.runCollect(conversation.entries({ order: "ascending" }));
+	// The guard writes its record into the result of every call it kept from running: a block by another
+	// extension, such as a person's denial through the approval gate, has none. Decoding a record waits on nothing, so
+	// one after the other.
+	const refused = yield* Effect.forEach(entries, Refused.of, { concurrency: 1 });
+	const own = yield* settled(shares, conversation.id);
+	const elsewhere = yield* forked(thread);
+	return {
+		turns: Arr.filter(entries, returned).length,
+		toolCalls: Arr.filter(entries, (entry) => ToolResultEntry.is(entry)).length,
+		refusedToolCalls: Arr.filter(refused, Option.isSome).length,
+		settledMicros: own + elsewhere,
+	};
+});
 
 /**
  * `ending` as the thread's outcome: with what the thread took so far. Of the counts, only the money of a swarm's fork
  * that is an actor and still exists is asked of that actor.
  */
-export function counted(
-	thread: string,
+export const counted = Effect.fn("Counts.counted")(function* (
+	thread: ThreadKey,
 	conversation: Conversation.Conversation,
 	ending: Ending,
-): Effect.Effect<Outcome, Failure, Harness.Harness | Shares | Forks.Accounts> {
-	return Effect.map(
-		Shares.use((shares) => of(thread, conversation, shares)),
-		(counts) => ({ ...ending, counts }),
-	);
-}
+): Effect.fn.Return<Outcome, Failure, Harness.Harness | Shares | Forks.Accounts> {
+	const shares = yield* Shares;
+	const counts = yield* of(thread, conversation, shares);
+	return { ...ending, counts };
+});
 
 /**
  * Whether the entry is a model response that answered, by Pi's rule (`ANSWERED`): Pi also stores a failed attempt as
@@ -82,17 +86,21 @@ function returned(entry: EntryRecord): boolean {
  * creating commit. A conversation without a share has no stored total and counts as zero. In a copied storage a
  * share's `settled` is what the copy settled itself (the budget's `onStorageFork`), so nothing of its source is here.
  */
-export function settled(
+export const settled: (
 	shares: SharesService,
 	conversation: ConversationId,
-): Effect.Effect<bigint, Doc.Failure, Harness.Harness> {
-	return Effect.gen(function* () {
-		const own = Option.match(yield* shares.get(conversation), { onNone: () => 0n, onSome: (share) => share.settled });
-		const owned = yield* Stream.runCollect(Harness.scanConversations({ ownerConversationId: conversation }));
-		const below = yield* Effect.forEach(owned, (child) => settled(shares, child.id));
-		return below.reduce((sum, amount) => sum + amount, own);
+) => Effect.Effect<bigint, Doc.Failure, Harness.Harness> = Effect.fn("Counts.settled")(function* (
+	shares: SharesService,
+	conversation: ConversationId,
+) {
+	const share = yield* shares.get(conversation);
+	const own = Option.match(share, { onNone: () => 0n, onSome: (found) => found.settled });
+	const owned = yield* Stream.runCollect(Harness.scanConversations({ ownerConversationId: conversation }));
+	const below = yield* Effect.forEach(owned, (child) => settled(shares, child.id), {
+		concurrency: CONCURRENT_READS,
 	});
-}
+	return own + Big.sumAll(below);
+});
 
 /**
  * What the forks of the thread's swarms settled in other storages: for every swarm started on `thread` in this
@@ -103,24 +111,32 @@ export function settled(
  * - A swarm this storage was copied with is its source's (`StorageFork.inherited`).
  * - A job whose fork cannot be asked now has no account to give, and counts as zero until it can.
  */
-function forked(
-	thread: string,
-): Effect.Effect<bigint, Doc.Failure | Swarm.SwarmFaulted, Harness.Harness | Forks.Accounts> {
-	return Effect.gen(function* () {
-		const accounts = yield* Forks.Accounts;
-		const inherited = yield* StorageFork.inherited;
-		const perSwarm = yield* Effect.forEach(yield* Thread.swarms(thread), (swarmId) =>
+const forked = Effect.fn("Counts.forked")(function* (
+	thread: ThreadKey,
+): Effect.fn.Return<bigint, Doc.Failure | Swarm.SwarmFaulted, Harness.Harness | Forks.Accounts> {
+	const accounts = yield* Forks.Accounts;
+	const inherited = yield* StorageFork.inherited;
+	const swarmIds = yield* Thread.swarms(thread);
+	const perSwarm = yield* Effect.forEach(
+		swarmIds,
+		(swarmId) =>
 			Effect.gen(function* () {
 				const status = yield* Swarm.status(swarmId);
 				if (inherited(status.taskId)) return 0n;
-				const elsewhere = status.jobs.filter((job) => !Option.exists(job.ran, (place) => place.actorId === null));
-				const spent = yield* Effect.forEach(elsewhere, (job) => accounts.spent(swarmId, job));
-				return spent.reduce((sum, account) => sum + Option.getOrElse(account, () => 0n), 0n);
+				const elsewhere = Arr.filter(
+					status.jobs,
+					(job) => !Option.exists(job.ran, (place) => place.actorId === null),
+				);
+				// Each fork that is an actor is asked by a call of its own.
+				const spent = yield* Effect.forEach(elsewhere, (job) => accounts.spent(swarmId, job), {
+					concurrency: CONCURRENT_READS,
+				});
+				return Big.sumAll(Arr.getSomes(spent));
 			}).pipe(
 				// An id is noted before its swarm is stored: a start that was cut off or refused left one without a swarm.
 				Effect.catchTag("SwarmNotFound", () => Effect.succeed(0n)),
 			),
-		);
-		return perSwarm.reduce((sum, amount) => sum + amount, 0n);
-	});
-}
+		{ concurrency: CONCURRENT_READS },
+	);
+	return Big.sumAll(perSwarm);
+});

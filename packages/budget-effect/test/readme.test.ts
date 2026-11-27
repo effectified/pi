@@ -2,7 +2,7 @@
 // the imports differ (the README names the packages, this file its sources and a stand-in for the router's port),
 // and the model is scripted.
 
-import { complete } from "@effectified/pi-ai";
+import { complete, ModelId, ProviderId, type RequestKey, SessionId } from "@effectified/pi-ai";
 import { Harness, Registry, Storage } from "@effectified/pi-durable";
 import { answer, ScriptedModels } from "@effectified/pi-durable/testing";
 import { Context, Effect, Layer, Option, Stream } from "effect";
@@ -16,22 +16,24 @@ import {
 	LeaseFenced,
 	Prices,
 	type PriceTable,
+	Reservation,
 	refusalOf,
 	Shares,
 	Spend,
+	SpendKey,
 	stopOf,
 } from "../src/index.ts";
 
 // README: the lease
 /** A product's lease. This one is a wallet in memory; a real one is a row the product fences and renews. */
-const wallet = { left: 1_000_000n, held: new Map<string, bigint>(), fenced: false };
+const wallet = { left: 1_000_000n, held: new Map<Reservation, bigint>(), fenced: false };
 
 const WalletLease = Layer.succeed(Lease, {
 	reserve: (estimate, request) =>
 		Effect.suspend(() => {
-			if (wallet.fenced) return Effect.fail(new LeaseFenced({ reason: "fenced" }));
-			if (wallet.left < estimate) return Effect.fail(new LeaseFenced({ reason: "out_of_money" }));
-			const token = `${request.provider}/${request.model}#${wallet.held.size + 1}`;
+			if (wallet.fenced) return Effect.fail(LeaseFenced.make({ reason: "fenced" }));
+			if (wallet.left < estimate) return Effect.fail(LeaseFenced.make({ reason: "out_of_money" }));
+			const token = Reservation.make(`${request.provider}/${request.model}#${wallet.held.size + 1}`);
 			wallet.left -= estimate;
 			wallet.held.set(token, estimate);
 			return Effect.succeed(token);
@@ -45,7 +47,7 @@ const WalletLease = Layer.succeed(Lease, {
 });
 
 // README: prices and the estimate
-const table: PriceTable = {
+const table: typeof PriceTable.Encoded = {
 	currency: "USD",
 	// Per million tokens, in millionths of the currency: USD 3.00 in, USD 15.00 out.
 	prices: [
@@ -90,7 +92,7 @@ const requests = ScriptedModels.use((scripted) => scripted.callCount);
 
 // README: prices behind a router
 // From the product's route table: `yield* priceRows(routes)` of @effectified/pi-router, written out.
-const routerRows: PriceTable = {
+const routerRows: typeof PriceTable.Encoded = {
 	currency: "USD",
 	prices: [
 		// Each route's model at the route's price: what a response is settled at.
@@ -123,10 +125,10 @@ const routerPrices = Prices.layer(routerRows);
  */
 interface RouteEvent {
 	readonly requestId: string;
-	readonly sessionId?: string | undefined;
-	readonly requestKey?: string | undefined;
+	readonly sessionId?: SessionId | undefined;
+	readonly requestKey?: RequestKey | undefined;
 	readonly attempt: number;
-	readonly route: { readonly provider: string; readonly model: string };
+	readonly route: { readonly provider: ProviderId; readonly model: ModelId };
 	readonly usage: {
 		readonly input: number;
 		readonly output: number;
@@ -225,11 +227,14 @@ describe("the README", () => {
 		const usage = { input: 1000, output: 100, cacheRead: 0, cacheWrite: 0 };
 		const costs = await Effect.runPromise(
 			Prices.use((prices) =>
-				Effect.all([
-					prices.cost("openrouter", "anthropic/claude-haiku-5.5", usage),
-					prices.cost("local", "qwen-3-coder", usage),
-					prices.cost("router", "author", usage),
-				]),
+				Effect.all(
+					[
+						prices.cost(ProviderId.make("openrouter"), ModelId.make("anthropic/claude-haiku-5.5"), usage),
+						prices.cost(ProviderId.make("local"), ModelId.make("qwen-3-coder"), usage),
+						prices.cost(ProviderId.make("router"), ModelId.make("author"), usage),
+					],
+					{ concurrency: 1 },
+				),
 			).pipe(Effect.provide(routerPrices)),
 		);
 		// 1000 x 1.0 + 100 x 5.0 micro units for the paid route and for the alias; the local route is free.
@@ -240,10 +245,16 @@ describe("the README", () => {
 		wallet.left = 1_000_000n;
 		wallet.fenced = false;
 		const usage = { input: 1200, output: 0, cacheRead: 300, cacheWrite: 0 };
-		const route = { provider: "faux", model: "faux-1" };
+		const route = { provider: ProviderId.make("faux"), model: ModelId.make("faux-1") };
 		// What a router hands over, as plain data: the first attempt of a request, which failed after it used tokens
 		// and which another route is taking over; and the first attempt of that conversation's next request.
-		const first: RouteEvent = { requestId: "lz4k2q9xw-1", sessionId: "session-7", attempt: 1, route, usage };
+		const first: RouteEvent = {
+			requestId: "lz4k2q9xw-1",
+			sessionId: SessionId.make("session-7"),
+			attempt: 1,
+			route,
+			usage,
+		};
 		const second: RouteEvent = { ...first, requestId: "lz4k2q9xw-2" };
 
 		// README: spend the budget did not see
@@ -255,7 +266,7 @@ describe("the README", () => {
 				return AttemptSettlement.of({
 					settle: (event) =>
 						spend.record({
-							key: `${event.requestId}#${event.attempt}`,
+							key: SpendKey.make(`${event.requestId}#${event.attempt}`),
 							provider: event.route.provider,
 							model: event.route.model,
 							session: event.sessionId,

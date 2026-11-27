@@ -1,9 +1,18 @@
-// What the tests share: values in the process environment and a temporary directory, each for a scope.
+// What the tests share: values in the process environment and a temporary directory, each for a scope, and a file
+// system that reads files.
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, type Scope } from "effect";
+import { Effect, FileSystem, type Scope } from "effect";
+
+/**
+ * Effect's `FileSystem` reading text files as Node does, for what reads one (`Plan.readDiscoveredCases`); the rest
+ * of it does nothing. An application provides a whole one, such as `NodeFileSystem.layer` of `@effect/platform-node`.
+ */
+export const nodeReads = FileSystem.layerNoop({
+	readFileString: (path) => Effect.promise(() => readFile(path, "utf8")),
+});
 
 /** `values` in the process environment for the scope (`undefined` removes one); closing it restores the old ones. */
 export function processEnvironment(

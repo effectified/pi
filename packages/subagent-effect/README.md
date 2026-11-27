@@ -89,7 +89,7 @@ With a real provider, give `Harness.layer` your `Models` and name one of its mod
 
 | Field | |
 |---|---|
-| `name` | What the parent's model passes to the tools, and what the records keep |
+| `name` | What the parent's model passes to the tools, and what the records keep: a `Subagent.Name`, which `make` brands |
 | `description` | What the subagent is for, in words the parent's model picks it by |
 | `agent.model`, `agent.tools` | Required. The child's model, and its tools: exactly these, in order |
 | `agent.thinkingLevel`, `instructions`, `cwd`, `maxTurns`, `compaction` | Optional. Left out: unset in the child |
@@ -128,7 +128,9 @@ nothing of its parent's conversation; the `task` is its first message.
 
 Every result about a child carries details for the host, which the model never reads:
 `{ conversationId, handle, subagent, mode, status }`, with `result` for a typed result and `reason` for a failure.
-`status` is `running`, `answered` or `failed`. The handle is the child's conversation id as text.
+`status` is `running`, `answered` or `failed`. The handle is the child's conversation id as text, a `Child.Handle`
+(`Child.key(conversationId)`). The tools decode what the model passes: the subagent's name as a `Subagent.Name`, the
+handle as a `Child.Handle`.
 
 **Failure is a result.** A child that does not answer gives the parent an error result that says why, and the
 parent's run goes on. Pi's reason is in `details.reason`:
@@ -211,8 +213,8 @@ product that has neither plugin says so with `ChildSetup.none`.
 | `created(tx, child)` | Inside the commit that creates the child, after the declared agent was written | Fails the commit: no child exists, and the tool result is an error with `reason` |
 | `beforeStart(child)` | After that commit, before the child gets its task. Pi may run it again after a crash | The child ends without a provider request, with an error result |
 
-`child` is `{ conversationId, parentId, subagent, mode, depth }`. Both fail with `ChildSetupFailed`, whose `reason`
-the parent's model reads.
+`child` is a `ChildSetup.Child`, a `Schema`: `{ conversationId, parentId, subagent, mode, depth }`. Both fail with
+`ChildSetupFailed`, whose `reason` the parent's model reads.
 
 A product with the guard and the budget plugins, as product code. A child inherits no grant, so `created` gives it
 its allow-list; the budget plugin sets a cap in a commit of its own, so that goes into `beforeStart`:
@@ -227,7 +229,7 @@ const allowances: Record<string, { readonly tools: ReadonlyArray<string>; readon
 };
 
 const refused = (child: ChildSetup.Child) => (cause: unknown) =>
-	new ChildSetupFailed({ reason: `The subagent ${child.subagent} has no allowance.`, cause });
+	ChildSetupFailed.make({ reason: `The subagent ${child.subagent} has no allowance.`, cause });
 
 const Setup = Layer.effect(
 	ChildSetup.ChildSetup,
@@ -284,8 +286,9 @@ that. Two things link a child to its parent:
 - **Pi's own record.** `ConversationRecord.owner` of the child is `{ conversationId, taskId }`: the parent's
   conversation, and the task that drives the child. Pi keeps it after that task ended.
 - **The `subagent.child` document**, in the session scope under the child's conversation id as text:
-  `{ conversation, subagent, parent, depth, mode, task, state }`. `state` is `Running`, `Answered` (the entry of the
-  final answer), `Typed` (also the result as JSON) or `Failed` (`reason`, `message`, the last answer's entry if any).
+  `{ conversation, subagent, parent, depth, mode, task, state }` (`Child.Record`). `state` is a `Child.State`:
+  `Running`, `Answered` (the entry of the final answer), `Typed` (also the result as JSON) or `Failed` (`reason`,
+  `message`, the last answer's entry if any). `Child.State.match(state, { ... })` takes one handler per tag.
 
 ```ts
 import type { ConversationId } from "@effectified/pi-durable";

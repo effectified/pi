@@ -1,8 +1,8 @@
-import { complete, type Models } from "@effectified/pi-ai";
+import { complete, ModelId, type Models, ProviderId } from "@effectified/pi-ai";
 import { runTest } from "@effectified/pi-ai/testing";
 import { Harness } from "@effectified/pi-durable";
 import { answer, ScriptedModels } from "@effectified/pi-durable/testing";
-import { Effect, Layer, Option } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 import type { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import {
@@ -13,7 +13,8 @@ import {
 	PriceMissing,
 	Shares,
 	Spend,
-	type SpentUsage,
+	SpendKey,
+	SpentUsage,
 	stopOf,
 } from "../src/index.ts";
 import { type Budgeted, budgetedHarness, ESTIMATE, expectedCost, prices, TestLease, withEvents } from "./support.ts";
@@ -63,17 +64,22 @@ const ATTEMPTS = [
 function forwarded(attempts: ReadonlyArray<(typeof ATTEMPTS)[number]>): ReadonlyArray<SpentUsage> {
 	return attempts
 		.filter((attempt) => attempt.fallback)
-		.map((attempt) => ({
-			key: `${attempt.requestId}#${attempt.attempt}`,
-			provider: attempt.route.provider,
-			model: attempt.route.model,
-			session: attempt.sessionId,
-			requestKey: attempt.requestKey,
-			usage: attempt.usage,
-			// An attempt another route took over failed: an abort never starts a fallback.
-			outcome: "failed",
-		}));
+		.map((attempt) =>
+			spentUsage({
+				key: `${attempt.requestId}#${attempt.attempt}`,
+				provider: attempt.route.provider,
+				model: attempt.route.model,
+				session: attempt.sessionId,
+				requestKey: attempt.requestKey,
+				usage: attempt.usage,
+				// An attempt another route took over failed: an abort never starts a fallback.
+				outcome: "failed",
+			}),
+		);
 }
+
+/** A spend as plain data, its ids branded as a product's would be by the route event it came from. */
+const spentUsage = Schema.decodeSync(SpentUsage);
 
 const [FAILED] = forwarded(ATTEMPTS);
 
@@ -125,9 +131,12 @@ describe("Spend.record", () => {
 				const spend = yield* Spend;
 				const first = yield* spend.record(FAILED);
 				const [again, events] = yield* withEvents(0, spend.record(FAILED));
-				const both = yield* Effect.all([spend.record(FAILED), spend.record({ ...FAILED, key: "lz4k2q9xw-2#1" })], {
-					concurrency: "unbounded",
-				});
+				const both = yield* Effect.all(
+					[spend.record(FAILED), spend.record({ ...FAILED, key: SpendKey.make("lz4k2q9xw-2#1") })],
+					{
+						concurrency: "unbounded",
+					},
+				);
 				expect(first._tag).toBe("Settled");
 				expect(again).toEqual({ _tag: "Duplicate" });
 				expect(events).toEqual([]);
@@ -179,7 +188,7 @@ describe("Spend.record", () => {
 				const lease = yield* TestLease;
 				const spend = yield* Spend;
 				const usage = { input: 1000, output: 100, cacheRead: 0, cacheWrite: 0 };
-				const recorded = yield* spend.record({ key: "a#1", ...BACKUP, usage, outcome: "aborted" });
+				const recorded = yield* spend.record(spentUsage({ key: "a#1", ...BACKUP, usage, outcome: "aborted" }));
 				// 1000 x 1.0 + 100 x 5.0 micro units: the backup's own price.
 				expect(recorded).toEqual({ _tag: "Settled", reservation: "r1", cost: 1_500n });
 				expect(lease.steps[1]).toEqual({
@@ -198,7 +207,7 @@ describe("Spend.record", () => {
 			Effect.gen(function* () {
 				const lease = yield* TestLease;
 				const spend = yield* Spend;
-				const unknown = { ...FAILED, provider: "nowhere", model: "none" };
+				const unknown = { ...FAILED, provider: ProviderId.make("nowhere"), model: ModelId.make("none") };
 				const [error, events] = yield* withEvents(1, Effect.flip(spend.record(unknown)));
 				expect(error).toBeInstanceOf(PriceMissing);
 				expect(error).toMatchObject({ provider: "nowhere", model: "none" });

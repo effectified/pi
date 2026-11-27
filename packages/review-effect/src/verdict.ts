@@ -1,27 +1,34 @@
 // The verdict: what one review of one answer came to, stored as an entry of the reviewed conversation.
 
+import { ModelId, ModelRef, ProviderId, Reported } from "@effectified/pi-ai";
 import { Entry, Submission, Task } from "@effectified/pi-durable";
 import { Schema } from "effect";
+import { Name } from "./check.ts";
 import { Finding } from "./finding.ts";
 
+/** A count of this package's own, 0 or more: of corrective runs. */
+export const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+
+/** The number of one of a series, from 1: a review's pass within its run, a request's attempt. */
+export const Ordinal = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
+
+/** A time in epoch milliseconds, as the harness clock and pi-ai give one: a number, kept as given. */
+export const EpochMillis = Schema.Finite;
+
 /** A model in a review, with the family the policy gave it; no `family` when the policy gave none. */
-export const Party = Schema.Struct({
-	provider: Schema.String,
-	modelId: Schema.String,
-	family: Schema.optionalKey(Schema.String),
-});
+export const Party = Schema.Struct({ ...ModelRef.fields, family: Schema.optionalKey(Schema.String) });
 
 /** A model in a review. */
 export type Party = typeof Party.Type;
 
 /** A finding with the name of the check that made it. */
-export const Found = Schema.Struct({ check: Schema.String, ...Finding.fields });
+export const Found = Schema.Struct({ check: Name, ...Finding.fields });
 
 /** A finding with the name of the check that made it. */
 export type Found = typeof Found.Type;
 
 /** A check that failed instead of answering, and what it failed with. */
-export const CheckFailure = Schema.Struct({ check: Schema.String, error: Schema.String });
+export const CheckFailure = Schema.Struct({ check: Name, error: Schema.String });
 
 /** A check that failed instead of answering. */
 export type CheckFailure = typeof CheckFailure.Type;
@@ -31,11 +38,11 @@ export type CheckFailure = typeof CheckFailure.Type;
  * total, and `totalFromProvider` when the total is what the provider billed rather than the catalog's estimate.
  */
 export const Cost = Schema.Struct({
-	input: Schema.Number,
-	output: Schema.Number,
-	cacheRead: Schema.Number,
-	cacheWrite: Schema.Number,
-	total: Schema.Number,
+	input: Reported,
+	output: Reported,
+	cacheRead: Reported,
+	cacheWrite: Reported,
+	total: Reported,
 	totalFromProvider: Schema.optionalKey(Schema.Boolean),
 });
 
@@ -51,14 +58,14 @@ export type Cost = typeof Cost.Type;
  * - `costs`: pi-ai's whole `usage.cost`. Absent from a verdict stored before it was kept.
  */
 export const Usage = Schema.Struct({
-	input: Schema.Number,
-	output: Schema.Number,
-	cacheRead: Schema.Number,
-	cacheWrite: Schema.Number,
-	cacheWrite1h: Schema.optionalKey(Schema.Number),
-	reasoning: Schema.optionalKey(Schema.Number),
-	totalTokens: Schema.Number,
-	cost: Schema.Number,
+	input: Reported,
+	output: Reported,
+	cacheRead: Reported,
+	cacheWrite: Reported,
+	cacheWrite1h: Schema.optionalKey(Reported),
+	reasoning: Schema.optionalKey(Reported),
+	totalTokens: Reported,
+	cost: Reported,
 	costs: Schema.optionalKey(Cost),
 });
 
@@ -71,7 +78,7 @@ export type Usage = typeof Usage.Type;
  * - `provider`, `model`: what the response names. Behind a router alias that is the route that served, not the alias.
  *   The policy's reviewer when the request ended without a response.
  * - `api`: pi-ai's api of the response; the reviewer model's when the request ended without a response.
- * - `responseModel`, `responseId`: what the provider said of its response, when it said it.
+ * - `responseModel`, `responseId`: what the provider said of its response, when it said it, in its own words.
  * - `stopReason`: pi-ai's. `error` and `aborted` are a request that failed.
  * - `timestamp`: when the request started, in epoch milliseconds: the response's own, or the harness clock the
  *   request was sent at when it ended without a response.
@@ -82,14 +89,14 @@ export type Usage = typeof Usage.Type;
  * A verdict stored before `api`, `timestamp` and `usage.costs` were kept has none of them.
  */
 export const Call = Schema.Struct({
-	provider: Schema.String,
-	model: Schema.String,
+	provider: ProviderId,
+	model: ModelId,
 	api: Schema.optionalKey(Schema.String),
 	responseModel: Schema.optionalKey(Schema.String),
 	responseId: Schema.optionalKey(Schema.String),
 	stopReason: Schema.Literals(["stop", "length", "toolUse", "error", "aborted", "pending", "deferred"]),
-	timestamp: Schema.optionalKey(Schema.Number),
-	durationMs: Schema.optionalKey(Schema.Number),
+	timestamp: Schema.optionalKey(EpochMillis),
+	durationMs: Schema.optionalKey(Reported),
 	usage: Schema.optionalKey(Usage),
 	error: Schema.optionalKey(Schema.String),
 });
@@ -114,7 +121,7 @@ export const Unreviewed = Schema.Literals([
 export type Unreviewed = typeof Unreviewed.Type;
 
 /**
- * What a review decided:
+ * What a review decided. `Outcome.match` picks a handler per tag and `Outcome.guards` tests for one:
  *
  * - `Passed`: no blocking finding and no failed check. The answer stands.
  * - `Corrected`: a blocking finding, and the run was sent back with a correction message.
@@ -123,13 +130,13 @@ export type Unreviewed = typeof Unreviewed.Type;
  *   again (`retry`); `attempt` is the number of this request for the answer, from 1.
  * - `NotReviewed`: no review was made, or it was not complete; `reason` says why. The run ends with the answer.
  */
-export const Outcome = Schema.Union([
-	Schema.TaggedStruct("Passed", {}),
-	Schema.TaggedStruct("Corrected", {}),
-	Schema.TaggedStruct("Held", { task: Task.Id }),
-	Schema.TaggedStruct("Deferred", { task: Task.Id, attempt: Schema.Number }),
-	Schema.TaggedStruct("NotReviewed", { reason: Unreviewed }),
-]);
+export const Outcome = Schema.TaggedUnion({
+	Passed: {},
+	Corrected: {},
+	Held: { task: Task.Id },
+	Deferred: { task: Task.Id, attempt: Ordinal },
+	NotReviewed: { reason: Unreviewed },
+});
 
 /** What a review decided. */
 export type Outcome = typeof Outcome.Type;
@@ -153,15 +160,15 @@ export type Outcome = typeof Outcome.Type;
 export const Verdict = Schema.Struct({
 	answer: Entry.Id,
 	inputs: Schema.optionalKey(Schema.Array(Submission.Id)),
-	pass: Schema.Number,
-	corrections: Schema.Number,
+	pass: Ordinal,
+	corrections: Count,
 	author: Party,
 	reviewer: Party,
 	call: Schema.optionalKey(Call),
 	findings: Schema.Array(Found),
 	failures: Schema.Array(CheckFailure),
 	outcome: Outcome,
-	time: Schema.Number,
+	time: EpochMillis,
 });
 
 /** One review of one answer. */

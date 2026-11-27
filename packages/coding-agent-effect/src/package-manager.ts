@@ -32,7 +32,8 @@ export type MissingSourceAction = Awaited<ReturnType<NonNullable<Parameters<PiPa
 
 /** A package manager: every member of Pi's `PackageManager` as an Effect, under its name. */
 export interface PackageManagerHandle
-	extends Reads<PiPackageManager, (typeof READS)[number]>,
+	extends
+		Reads<PiPackageManager, (typeof READS)[number]>,
 		Writes<PiPackageManager, (typeof WRITES)[number]>,
 		Awaits<PiPackageManager, (typeof AWAITS)[number]> {
 	/** Pi's manager, for what takes one as it is. */
@@ -58,7 +59,7 @@ export interface Options extends Omit<ConstructorParameters<typeof DefaultPackag
 
 /** The package manager of the program. */
 export class PackageManager extends Context.Service<PackageManager, PackageManagerHandle>()(
-	"@effectified/pi-coding-agent/PackageManager",
+	"@effectified/pi-coding-agent/package-manager/PackageManager",
 ) {
 	/** `PackageManager.make(options)` as a Layer. */
 	static layer(options: Options): Layer.Layer<PackageManager> {
@@ -66,12 +67,12 @@ export class PackageManager extends Context.Service<PackageManager, PackageManag
 	}
 
 	/** Pi's `DefaultPackageManager` for the packages of `agentDir` and of `cwd`'s project. */
-	static make(options: Options): Effect.Effect<PackageManagerHandle> {
+	static readonly make = Effect.fn("PackageManager.make")((options: Options): Effect.Effect<PackageManagerHandle> => {
 		const { settingsManager, ...rest } = options;
 		return Effect.sync(() =>
 			PackageManager.fromPi(new DefaultPackageManager({ ...rest, settingsManager: settingsManager.pi })),
 		);
-	}
+	});
 
 	/** Pi's manager as a handle. It stays the caller's. */
 	static fromPi(pi: PiPackageManager): PackageManagerHandle {

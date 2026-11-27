@@ -1,8 +1,9 @@
 // The agent change of a swarm's forks as it crosses to a thread actor: what `ForkAgent.toWire` makes of a change.
 
-import { Extension, Registry, Tool } from "@effectified/pi-durable";
+import { Extension, Registry, Tool, ToolName } from "@effectified/pi-durable";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
+import * as Swarm from "@effectified/pi-swarm";
 import { ForkAgent } from "../src/rivet.ts";
 
 const Lookup = Tool.make("lookup", {
@@ -14,7 +15,8 @@ const Lookup = Tool.make("lookup", {
 
 const Office = Extension.make({ name: "office", tools: [Lookup] });
 
-const crossed = (agent: ForkAgent.ForkAgent) => Effect.runPromise(ForkAgent.toWire("t1/covers-1", agent));
+const crossed = (agent: ForkAgent.ForkAgent) =>
+	Effect.runPromise(ForkAgent.toWire(Swarm.SwarmId.make("t1/covers-1"), agent));
 
 describe("an agent change as it crosses", () => {
 	it("is the model, the level, the instructions and the turns as they are, and tools and extensions by name", async () => {
@@ -24,8 +26,8 @@ describe("an agent change as it crosses", () => {
 			instructions: "Answer briefly.",
 			maxTurns: 3,
 			extensions: [Office, "search"],
-			tools: [Lookup, "write_note"],
-			modelTools: { add: [Lookup], remove: ["write_note"] },
+			tools: [Lookup, ToolName.make("write_note")],
+			modelTools: { add: [Lookup], remove: [ToolName.make("write_note")] },
 		});
 		expect(wire).toEqual({
 			model: { provider: "router", modelId: "cheap" },
@@ -68,7 +70,9 @@ describe("an agent change as it crosses", () => {
 	});
 
 	it("does not cross when it is no data of that shape, and leaves out what the type does not have", async () => {
-		const refused = await Effect.runPromise(Effect.flip(ForkAgent.toWire("t1/covers-1", { maxTurns: 0 })));
+		const refused = await Effect.runPromise(
+			Effect.flip(ForkAgent.toWire(Swarm.SwarmId.make("t1/covers-1"), { maxTurns: 0 })),
+		);
 		expect(refused).toMatchObject({ _tag: "InvalidPlan", swarmId: "t1/covers-1" });
 		expect(refused.message).toContain("The agent change of the forks cannot cross");
 		// Only a cast lets a field through that `Agent.Change` does not have: it stays with the caller.
@@ -79,7 +83,7 @@ describe("an agent change as it crosses", () => {
 	it("does not cross with a token count of its compaction that Pi's configure would refuse", async () => {
 		// Pi throws a `RangeError` in the fork's creating commit for each of these: the fork would never exist.
 		const refusedFor = (compaction: NonNullable<ForkAgent.ForkAgent["compaction"]>) =>
-			Effect.runPromise(Effect.flip(ForkAgent.toWire("t1/covers-1", { compaction })));
+			Effect.runPromise(Effect.flip(ForkAgent.toWire(Swarm.SwarmId.make("t1/covers-1"), { compaction })));
 		for (const compaction of [
 			{ reserveTokens: -1 },
 			{ keepRecentTokens: 1.5 },
@@ -93,7 +97,7 @@ describe("an agent change as it crosses", () => {
 describe("an agent change held against the registry of the actor", () => {
 	const held = (agent: ForkAgent.Wire) =>
 		Effect.runPromise(
-			Effect.result(ForkAgent.requireInstalled("t1/covers-1", agent)).pipe(
+			Effect.result(ForkAgent.requireInstalled(Swarm.SwarmId.make("t1/covers-1"), agent)).pipe(
 				Effect.provide(Registry.layer([Office])),
 				Effect.map((result) => (result._tag === "Success" ? "installed" : result.failure.reason)),
 			),
@@ -103,18 +107,29 @@ describe("an agent change held against the registry of the actor", () => {
 		expect(await held({})).toBe("installed");
 		expect(await held({ model: null, tools: null, extensions: null, modelTools: null })).toBe("installed");
 		expect(
-			await held({ extensions: ["office"], tools: ["lookup"], modelTools: { add: ["lookup"], remove: ["lookup"] } }),
+			await held({
+				extensions: ["office"],
+				tools: [ToolName.make("lookup")],
+				modelTools: { add: [ToolName.make("lookup")], remove: [ToolName.make("lookup")] },
+			}),
 		).toBe("installed");
 	});
 
 	it("names every tool and extension nothing is installed under, in a list and in an edit", async () => {
-		expect(await held({ tools: ["lookup", "lokup"] })).toBe("Nothing is installed under: tool lokup");
-		expect(await held({ tools: { remove: ["lokup"] } })).toBe("Nothing is installed under: tool lokup");
+		expect(await held({ tools: [ToolName.make("lookup"), ToolName.make("lokup")] })).toBe(
+			"Nothing is installed under: tool lokup",
+		);
+		expect(await held({ tools: { remove: [ToolName.make("lokup")] } })).toBe(
+			"Nothing is installed under: tool lokup",
+		);
 		expect(
-			await held({ modelTools: { add: ["a"], remove: ["b"] }, extensions: { add: ["c"], remove: ["office"] } }),
+			await held({
+				modelTools: { add: [ToolName.make("a")], remove: [ToolName.make("b")] },
+				extensions: { add: ["c"], remove: ["office"] },
+			}),
 		).toBe("Nothing is installed under: extension c, tool a, tool b");
 		// A tool's name is no extension's, and the reverse.
-		expect(await held({ tools: ["office"], extensions: ["lookup"] })).toBe(
+		expect(await held({ tools: [ToolName.make("office")], extensions: ["lookup"] })).toBe(
 			"Nothing is installed under: extension lookup, tool office",
 		);
 	});

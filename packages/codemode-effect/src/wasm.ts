@@ -9,9 +9,11 @@ import { messageOf, WasmLoadFailed } from "./errors.ts";
  * on the next call. `path` defaults to the file of the installed `quickjs-wasi`; pass it when the file lives
  * elsewhere, such as embedded in a Bun compiled executable.
  */
-export function load(path?: string): Effect.Effect<CodemodeWasmModule, WasmLoadFailed> {
-	return Effect.tryPromise({
+export const load = Effect.fn("Wasm.load")(function* (
+	path?: string,
+): Effect.fn.Return<CodemodeWasmModule, WasmLoadFailed> {
+	return yield* Effect.tryPromise({
 		try: () => loadQuickJSWasm(path),
-		catch: (cause) => new WasmLoadFailed({ message: messageOf(cause), cause }),
+		catch: (cause) => WasmLoadFailed.make({ message: messageOf(cause), cause }),
 	});
-}
+});

@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
+import { Digest } from "../src/index.ts";
 import { Decided } from "../src/signal.ts";
 
 describe("Decided", () => {
@@ -10,7 +11,13 @@ describe("Decided", () => {
 			1,
 			{ signal: "approvals.decision", key: "7:0:abc" },
 		]);
-		const denial = { _tag: "Denied", digest: "d", by: "bob", at: 2, note: "No." } as const;
+		const denial = {
+			_tag: "Denied",
+			digest: Digest.Digest.make("d".repeat(64)),
+			by: "bob",
+			at: 2,
+			note: "No.",
+		} as const;
 		const json = await Effect.runPromise(Decided.encode(denial));
 		expect(json).toEqual(denial);
 		expect(await Effect.runPromise(Decided.decode(json))).toEqual(denial);

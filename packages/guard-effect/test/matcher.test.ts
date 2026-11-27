@@ -1,3 +1,4 @@
+import { ToolName } from "@effectified/pi-durable";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Matcher } from "../src/index.ts";
@@ -56,12 +57,14 @@ describe("matches", () => {
 	});
 
 	it("an exact name and a prefix compare the characters as they are", () => {
-		expect(Matcher.matches(Matcher.exact("drop_table"), "drop_table")).toBe(true);
-		expect(Matcher.matches(Matcher.exact("drop_table"), "Drop_table")).toBe(false);
-		expect(Matcher.matches(Matcher.exact("drop_table"), "drop_table_now")).toBe(false);
+		expect(Matcher.matches(Matcher.exact(ToolName.make("drop_table")), "drop_table")).toBe(true);
+		expect(Matcher.matches(Matcher.exact(ToolName.make("drop_table")), "Drop_table")).toBe(false);
+		expect(Matcher.matches(Matcher.exact(ToolName.make("drop_table")), "drop_table_now")).toBe(false);
 		expect(Matcher.matches(Matcher.prefix("admin__"), "admin__reset")).toBe(true);
 		expect(Matcher.matches(Matcher.prefix("admin__"), "Admin__reset")).toBe(false);
 		expect(Matcher.matches(Matcher.prefix("sign"), "signature_lookup")).toBe(true);
+		// Data-last, as a pipe reads it.
+		expect(Matcher.matches("admin__reset")(Matcher.prefix("admin__"))).toBe(true);
 	});
 });
 
@@ -69,7 +72,12 @@ describe("Matcher", () => {
 	it("is data: the constructors give what the schema decodes from JSON", () => {
 		const decode = Schema.decodeUnknownSync(Schema.Array(Matcher.Matcher));
 		const json = JSON.parse(
-			JSON.stringify([Matcher.exact("a"), Matcher.prefix("b"), Matcher.firstWord(["c"]), Matcher.anyWord(["d"])]),
+			JSON.stringify([
+				Matcher.exact(ToolName.make("a")),
+				Matcher.prefix("b"),
+				Matcher.firstWord(["c"]),
+				Matcher.anyWord(["d"]),
+			]),
 		);
 		expect(decode(json)).toEqual([
 			{ _tag: "Exact", name: "a" },
@@ -81,7 +89,7 @@ describe("Matcher", () => {
 	});
 
 	it("describes itself for an error message", () => {
-		expect(Matcher.describe(Matcher.exact("a"))).toBe("the name a");
+		expect(Matcher.describe(Matcher.exact(ToolName.make("a")))).toBe("the name a");
 		expect(Matcher.describe(Matcher.prefix("b"))).toBe("the prefix b");
 		expect(Matcher.describe(Matcher.firstWord(["c", "d"]))).toBe("the first word c, d");
 		expect(Matcher.describe(Matcher.anyWord(["e"]))).toBe("a word e");

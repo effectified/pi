@@ -7,7 +7,7 @@ import {
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
-import { complete, EffectProvider, getModel, Models } from "@effectified/pi-ai";
+import { complete, EffectProvider, fromPiModelRef, getModel, ModelId, Models, ProviderId } from "@effectified/pi-ai";
 import { runTest, ScriptedLanguageModel } from "@effectified/pi-ai/testing";
 import { Effect, Exit, Fiber, Layer, Option, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
@@ -28,7 +28,21 @@ import {
 	type RouteTable,
 	validateRouteTable,
 } from "../src/index.ts";
-import { context, failing, hanging, label, modelsLayer, PRICE, route, scripted, summary, table } from "./scripted.ts";
+import {
+	AUTHOR,
+	context,
+	FAST,
+	failing,
+	hanging,
+	label,
+	modelsLayer,
+	PRICE,
+	Refused,
+	route,
+	scripted,
+	summary,
+	table,
+} from "./scripted.ts";
 
 /** A router over `routes`, and the `Models` of `handles` it routes to. */
 function routed(routes: RouteTable, handles: FauxProviderHandle[], options?: RouterOptions) {
@@ -86,9 +100,9 @@ describe("Router.layer", () => {
 		const seen = await Effect.runPromise(
 			Effect.gen(function* () {
 				const router = yield* Router;
-				const model = yield* getModel({ provider: "routes", modelId: "fast" });
+				const model = yield* getModel(fromPiModelRef({ provider: "routes", modelId: "fast" }));
 				return { ids: [router.id, router.provider.id, router.provider.name, model.provider], table: router.table };
-			}).pipe(Effect.provide(routed(routes, [a], { id: "routes", name: "Routes" }))),
+			}).pipe(Effect.provide(routed(routes, [a], { id: ProviderId.make("routes"), name: "Routes" }))),
 		);
 		expect(seen.ids).toEqual(["routes", "routes", "Routes", "routes"]);
 		expect(seen.table).toEqual(routes);
@@ -104,7 +118,7 @@ describe("a pi-ai request to an alias", () => {
 				Effect.gen(function* () {
 					const recorded = yield* (yield* RouteEvents).subscribe;
 					const models = yield* Models;
-					const model = yield* getModel({ provider: "router", modelId: "fast" });
+					const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "fast" }));
 					// pi-ai's own call, as a Pi harness makes it.
 					const response = models.stream(model, context);
 					const events = yield* Effect.promise(async () => {
@@ -150,7 +164,7 @@ describe("a pi-ai request to an alias", () => {
 		const served = await Effect.runPromise(
 			Effect.gen(function* () {
 				const models = yield* Models;
-				const model = yield* getModel({ provider: "router", modelId: "author" });
+				const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "author" }));
 				const ask = (metadata?: SimpleStreamOptions["metadata"]) =>
 					Effect.promise(() => models.completeSimple(model, context, { metadata })).pipe(
 						Effect.map((message) => message.provider),
@@ -179,7 +193,7 @@ describe("a pi-ai request to an alias", () => {
 		const provider = await Effect.runPromise(
 			Effect.gen(function* () {
 				const models = yield* Models;
-				const model = yield* getModel({ provider: "router", modelId: "author" });
+				const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "author" }));
 				// pi-ai lets a custom API take any option. This one is not how a request says its classification.
 				const options = { constraints: { classification: "public" } };
 				return (yield* Effect.promise(() => models.complete(model, context, options))).provider;
@@ -202,7 +216,7 @@ describe("a pi-ai request to an alias", () => {
 		await Effect.runPromise(
 			Effect.gen(function* () {
 				const models = yield* Models;
-				const model = yield* getModel({ provider: "router", modelId: "fast" });
+				const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "fast" }));
 				yield* Effect.promise(() =>
 					models.completeSimple(model, context, {
 						apiKey: "a key for some other provider",
@@ -236,7 +250,7 @@ describe("a pi-ai request to an alias", () => {
 		const { open, cloud, local, layer } = tiers();
 		const error = await Effect.runPromise(
 			Effect.gen(function* () {
-				const model = yield* getModel({ provider: "router", modelId: "fast" });
+				const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "fast" }));
 				return yield* Effect.flip(
 					complete(model, context, { metadata: constraintsToMetadata({ classification: "secret" }) }),
 				);
@@ -256,7 +270,7 @@ describe("a pi-ai request to an alias", () => {
 		const { open, layer } = tiers();
 		const error = await Effect.runPromise(
 			Effect.gen(function* () {
-				const model = yield* getModel({ provider: "router", modelId: "fast" });
+				const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "fast" }));
 				return yield* Effect.flip(
 					complete(model, context, { metadata: { "pi-router": { classification: "topsecret" } } }),
 				);
@@ -276,7 +290,7 @@ describe("a pi-ai request to an alias", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const recorded = yield* (yield* RouteEvents).subscribe;
-					const model = yield* getModel({ provider: "router", modelId: "fast" });
+					const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "fast" }));
 					const fiber = yield* Effect.forkChild(complete(model, context));
 					const signal = yield* Effect.promise(() => pending.signal);
 					const abortedBefore = signal?.aborted;
@@ -317,7 +331,7 @@ describe("the product's constraint source", () => {
 		const served = await Effect.runPromise(
 			Effect.gen(function* () {
 				const models = yield* Models;
-				const model = yield* getModel({ provider: "router", modelId: "author" });
+				const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "author" }));
 				// One harness: every conversation's request carries the same metadata, and its own session.
 				const metadata = { user_id: "u1", ...constraintsToMetadata({ classification: "public" }) };
 				const ask = (sessionId: string) =>
@@ -344,7 +358,7 @@ describe("the product's constraint source", () => {
 		const provider = await Effect.runPromise(
 			Effect.gen(function* () {
 				const router = yield* Router;
-				return (yield* router.complete("author", context, { constraints: { classification: "secret" } })).provider;
+				return (yield* router.complete(AUTHOR, context, { constraints: { classification: "secret" } })).provider;
 			}).pipe(Effect.provide(layer)),
 		);
 		expect(provider).toBe("local");
@@ -352,14 +366,14 @@ describe("the product's constraint source", () => {
 	});
 
 	it("refuses a request it cannot answer for, with a typed error Pi does not retry, and sends nothing", async () => {
-		const failure = new ConstraintsUnavailable({ alias: "fast", reason: "no grant: 503 overloaded" });
+		const failure = new ConstraintsUnavailable({ alias: FAST, reason: "no grant: 503 overloaded" });
 		const { open, cloud, layer } = sourced(() => Effect.fail(failure));
 		const result = await runTest(
 			Effect.gen(function* () {
 				const recorded = yield* (yield* RouteEvents).subscribe;
 				const router = yield* Router;
-				const model = yield* getModel({ provider: "router", modelId: "fast" });
-				const typed = yield* Effect.flip(router.complete("fast", context));
+				const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "fast" }));
+				const typed = yield* Effect.flip(router.complete(FAST, context));
 				const throughPi = yield* Effect.flip(complete(model, context, { sessionId: "session-7" }));
 				const first = yield* Effect.forkChild(Effect.timeoutOption(Stream.runHead(recorded), "1 hour"), {
 					startImmediately: true,
@@ -383,7 +397,7 @@ describe("the product's constraint source", () => {
 	it("refuses a request when the source dies, the same way", async () => {
 		const { open, layer } = sourced(() => Effect.die(new Error("connection timed out")));
 		const error = await Effect.runPromise(
-			Effect.flip(Router.use((router) => router.complete("fast", context))).pipe(Effect.provide(layer)),
+			Effect.flip(Router.use((router) => router.complete(FAST, context))).pipe(Effect.provide(layer)),
 		);
 		expect(error).toMatchObject({
 			_tag: "ConstraintsUnavailable",
@@ -396,7 +410,7 @@ describe("the product's constraint source", () => {
 	it("fails the request for a classification the table does not list", async () => {
 		const { open, layer } = sourced(() => Effect.succeed({ classification: "topsecret" }));
 		const error = await Effect.runPromise(
-			Effect.flip(Router.use((router) => router.complete("fast", context))).pipe(Effect.provide(layer)),
+			Effect.flip(Router.use((router) => router.complete(FAST, context))).pipe(Effect.provide(layer)),
 		);
 		expect(error).toMatchObject({
 			_tag: "InvalidConstraints",
@@ -407,9 +421,7 @@ describe("the product's constraint source", () => {
 
 	it("is not asked by Router.resolve, which has no request", async () => {
 		const { layer } = sourced(() => Effect.die(new Error("never asked")));
-		const routes = await Effect.runPromise(
-			Router.use((router) => router.resolve("fast")).pipe(Effect.provide(layer)),
-		);
+		const routes = await Effect.runPromise(Router.use((router) => router.resolve(FAST)).pipe(Effect.provide(layer)));
 		expect(routes.map((entry) => entry.provider)).toEqual(["open", "cloud"]);
 	});
 });
@@ -429,11 +441,11 @@ describe("a request that requires labels", () => {
 		const result = await Effect.runPromise(
 			Effect.gen(function* () {
 				const router = yield* Router;
-				const model = yield* getModel({ provider: "router", modelId: "fast" });
+				const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "fast" }));
 				const requires = ["zero-data-retention"];
 				const viaPi = yield* complete(model, context, { metadata: constraintsToMetadata({ requires }) });
-				const direct = yield* router.complete("fast", context, { constraints: { requires } });
-				const none = yield* Effect.flip(router.complete("fast", context, { constraints: { requires: ["batch"] } }));
+				const direct = yield* router.complete(FAST, context, { constraints: { requires } });
+				const none = yield* Effect.flip(router.complete(FAST, context, { constraints: { requires: ["batch"] } }));
 				return { served: [viaPi.provider, direct.provider], none };
 			}).pipe(Effect.provide(routed(routes, [plain, kept]))),
 		);
@@ -457,8 +469,8 @@ describe("Router.resolve", () => {
 			Effect.gen(function* () {
 				const router = yield* Router;
 				return {
-					routes: (yield* router.resolve("author", { classification: "internal" })).map((entry) => entry.provider),
-					none: yield* Effect.flip(router.resolve("author", { classification: "secret", regions: ["us"] })),
+					routes: (yield* router.resolve(AUTHOR, { classification: "internal" })).map((entry) => entry.provider),
+					none: yield* Effect.flip(router.resolve(AUTHOR, { classification: "secret", regions: ["us"] })),
 				};
 			}).pipe(Effect.provide(layer)),
 		);
@@ -475,10 +487,10 @@ describe("Router.stream and Router.complete", () => {
 			Effect.gen(function* () {
 				const router = yield* Router;
 				const constraints = { classification: "internal" };
-				const events = yield* Stream.runCollect(router.stream("author", context, { constraints }));
+				const events = yield* Stream.runCollect(router.stream(AUTHOR, context, { constraints }));
 				// The option wins over what the metadata says.
 				const metadata = constraintsToMetadata({ classification: "secret" });
-				const message = yield* router.complete("author", context, { constraints, metadata });
+				const message = yield* router.complete(AUTHOR, context, { constraints, metadata });
 				return { events: events.map(label), provider: message.provider };
 			}).pipe(Effect.provide(layer)),
 		);
@@ -500,12 +512,12 @@ describe("Router.stream and Router.complete", () => {
 			Effect.gen(function* () {
 				const router = yield* Router;
 				return {
-					alias: yield* Effect.flip(router.complete("nope", context)),
-					none: yield* Effect.flip(router.complete("fast", context, { constraints: { regions: ["jp"] } })),
+					alias: yield* Effect.flip(router.complete(ModelId.make("nope"), context)),
+					none: yield* Effect.flip(router.complete(FAST, context, { constraints: { regions: ["jp"] } })),
 					label: yield* Effect.flip(
-						Stream.runDrain(router.stream("fast", context, { constraints: { classification: "x" } })),
+						Stream.runDrain(router.stream(FAST, context, { constraints: { classification: "x" } })),
 					),
-					metadata: yield* Effect.flip(router.complete("fast", context, { metadata: { "pi-router": 7 } })),
+					metadata: yield* Effect.flip(router.complete(FAST, context, { metadata: { "pi-router": 7 } })),
 				};
 			}).pipe(Effect.provide(layer)),
 		);
@@ -532,7 +544,7 @@ describe("Router.stream and Router.complete", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const recorded = yield* (yield* RouteEvents).subscribe;
-					const error = yield* Effect.flip((yield* Router).complete("fast", context));
+					const error = yield* Effect.flip((yield* Router).complete(FAST, context));
 					return { error, recorded: yield* Stream.runCollect(Stream.take(recorded, 2)) };
 				}),
 			).pipe(Effect.provide(layer)),
@@ -558,8 +570,8 @@ describe("Router.stream and Router.complete", () => {
 				Effect.gen(function* () {
 					const events = yield* (yield* RouteEvents).subscribe;
 					const router = yield* Router;
-					yield* router.complete("fast", context);
-					yield* router.complete("fast", context);
+					yield* router.complete(FAST, context);
+					yield* router.complete(FAST, context);
 					return yield* Stream.runCollect(Stream.take(events, 3));
 				}),
 			).pipe(Effect.provide(layer)),
@@ -581,8 +593,8 @@ describe("Router.stream and Router.complete", () => {
 					Effect.gen(function* () {
 						const events = yield* (yield* RouteEvents).subscribe;
 						const router = yield* Router;
-						const model = yield* getModel({ provider: "router", modelId: "fast" });
-						yield* router.complete("fast", context, { sessionId: "session-7" });
+						const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "fast" }));
+						yield* router.complete(FAST, context, { sessionId: "session-7" });
 						// Through pi-ai, as a harness asks, and without a session.
 						yield* complete(model, context);
 						const recorded = yield* Stream.runCollect(Stream.take(events, 3));
@@ -622,7 +634,7 @@ describe("Router.stream and Router.complete", () => {
 				Effect.scoped(
 					Effect.gen(function* () {
 						const events = yield* (yield* RouteEvents).subscribe;
-						const model = yield* getModel({ provider: "router", modelId: "fast" });
+						const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "fast" }));
 						for (const [asked, sessionId] of sends) {
 							yield* complete(model, asked, sessionId === undefined ? {} : { sessionId });
 						}
@@ -667,7 +679,7 @@ describe("Router.stream and Router.complete", () => {
 				Effect.gen(function* () {
 					const recorded = yield* (yield* RouteEvents).subscribe;
 					const router = yield* Router;
-					const events = yield* Stream.runCollect(Stream.take(router.stream("fast", context), 3));
+					const events = yield* Stream.runCollect(Stream.take(router.stream(FAST, context), 3));
 					const outcomes = yield* Stream.runCollect(Stream.take(recorded, 1));
 					return { events: events.map(label), outcomes: outcomes.map((event) => event.outcome) };
 				}),
@@ -700,8 +712,8 @@ describe("OpenRouter", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const effect = yield* EffectProvider.make({
-						id: "effect-openrouter",
-						models: [{ id: "m", contextWindow: 100_000, maxTokens: 4_000 }],
+						id: ProviderId.make("effect-openrouter"),
+						models: [{ id: ModelId.make("m"), contextWindow: 100_000, maxTokens: 4_000 }],
 						layer: ScriptedLanguageModel.layer([
 							Effect.succeed([
 								{ type: "text", text: "from effect/ai" },
@@ -726,7 +738,7 @@ describe("OpenRouter", () => {
 					const layer = Router.layer(routes).pipe(Layer.provideMerge(Models.layer([openrouter.provider, effect])));
 					return yield* Effect.gen(function* () {
 						const recorded = yield* (yield* RouteEvents).subscribe;
-						const model = yield* getModel({ provider: "router", modelId: "fast" });
+						const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "fast" }));
 						// The first request falls back to the effect/ai model; the second is served by OpenRouter.
 						const first = yield* complete(model, context);
 						const second = yield* complete(model, context);
@@ -801,11 +813,11 @@ describe("the product's settlement of an attempt another route takes over", () =
 		const served = await Effect.runPromise(
 			Effect.gen(function* () {
 				const router = yield* Router;
-				const model = yield* getModel({ provider: "router", modelId: "fast" });
+				const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "fast" }));
 				// Through pi-ai, as a harness asks, and directly: the caller's own settlement is never asked.
 				const viaPi = yield* complete(model, context, { sessionId: "session-7" });
 				const direct = yield* router
-					.complete("fast", context)
+					.complete(FAST, context)
 					.pipe(Effect.provideService(AttemptSettlement, { settle: () => Effect.die(new Error("never asked")) }));
 				return [viaPi.provider, direct.provider];
 			}).pipe(Effect.provide(layer)),
@@ -820,14 +832,16 @@ describe("the product's settlement of an attempt another route takes over", () =
 	});
 
 	it("ends a pi-ai request in an error Pi does not retry, with the usage of the attempt it could not settle", async () => {
-		const { open, cloud, layer } = settled(() => Effect.fail(new Error("the lease is fenced: 503 overloaded")));
+		const { open, cloud, layer } = settled(() =>
+			Effect.fail(new Refused({ message: "the lease is fenced: 503 overloaded" })),
+		);
 		open.setResponses([failing("overloaded")]);
 		cloud.setResponses([fauxAssistantMessage("never")]);
 		const result = await Effect.runPromise(
 			Effect.scoped(
 				Effect.gen(function* () {
 					const recorded = yield* (yield* RouteEvents).subscribe;
-					const model = yield* getModel({ provider: "router", modelId: "fast" });
+					const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "fast" }));
 					const error = yield* Effect.flip(complete(model, context));
 					return { error, recorded: yield* Stream.runCollect(Stream.take(recorded, 1)) };
 				}),
@@ -850,10 +864,10 @@ describe("the product's settlement of an attempt another route takes over", () =
 	});
 
 	it("ends Router.complete with the typed error that names the attempt", async () => {
-		const { open, cloud, layer } = settled(() => Effect.fail(new Error("the lease is fenced")));
+		const { open, cloud, layer } = settled(() => Effect.fail(new Refused({ message: "the lease is fenced" })));
 		open.setResponses([failing("overloaded")]);
 		const error = await Effect.runPromise(
-			Effect.flip(Router.use((router) => router.complete("fast", context))).pipe(Effect.provide(layer)),
+			Effect.flip(Router.use((router) => router.complete(FAST, context))).pipe(Effect.provide(layer)),
 		);
 		expect(error).toMatchObject({
 			_tag: "AttemptUnsettled",

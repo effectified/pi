@@ -10,7 +10,8 @@ import {
 import type { Context } from "@effectified/pi-chord/context";
 import type { JsonValue } from "@effectified/pi-chord/json";
 import { decodeUnknown, encode, SchemaConversionError, SchemaDecodeError, toJsonSchema } from "@effectified/pi-schema";
-import { Effect, Option, Predicate, type Schema } from "effect";
+import { Effect, Option, Predicate, Record, Schema } from "effect";
+import { dual } from "effect/Function";
 import { call } from "./call.ts";
 import type { DurableError } from "./errors.ts";
 
@@ -82,20 +83,21 @@ export function toPiKey({ signal, key }: Key): Effect.Effect<SignalKey<unknown>,
  * The committed state of `key` in the task `reader` belongs to, its value decoded: none while nothing came. It never
  * waits. `parent` is the context of the Pi invocation the read is made from.
  */
-export function read<S extends Schema.Constraint>(
+export const read: <S extends Schema.Constraint>(
 	reader: Reader,
 	signal: Signal<S>,
 	key: string,
 	parent?: Context,
-): Effect.Effect<Option.Option<State<S["Type"]>>, DurableError | Failure, S["DecodingServices"]> {
-	return Effect.gen(function* () {
-		const token = yield* signal.token;
-		const state = yield* call((context) => reader.readSignal(token, key, context), parent);
-		if (state === undefined) return Option.none();
-		if (state.kind === "expired") return Option.some(state);
-		return Option.some({ kind: "value", value: yield* signal.decode(state.value) });
-	});
-}
+) => Effect.Effect<Option.Option<State<S["Type"]>>, DurableError | Failure, S["DecodingServices"]> = Effect.fn(
+	"Signal.read",
+)(function* <S extends Schema.Constraint>(reader: Reader, signal: Signal<S>, key: string, parent?: Context) {
+	const token = yield* signal.token;
+	const state = yield* call((context) => reader.readSignal(token, key, context), parent);
+	if (state === undefined) return Option.none();
+	if (state.kind === "expired") return Option.some<State<S["Type"]>>(state);
+	const value: S["Type"] = yield* signal.decode(state.value);
+	return Option.some<State<S["Type"]>>({ kind: "value", value });
+});
 
 /** What `stateIn` reads of a task's stored record: its memos, which a task that ended no longer has. */
 export interface Stored {
@@ -108,32 +110,52 @@ export interface Stored {
  * no call for this outside the task's own `readSignal`: it reads the memo Pi keeps a key's state in,
  * `pi.signal.<signal name>/<key>` (Pi's specification, 5.7). That name and the memo's shape are a convention of
  * Pi's stored data, not an API. A value stored under another version of the signal fails with `SchemaDecodeError`,
- * its only failure: it decodes with the schema and never builds Pi's token.
+ * its only failure: it decodes with the schema and never builds Pi's token. Data-first, or data-last on the record.
  */
-export function stateIn<S extends Schema.Constraint>(
-	record: Stored,
-	signal: Signal<S>,
-	key: string,
-): Effect.Effect<Option.Option<State<S["Type"]>>, SchemaDecodeError, S["DecodingServices"]> {
-	const name = `pi.signal.${signal.name}/${key}`;
-	// Own memos only: a name such as `toString` must not find an inherited property.
-	if (record.memos === undefined || !Object.hasOwn(record.memos, name)) return Effect.succeedNone;
-	// Stored data is a trust boundary: the memo is read as what Pi 1.6.0 writes, and anything else is refused.
-	const stored: unknown = record.memos[name];
-	if (Predicate.hasProperty(stored, "expired") && stored.expired === true) {
-		return Effect.succeedSome({ kind: "expired" });
-	}
-	if (!Predicate.hasProperty(stored, "version") || !Predicate.hasProperty(stored, "value")) {
-		return Effect.fail(unreadable(name, "it is not a signal memo of Pi Durable 1.6.0"));
-	}
-	if (stored.version !== signal.version) {
-		return Effect.fail(unreadable(name, `it holds version ${String(stored.version)}, not ${signal.version}`));
-	}
-	return Effect.map(signal.decode(stored.value), (value) => Option.some({ kind: "value", value }));
-}
+export const stateIn: {
+	<S extends Schema.Constraint>(
+		signal: Signal<S>,
+		key: string,
+	): (record: Stored) => Effect.Effect<Option.Option<State<S["Type"]>>, SchemaDecodeError, S["DecodingServices"]>;
+	<S extends Schema.Constraint>(
+		record: Stored,
+		signal: Signal<S>,
+		key: string,
+	): Effect.Effect<Option.Option<State<S["Type"]>>, SchemaDecodeError, S["DecodingServices"]>;
+} = dual(
+	3,
+	<S extends Schema.Constraint>(
+		record: Stored,
+		signal: Signal<S>,
+		key: string,
+	): Effect.Effect<Option.Option<State<S["Type"]>>, SchemaDecodeError, S["DecodingServices"]> => {
+		const name = `pi.signal.${signal.name}/${key}`;
+		// Own memos only: a name such as `toString` must not find an inherited property.
+		if (record.memos === undefined || !Record.has(record.memos, name)) return Effect.succeedNone;
+		// Stored data is a trust boundary: the memo is decoded as what Pi 1.6.0 writes, and anything else is refused.
+		const stored: unknown = record.memos[name];
+		if (Schema.is(ExpiredMemo)(stored)) return Effect.succeedSome<State<S["Type"]>>({ kind: "expired" });
+		return Schema.decodeUnknownEffect(DeliveredMemo)(stored).pipe(
+			Effect.mapError(() => unreadable(name, "it is not a signal memo of Pi Durable 1.6.0")),
+			Effect.flatMap((memo) =>
+				memo.version === signal.version
+					? Effect.map(signal.decode(memo.value), (value) =>
+							Option.some<State<S["Type"]>>({ kind: "value", value }),
+						)
+					: Effect.fail(unreadable(name, `it holds version ${String(memo.version)}, not ${signal.version}`)),
+			),
+		);
+	},
+);
+
+/** The memo of a key whose sleep's deadline came first, as Pi 1.6.0 writes it (its specification, 5.7). */
+const ExpiredMemo = Schema.Struct({ expired: Schema.Literal(true) });
+
+/** The memo of a key a value was delivered under, with the signal's version, as Pi 1.6.0 writes it. */
+const DeliveredMemo = Schema.Struct({ version: Schema.Unknown, value: Schema.Unknown });
 
 function unreadable(memo: string, why: string): SchemaDecodeError {
-	return new SchemaDecodeError({ issues: [{ path: "", message: `Memo ${memo} cannot be read: ${why}` }] });
+	return SchemaDecodeError.make({ issues: [{ path: "", message: `Memo ${memo} cannot be read: ${why}` }] });
 }
 
 /** What a signal needs of Pi and of its schema to write, built together so one failure covers the definition. */
@@ -147,7 +169,7 @@ function compile<S extends Schema.Constraint>(
 	version: number,
 	schema: S,
 ): Effect.Effect<Compiled<S>, SchemaConversionError> {
-	const failed = (reason: string) => new SchemaConversionError({ reason: `Signal ${name}: ${reason}` });
+	const failed = (reason: string) => SchemaConversionError.make({ reason: `Signal ${name}: ${reason}` });
 	return Effect.try({
 		try: () => toJsonSchema(schema),
 		catch: (cause) => failed(Predicate.isError(cause) ? cause.message : String(cause)),
@@ -162,7 +184,7 @@ function compile<S extends Schema.Constraint>(
 				}),
 				// Pi's messages name the signal themselves.
 				catch: (cause) =>
-					new SchemaConversionError({ reason: Predicate.isError(cause) ? cause.message : String(cause) }),
+					SchemaConversionError.make({ reason: Predicate.isError(cause) ? cause.message : String(cause) }),
 			}),
 		),
 	);

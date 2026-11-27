@@ -1,7 +1,7 @@
 import type { AssistantMessage, Context as PiContext, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { Effect, Exit, Fiber, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { complete, completeSimple, type ResponseEvent, stream, streamSimple } from "../src/index.ts";
+import { complete, completeSimple, finalMessage, type ResponseEvent, stream, streamSimple } from "../src/index.ts";
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall, ScriptedModels } from "../src/testing/index.ts";
 
 // Equal bounds make every delta four characters, so the events are exact.
@@ -225,5 +225,29 @@ describe("streamSimple and completeSimple", () => {
 			["low", undefined, 64],
 		]);
 		expect(result.seen.every((options) => options?.signal instanceof AbortSignal)).toBe(true);
+	});
+});
+
+describe("finalMessage", () => {
+	it("gives the message of done to a consumer that also reads the events", async () => {
+		const result = await Effect.runPromise(
+			Effect.gen(function* () {
+				const models = yield* ScriptedModels;
+				yield* models.setResponses([fauxAssistantMessage("Hello world")]);
+				const deltas: string[] = [];
+				const message = yield* stream(models.model, context).pipe(
+					Stream.tap((event) => Effect.sync(() => event.type === "text_delta" && deltas.push(event.delta))),
+					Stream.run(finalMessage),
+				);
+				return { deltas, message };
+			}).pipe(Effect.provide(scripted())),
+		);
+		expect(result.deltas.join("")).toBe("Hello world");
+		expect(result.message.content).toEqual([{ type: "text", text: "Hello world" }]);
+	});
+
+	it("dies on events that do not end in done: a broken provider", async () => {
+		const exit = await Effect.runPromiseExit(Stream.run(Stream.empty, finalMessage));
+		expect(Exit.hasDies(exit)).toBe(true);
 	});
 });

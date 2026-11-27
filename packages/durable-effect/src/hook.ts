@@ -24,7 +24,7 @@ import * as Entries from "./entries.ts";
 import * as Entry from "./entry.ts";
 import type { DurableError } from "./errors.ts";
 import * as Gate from "./gate.ts";
-import { type Invoke, invoker } from "./invocation.ts";
+import { built, type Invoke, invoker } from "./invocation.ts";
 import * as Memo from "./memo.ts";
 import * as Signal from "./signal.ts";
 
@@ -104,10 +104,7 @@ export function beforeRequest<E, R>(
 	return registered((invoke) =>
 		hook(GenerationTask, {
 			beforeRequest: (request, api, context) =>
-				invoke(
-					answered(() => handler(request, fromPi(api, context))),
-					context,
-				),
+				ask(invoke, "beforeRequest", api, context, (hookApi) => answered(handler(request, hookApi))),
 		}),
 	);
 }
@@ -125,10 +122,7 @@ export function beforeProviderRequest<E, R>(
 	return registered((invoke) =>
 		hook(GenerationTask, {
 			beforeProviderRequest: (request, api, context) =>
-				invoke(
-					answered(() => handler(request, fromPi(api, context))),
-					context,
-				),
+				ask(invoke, "beforeProviderRequest", api, context, (hookApi) => answered(handler(request, hookApi))),
 		}),
 	);
 }
@@ -140,10 +134,7 @@ export function afterResponse<E, R>(
 	return registered((invoke) =>
 		hook(GenerationTask, {
 			afterResponse: (message, api, context) =>
-				invoke(
-					Effect.suspend(() => handler(message, fromPi(api, context))),
-					context,
-				),
+				ask(invoke, "afterResponse", api, context, (hookApi) => handler(message, hookApi)),
 		}),
 	);
 }
@@ -161,10 +152,7 @@ export function onYield<E, R>(
 	return registered((invoke) =>
 		hook(GenerationTask, {
 			onYield: (answer, api, context) =>
-				invoke(
-					answered(() => handler(answer, fromPi(api, context))),
-					context,
-				),
+				ask(invoke, "onYield", api, context, (hookApi) => answered(handler(answer, hookApi))),
 		}),
 	);
 }
@@ -184,10 +172,7 @@ export function afterTools<E, R>(
 	return registered((invoke) =>
 		hook(GenerationTask, {
 			afterTools: (assistant, results, api, context) =>
-				invoke(
-					answered(() => handler(assistant, results, fromPi(api, context))),
-					context,
-				),
+				ask(invoke, "afterTools", api, context, (hookApi) => answered(handler(assistant, results, hookApi))),
 		}),
 	);
 }
@@ -205,10 +190,7 @@ export function afterRun<E, R>(
 	return registered((invoke) =>
 		hook(GenerationTask, {
 			afterRun: (run, api, context) =>
-				invoke(
-					answered(() => handler(run, fromPi(api, context))),
-					context,
-				),
+				ask(invoke, "afterRun", api, context, (hookApi) => answered(handler(run, hookApi))),
 		}),
 	);
 }
@@ -226,10 +208,7 @@ export function beforeCompact<E, R>(
 	return registered((invoke) =>
 		hook(CompactionTask, {
 			beforeCompact: (compaction, api, context) =>
-				invoke(
-					answered(() => handler(compaction, fromPi(api, context))),
-					context,
-				),
+				ask(invoke, "beforeCompact", api, context, (hookApi) => answered(handler(compaction, hookApi))),
 		}),
 	);
 }
@@ -244,12 +223,16 @@ export function beforeTool<E, R>(
 	return registered((invoke) =>
 		hook(ToolTask, {
 			beforeTool: (toolCall, api, context) =>
-				invoke(
-					Effect.flatMap(
-						Effect.suspend(() => handler(toolCall, fromPi(api, context))),
-						Gate.toPi,
-					),
+				ask(
+					invoke,
+					"beforeTool",
+					api,
 					context,
+					(hookApi) => Effect.flatMap(handler(toolCall, hookApi), Gate.toPi),
+					{
+						tool: toolCall.name,
+						callId: toolCall.id,
+					},
 				),
 		}),
 	);
@@ -269,31 +252,56 @@ export function afterTool<E, R>(
 	return registered((invoke) =>
 		hook(ToolTask, {
 			afterTool: (toolCall, result, api, context) =>
-				invoke(
-					answered(() => handler(toolCall, result, fromPi(api, context))),
-					context,
-				),
+				ask(invoke, "afterTool", api, context, (hookApi) => answered(handler(toolCall, result, hookApi)), {
+					tool: toolCall.name,
+					callId: toolCall.id,
+				}),
 		}),
 	);
 }
 
 /** A hook whose Pi registration `build` makes, with an `Invoke` on the context the registration is run in. */
 function registered<R>(build: (invoke: Invoke<R>) => HookRegistration): Hook<R> {
-	return { registration: Effect.map(Effect.context<R>(), (context) => build(invoker(context))) };
+	return { registration: Effect.map(Effect.context<R>(), (context) => build(invoker(built(context)))) };
 }
 
-/** A handler's answer as Pi reads it: the value, or `undefined` for none. A throw of `handler` is a defect. */
-function answered<A, E, R>(handler: () => Effect.Effect<Option.Option<A>, E, R>): Effect.Effect<A | undefined, E, R> {
-	return Effect.map(Effect.suspend(handler), Option.getOrUndefined);
+/**
+ * Runs a handler for one ask of Pi, with the api for that ask, in a span of its own that names the hook, the asking
+ * task and its conversation (and `attributes`). A hook is asked once per step of a conversation, never per token. A
+ * throw of `handler` is a defect.
+ */
+function ask<A, E, R>(
+	invoke: Invoke<R>,
+	name: string,
+	api: PiHookApi,
+	invocation: ChordContext,
+	handler: (api: Api) => Effect.Effect<A, E, R>,
+	attributes?: { readonly [attribute: string]: string },
+): Promise<A> {
+	const hookApi = fromPi(api, invocation);
+	return invoke(
+		Effect.withSpan(
+			Effect.suspend(() => handler(hookApi)),
+			`Hook.${name}`,
+			{
+				attributes: { hook: name, taskId: api.taskId, conversationId: api.conversationId, ...attributes },
+			},
+		),
+		invocation,
+	);
+}
+
+/** A handler's answer as Pi reads it: the value, or `undefined` for none. */
+function answered<A, E, R>(answer: Effect.Effect<Option.Option<A>, E, R>): Effect.Effect<A | undefined, E, R> {
+	return Effect.map(answer, Option.getOrUndefined);
 }
 
 /** The Effect form of the api Pi gives a hook; its Pi calls run under `invocation`, the hook's own context. */
 function fromPi(api: PiHookApi, invocation: ChordContext): Api {
-	const entry = (id: EntryId) =>
-		Effect.map(
-			call((context) => api.entry(id, context), invocation),
-			Option.fromNullishOr,
-		);
+	const entry = Effect.fn("HookApi.entry")(function* (id: EntryId) {
+		const found = yield* call((context) => api.entry(id, context), invocation);
+		return Option.fromNullishOr(found);
+	});
 	return {
 		...Doc.reader(api, invocation),
 		taskId: api.taskId,

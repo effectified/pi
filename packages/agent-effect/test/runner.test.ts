@@ -5,7 +5,9 @@ import { runner } from "../src/runner.ts";
 
 class Greeting extends Context.Service<Greeting, string>()("test/Greeting") {}
 
-class Refused extends Schema.TaggedError<Refused>()("Refused", { reason: Schema.String }) {}
+class Refused extends Schema.TaggedError<Refused, { readonly brand: unique symbol }>()("Refused", {
+	reason: Schema.String,
+}) {}
 
 describe("runner", () => {
 	const run = runner(Context.make(Greeting, "hello"));
@@ -15,7 +17,7 @@ describe("runner", () => {
 	});
 
 	it("rejects with the failure itself, which is how throwing code reaches Pi", async () => {
-		const rejection = await run(Effect.fail(new Refused({ reason: "no" })), undefined).catch((error) => error);
+		const rejection = await run(Effect.fail(Refused.make({ reason: "no" })), undefined).catch((error) => error);
 		expect(rejection).toBeInstanceOf(Refused);
 	});
 

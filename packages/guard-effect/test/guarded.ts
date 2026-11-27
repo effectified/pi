@@ -10,6 +10,7 @@ import {
 	type Registry,
 	Storage,
 	Tool,
+	ToolName,
 } from "@effectified/pi-durable";
 import { answer, type FauxResponseStep, ScriptedModels } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option, PubSub, Schema, type Scope, Stream } from "effect";
@@ -26,6 +27,11 @@ import {
 	type Rule,
 } from "../src/index.ts";
 
+/** Tool names as a grant and a policy name them: `names("read", "search")`. */
+export function names(...listed: ReadonlyArray<string>): ReadonlyArray<ToolName> {
+	return listed.map((name) => ToolName.make(name));
+}
+
 /** Options of `guardedHarness`. */
 export interface Options<
 	Extensions extends ReadonlyArray<Extension.Extension>,
@@ -33,7 +39,8 @@ export interface Options<
 	E,
 	R,
 > {
-	readonly policy: Policy.Policy;
+	/** As a product writes one in code: names as plain strings. */
+	readonly policy: Policy.Encoded;
 	readonly rules?: Rules;
 	readonly extensions: Extensions;
 	/** The model's first responses, in order. */

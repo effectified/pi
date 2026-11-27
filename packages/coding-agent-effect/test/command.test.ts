@@ -1,8 +1,13 @@
 import { runTest } from "@effectified/pi-ai/testing";
-import { Effect, Stream } from "effect";
+import { Effect, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { Command, CommandContext, Extension, ExtensionApi } from "../src/index.ts";
 import { openSession, services } from "./scripted.ts";
+
+/** A failure of a command's handler, as an extension would have one. */
+class CommandFailed extends Schema.TaggedError<CommandFailed, { readonly brand: unique symbol }>()("CommandFailed", {
+	message: Schema.String,
+}) {}
 
 describe("Command.make", () => {
 	it("registers `/name` with its description and completions, which run as Effects", async () => {
@@ -57,7 +62,9 @@ describe("Command.make", () => {
 	it("reports a failing handler as an extension error with its message", async () => {
 		const errors = await runTest(
 			Effect.gen(function* () {
-				const broken = Command.make("broken", { handler: () => Effect.fail(new Error("the command failed")) });
+				const broken = Command.make("broken", {
+					handler: () => Effect.fail(CommandFailed.make({ message: "the command failed" })),
+				});
 				const { session } = yield* openSession({ extensions: [Extension.make("broken", { commands: [broken] })] });
 				const reported = yield* session.extensionErrors;
 				yield* session.prompt("/broken");

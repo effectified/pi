@@ -1,10 +1,12 @@
 // A copied storage holds no swarm of its own: what a host runs on a copy of a whole harness storage before its first call.
 
-import type { TaskId } from "@effectified/pi-durable";
-import { type Doc, Harness } from "@effectified/pi-durable";
-import { Effect, Stream } from "effect";
+import { type Doc, Harness, Task, type TaskId } from "@effectified/pi-durable";
+import { Array as Arr, Effect, Option, pipe, Stream, String as Str } from "effect";
 import { TASK_PREFIX } from "./coordinator.ts";
 import { Copy } from "./ledger.ts";
+
+// The id of no task: a storage that holds none was copied with no coordinator.
+const NO_TASK = Task.Id.make(0);
 
 /**
  * Makes every coordinator the copy inherited do nothing, and aborts those still live. Run it on a storage copied
@@ -23,14 +25,18 @@ export const onStorageFork: Effect.Effect<void, Doc.Failure, Harness.Harness> = 
 			// Coordinators are background tasks, so this reads few records, whatever the storage holds.
 			const live: ReadonlyArray<TaskId> = yield* Stream.runCollect(
 				tx.tasks({ background: true }).pipe(
-					Stream.filter((task) => task.kind.startsWith(TASK_PREFIX) && task.state.status !== "terminal"),
+					Stream.filter(
+						(task) => pipe(task.kind, Str.startsWith(TASK_PREFIX)) && task.state.status !== "terminal",
+					),
 					Stream.map((task) => task.id),
 				),
 			);
-			yield* Effect.flatMap(tx.doc(Copy), (copy) => copy.set({ through: newest.items[0]?.id ?? 0 }));
+			const through = Option.match(Arr.head(newest.items), { onNone: () => NO_TASK, onSome: (task) => task.id });
+			yield* Effect.flatMap(tx.doc(Copy), (copy) => copy.set({ through }));
 			return live;
 		}),
 	);
-	// An abort wakes a coordinator that sleeps on a signal the copy will never get; it then ends as marked.
-	yield* Effect.forEach(inherited, (taskId) => Harness.abortTask(taskId), { discard: true });
-});
+	// An abort wakes a coordinator that sleeps on a signal the copy will never get; it then ends as marked. Each abort
+	// is a commit of its own, and Pi runs one commit at a time, so they are asked one after the other.
+	yield* Effect.forEach(inherited, (taskId) => Harness.abortTask(taskId), { concurrency: 1, discard: true });
+}).pipe(Effect.withSpan("Swarm.onStorageFork"));

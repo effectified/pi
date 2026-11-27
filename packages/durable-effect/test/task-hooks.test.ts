@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import { Extension, Harness, Task, TaskHooks } from "../src/index.ts";
 import { TestHarness } from "../src/testing/index.ts";
 
-class Refused extends Schema.TaggedError<Refused>()("Refused", { why: Schema.String }) {}
+class Refused extends Schema.TaggedError<Refused, { readonly brand: unique symbol }>()("Refused", {
+	why: Schema.String,
+}) {}
 
 /** What the strict checker reads its verdict from: a service, so a test sees the answer ran with it. */
 class Strictness extends Context.Service<Strictness, { readonly limit: number }>()("test/Strictness") {}

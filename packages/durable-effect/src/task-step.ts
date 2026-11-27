@@ -4,7 +4,7 @@ import type { JsonObject, NextTaskState, TaskOutcome, TaskOutcomeError } from "@
 import type { StrictOmit } from "@effectified/pi-ai";
 import type { JsonValue } from "@effectified/pi-chord/json";
 import type { SchemaConversionError, SchemaDecodeError } from "@effectified/pi-schema";
-import { Effect } from "effect";
+import { Effect, Match } from "effect";
 import * as Signal from "./signal.ts";
 
 /** The state a task commits for itself: Pi's `NextTaskState`, with the state and the result as decoded values. */
@@ -125,35 +125,40 @@ export interface Encoders<S, A> {
 	readonly result: (result: A) => Effect.Effect<JsonValue, SchemaDecodeError>;
 }
 
+/** What Pi's `runtime.commit` callback returns: the task's next state, or nothing to leave it. */
+type PiStep = NextTaskState<Checkpoint, JsonValue> | undefined;
+
 /** The state Pi's `runtime.commit` callback returns for `step`: nothing for `Unchanged`. */
 export function toPi<S, A>(
 	step: Step<S, A> | Unchanged,
 	encoders: Encoders<S, A>,
-): Effect.Effect<NextTaskState<Checkpoint, JsonValue> | undefined, SchemaDecodeError | SchemaConversionError> {
-	switch (step._tag) {
-		case "Unchanged":
-			return Effect.succeed(undefined);
-		case "Next":
-			return Effect.map(encoders.state(step.state), (checkpoint) => ({ status: "running", checkpoint }));
-		case "Sleep":
-			return Effect.all([encoders.state(step.state), Effect.forEach(step.signals ?? [], Signal.toPiKey)]).pipe(
+): Effect.Effect<PiStep, SchemaDecodeError | SchemaConversionError> {
+	return Match.valueTags(step, {
+		Unchanged: (): Effect.Effect<PiStep> => Effect.undefined,
+		Next: (next): Effect.Effect<PiStep, SchemaDecodeError> =>
+			Effect.map(encoders.state(next.state), (checkpoint) => ({ status: "running", checkpoint })),
+		Sleep: (sleep): Effect.Effect<PiStep, SchemaDecodeError | SchemaConversionError> =>
+			Effect.all(
+				[encoders.state(sleep.state), Effect.forEach(sleep.signals ?? [], Signal.toPiKey, { concurrency: 1 })],
+				{ concurrency: 1 },
+			).pipe(
 				Effect.map(([checkpoint, signals]) => ({
 					status: "sleeping",
 					checkpoint,
-					...(step.until === undefined ? {} : { until: step.until }),
-					...(step.signals === undefined ? {} : { signals }),
+					...(sleep.until === undefined ? {} : { until: sleep.until }),
+					...(sleep.signals === undefined ? {} : { signals }),
 				})),
-			);
-		case "Wait":
-			return Effect.map(encoders.state(step.state), (checkpoint) => ({
+			),
+		Wait: (wait): Effect.Effect<PiStep, SchemaDecodeError> =>
+			Effect.map(encoders.state(wait.state), (checkpoint) => ({
 				status: "waiting",
 				checkpoint,
-				on: step.on,
-				policy: step.policy,
-			}));
-		case "End":
-			return Effect.map(outcomeToPi(step.outcome, encoders.result), (outcome) => ({ status: "terminal", outcome }));
-	}
+				on: wait.on,
+				policy: wait.policy,
+			})),
+		End: (end): Effect.Effect<PiStep, SchemaDecodeError> =>
+			Effect.map(outcomeToPi(end.outcome, encoders.result), (outcome) => ({ status: "terminal", outcome })),
+	});
 }
 
 /** `outcome` with its result as stored JSON. */

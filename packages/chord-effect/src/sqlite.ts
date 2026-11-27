@@ -6,7 +6,7 @@ import {
 	type SqliteDatabase,
 	type SqliteMigration,
 } from "@earendil-works/chord/sqlite";
-import { Effect } from "effect";
+import { Effect, Predicate } from "effect";
 import { InvalidSchemaPrefix, type SqliteError } from "./errors.ts";
 import { settled } from "./settled.ts";
 
@@ -25,7 +25,7 @@ export function validateSqliteSchemaPrefix(prefix: string): Effect.Effect<void, 
 		try: () => piValidateSqliteSchemaPrefix(prefix),
 		// Chord's validator throws only an `Error` that names the prefix.
 		catch: (thrown) =>
-			new InvalidSchemaPrefix({ prefix, message: thrown instanceof Error ? thrown.message : String(thrown) }),
+			InvalidSchemaPrefix.make({ prefix, message: Predicate.isError(thrown) ? thrown.message : String(thrown) }),
 	});
 }
 

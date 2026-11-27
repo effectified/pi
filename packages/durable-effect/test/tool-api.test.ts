@@ -12,7 +12,7 @@ import { runTest } from "@effectified/pi-ai/testing";
 import { type SchemaConversionError, toJsonSchema } from "@effectified/pi-schema";
 import { Effect, Fiber, Latch, type Layer, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { Doc, Extension, Harness, Registry, Signal, Task, Tool } from "../src/index.ts";
+import { Doc, Extension, Harness, Registry, Signal, Task, Tool, ToolName } from "../src/index.ts";
 import { runBoth } from "./parity.ts";
 import { AGENT, answer, harnessLayer } from "./scripted.ts";
 import { untilTask } from "./until-task.ts";
@@ -230,10 +230,10 @@ describe("what a call may use", () => {
 			success: Schema.Number,
 			handler: (_params, api) =>
 				Effect.gen(function* () {
-					const first = yield* api.executeTool("double", { n: 2 }, { progress: false });
-					const started = yield* api.startTool("double", { n: 10 }, { key: "ten" });
+					const first = yield* api.executeTool(ToolName.make("double"), { n: 2 }, { progress: false });
+					const started = yield* api.startTool(ToolName.make("double"), { n: 10 }, { key: "ten" });
 					const second = yield* started.result;
-					const invalid = yield* api.executeTool("double", { n: "two" });
+					const invalid = yield* api.executeTool(ToolName.make("double"), { n: "two" });
 					seen.push(
 						first.structuredOutput,
 						second.structuredOutput,
@@ -323,7 +323,7 @@ describe("a call that parks", () => {
 			replay: "safe",
 			handler: (_params, api) =>
 				Effect.gen(function* () {
-					const started = yield* api.startTool("slow", {}, { key: "slow" });
+					const started = yield* api.startTool(ToolName.make("slow"), {}, { key: "slow" });
 					waiting.resolve(api.taskId);
 					wakes.push(Option.getOrUndefined(api.wake)?.reason);
 					if (Option.isNone(api.wake)) return Tool.wait({ on: [started.taskId], policy: "allSettled" });

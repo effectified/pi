@@ -15,9 +15,12 @@ export { DEFAULT_AGENT_IDENTITY } from "@earendil-works/pi-agent-core";
 // The schema failure building a tool can fail with, so a caller needs no second import to name it.
 export { SchemaConversionError } from "@effectified/pi-schema";
 export * as Agent from "./agent.ts";
+export * as AgentEvents from "./agent-events.ts";
 export * as AgentLoop from "./agent-loop.ts";
-export { AgentBusy, type AgentError, CannotContinue } from "./errors.ts";
+export { AgentBusy, type AgentError, CannotContinue, ToolFailed } from "./errors.ts";
 export type { Hooks } from "./hooks.ts";
+// The names of tools and the ids of their calls, branded.
+export { ToolCallId, ToolName } from "./ids.ts";
 export { type RunToolCallOptions, runToolCall } from "./run-tool-call.ts";
 export { type ProxyOptions, StreamFn } from "./stream-fn.ts";
 export * as Tool from "./tool.ts";

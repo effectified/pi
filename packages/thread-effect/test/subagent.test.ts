@@ -2,16 +2,16 @@
 // budget's share in the commit that creates it, recorded under its own conversation, and paid from the same lease.
 
 import { fauxProvider } from "@earendil-works/pi-ai";
-import { Models } from "@effectified/pi-ai";
+import { fromPiModelRef, Models } from "@effectified/pi-ai";
 import { Shares } from "@effectified/pi-budget";
-import { Extension, Harness, Storage, Tool } from "@effectified/pi-durable";
+import { Extension, Harness, Storage, Tool, ToolName } from "@effectified/pi-durable";
 import { answer, toolCall } from "@effectified/pi-durable/testing";
 import { Conversations, Guard, Policy } from "@effectified/pi-guard";
 import * as Review from "@effectified/pi-review";
 import { ChildSetup, ChildSetupFailed, Subagent, Subagents } from "@effectified/pi-subagent";
 import { Effect, Layer, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { Threads } from "../src/index.ts";
+import { ThreadKey, Threads } from "../src/index.ts";
 import {
 	committed,
 	type Options,
@@ -35,7 +35,7 @@ const play = (state: Outside, labs: Providers, options?: Options) =>
 		Effect.gen(function* () {
 			const threads = yield* Threads.Threads;
 			const outcome = yield* threads.work(work("t1", "Ask the researcher what record 42 is called.", [SUBAGENT]));
-			const parent = yield* threads.conversation("t1");
+			const parent = yield* threads.conversation(ThreadKey.make("t1"));
 			const owned = yield* Harness.commit((tx) => tx.scanConversations({ ownerConversationId: parent.id }, 10));
 			const child = Option.getOrThrow(
 				yield* Harness.conversation(Option.getOrThrow(Option.fromNullishOr(owned.items[0])).id),
@@ -194,8 +194,11 @@ describe("a subagent of a thread", () => {
 				success: Schema.String,
 				handler: () => Effect.succeed(name),
 			});
-		const model = { provider: "faux", modelId: "faux-1" };
-		const Narrow = Subagent.make("narrow", { description: "Reads.", agent: { model, tools: ["read"] } });
+		const model = fromPiModelRef({ provider: "faux", modelId: "faux-1" });
+		const Narrow = Subagent.make("narrow", {
+			description: "Reads.",
+			agent: { model, tools: [ToolName.make("read")] },
+		});
 		const faux = fauxProvider({ api: "scripted" });
 		faux.setResponses([
 			toolCall(SUBAGENT, { subagent: "narrow", task: "Read it." }),
@@ -211,7 +214,7 @@ describe("a subagent of a thread", () => {
 						Conversations.grantIn(
 							tx,
 							child.conversationId,
-							{ tools: ["read", "write"] },
+							{ tools: [ToolName.make("read"), ToolName.make("write")] },
 							{ mode: "narrow" },
 						).pipe(
 							Effect.provideService(Guard.Guard, guard),

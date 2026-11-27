@@ -12,13 +12,11 @@ import { Clock, Effect } from "effect";
  * and code, and `details`), stamped now by `Clock`. Add it to a message with pi-ai's
  * `appendAssistantMessageDiagnostic`.
  */
-export function createAssistantMessageDiagnostic(
+export const createAssistantMessageDiagnostic = Effect.fn("Diagnostics.createAssistantMessageDiagnostic")(function* (
 	type: string,
 	error: unknown,
 	details?: JsonObject,
-): Effect.Effect<AssistantMessageDiagnostic> {
-	return Effect.map(Clock.currentTimeMillis, (timestamp) => ({
-		...piCreateAssistantMessageDiagnostic(type, error, details),
-		timestamp,
-	}));
-}
+): Effect.fn.Return<AssistantMessageDiagnostic> {
+	const timestamp = yield* Clock.currentTimeMillis;
+	return { ...piCreateAssistantMessageDiagnostic(type, error, details), timestamp };
+});

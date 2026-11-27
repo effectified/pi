@@ -6,10 +6,13 @@ import {
 	type CallToolResult,
 	limitMcpContent,
 	MCP_OUTPUT_MAX_BYTES,
+	McpServerName,
 	McpUnexpectedError,
 	type OutputSaver,
 	toMcpModelContent,
 } from "../src/index.ts";
+
+const FILES = McpServerName.make("files");
 
 class Saved extends Context.Service<Saved, Array<{ data: string | Uint8Array; extension: string }>>()("test/Saved") {}
 
@@ -37,7 +40,7 @@ describe("toMcpModelContent", () => {
 	it("saves binary resources with the Effect, and names the tool that reads resource links", async () => {
 		const saved: Array<{ data: string | Uint8Array; extension: string }> = [];
 		const content = await Effect.runPromise(
-			toMcpModelContent("files", BINARY, { saveOutput: save, readResourceTool: "read_mcp_resource" }).pipe(
+			toMcpModelContent(FILES, BINARY, { saveOutput: save, readResourceTool: "read_mcp_resource" }).pipe(
 				Effect.provideService(Saved, saved),
 			),
 		);
@@ -51,7 +54,7 @@ describe("toMcpModelContent", () => {
 
 	it("says why when the save fails, as Pi does", async () => {
 		const failing: OutputSaver = () => Effect.fail(new McpUnexpectedError({ cause: new Error("disk full") }));
-		const content = await Effect.runPromise(toMcpModelContent("files", BINARY, { saveOutput: failing }));
+		const content = await Effect.runPromise(toMcpModelContent(FILES, BINARY, { saveOutput: failing }));
 		expect(content[1]).toEqual({
 			type: "text",
 			text: "[Binary resource file:///r/data.zip (application/zip, 3B) could not be saved: disk full]",

@@ -1,24 +1,26 @@
 import type { ConversationId } from "@earendil-works/pi-durable";
+import { ToolCallId, ToolName } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Check from "../src/check.ts";
 import { Matcher, Policy, Rule } from "../src/index.ts";
+import { names } from "./guarded.ts";
 
 const Text = Schema.Struct({ text: Schema.String });
-const Search = { name: "search", parameters: Text };
-const Write = { name: "write", parameters: Text };
+const Search = { name: ToolName.make("search"), parameters: Text };
+const Write = { name: ToolName.make("write"), parameters: Text };
 
-const policy: Policy.Policy = {
+const policy = Schema.decodeSync(Policy.Policy)({
 	...Policy.empty,
 	denied: [Matcher.firstWord(["delete"])],
 	classifications: ["public", "internal"],
 	toolCeilings: { search: "public" },
-};
+});
 
 const about = (name: string, grant: Rule.Call["grant"]): Rule.Call => ({
-	name,
+	name: ToolName.make(name),
 	conversationId: 1 as ConversationId,
-	callId: "call-1",
+	callId: ToolCallId.make("call-1"),
 	nested: false,
 	grant,
 });
@@ -42,24 +44,30 @@ const decide = (rules: ReadonlyArray<Rule.Rule<never>>, name: string, grant: Rul
 
 describe("decide", () => {
 	it("passes a call of a granted tool no rule stops, with its arguments untouched", async () => {
-		const verdict = await decide([], "write", { tools: ["write"] });
+		const verdict = await decide([], "write", { tools: names("write") });
 		expect(verdict).toEqual({ _tag: "Pass", arguments: Option.none() });
 	});
 
 	it("refuses a name the policy denies, even when the grant lists it", async () => {
-		expect(await decide([], "delete_all", { tools: ["delete_all"] })).toEqual({ _tag: "Refuse", rule: "denied" });
+		expect(await decide([], "delete_all", { tools: names("delete_all") })).toEqual({
+			_tag: "Refuse",
+			rule: "denied",
+		});
 	});
 
 	it("refuses a tool outside the grant before any rule is asked", async () => {
 		const asked: string[] = [];
 		const rule = recorded("seen", Write, asked, () => Rule.allow);
-		expect(await decide([rule], "write", { tools: ["search"] })).toEqual({ _tag: "Refuse", rule: "allow-list" });
+		expect(await decide([rule], "write", { tools: names("search") })).toEqual({ _tag: "Refuse", rule: "allow-list" });
 		expect(await decide([rule], "write", { tools: [] })).toEqual({ _tag: "Refuse", rule: "allow-list" });
 		expect(asked).toEqual([]);
 	});
 
 	it("refuses a tool whose ceiling is below the conversation's classification, or that has none", async () => {
-		const grant = (classification?: string) => ({ tools: ["search"], ...(classification ? { classification } : {}) });
+		const grant = (classification?: string) => ({
+			tools: names("search"),
+			...(classification ? { classification } : {}),
+		});
 		expect(await decide([], "search", grant("public"))).toEqual({ _tag: "Pass", arguments: Option.none() });
 		expect(await decide([], "search", grant("internal"))).toEqual({ _tag: "Refuse", rule: "ceiling" });
 		expect(await decide([], "search", grant())).toEqual({ _tag: "Refuse", rule: "ceiling" });
@@ -73,7 +81,7 @@ describe("decide", () => {
 			recorded("second", Write, asked, (text) => Rule.rewrite({ text: `${text}b` })),
 			recorded("third", Write, asked, (text) => Rule.rewrite({ text: `${text}c` })),
 		];
-		const verdict = await decide(rules, "write", { tools: ["write"] });
+		const verdict = await decide(rules, "write", { tools: names("write") });
 		expect(verdict).toEqual({ _tag: "Pass", arguments: Option.some({ text: "abc" }) });
 		expect(asked).toEqual(["first:a", "second:a", "third:ab"]);
 	});
@@ -84,7 +92,7 @@ describe("decide", () => {
 			recorded("first", Write, asked, () => Rule.block("not this text")),
 			recorded("second", Write, asked, () => Rule.allow),
 		];
-		expect(await decide(rules, "write", { tools: ["write"] })).toEqual({
+		expect(await decide(rules, "write", { tools: names("write") })).toEqual({
 			_tag: "Refuse",
 			rule: "argument",
 			name: "first",
@@ -94,12 +102,12 @@ describe("decide", () => {
 	});
 
 	it("refuses when a rule fails, with a failure or a defect, and never fails itself", async () => {
-		const failing = Rule.make("failing", Write, () => Effect.fail(new Error("the lookup is down")));
+		const failing = Rule.make("failing", Write, () => Effect.fail("the lookup is down"));
 		const dying = Rule.make("dying", Write, () => Effect.die(new Error("a bug")));
 		const throwing = Rule.make("throwing", Write, (): Effect.Effect<Rule.Outcome<typeof Text.Type>> => {
 			throw new Error("a throw");
 		});
-		const grant = { tools: ["write"] };
+		const grant = { tools: names("write") };
 		expect(await decide([failing], "write", grant)).toEqual({
 			_tag: "Refuse",
 			rule: "argument-failed",

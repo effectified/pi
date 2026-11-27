@@ -35,8 +35,10 @@ import {
 const HELLO = { messages: [{ role: "user" as const, content: "Hello", timestamp: 0 }] };
 
 /** Runs a test body on budgeted models over a scripted provider, whose table also lists `more`, on the test clock. */
-const run = <A, E>(body: Effect.Effect<A, E, Budgeted | TestClock.TestClock>, more: ReadonlyArray<ModelPrice> = []) =>
-	runTest(Effect.provide(body, budgetedModels({ prices: more })));
+const run = <A, E>(
+	body: Effect.Effect<A, E, Budgeted | TestClock.TestClock>,
+	more: ReadonlyArray<typeof ModelPrice.Encoded> = [],
+) => runTest(Effect.provide(body, budgetedModels({ prices: more })));
 
 /** A chat model of a provider of this file. */
 const UNREACHABLE: Model<Api> = {
@@ -660,7 +662,7 @@ describe("the other provider requests", () => {
 });
 
 /** The relay's own price, under the id a request to it is checked against: 1.0 micro units per input token. */
-const RELAY_PRICE: ModelPrice = {
+const RELAY_PRICE: typeof ModelPrice.Encoded = {
 	provider: "unreachable",
 	model: "unreachable-1",
 	input: 1_000_000,

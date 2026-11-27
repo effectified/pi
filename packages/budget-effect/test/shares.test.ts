@@ -110,7 +110,7 @@ const costs = (steps: ReadonlyArray<Step>) =>
 const reservedFor = (steps: ReadonlyArray<Step>) =>
 	steps.flatMap((step) => (step.step === "reserve" ? [step.request.conversation] : []));
 
-class Rejected extends Schema.TaggedError<Rejected>()("Rejected", {}) {}
+class Rejected extends Schema.TaggedError<Rejected, { readonly brand: unique symbol }>()("Rejected", {}) {}
 
 describe("a cap set in a commit", () => {
 	it("is stored with the commit that creates the conversation, and its first request counts against it", () =>
@@ -190,6 +190,24 @@ describe("a cap set in a commit", () => {
 				expect(yield* shares.get(sub.id)).toEqual(
 					Option.some({ conversation: sub.id, cap: 1n, settled: costs(lease.steps)[1] }),
 				);
+			}),
+		));
+
+	it("takes a cap below zero, which refuses the conversation's first request, as before 0.3.0", () =>
+		run(
+			Effect.gen(function* () {
+				const scripted = yield* ScriptedModels;
+				const shares = yield* Shares;
+				yield* scripted.setResponses([answer("One.")]);
+				const sub = yield* child;
+				expect(yield* shares.setCap(sub.id, -1n)).toEqual({ conversation: sub.id, cap: -1n, settled: 0n });
+				expect(yield* sub.prompt("First")).toMatchObject({ status: "unanswered", reason: "model_error" });
+				expect(Option.getOrThrow(yield* stopOf(sub.id)).refusal).toMatchObject({
+					_tag: "ShareExhausted",
+					cap: -1n,
+					settled: 0n,
+				});
+				expect(yield* scripted.callCount).toBe(0);
 			}),
 		));
 

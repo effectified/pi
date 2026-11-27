@@ -13,7 +13,7 @@ import { Effect, Option } from "effect";
 import { call } from "./call.ts";
 import * as Doc from "./doc.ts";
 import type { DurableError } from "./errors.ts";
-import { type Invoke, invoker } from "./invocation.ts";
+import { built, type Invoke, invoker } from "./invocation.ts";
 import * as Wrap from "./wrap.ts";
 
 /**
@@ -63,7 +63,7 @@ export function make<E = never, R = never>(key: string, render: Render<E, R>, op
 	return {
 		key,
 		registration: Effect.map(Effect.context<R>(), (context) =>
-			piSection(key, rendered(invoker(context), render), options),
+			piSection(key, rendered(invoker(built(context)), render), options),
 		),
 	};
 }
@@ -105,7 +105,8 @@ function fromPi(section: PiSection): Wrapped {
 		tag: section.tag,
 		render: (input) =>
 			Effect.map(
-				call(async (context) => section.render(input.pi, context)),
+				// Pi's render may answer at once or later: a promise either way.
+				call((context) => Promise.resolve(section.render(input.pi, context))),
 				Option.fromUndefinedOr,
 			),
 	};

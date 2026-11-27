@@ -4,7 +4,7 @@ import type { ImageLimits, ImageProcessor, PreparedImage } from "@earendil-works
 import { Effect, Option, Predicate, Schema } from "effect";
 
 /** A processor failed to prepare an image for another reason than that it cannot be decoded or made to fit. */
-export class ImageFailed extends Schema.TaggedError<ImageFailed>()("ImageFailed", {
+export class ImageFailed extends Schema.TaggedError<ImageFailed, { readonly brand: unique symbol }>()("ImageFailed", {
 	message: Schema.String,
 	cause: Schema.Defect(),
 }) {}
@@ -51,7 +51,7 @@ export function fromPi(pi: ImageProcessor): Processor {
 				Effect.tryPromise({
 					try: () => pi.prepare(bytes, mimeType, limits),
 					catch: (cause) =>
-						new ImageFailed({ message: Predicate.isError(cause) ? cause.message : String(cause), cause }),
+						ImageFailed.make({ message: Predicate.isError(cause) ? cause.message : String(cause), cause }),
 				}),
 				Option.fromUndefinedOr,
 			),

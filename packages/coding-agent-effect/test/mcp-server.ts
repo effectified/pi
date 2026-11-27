@@ -18,7 +18,7 @@ export const TOOLS = [
 
 /** A client of a scripted MCP server on an in-memory pair: it lists `TOOLS` and answers calls of them. */
 export const connected: Effect.Effect<McpClientService, unknown, Scope.Scope> = Effect.gen(function* () {
-	const pair = yield* inMemoryTransportPair();
+	const pair = yield* inMemoryTransportPair;
 	yield* pair.server.messages.pipe(
 		Stream.filter(isJsonRpcRequest),
 		Stream.runForEach((request) => {

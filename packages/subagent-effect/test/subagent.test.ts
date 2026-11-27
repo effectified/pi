@@ -1,5 +1,5 @@
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { Harness } from "@effectified/pi-durable";
+import { Harness, ToolName } from "@effectified/pi-durable";
 import { toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
@@ -52,7 +52,7 @@ describe("a child's agent", () => {
 				const root = yield* Harness.rootWith({
 					agent: {
 						model: PARENT,
-						tools: ["a", "b", foreground, background, status],
+						tools: [ToolName.make("a"), ToolName.make("b"), foreground, background, status],
 						instructions: "Parent rules.",
 						thinkingLevel: "high",
 						cwd: "/parent",

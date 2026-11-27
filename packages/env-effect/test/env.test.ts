@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runLive } from "@effectified/pi-ai/testing";
-import { Context, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect";
+import { Context, Effect, Exit, Fiber, Layer, Option, Scope, Stream, Tracer } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Env from "../src/env.ts";
 import { nodeEnv, tempDir } from "./fixtures.ts";
@@ -94,6 +94,31 @@ describe("Env.fromPi", () => {
 	it("gives Pi's environment itself, for a harness", async () => {
 		const pi = nodeEnv("/");
 		expect((await runLive(Env.fromPi(pi))).pi).toBe(pi);
+	});
+
+	it("runs each operation in a span named for it, under the caller's span", async () => {
+		const spans: Tracer.NativeSpan[] = [];
+		const tracer = Tracer.make({
+			span: (options) => {
+				const span = new Tracer.NativeSpan(options);
+				spans.push(span);
+				return span;
+			},
+		});
+		await runLive(
+			Effect.gen(function* () {
+				const directory = yield* tempDir;
+				const env = yield* Env.fromPi(nodeEnv(directory));
+				yield* Effect.withSpan(env.exists("x"), "app.check");
+				yield* Effect.withSpan(Stream.runDrain(env.execOutput("true")), "app.run");
+			}).pipe(Effect.provideService(Tracer.Tracer, tracer)),
+		);
+		const parent = (name: string) => {
+			const span = spans.find((each) => each.name === name);
+			const parentId = span === undefined ? undefined : Option.getOrUndefined(span.parent)?.spanId;
+			return spans.find((each) => each.spanId === parentId)?.name;
+		};
+		expect([parent("Env.exists"), parent("Env.execOutput")]).toEqual(["app.check", "app.run"]);
 	});
 
 	it("runs commands, streams output and watches, through the same environment", async () => {

@@ -2,7 +2,7 @@
 // context as a service, built into pi-coding-agent's tool definition.
 
 import type { ExtensionToolContext as PiToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Tool as AgentTool } from "@effectified/pi-agent";
+import { Tool as AgentTool, ToolName } from "@effectified/pi-agent";
 import type { SchemaConversionError } from "@effectified/pi-schema";
 import { Effect, type Schema } from "effect";
 import { ExtensionContext, fromPiContext, fromPiToolContext, ToolContext } from "./extension-context.ts";
@@ -30,19 +30,17 @@ export type Contexts = ExtensionContext | ToolContext;
  * it renders) is not wrapped yet.
  */
 export interface Options<P extends Schema.Constraint, S extends Schema.Constraint, E, R>
-	extends Omit<AgentTool.Options<P, S, E, R>, "replay">,
-		Session {}
+	extends Omit<AgentTool.Options<P, S, E, R>, "replay">, Session {}
 
 /** A tool made by `make`. */
 export interface Tool<Name extends string, P extends Schema.Constraint, S extends Schema.Constraint, E, R>
-	extends Options<P, S, E, R>,
-		Any<AgentTool.Requirements<P, S, Exclude<R, Contexts>>> {
-	readonly name: Name;
+	extends Options<P, S, E, R>, Any<AgentTool.Requirements<P, S, Exclude<R, Contexts>>> {
+	readonly name: Name & ToolName;
 }
 
 /** Any tool, whatever its schemas: what an extension, `ExtensionApi.registerTool` and a session take. */
 export interface Any<R> {
-	readonly name: string;
+	readonly name: ToolName;
 	/** Builds Pi's tool definition; its handler runs with the services of the context this Effect runs in. */
 	readonly definition: Effect.Effect<ToolDefinition, SchemaConversionError, R>;
 }
@@ -57,12 +55,14 @@ export function make<const Name extends string, P extends Schema.Constraint, S e
 	name: Name,
 	options: Options<P, S, E, R>,
 ): Tool<Name, P, S, E, R> {
-	return { ...options, name, definition: definition(name, options) };
+	// The brand checks nothing of a string, so the branded name keeps the literal type it was given.
+	const branded = ToolName.make(name) as Name & ToolName;
+	return { ...options, name: branded, definition: definition(branded, options) };
 }
 
 /** The tool definition of `make`: an agent tool of `@effectified/pi-agent`, given the context of each call. */
 function definition<P extends Schema.Constraint, S extends Schema.Constraint, E, R>(
-	name: string,
+	name: ToolName,
 	options: Options<P, S, E, R>,
 ): Effect.Effect<ToolDefinition, SchemaConversionError, AgentTool.Requirements<P, S, Exclude<R, Contexts>>> {
 	const {
@@ -92,31 +92,28 @@ function definition<P extends Schema.Constraint, S extends Schema.Constraint, E,
 				);
 			}),
 	});
-	return Effect.map(
-		agentTool.agentTool,
-		(built): ToolDefinition => ({
-			name: built.name,
-			label: built.label,
-			description: built.description,
-			parameters: built.parameters,
-			...(built.outputSchema === undefined ? {} : { outputSchema: built.outputSchema }),
-			...(built.executionMode === undefined ? {} : { executionMode: built.executionMode }),
-			...(built.prepareArguments === undefined ? {} : { prepareArguments: built.prepareArguments }),
-			...(built.constrainedSampling === undefined ? {} : { constrainedSampling: built.constrainedSampling }),
-			...(promptSnippet === undefined ? {} : { promptSnippet }),
-			...(promptGuidelines === undefined ? {} : { promptGuidelines }),
-			...(exposure === undefined ? {} : { exposure }),
-			...(namespace === undefined ? {} : { namespace }),
-			...(annotations === undefined ? {} : { annotations }),
-			...(defaultActive === undefined ? {} : { defaultActive }),
-			...(reachesTools === undefined ? {} : { reachesTools }),
-			...(prepareLoadout === undefined ? {} : { prepareLoadout }),
-			execute: (toolCallId, params, signal, onUpdate, ctx) => {
-				contexts.set(toolCallId, ctx);
-				return built.execute(toolCallId, params, signal, onUpdate).finally(() => contexts.delete(toolCallId));
-			},
-		}),
-	);
+	return Effect.map(agentTool.agentTool, (built): ToolDefinition => ({
+		name: built.name,
+		label: built.label,
+		description: built.description,
+		parameters: built.parameters,
+		...(built.outputSchema === undefined ? {} : { outputSchema: built.outputSchema }),
+		...(built.executionMode === undefined ? {} : { executionMode: built.executionMode }),
+		...(built.prepareArguments === undefined ? {} : { prepareArguments: built.prepareArguments }),
+		...(built.constrainedSampling === undefined ? {} : { constrainedSampling: built.constrainedSampling }),
+		...(promptSnippet === undefined ? {} : { promptSnippet }),
+		...(promptGuidelines === undefined ? {} : { promptGuidelines }),
+		...(exposure === undefined ? {} : { exposure }),
+		...(namespace === undefined ? {} : { namespace }),
+		...(annotations === undefined ? {} : { annotations }),
+		...(defaultActive === undefined ? {} : { defaultActive }),
+		...(reachesTools === undefined ? {} : { reachesTools }),
+		...(prepareLoadout === undefined ? {} : { prepareLoadout }),
+		execute: (toolCallId, params, signal, onUpdate, ctx) => {
+			contexts.set(toolCallId, ctx);
+			return built.execute(toolCallId, params, signal, onUpdate).finally(() => contexts.delete(toolCallId));
+		},
+	}));
 }
 
 /** The success value with extras, as `@effectified/pi-agent`'s `Tool.result`. */

@@ -18,7 +18,7 @@ import type {
 	ToolDiagnostic,
 	WakeReason,
 } from "@earendil-works/pi-durable";
-import type { StrictOmit } from "@effectified/pi-ai";
+import { type StrictOmit, ToolCallId } from "@effectified/pi-ai";
 import type { Context as ChordContext } from "@effectified/pi-chord/context";
 import type { JsonValue } from "@effectified/pi-chord/json";
 import type { SchemaDecodeError } from "@effectified/pi-schema";
@@ -30,6 +30,7 @@ import * as Memo from "./memo.ts";
 import * as Signal from "./signal.ts";
 import * as Submission from "./submission.ts";
 import type * as Task from "./task.ts";
+import type { ToolName } from "./tool-name.ts";
 import * as Tx from "./tx.ts";
 import type * as Watch from "./watch.ts";
 
@@ -43,7 +44,7 @@ export interface Api extends Doc.Reader {
 	readonly taskId: TaskId;
 	readonly conversationId: ConversationId;
 	/** The id the model gave the call; a nested call's is `<caller's id>/<key>`. */
-	readonly callId: string;
+	readonly callId: ToolCallId;
 	/** Why this run started after a park (`Tool.sleep`, `Tool.wait`); none on a fresh call. */
 	readonly wake: Option.Option<WakeReason>;
 	/** What the call last parked with; none on a fresh call, or after a park without a checkpoint. */
@@ -96,13 +97,13 @@ export interface Api extends Doc.Reader {
 	 * result, not a failure. Interrupting the wait leaves the nested call running. After a wake a `key` is required.
 	 */
 	readonly executeTool: (
-		name: string,
+		name: ToolName,
 		args: JsonObject,
 		options?: NestedOptions,
 	) => Effect.Effect<NestedToolExecutionResult, DurableError>;
 	/** Starts the nested call, or finds the one already made under its key, without waiting: to park on its `taskId`. */
 	readonly startTool: (
-		name: string,
+		name: ToolName,
 		args: JsonObject,
 		options?: NestedOptions,
 	) => Effect.Effect<Started, DurableError>;
@@ -170,42 +171,54 @@ export function fromPi(api: PiToolExecutionApi): Api {
 		...Doc.reader(api),
 		taskId: api.taskId,
 		conversationId: api.conversationId,
-		callId: api.callId,
+		callId: ToolCallId.make(api.callId),
 		wake: Option.fromUndefinedOr(api.wake),
 		checkpoint: Option.fromUndefinedOr(api.checkpoint),
 		now: Effect.sync(() => api.now()),
 		agent: call((context) => api.agent(context)),
-		commit: (change, options) =>
-			Tx.commit((body, context, given) => api.commit(body, context, given), change, options),
+		commit: Effect.fn("ToolApi.commit")(function* <A, E, R>(
+			change: (tx: Tx.Tx) => Effect.Effect<A, E, R>,
+			options?: CommitOptions,
+		) {
+			return yield* Tx.commit((body, context, given) => api.commit(body, context, given), change, options);
+		}),
 		memo: Memo.fromPi(api),
 		readSignal: (signal, key) => Signal.read(api, signal, key),
-		createTask: (task, input, options) =>
-			Effect.flatMap(task.encodeInput(input), (json) =>
-				call((context) => api.createTask(task.token, json, options, context)),
-			),
-		getTask: (id) =>
-			Effect.map(
-				call((context) => api.getTask(id, context)),
-				Option.fromUndefinedOr,
-			),
-		waitForTask: (id) => call((context) => api.waitForTask(id, context)),
-		conversation: (id) =>
-			Effect.map(
-				call((context) => api.conversation(id, context)),
-				(found) => Option.map(Option.fromUndefinedOr(found), handle),
-			),
-		executeTool: (name, args, options) => call((context) => api.executeTool(name, args, context, options)),
-		startTool: (name, args, options) =>
-			Effect.map(
-				call((context) => api.executeTool(name, args, context, { ...options, wait: false })),
-				(started): Started => ({
-					taskId: started.taskId,
-					result: call((context) => started.result(context)),
-				}),
-			),
+		createTask: Effect.fn("ToolApi.createTask")(function* <I, A>(
+			task: Task.Kind<I, A>,
+			input: NoInfer<I>,
+			options: CreateTaskOptions,
+		) {
+			const json = yield* task.encodeInput(input);
+			return yield* call((context) => api.createTask(task.token, json, options, context));
+		}),
+		getTask: Effect.fn("ToolApi.getTask")(function* <R>(id: TaskId<R>) {
+			const found = yield* call((context) => api.getTask(id, context));
+			return Option.fromUndefinedOr(found);
+		}),
+		waitForTask: Effect.fn("ToolApi.waitForTask")(function* <R>(id: TaskId<R>) {
+			return yield* call((context) => api.waitForTask(id, context));
+		}),
+		conversation: Effect.fn("ToolApi.conversation")(function* (id: ConversationId) {
+			const found = yield* call((context) => api.conversation(id, context));
+			return Option.map(Option.fromUndefinedOr(found), handle);
+		}),
+		executeTool: Effect.fn("ToolApi.executeTool")(function* (
+			name: ToolName,
+			args: JsonObject,
+			options?: NestedOptions,
+		) {
+			return yield* call((context) => api.executeTool(name, args, context, options));
+		}),
+		startTool: Effect.fn("ToolApi.startTool")(function* (name: ToolName, args: JsonObject, options?: NestedOptions) {
+			const started = yield* call((context) => api.executeTool(name, args, context, { ...options, wait: false }));
+			return { taskId: started.taskId, result: call((context) => started.result(context)) } satisfies Started;
+		}),
 		diagnostic: (diagnostic) => Effect.sync(() => api.diagnostic(diagnostic)),
-		// A decode boundary: Effect types JSON read-only, Chord types the same values mutable.
-		details: (value) => call((context) => api.details(value as JsonValue, context)),
+		details: Effect.fn("ToolApi.details")(function* (value: Schema.Json) {
+			// A decode boundary: Effect types JSON read-only, Chord types the same values mutable.
+			return yield* call((context) => api.details(value as JsonValue, context));
+		}),
 		watchDoc: (doc, ...address) => Doc.watch(api, doc, ...address),
 		pi: api,
 	};
@@ -215,13 +228,16 @@ export function fromPi(api: PiToolExecutionApi): Api {
 export function handle(conversation: ConversationHandle): Handle {
 	return {
 		id: conversation.id,
-		submit: (draft) =>
-			Effect.map(
-				call((context) => conversation.submit(draft, context)),
-				Submission.fromPi,
-			),
-		admit: (tx, draft) => Tx.admit(conversation, tx, draft),
-		abort: (options) => call((context) => conversation.abort(context, options)),
+		submit: Effect.fn("Handle.submit")(function* (draft: SubmissionDraft) {
+			const submitted = yield* call((context) => conversation.submit(draft, context));
+			return Submission.fromPi(submitted);
+		}),
+		admit: Effect.fn("Handle.admit")(function* (tx: Tx.Tx, draft: SubmissionDraft) {
+			return yield* Tx.admit(conversation, tx, draft);
+		}),
+		abort: Effect.fn("Handle.abort")(function* (options?: ConversationAbortOptions) {
+			return yield* call((context) => conversation.abort(context, options));
+		}),
 		waitForIdle: call((context) => conversation.waitForIdle(context)),
 	};
 }

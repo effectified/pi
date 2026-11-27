@@ -1,6 +1,6 @@
 // Refusals: what a guard publishes for every tool call it kept from running. Never the arguments.
 
-import { Conversation, Task } from "@effectified/pi-durable";
+import { Conversation, Task, ToolCallId, ToolName } from "@effectified/pi-durable";
 import { Schema } from "effect";
 
 /**
@@ -14,6 +14,9 @@ import { Schema } from "effect";
  * - `unavailable`: Pi itself refused the call, because the tool was not offered or does not resolve.
  * - `guard-not-first`: the conversation does not ask the guard's extension first, so the tool refused to run.
  * - `guard-failed`: the guard could not decide, such as a grant it could not read.
+ *
+ * Plain literals, not a tagged union: the reason is stored in a tool result's details (`Refused`), which a host
+ * reads as JSON without this package.
  */
 export const Reason = Schema.Literals([
 	"denied",
@@ -35,8 +38,8 @@ export const Refusal = Schema.Struct({
 	/** The call's task. With `callId` it identifies the call: Pi may ask a hook twice across a restart. */
 	taskId: Task.Id,
 	/** The id the model gave the call; a nested call's is `<caller's id>/<key>`. */
-	callId: Schema.String,
-	tool: Schema.String,
+	callId: ToolCallId,
+	tool: ToolName,
 	rule: Reason,
 	/** The name of the argument rule, for `argument` and `argument-failed`. */
 	name: Schema.optionalKey(Schema.String),
@@ -48,6 +51,6 @@ export const Refusal = Schema.Struct({
 export type Refusal = typeof Refusal.Type;
 
 /** What the model reads for every refusal, whatever the rule: the words Pi uses for a tool it does not have. */
-export function unavailable(tool: string): string {
+export function unavailable(tool: ToolName): string {
 	return `Tool ${tool} is not available`;
 }

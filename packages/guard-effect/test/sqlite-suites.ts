@@ -15,6 +15,7 @@ import {
 	BLOCKED,
 	brief,
 	guardedHarness,
+	names,
 	offering,
 	recorded,
 	toolResults,
@@ -26,7 +27,7 @@ import {
 /** Opens the driver's client on a database file. */
 export type ClientLayer = (filename: string) => Layer.Layer<SqlClient, SqlError>;
 
-const policy: Policy.Policy = {
+const policy: Policy.Encoded = {
 	...Policy.empty,
 	classifications: ["public", "internal"],
 	toolCeilings: { search: "public" },
@@ -58,7 +59,7 @@ export function registerSqliteSuites(
 						const { model } = yield* TestHarness.agent;
 						const conversation = yield* Conversations.create({
 							ownership: { kind: "ownerless" },
-							grant: { tools: ["read", "search"], classification: "internal" },
+							grant: { tools: names("read", "search"), classification: "internal" },
 						});
 						yield* conversation.configure({ model });
 						yield* conversation.prompt("Hello.");
@@ -101,7 +102,7 @@ export function registerSqliteSuites(
 					),
 				);
 
-				expect(reopened.granted).toEqual({ tools: ["read", "search"], classification: "internal" });
+				expect(reopened.granted).toEqual({ tools: names("read", "search"), classification: "internal" });
 				expect(reopened.enabled).toEqual(["read", "search"]);
 				expect(offered).toEqual([
 					["read", "search"],
@@ -143,7 +144,7 @@ export function registerSqliteSuites(
 					Effect.gen(function* () {
 						const conversation = yield* Conversations.create({
 							ownership: { kind: "ownerless" },
-							grant: { tools: ["read", "search"], classification: "internal" },
+							grant: { tools: names("read", "search"), classification: "internal" },
 						});
 						// Every tool is offered behind the guard's back, so each call reaches the guard's hook.
 						yield* conversation.configure({ ...(yield* TestHarness.agent), tools: null });

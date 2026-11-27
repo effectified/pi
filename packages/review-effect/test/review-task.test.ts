@@ -1,7 +1,8 @@
 import { type FauxResponseStep, fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { fromPiModelRef } from "@effectified/pi-ai";
 import { Harness } from "@effectified/pi-durable";
 import { answer, held, TestHarness } from "@effectified/pi-durable/testing";
-import { Effect, Option, Stream } from "effect";
+import { Effect, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { Check, Correction, type Finding, state, verdicts } from "../src/index.ts";
 import {
@@ -24,6 +25,13 @@ import {
 
 const WRONG: Finding = { severity: "block", text: "Six times seven is 42.", location: "It is 41." };
 const TERSE: Finding = { severity: "warn", text: "Show the multiplication." };
+
+/** What a product's check fails with when the service it reads is down. */
+class IndexDown extends Schema.TaggedError<IndexDown, { readonly brand: unique symbol }>()("IndexDown", {}) {
+	override get message(): string {
+		return "The index is down";
+	}
+}
 
 /** Asks the question on `given` and waits for the run to end; what the conversation then holds. */
 function settled<R>(given: Scene<R>) {
@@ -105,10 +113,11 @@ describe("a blocking finding", () => {
 			reviewer: [findings(WRONG, TERSE), findings()],
 		});
 		const result = await Effect.runPromise(settled(corrected));
+		const model = Check.Name.make("review.model");
 		const message = Correction.standard({
 			pass: 1,
-			blocking: [{ check: "review.model", ...WRONG }],
-			remarks: [{ check: "review.model", ...TERSE }],
+			blocking: [{ check: model, ...WRONG }],
+			remarks: [{ check: model, ...TERSE }],
 		});
 		expect(message).toBe(
 			[
@@ -227,7 +236,9 @@ describe("a product's check", () => {
 			[1, "It is forty-two.", PARTIES.author, 2],
 			[2, "It is 42.", PARTIES.author, 4],
 		]);
-		expect(seen[0]?.answerId).toBe((result.transcript[2]?.[1] as { answer: number }).answer);
+		const verdict = result.transcript[2]?.[1] as { readonly answer: number } | undefined;
+		expect(verdict?.answer).toEqual(expect.any(Number));
+		expect(seen[0]?.answerId).toBe(verdict?.answer);
 		expect([AUTHOR.provider, REVIEWER.provider]).toEqual(["author-lab", "reviewer-lab"]);
 	});
 });
@@ -306,7 +317,7 @@ describe("an answer the reviewer may not review", () => {
 });
 
 describe("a check that fails", () => {
-	const Down = Check.make("app.down", () => Effect.fail(new Error("The index is down")));
+	const Down = Check.make("app.down", () => Effect.fail(new IndexDown()));
 	const Broken = Check.make("app.broken", () => Effect.die("boom"));
 
 	it("never passes the answer: it is recorded as not reviewed, with the failure", async () => {
@@ -391,8 +402,8 @@ describe("the reviewer's request in the verdict", () => {
 });
 
 describe("the family rule and the model that reviewed", () => {
-	const ALIAS = { provider: "router", modelId: "reviewer" };
-	const JUDGE = { provider: "judge-lab", modelId: "judge-2" };
+	const ALIAS = fromPiModelRef({ provider: "router", modelId: "reviewer" });
+	const JUDGE = fromPiModelRef({ provider: "judge-lab", modelId: "judge-2" });
 	const FAILED = fauxAssistantMessage([], { stopReason: "error", errorMessage: "overloaded" });
 	const WRONG_AGAIN: Finding = { severity: "block", text: "It is not 42." };
 	/** The alias is of family beta, as its first route is; its second route is the author's own model. */

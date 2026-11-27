@@ -23,7 +23,7 @@ export interface Process {
 	readonly write: (data: Uint8Array | string) => Effect.Effect<void>;
 	/** Closes its stdin after what was written before. */
 	readonly closeStdin: Effect.Effect<void>;
-	/** Its exit code. Fails with the daemon's error, with code `aborted` once its scope closed. */
+	/** Its exit code, an integer. Fails with the daemon's error, with code `aborted` once its scope closed. */
 	readonly exited: Effect.Effect<number, RemoteFailed>;
 }
 
@@ -31,22 +31,23 @@ export interface Process {
  * Starts a program in the daemon behind `connection`; closing the scope kills it and its process group. Fails with
  * `not_supported` when the daemon predates processes.
  */
-export function open(connection: Connection, options: Options): Effect.Effect<Process, RemoteFailed, Scope.Scope> {
-	return Effect.map(
-		Program.acquire(["stdout", "stderr"] as const, (write) =>
-			openProcess(connection.pi, {
-				...options,
-				onStdout: (bytes) => write("stdout", bytes),
-				onStderr: (bytes) => write("stderr", bytes),
-			}),
-		),
-		({ pi, output, exited }) => ({
-			pid: pi.pid,
-			stdout: output("stdout"),
-			stderr: output("stderr"),
-			write: (data) => Effect.sync(() => pi.write(data)),
-			closeStdin: Effect.sync(() => pi.closeStdin()),
-			exited,
+export const open = Effect.fn("Process.open")(function* (
+	connection: Connection,
+	options: Options,
+): Effect.fn.Return<Process, RemoteFailed, Scope.Scope> {
+	const { pi, output, exited } = yield* Program.acquire(["stdout", "stderr"], (write) =>
+		openProcess(connection.pi, {
+			...options,
+			onStdout: (bytes) => write("stdout", bytes),
+			onStderr: (bytes) => write("stderr", bytes),
 		}),
 	);
-}
+	return {
+		pid: pi.pid,
+		stdout: output("stdout"),
+		stderr: output("stderr"),
+		write: (data) => Effect.sync(() => pi.write(data)),
+		closeStdin: Effect.sync(() => pi.closeStdin()),
+		exited,
+	};
+});

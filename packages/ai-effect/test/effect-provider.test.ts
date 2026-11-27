@@ -7,7 +7,7 @@ import {
 import { Context, Effect, Exit, Layer, Scope, Stream } from "effect";
 import { AiError, LanguageModel, type Prompt, type Response, Tool } from "effect/ai";
 import { describe, expect, it } from "vitest";
-import { complete, EffectProvider, Models, streamSimple } from "../src/index.ts";
+import { complete, EffectProvider, ModelId, Models, ProviderId, streamSimple } from "../src/index.ts";
 import {
 	fauxAssistantMessage,
 	fauxText,
@@ -18,7 +18,7 @@ import {
 } from "../src/testing/index.ts";
 
 const MODEL: EffectProvider.EffectModel = {
-	id: "scripted",
+	id: ModelId.make("scripted"),
 	contextWindow: 1000,
 	maxTokens: 100,
 	input: ["text", "image"],
@@ -39,7 +39,7 @@ const context: PiContext = {
 
 /** A provider over `layer` and a pi-ai `Models` that holds it, alive until the scope closes. */
 const provide = Effect.fnUntraced(function* (layer: Layer.Layer<LanguageModel.LanguageModel>) {
-	const provider = yield* EffectProvider.make({ id: "effect", models: [MODEL], layer });
+	const provider = yield* EffectProvider.make({ id: ProviderId.make("effect"), models: [MODEL], layer });
 	const models = yield* Effect.provide(
 		Models.use((models) => Effect.succeed(models)),
 		Models.layer([provider]),
@@ -119,9 +119,9 @@ describe("EffectProvider.make", () => {
 			Effect.gen(function* () {
 				const { provider, models } = yield* provideScripted([]);
 				const minimal = yield* EffectProvider.make({
-					id: "plain",
+					id: ProviderId.make("plain"),
 					name: "Plain",
-					models: [{ id: "m", contextWindow: 8, maxTokens: 4 }],
+					models: [{ id: ModelId.make("m"), contextWindow: 8, maxTokens: 4 }],
 					layer: ScriptedLanguageModel.layer(),
 				});
 				return {

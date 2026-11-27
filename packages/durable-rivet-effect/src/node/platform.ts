@@ -17,12 +17,22 @@ export const layer: Layer.Layer<Services> = NodeChildProcessSpawner.layer.pipe(
 	Layer.provideMerge(Layer.merge(NodeFileSystem.layer, NodePath.layer)),
 );
 
-/** The process ids of the engines started on `directory`, by any process. See `EngineProcess.running`. */
-export function running(directory: string): Effect.Effect<ReadonlyArray<number>, EngineUnavailable> {
-	return Effect.provide(EngineProcess.running(directory), layer);
+/** `effect` on Node's implementations of the platform services, `layer`: what the entries' functions run on. */
+export function provide<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, Exclude<R, Services>> {
+	// @effect-diagnostics-next-line strictEffectProvide:off The `/node` and `/bun` entries are where the local engine's platform is decided, so that their functions need nothing of the caller (README, "What runs locally"); the services hold no state.
+	return Effect.provide(effect, layer);
 }
 
+/** The process ids of the engines started on `directory`, by any process. See `EngineProcess.running`. */
+export const running: (directory: string) => Effect.Effect<ReadonlyArray<number>, EngineUnavailable> = Effect.fn(
+	"LocalEngine.running",
+)(function* (directory: string) {
+	return yield* provide(EngineProcess.running(directory));
+});
+
 /** Stops the engines started on `directory`, for a test or a clean-up. See `EngineProcess.stop`. */
-export function stop(directory: string): Effect.Effect<void, EngineUnavailable> {
-	return Effect.provide(EngineProcess.stop(directory), layer);
-}
+export const stop: (directory: string) => Effect.Effect<void, EngineUnavailable> = Effect.fn("LocalEngine.stop")(
+	function* (directory: string) {
+		return yield* provide(EngineProcess.stop(directory));
+	},
+);

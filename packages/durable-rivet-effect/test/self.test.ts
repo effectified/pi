@@ -4,11 +4,11 @@
 import { Effect, Layer, Option } from "effect";
 import type { ClientRaw } from "rivetkit/client";
 import { describe, expect, it } from "vitest";
-import { ActorEngine, ActorInfo, Client, type Identity, Self } from "../src/index.ts";
+import { ActorEngine, ActorId, ActorInfo, Client, type Identity, Self } from "../src/index.ts";
 import { Agent } from "./agent.ts";
 
 const info: Identity = {
-	actorId: "actor-1",
+	actorId: ActorId.make("actor-1"),
 	name: "agent",
 	key: ["tenant", "primed"],
 	namespace: "default",

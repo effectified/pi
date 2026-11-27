@@ -843,7 +843,7 @@ function printChanges(changes: readonly Change[]): void {
 /** A line diff of two texts: `-` and `+` lines with two lines of context, `...` where unchanged lines are left out. */
 function lineDiff(before: readonly string[], after: readonly string[]): string[] {
 	// Longest common subsequence table, from the end, so the walk below goes forward.
-	const lengths = Array.from({ length: before.length + 1 }, () => new Array<number>(after.length + 1).fill(0));
+	const lengths = Array.from({ length: before.length + 1 }, () => Array.from({ length: after.length + 1 }, () => 0));
 	for (let i = before.length - 1; i >= 0; i--) {
 		for (let j = after.length - 1; j >= 0; j--) {
 			lengths[i][j] =

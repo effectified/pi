@@ -4,7 +4,7 @@ import { Gate, Harness, Hook } from "@effectified/pi-durable";
 import { Effect } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-import { approve, decide, deny, pending } from "../src/index.ts";
+import { approve, Digest, decide, deny, pending, RequestId } from "../src/index.ts";
 import { HOUR, parked, scene, status, submit } from "./scene.ts";
 
 const MISSING_TASK = 999_999 as TaskId;
@@ -26,7 +26,10 @@ describe("decide", () => {
 				yield* root.waitForIdle;
 				const late = yield* decide(request, yield* deny(request, "eve"));
 				// Pi dropped the call's requests with its outcome: any id sent to it answers the same.
-				const other = yield* decide({ task: request.task, id: "never asked" }, yield* deny(request, "eve"));
+				const other = yield* decide(
+					{ task: request.task, id: RequestId.make("never asked") },
+					yield* deny(request, "eve"),
+				);
 				return { delivered, again, late, other, settled: settled.status };
 			}).pipe(Effect.provide(layer)),
 		);
@@ -115,7 +118,10 @@ describe("decide", () => {
 				const results = {
 					noTask: yield* decide({ task: MISSING_TASK, id: request.id }, approval),
 					noToolCall: yield* decide({ task: generation?.record.id as TaskId, id: request.id }, approval),
-					noRequest: yield* decide({ task: request.task, id: `${request.task}:1:${request.digest}` }, approval),
+					noRequest: yield* decide(
+						{ task: request.task, id: RequestId.make(`${request.task}:1:${request.digest}`) },
+						approval,
+					),
 				};
 				const listed = yield* pending;
 				yield* root.abort();
@@ -134,7 +140,9 @@ describe("decide", () => {
 			Effect.gen(function* () {
 				const { root, submission } = yield* submit();
 				const request = yield* parked(published);
-				const error = yield* Effect.flip(decide(request, yield* approve({ digest: "0".repeat(64) }, "ada")));
+				const error = yield* Effect.flip(
+					decide(request, yield* approve({ digest: Digest.Digest.make("0".repeat(64)) }, "ada")),
+				);
 				const listed = yield* pending;
 				// The request is still open: the right decision is delivered.
 				const delivered = yield* decide(request, yield* approve(request, "ada"));

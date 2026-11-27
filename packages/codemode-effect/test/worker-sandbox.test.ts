@@ -1,7 +1,7 @@
 import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Ref, Semaphore } from "effect";
 import { describe, expect, it } from "vitest";
-import { Wasm, WorkerSandbox } from "../src/index.ts";
+import { AdmissionDenied, Wasm, WorkerSandbox } from "../src/index.ts";
 import { lookup, records } from "./tools.ts";
 
 describe("make", () => {
@@ -48,7 +48,7 @@ describe("the worker callbacks", () => {
 			Effect.gen(function* () {
 				const workers = yield* Ref.make(0);
 				const sandbox = yield* WorkerSandbox.make({
-					acquireWorker: Effect.fail(new Error("no capacity")),
+					acquireWorker: Effect.fail(AdmissionDenied.make({ message: "no capacity" })),
 					onWorkerStarted: () => Ref.update(workers, (n) => n + 1),
 				});
 				return [yield* sandbox.execute(`return 1;`), yield* Ref.get(workers)] as const;

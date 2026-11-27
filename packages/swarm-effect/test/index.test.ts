@@ -6,22 +6,37 @@ import * as Package from "../src/index.ts";
 describe("the public surface", () => {
 	it("is the definition, the host operations, the driver port and the in-storage driver", () => {
 		expect(Object.keys(Package).sort()).toEqual([
+			"Cleaned",
 			"ConversationForks",
+			"Destroyed",
+			"Ending",
 			"Fork",
 			"ForkDriver",
+			"ForkFailure",
 			"ForkGone",
+			"ForkId",
 			"ForkRetryLater",
 			"ForkSetup",
 			"ForkSetupFailed",
 			"InvalidPlan",
 			"InvalidValue",
+			"JobEvent",
+			"JobKey",
+			"JobRef",
+			"JobReport",
 			"JobState",
 			"JobStatus",
 			"Notice",
 			"Place",
 			"Reason",
+			"RequestId",
+			"RunRequest",
+			"Started",
+			"Status",
 			"Stored",
+			"StoredJob",
 			"SwarmFaulted",
+			"SwarmId",
 			"SwarmIdTaken",
 			"SwarmNotFound",
 			"cancel",
@@ -37,7 +52,7 @@ describe("the public surface", () => {
 			"typed",
 		]);
 		expect(Object.keys(Package.ConversationForks).sort()).toEqual(["attach", "layer"]);
-		expect(Object.keys(Package.ForkSetup).sort()).toEqual(["ForkSetup", "none"]);
+		expect(Object.keys(Package.ForkSetup).sort()).toEqual(["ForkSetup", "Forked", "none"]);
 	});
 
 	it("has the port on a subpath of its own, with the same values as the main entry", () => {
@@ -48,15 +63,25 @@ describe("the public surface", () => {
 			import: "./dist/driver.js",
 		});
 		expect(Object.keys(Port).sort()).toEqual([
+			"Bytes",
+			"Destroyed",
 			"Fork",
 			"ForkDriver",
+			"ForkFailure",
 			"ForkGone",
+			"ForkId",
 			"ForkRetryLater",
+			"JobKey",
 			"JobStatus",
+			"Millis",
 			"Notice",
 			"Place",
+			"RequestId",
+			"RunRequest",
+			"SwarmId",
 		]);
 		expect(Port.ForkDriver).toBe(Package.ForkDriver);
 		expect(Port.ForkGone).toBe(Package.ForkGone);
+		expect(Port.SwarmId).toBe(Package.SwarmId);
 	});
 });

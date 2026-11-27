@@ -143,8 +143,8 @@ A `Conversation` is a plain object of Effects bound to its harness.
   Pi stores nothing else of a conversation's creation: no time, and no creator besides the owner.
 
 `Conversation.Id`, `Entry.Id`, `Submission.Id` and `Task.Id` are the schemas of Pi's ids, for a document, a task
-state or a wire that keeps one: a number as stored, the branded id as decoded, with no cast (Pi brands ids in its
-types only, and TypeScript checks the brand is a number's). `Entry.after(id)` is the smallest entry id after `id`, the
+state or a wire that keeps one: an integer as stored (Pi mints them from 1; 0 names no record), the branded id as
+decoded, with no cast (Pi brands ids in its types only, and TypeScript checks the brand is a number's). `Entry.after(id)` is the smallest entry id after `id`, the
 bound of a read that starts after it (`minEntryId`).
 
 ## Conversation init
@@ -162,13 +162,13 @@ const Jobs = Doc.family({
 	kind: "swarm.job",
 	version: 1,
 	scope: "session",
-	schema: Schema.Struct({ conversationId: Schema.NullOr(Schema.Number) }),
+	schema: Schema.Struct({ conversationId: Schema.NullOr(Conversation.Id) }),
 	initial: () => ({ conversationId: null }),
 	checkpointWhen: () => false,
 });
 
-class AlreadyForked extends Schema.TaggedError<AlreadyForked>()("AlreadyForked", {
-	conversationId: Schema.Number,
+class AlreadyForked extends Schema.TaggedError<AlreadyForked, { readonly brand: unique symbol }>()("AlreadyForked", {
+	conversationId: Conversation.Id,
 }) {}
 
 // One fork per job key: `init` claims the key in the commit that creates the fork.
@@ -181,7 +181,7 @@ const forkFor = (parent: Conversation.Conversation, at: EntryId, key: string) =>
 				const job = yield* tx.doc(Jobs, key, null);
 				const claimed = (yield* job.get).conversationId;
 				// A failing init fails the creating commit: a retried job stores no second fork.
-				if (claimed !== null) return yield* new AlreadyForked({ conversationId: claimed });
+				if (claimed !== null) return yield* AlreadyForked.make({ conversationId: claimed });
 				yield* job.set({ conversationId });
 			}),
 	}); // Effect<Conversation, AlreadyForked | DurableError | SchemaDecodeError>
@@ -212,7 +212,9 @@ const Todos = Doc.make({
 });
 const Note = Entry.make("app.note", Schema.Struct({ text: Schema.String, at: Schema.Date }));
 
-class TooMany extends Schema.TaggedError<TooMany>()("TooMany", { max: Schema.Number }) {}
+class TooMany extends Schema.TaggedError<TooMany, { readonly brand: unique symbol }>()("TooMany", {
+	max: Schema.Int,
+}) {}
 
 const addTodo = (item: string, at: Date) =>
 	Effect.gen(function* () {
@@ -222,7 +224,7 @@ const addTodo = (item: string, at: Date) =>
 				const todos = yield* tx.doc(Todos, root.id);
 				const { items } = yield* todos.get;
 				// A failing body fails the commit with its own error, and nothing of it is stored.
-				if (items.length >= 2) return yield* new TooMany({ max: 2 });
+				if (items.length >= 2) return yield* TooMany.make({ max: 2 });
 				yield* todos.set({ items: [...items, item] });
 				const note = yield* tx.append(Note, root.id, { data: { text: `added ${item}`, at } });
 				return note.id;
@@ -324,7 +326,8 @@ const noteWhenIdle = (conversation: Conversation.Conversation, text: string, at:
 `Entry.make(kind, schema)` defines an entry kind of your own, as Pi's `defineEntry`, with its data typed by `schema`.
 `tx.append(Note, conversationId, { data })` appends one; `tx.entryOf(Note, id)` and a hook's `api.entryOf(Note, id)`
 read one back; and `Note.read(record)` types any stored record, for example of `Conversation.entries`: none for
-another kind.
+another kind. `Entry.collect(Note)` is the `Sink` of a stream of records that keeps those of the kind, decoded and in
+order: `Stream.run(root.entries({ order: "ascending" }), Entry.collect(Note))`.
 
 ## Submission
 
@@ -359,7 +362,11 @@ const storage = Storage.sql({ prefix: "pi_" }).pipe(Layer.provide(SqliteClient.l
 
 ## Tool
 
-`Tool.make(name, { description, parameters, success, replay, callers, handler })`. Pi validates a call against the
+`Tool.make(name, { description, parameters, success, replay, callers, handler })`. The tool's `name` is a `ToolName`,
+the brand this package gives tool names, so an extension's name or another string is never taken for one: it is what
+`Agent.Change.tools`, a nested call (`api.executeTool`) and `Tool.wrap` take. `Tool.make` and Pi's tools of `/tools`
+brand their own; `ToolName.make("read")` brands a literal. Each call runs in a span, `Tool.execute`, with the tool's
+name, the call's id, its task and its conversation. Pi validates a call against the
 JSON Schema of `parameters`; the handler gets the decoded value and returns an `Effect`. The model reads a string
 result as it is and anything else as JSON. A handler failure, and arguments the schema rejects, become an error result
 the model reads, so the run goes on; a defect becomes Pi's own `tool_error` result. `replay: "safe"` lets Pi run the
@@ -416,7 +423,7 @@ const Subagent = Tool.make("subagent", {
 					if (existing !== undefined) return existing.id;
 					const created = yield* tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
 					// It starts as a copy of this conversation's agent; without the subagent tool itself.
-					yield* tx.configure(created.id, { tools: { remove: ["subagent"] } });
+					yield* tx.configure(created.id, { tools: { remove: [ToolName.make("subagent")] } });
 					return created.id;
 				}),
 			);
@@ -464,12 +471,13 @@ replay-safe handler, or a run after a park, gets the same task back. A child of 
 ## Agent
 
 What a conversation runs with is Pi's stored agent. `configure`, `fork`, `createConversation`, `rootWith` and
-`tx.configure` take an `Agent.Change`: Pi's `AgentChange`, with every tool and extension given as a `Tool` or
-`Extension` of this package, as Pi's own object, or as its name. Pi stores names.
+`tx.configure` take an `Agent.Change`: Pi's `AgentChange`, with every tool given as a `Tool` of this package, as Pi's
+own registration, or as its `ToolName`, and every extension as an `Extension`, as Pi's own object, or as its name. Pi
+stores names. An extension is never taken for a tool: its name is no `ToolName`.
 
 ```ts
 // Exactly these two tools, whatever else the selected extensions bring.
-yield* root.configure({ tools: ["lookup", "read"] });
+yield* root.configure({ tools: [Lookup, ToolName.make("read")] });
 // Of those, the model is offered only `lookup`; a tool may still call `read`.
 yield* root.configure({ modelTools: [Lookup] });
 yield* root.configure({ tools: null }); // back to the host default
@@ -480,7 +488,8 @@ A name nothing is registered under is stored and offers nothing until an extensi
 `Agent.Change` is derived from Pi's `AgentChange` field for field, so a field Pi adds is one of `Change` at once.
 `Agent.byName(change)` gives its JSON form, every tool and extension by its name, and `Agent.ByName` is the schema of
 that form, to keep a change in stored state or send it to another process and decode it back into a change
-`configure` takes; its thinking levels are pi-ai's own list, and its numbers those Pi's `configure` accepts.
+`configure` takes (decoding brands the tool names); its thinking levels are pi-ai's own list, and its numbers those
+Pi's `configure` accepts.
 `Agent.ModelRef` is the schema of the model a change names (`@effectified/pi-ai`'s `ModelRef`, Pi's `ModelRef`).
 
 ## Extension and Registry
@@ -508,7 +517,7 @@ class Policy extends Context.Service<Policy, { readonly text: string }>()("app/P
 
 const rules = Section.make("rules", () => Policy.use(({ text }) => Effect.succeedSome(text)));
 
-const audited = Tool.wrap("lookup", (tool) => ({
+const audited = Tool.wrap(Lookup.name, (tool) => ({
 	execute: (args, api) => Effect.tap(tool.execute(args, api), () => Effect.logInfo(`lookup ${api.callId}`)),
 }));
 
@@ -553,6 +562,8 @@ where Pi's hook may answer or not, the Effect succeeds with an `Option`.
 - Pi asks a hook again after a crash or a close that came before its answer was committed, and asks `beforeTool`
   again on every wake of a parked call. Keep what a handler does outside idempotent.
 - When Pi aborts the hook's invocation, the handler's fiber is interrupted.
+- Each ask runs in a span named for the hook (`Hook.beforeTool`, ...), with the asking task, its conversation, and for
+  the tool hooks the tool's name and the call's id.
 
 ### Hook tasks
 
@@ -670,7 +681,8 @@ const decision = (taskId: TaskId, callId: string) => Harness.signalState(taskId,
 `Harness.signalState(taskId, signal, key)` reads a key's state from the task's stored record, decoded as the task's
 own `readSignal` gives it: `Option.none` while nothing came, a value, or `expired`. `Signal.stateIn(record, signal,
 key)` reads it from a record you already hold: one of `Harness.inspect`, of `Harness.getTask`, of `tx.task` in a
-commit, and fails only with `SchemaDecodeError`: it decodes with the signal's schema and needs no Pi token. Pi has
+commit, and fails only with `SchemaDecodeError`: it decodes the memo and the value with schemas and needs no Pi token.
+`Signal.stateIn(signal, key)` is the same, data-last, for a pipe over the record. Pi has
 no call for this. Both read the memo Pi keeps a key's state in, `pi.signal.<signal name>/<key>`, which
 Pi's specification (5.7) describes: a convention of Pi's stored data, not an API, so a later Pi may change it. Pi
 drops a task's memos with its outcome: for a task that ended the state is none.
@@ -702,7 +714,7 @@ const Delegate = Tool.make("delegate", {
 					const existing = (yield* tx.scanConversations({ ownerTaskId: api.taskId }, 1)).items[0];
 					if (existing !== undefined) return existing.id;
 					const created = yield* tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
-					yield* tx.configure(created.id, { tools: { remove: ["delegate"] } });
+					yield* tx.configure(created.id, { tools: { remove: [ToolName.make("delegate")] } });
 					return created.id;
 				}),
 			);
@@ -829,6 +841,8 @@ const placeOrder = (cards: ReadonlyArray<string>) =>
 - **Interruption.** When the task is aborted or the harness closes, the running handler's fiber is interrupted. An
   abort then runs `abort`, once the work the task owns has ended; a close leaves the task for the next open.
 - **Services.** What the phases and `abort` need joins the requirements of `Registry.layer`, as for tools and hooks.
+- **Tracing.** Each phase runs in a span, `Task.phase` (`Task.abort` for the abort handler), with the task's kind, its
+  phase, its id and its conversation.
 
 ### Steps
 
@@ -970,7 +984,7 @@ const counts = Stream.map(Harness.watchDoc(Todos, root.id), (change) => change.v
 | `Conversation.changes(window?)` | Pi's `watch`: the conversation's view. `window` bounds its entries (newest 50, up to 100) |
 | `Harness.watchDoc(doc, …address)` | Pi's `watchDoc`, decoded. No element when the address holds no document |
 | `Harness.taskGraph` | Pi's `watchTaskGraph`: every live task with its owner and status |
-| `Harness.commits` | Pi's `observeCommits`: every stored commit with what it stored (see [Stored commits](#stored-commits)) |
+| `Harness.commits`, `Harness.attachCommits` | Pi's `observeCommits`: every stored commit with what it stored; `attachCommits` attaches now, for a reader of stored state (see [Stored commits](#stored-commits)) |
 | `Harness.observeDoc`, `Harness.observeConversation(id, window?)`, `Harness.observeTaskGraph` | Pi's synchronous observers: every commit one element, unfolded and in order, however slow the consumer (they wait in memory) |
 | `Harness.closing`, `Harness.closed` | Succeed when the harness begins to close, and once it has closed, with why (`closed`, or `failed` with the storage error) |
 | `Transcript.stream(conversation, { window, pageSize })` | A conversation's view kept as the client's whole transcript (Pi's `ConversationTranscript`): each element has the transcript, whose `loadEarlier` and `fillGap` load what the window left out |
@@ -1005,6 +1019,10 @@ const storedEntries = Stream.flatMap(Harness.commits, (commit) =>
   records Pi stored, not copies. A consumer that stops taking makes memory grow by what is committed meanwhile.
 - **The end.** It fails with `UnexpectedError` ("session closed") when the harness closes, as Pi ends its observers,
   and with the harness's own failure when it failed. Closing the stream's scope detaches the observer.
+- **Attached now.** `Harness.commits` attaches its observer when the stream starts to run, in whatever fiber runs it.
+  A consumer that reads stored state and then follows what changes it takes `Harness.attachCommits`, an Effect on the
+  scope: once it succeeded the observer is attached, and every commit stored from then on is an element of the Stream
+  it gives, also one stored while the consumer reads. Run that stream once.
 
 ## Scans and idle reads
 
@@ -1105,6 +1123,8 @@ const bounded = Effect.scoped(
 A call into Pi fails with one of a closed union of tagged errors, `DurableError`: `ConversationBusy`,
 `ConversationIdle`, `ReadAfterWrite`, `ReadOnlySession`, `SessionFailed`, `StorageRequestError`, `Cancelled` (Pi
 cancelled a call the fiber did not interrupt) and `UnexpectedError` (anything else Pi rejects with, in `cause`).
+`DurableError` is also the union's schema: `DurableError.match(error, { ... })` picks a handler per tag, and
+`DurableError.guards` tests for one.
 Every error class Pi Durable exports has its tag: the mapping is keyed by Pi's exports, so a class Pi adds fails to
 compile until it has one. `conversationId` of `ConversationBusy` and `ConversationIdle` is Pi's `ConversationId`.
 `Registry.layer` and signals add `SchemaConversionError`, and signals, documents and typed entries
@@ -1284,7 +1304,7 @@ const coding = Layer.unwrap(
 
 `Memo` (the memo function of a hook's, a tool's and a task's api), `JsonValue` and `JsonObject` (the JSON Pi stores:
 a memo, a checkpoint, a tool's details) are exported beside the modules, so a signature of yours can name them
-without a second import.
+without a second import. `ToolName` (also `Tool.Name`) is the schema and type of a tool's name.
 
 ## Not wrapped yet
 

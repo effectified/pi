@@ -35,7 +35,8 @@ npm install --allow-remote=all $R/effectified-pi-router-0.2.0.tgz $R/effectified
 ```ts
 import type { RouteTable } from "@effectified/pi-router";
 
-const table: RouteTable = {
+// The table as a product writes or stores it: plain text and numbers. The router decodes it.
+const table: typeof RouteTable.Encoded = {
 	// The product's labels, lowest to highest. The router has none of its own.
 	classifications: ["public", "internal", "secret"],
 	// Every concurrency key a route names: how many requests may be in flight on it.
@@ -74,7 +75,11 @@ const table: RouteTable = {
 };
 ```
 
-`RouteTable` is an Effect `Schema`. `decodeRouteTable(json)` reads a stored table and fails with `RouteTableError`
+`RouteTable` is an Effect `Schema`. Its type has the ids branded: a route's `provider` is a `ProviderId`, its `model`
+and an `alias` are `ModelId`s (of `@effectified/pi-ai`; an alias is the id of its model under the router's provider),
+and a `concurrencyKey` is this package's `ConcurrencyKey`. Its encoded form, `typeof RouteTable.Encoded`, is the plain
+one above: `Router.layer`, `validateRouteTable` and `priceRows` take it, or a decoded table, and `Router.table` is the
+decoded one. `decodeRouteTable(json)` reads a stored table and fails with `RouteTableError`
 (issue `Malformed`) when it is not one: a price must be a whole number of micro units, zero or more, and a label must
 be text without white space, not empty. A route without `labels` carries none, so a table written before labels
 existed decodes as it is.
@@ -98,13 +103,15 @@ provides `Router` and `RouteEvents`.
 
 ```ts
 import { Effect, Layer } from "effect";
-import { complete, getModel, Models } from "@effectified/pi-ai";
+import { complete, fromPiModelRef, getModel, Models, ProviderId } from "@effectified/pi-ai";
 import { Router } from "@effectified/pi-router";
 
-const live = Router.layer(table, { id: "router" }).pipe(Layer.provideMerge(Models.layer([openrouter, local])));
+const live = Router.layer(table, { id: ProviderId.make("router") }).pipe(
+	Layer.provideMerge(Models.layer([openrouter, local])),
+);
 
 const program = Effect.gen(function* () {
-	const model = yield* getModel({ provider: "router", modelId: "author" });
+	const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "author" }));
 	return yield* complete(model, { messages: [{ role: "user", content: "Hello", timestamp: Date.now() }] });
 }).pipe(Effect.provide(live));
 ```
@@ -161,10 +168,11 @@ request goes to a route's provider; the rest of the metadata is passed on.
 
 ```ts
 const router = yield* Router;
-yield* router.resolve("author", { classification: "public" }); // both routes, in table order
-yield* router.resolve("author", { classification: "secret" }); // the local route only
-yield* router.resolve("author", { classification: "public", requires: ["zero-data-retention"] }); // the local route
-yield* router.resolve("author", { classification: "secret", regions: ["us"] }); // fails: NoRouteAvailable
+const author = ModelId.make("author"); // the alias: the id of its model under the router's provider
+yield* router.resolve(author, { classification: "public" }); // both routes, in table order
+yield* router.resolve(author, { classification: "secret" }); // the local route only
+yield* router.resolve(author, { classification: "public", requires: ["zero-data-retention"] }); // the local route
+yield* router.resolve(author, { classification: "secret", regions: ["us"] }); // fails: NoRouteAvailable
 ```
 
 `NoRouteAvailable` says why each route is excluded, in table order: `classification`, `region` or `label`, the first
@@ -193,7 +201,7 @@ const PerConversation = Layer.succeed(ConstraintSource, {
 		// A session the product does not know is not served: the request is refused.
 		Effect.mapError(
 			Effect.fromNullishOr(sessionId === undefined ? undefined : bySession.get(sessionId)),
-			() => new ConstraintsUnavailable({ alias, reason: `no constraints for session ${sessionId}` }),
+			() => ConstraintsUnavailable.make({ alias, reason: `no constraints for session ${sessionId}` }),
 		),
 });
 
@@ -214,7 +222,7 @@ What the source answers only ever narrows a request. Three parties have a say, a
      classification, so the request is no longer treated as the highest label.
 
 - **Fail closed.** A source that fails refuses the request with its own `ConstraintsUnavailable`; one that dies
-  refuses it with a `ConstraintsUnavailable` whose `reason` names the defect. Nothing is sent and no route event is
+  refuses it with a `ConstraintsUnavailable` whose `reason` names the defect and whose `cause` is the defect. Nothing is sent and no route event is
   written. Through pi-ai the request ends in an `error` whose text is a fixed sentence without the reason, so no word
   of a product's reason can make Pi send the request again.
 - **The default imposes nothing.** `ConstraintSource` is a `Context.Reference` whose default answers `{}`: a router
@@ -243,7 +251,8 @@ request in Effect terms, with typed errors:
 
 ```ts
 const router = yield* Router;
-const message = yield* router.complete("author", context, { constraints: { classification: "public" } }).pipe(
+const author = ModelId.make("author");
+const message = yield* router.complete(author, context, { constraints: { classification: "public" } }).pipe(
 	Effect.catchTags({
 		// Every route failed. `error.failures` has one entry per attempt.
 		RoutesExhausted: (error) => Effect.fail(error.message),
@@ -275,8 +284,9 @@ const record = Effect.gen(function* () {
 });
 ```
 
-A `RouteEvent` has the router id, the request's number and its `requestId`, the pi-ai `sessionId` the request came
-with and the `requestKey` of what it asks (when it had a session), the alias, the whole route, the attempt number, the `outcome` (`served`, `failed`, `aborted`,
+A `RouteEvent` has the router id (a `ProviderId`), the request's number and its `requestId` (a `RouterRequestId`), the
+pi-ai `sessionId` the request came with and the `requestKey` of what it asks (a `RequestKey`, when it had a session),
+the alias (a `ModelId`), the whole route, the attempt number, the `outcome` (`served`, `failed`, `aborted`,
 `unavailable`), `fallback` (true when the next route is tried because of this outcome), pi-ai's error text, the token
 usage, its cost at the route's price, and three times from Effect's `Clock`: when the attempt began, how long it
 waited for the limiter and how long the request took. `events.subscribe` subscribes at once, so nothing published
@@ -310,7 +320,7 @@ attempt to the product's `AttemptSettlement` and waits for it, before the next r
 
 ```ts
 import { Effect, Layer } from "effect";
-import { Spend } from "@effectified/pi-budget";
+import { Spend, SpendKey } from "@effectified/pi-budget";
 import { AttemptSettlement, Router } from "@effectified/pi-router";
 
 /** Charges each attempt another route takes over to the budget, before that route is tried. */
@@ -321,7 +331,7 @@ const SettleAttempts = Layer.effect(
 		return AttemptSettlement.of({
 			settle: (event) =>
 				spend.record({
-					key: `${event.requestId}#${event.attempt}`,
+					key: SpendKey.make(`${event.requestId}#${event.attempt}`),
 					provider: event.route.provider,
 					model: event.route.model,
 					session: event.sessionId,
@@ -360,7 +370,8 @@ zero at the route's price) and that the next route is about to take over, and fo
   route is tried. The attempt becomes the request's last:
   - Its route event says `fallback: false`.
   - The request fails with `AttemptUnsettled`: `alias`, `requestId` and `attempt` (the attempt's name, as in its
-    event), `provider`, `model`, `reason` (the port's text) and `response` (the failed route's pi-ai message).
+    event), `provider`, `model`, `reason` (the port's text), `cause` (what the port failed or died with) and
+    `response` (the failed route's pi-ai message).
   - Through pi-ai it ends in an `error` that is the failed route's own message, its usage included, under a fixed
     sentence. A budget around the router therefore settles this attempt with the request's own reservation, at the
     route's price. That reservation was given before the request was sent, so a lease that is fenced by now is
@@ -403,11 +414,11 @@ The request itself moves on to its next route.
 `Limiter` is also usable alone:
 
 ```ts
-import { Limiter } from "@effectified/pi-router";
+import { ConcurrencyKey, Limiter } from "@effectified/pi-router";
 
 const limited = Effect.gen(function* () {
 	const limiter = yield* Limiter;
-	return yield* limiter.withPermit("crawler", fetchPage);
+	return yield* limiter.withPermit(ConcurrencyKey.make("crawler"), fetchPage);
 }).pipe(Effect.provide(Limiter.layer({ limits: { crawler: { maxInFlight: 4 } } })));
 ```
 
@@ -450,7 +461,7 @@ them as plain rows, in the shape the `PriceTable` of `@effectified/pi-budget` de
 import { priceRows } from "@effectified/pi-router";
 
 // { currency: "USD", prices: [{ provider, model, input, output, cacheRead, cacheWrite }, ...] }
-const rows = yield* priceRows(table); // or priceRows(table, "routes") for a router built with { id: "routes" }
+const rows = yield* priceRows(table); // or priceRows(table, id) for a router built with { id }
 // In the product, with the budget: Prices.layer(rows)
 ```
 
@@ -472,12 +483,12 @@ pi-ai 1.6.0 ships an OpenRouter provider, and `@effectified/pi-ai` can make a pr
 such as `@effect/ai-openrouter`. A table can route to both side by side:
 
 ```ts
-import { EffectProvider, Models } from "@effectified/pi-ai";
+import { EffectProvider, ModelId, Models, ProviderId } from "@effectified/pi-ai";
 import { openrouterProvider } from "@effectified/pi-ai/providers/openrouter";
 
 const viaEffect = yield* EffectProvider.make({
-	id: "effect-openrouter",
-	models: [{ id: "openai/gpt-6-luna", contextWindow: 400_000, maxTokens: 32_000 }],
+	id: ProviderId.make("effect-openrouter"),
+	models: [{ id: ModelId.make("openai/gpt-6-luna"), contextWindow: 400_000, maxTokens: 32_000 }],
 	layer: openRouterLanguageModel, // Layer<LanguageModel.LanguageModel> from @effect/ai-openrouter
 });
 const live = Router.layer(table).pipe(Layer.provideMerge(Models.layer([openrouterProvider(), viaEffect])));

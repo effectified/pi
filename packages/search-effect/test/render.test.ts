@@ -1,11 +1,11 @@
 import { DateTime } from "effect";
 import { describe, expect, it } from "vitest";
-import type { Hit, Retrieval, Unfetched } from "../src/provider/index.ts";
+import { type Hit, ProviderName, type Retrieval, type Unfetched } from "../src/provider/index.ts";
 import { fetchText, searchText } from "../src/render.ts";
 
 function retrieval(hits: ReadonlyArray<Hit>, unfetched: ReadonlyArray<Unfetched> = []): Retrieval {
 	return {
-		provider: "test",
+		provider: ProviderName.make("test"),
 		request: { method: "POST", url: "https://search.test", body: {} },
 		retrievedAt: DateTime.makeUnsafe(0),
 		raw: '{"secret":"raw body"}',

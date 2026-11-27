@@ -8,6 +8,7 @@ import type {
 	McpPipe,
 	McpRequestOptions,
 	PipeTransportOptions,
+	Tool as PiTool,
 	StdioTransportOptions,
 	StreamableHttpTransportOptions,
 } from "@earendil-works/pi-mcp";
@@ -16,16 +17,18 @@ import type {
 	createMcpAuthProvider,
 	listenForLoopbackSignIn,
 	McpOAuthServerStore,
+	McpOAuthSettings,
 	McpSignInOptions,
 	waitForLoopbackSignIn,
 } from "@earendil-works/pi-mcp/oauth";
 import type { Assert, Conform, Covers } from "../../../effect/conformance.ts";
 import type { Auth } from "../src/auth.ts";
-import type { ClientOptions, McpClientService } from "../src/client.ts";
+import type { ClientOptions, McpClientService, Tool } from "../src/client.ts";
 import type * as Errors from "../src/errors.ts";
 import type { TaggedClass } from "../src/errors.ts";
 import type { AuthProviderOptions } from "../src/oauth/auth-provider.ts";
 import type { LoopbackOptions, WaitOptions } from "../src/oauth/loopback.ts";
+import type { OAuthSettings } from "../src/oauth/settings.ts";
 import type { SignInOptions } from "../src/oauth/sign-in.ts";
 import type { OAuthStore } from "../src/oauth/store.ts";
 import type { PiRequestOptions, RequestOptions } from "../src/request.ts";
@@ -88,6 +91,10 @@ export type ClientCovered = Assert<
 	>
 >;
 
+/** A listed tool is Pi's, field by field, with its name branded. */
+export type ToolMirrored = Assert<Conform<Omit<Tool, "name">, Omit<PiTool, "name">>> &
+	Assert<Conform<keyof Tool, keyof PiTool>>;
+
 /** A request's options: Pi's signal is the fiber, its timer `timeout`, its progress callback `progress`. */
 export type RequestOptionsCovered = Assert<Conform<keyof McpRequestOptions, keyof PiRequestOptions>> &
 	Assert<Conform<keyof RequestOptions, "timeout" | "progress">>;
@@ -101,6 +108,12 @@ export type TransportOptionsCovered = Assert<Covers<StdioTransportOptions, Stdio
 	Assert<Covers<StreamableHttpTransportOptions, StreamableHttpOptions, "authProvider">> &
 	Assert<Covers<McpPipe, Pipe>> &
 	Assert<Covers<AuthProvider, Auth>>;
+
+/** The OAuth settings are Pi's, field by field, with the client secret `Redacted`. */
+export type OAuthSettingsMirrored = Assert<
+	Conform<Omit<OAuthSettings, "clientSecret">, Omit<McpOAuthSettings, "clientSecret">>
+> &
+	Assert<Conform<keyof OAuthSettings, keyof McpOAuthSettings>>;
 
 /** The OAuth store and the options of what takes one are Pi's, with the store as Effects and the signal the fiber's. */
 export type OAuthOptionsCovered = Assert<Covers<McpOAuthServerStore, OAuthStore>> &

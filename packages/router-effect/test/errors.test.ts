@@ -1,4 +1,5 @@
 import { isRetryableAssistantError } from "@earendil-works/pi-ai";
+import { ModelId, ProviderId } from "@effectified/pi-ai";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
@@ -6,16 +7,23 @@ import {
 	ConstraintsUnavailable,
 	InvalidConstraints,
 	NoRouteAvailable,
+	RouterRequestId,
 	RoutesExhausted,
 	RouteTableError,
 	RouteTableIssue,
 	UnknownAlias,
 } from "../src/index.ts";
-import { failing } from "./scripted.ts";
+import { FAST, failing } from "./scripted.ts";
+
+/** The provider `a` and its model `m`, as the routes of these tests name them. */
+const A = ProviderId.make("a");
+const M = ModelId.make("m");
 
 describe("RouteTableError", () => {
 	it("says each kind of issue in words that name the entry", () => {
-		const said = (issue: RouteTableIssue) => new RouteTableError({ issues: [issue] }).message;
+		// An issue as stored, decoded: its ids are branded.
+		const said = (issue: typeof RouteTableIssue.Encoded) =>
+			RouteTableError.make({ issues: [Schema.decodeUnknownSync(RouteTableIssue)(issue)] }).message;
 		expect(said({ _tag: "Malformed", message: "Expected string" })).toBe("Expected string");
 		expect(said({ _tag: "DuplicateClassification", label: "public" })).toBe(
 			'Classification "public" is listed twice',
@@ -52,22 +60,22 @@ describe("RouteTableError", () => {
 
 describe("the errors of a request", () => {
 	it("are tagged and say what happened", () => {
-		const unknown = new UnknownAlias({ alias: "nope" });
+		const unknown = new UnknownAlias({ alias: ModelId.make("nope") });
 		expect([unknown._tag, unknown.message]).toEqual(["UnknownAlias", 'The route table has no alias "nope"']);
 
-		const invalid = new InvalidConstraints({ alias: "fast", reason: "no such label" });
+		const invalid = new InvalidConstraints({ alias: FAST, reason: "no such label" });
 		expect([invalid._tag, invalid.message]).toEqual([
 			"InvalidConstraints",
 			'The constraints of a request to alias "fast" are not usable: no such label',
 		]);
 
-		const anywhere = new NoRouteAvailable({ alias: "fast", classification: "secret", excluded: [] });
+		const anywhere = new NoRouteAvailable({ alias: FAST, classification: "secret", excluded: [] });
 		expect([anywhere._tag, anywhere.message]).toEqual([
 			"NoRouteAvailable",
 			'No route of alias "fast" may serve content classified "secret" in any region',
 		]);
 		const regional = new NoRouteAvailable({
-			alias: "fast",
+			alias: FAST,
 			classification: "secret",
 			regions: ["eu", "jp"],
 			excluded: [],
@@ -76,10 +84,10 @@ describe("the errors of a request", () => {
 			'No route of alias "fast" may serve content classified "secret" in the regions eu, jp',
 		);
 
-		const none = new NoRouteAvailable({ alias: "fast", classification: "public", regions: [], excluded: [] });
+		const none = new NoRouteAvailable({ alias: FAST, classification: "public", regions: [], excluded: [] });
 		expect(none.message).toBe('No route of alias "fast" may serve content classified "public" in no region');
 		const labelled = new NoRouteAvailable({
-			alias: "fast",
+			alias: FAST,
 			classification: "public",
 			requires: ["zero-data-retention", "batch"],
 			excluded: [],
@@ -90,8 +98,8 @@ describe("the errors of a request", () => {
 
 		const response = failing("overloaded");
 		const exhausted = new RoutesExhausted({
-			alias: "fast",
-			failures: [{ provider: "a", model: "m", message: "overloaded" }],
+			alias: FAST,
+			failures: [{ provider: A, model: M, message: "overloaded" }],
 			response,
 		});
 		expect([exhausted._tag, exhausted.message]).toEqual([
@@ -103,7 +111,7 @@ describe("the errors of a request", () => {
 
 	it("say that the constraints are not known without the source's reason, so Pi never sends the request again", () => {
 		// The reason is the product's text: it may hold any word, also one pi-ai retries a request for.
-		const error = new ConstraintsUnavailable({ alias: "fast", reason: "the grant store timed out: 503 overloaded" });
+		const error = new ConstraintsUnavailable({ alias: FAST, reason: "the grant store timed out: 503 overloaded" });
 		expect([error._tag, error.reason]).toEqual([
 			"ConstraintsUnavailable",
 			"the grant store timed out: 503 overloaded",
@@ -119,11 +127,11 @@ describe("the errors of a request", () => {
 	it("say which attempt could not be settled without the port's reason, so Pi never sends the request again", () => {
 		const response = failing("overloaded");
 		const error = new AttemptUnsettled({
-			alias: "fast",
-			requestId: "lz4k2q9xw-429",
+			alias: FAST,
+			requestId: RouterRequestId.make("lz4k2q9xw-429"),
 			attempt: 2,
-			provider: "a",
-			model: "m",
+			provider: A,
+			model: M,
 			// The reason is the product's text, and the request id ends in a number: either may read as a status code.
 			reason: "the lease store timed out: 503 overloaded",
 			response,
@@ -149,7 +157,7 @@ describe("the errors of a request", () => {
 
 	it("can be told apart by tag when handled", async () => {
 		const handled = await Effect.runPromise(
-			Effect.fail(new UnknownAlias({ alias: "nope" })).pipe(
+			Effect.fail(new UnknownAlias({ alias: ModelId.make("nope") })).pipe(
 				Effect.catchTag("UnknownAlias", (error) => Effect.succeed(`handled ${error.alias}`)),
 			),
 		);

@@ -169,7 +169,9 @@ const Todos = Doc.make({
 });
 const Note = Entry.make("app.note", Schema.Struct({ text: Schema.String, at: Schema.Date }));
 
-class TooMany extends Schema.TaggedError<TooMany>()("TooMany", { max: Schema.Number }) {}
+class TooMany extends Schema.TaggedError<TooMany, { readonly brand: unique symbol }>()("TooMany", {
+	max: Schema.Int,
+}) {}
 
 const addTodo = (item: string, at: Date) =>
 	Effect.gen(function* () {
@@ -179,7 +181,7 @@ const addTodo = (item: string, at: Date) =>
 				const todos = yield* tx.doc(Todos, root.id);
 				const { items } = yield* todos.get;
 				// A failing body fails the commit with its own error, and nothing of it is stored.
-				if (items.length >= 2) return yield* new TooMany({ max: 2 });
+				if (items.length >= 2) return yield* TooMany.make({ max: 2 });
 				yield* todos.set({ items: [...items, item] });
 				const note = yield* tx.append(Note, root.id, { data: { text: `added ${item}`, at } });
 				return note.id;

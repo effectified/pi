@@ -29,14 +29,14 @@ process as pi-mcp does: stdin closed, then SIGTERM, then SIGKILL.
 
 ```typescript
 import { Effect } from "effect";
-import { McpClient, stdioTransport } from "@effectified/pi-mcp";
+import { McpClient, McpToolName, stdioTransport } from "@effectified/pi-mcp";
 
 const echoOnce = (command: string, args: ReadonlyArray<string>) =>
 	Effect.gen(function* () {
 		const transport = yield* stdioTransport({ command, args });
 		const client = yield* McpClient.connect(transport, { name: "my-app", version: "1.0.0" });
 		const tools = yield* client.listTools();
-		const result = yield* client.callTool("echo", { text: "hello" });
+		const result = yield* client.callTool(McpToolName.make("echo"), { text: "hello" });
 		return { server: client.initialize.serverInfo.name, tools: tools.map((tool) => tool.name), result };
 	});
 
@@ -45,8 +45,13 @@ const answer = await Effect.runPromise(Effect.scoped(echoOnce("node", ["server.m
 
 `client.initialize` is the server's answer to `initialize`: protocol version, capabilities, server info and
 instructions. Every call (`request`, `notify`, `ping`, `listTools`, `listResources`, `listResourcesPage`,
-`listResourceTemplates`, `listResourceTemplatesPage`, `readResource`, `callTool`) is an Effect that fails with an
-`McpFailure`. A tool that failed is a result with `isError`, not a failure.
+`listResourceTemplates`, `listResourceTemplatesPage`, `readResource`, `callTool`) is an Effect with a span of its own
+(`McpClient.callTool`, ...) that fails with an `McpFailure`. A tool that failed is a result with `isError`, not a
+failure.
+
+A tool's name is an `McpToolName`: the name the server gives it, as `listTools` lists it and `callTool` takes it,
+which a string cannot stand in for. The name an application gives a server is an `McpServerName`, as
+`toMcpModelContent` takes it. Both are branded Schemas: `McpToolName.make("echo")` makes one.
 
 ## The client as a service
 
@@ -67,8 +72,8 @@ const toolNames = Effect.gen(function* () {
 const names = await Effect.runPromise(toolNames.pipe(Effect.provide(McpLive("node", ["server.mjs"]))));
 ```
 
-`streamableHttpTransport({ url })` reaches a server over Streamable HTTP; its `auth` takes the bearer tokens (see
-[OAuth](#oauth)). `pipeTransport({ open })` speaks MCP's stdio framing over a program the application runs itself,
+`streamableHttpTransport({ url })` reaches a server over Streamable HTTP; its `auth` takes the bearer tokens, each a
+`Redacted` until Pi writes it into the request (see [OAuth](#oauth)). `pipeTransport({ open })` speaks MCP's stdio framing over a program the application runs itself,
 on another machine or in a sandbox: `open` is an Effect that starts it and gives its stdin and its end.
 
 ## Timeouts, progress and errors
@@ -80,12 +85,12 @@ an interruption cancels the request on the server, as Pi does.
 
 ```typescript
 import { Effect, Queue } from "effect";
-import type { McpClientService, ProgressNotification } from "@effectified/pi-mcp";
+import { type McpClientService, McpToolName, type ProgressNotification } from "@effectified/pi-mcp";
 
 const search = (client: McpClientService, query: string) =>
 	Effect.gen(function* () {
 		const progress = yield* Queue.unbounded<ProgressNotification>();
-		const result = yield* client.callTool("search", { query }, { timeout: "2 minutes", progress });
+		const result = yield* client.callTool(McpToolName.make("search"), { query }, { timeout: "2 minutes", progress });
 		// What the server reported while it worked.
 		const reports = yield* Queue.clear(progress);
 		return { result, reports };
@@ -94,7 +99,8 @@ const search = (client: McpClientService, query: string) =>
 
 `McpFailure` is closed: one tag per error class of pi-mcp (`McpError`, `McpConnectionClosedError`, `McpTimeoutError`,
 `McpHttpError`, `McpAuthRequiredError`, `McpSessionExpiredError`, the OAuth ones), and `McpUnexpectedError` for what
-pi-mcp throws without a class of its own, such as a command that cannot start.
+pi-mcp throws without a class of its own, such as a command that cannot start. It is a Schema union too:
+`McpFailure.match(failure, { ... })` takes one handler per tag, and `McpFailure.guards.McpTimeoutError` tests for one.
 
 ## Notifications and the server's requests
 
@@ -123,12 +129,20 @@ pi-mcp's conversion of a tool result into what a model reads, with the place to 
 
 ```typescript
 import { Effect } from "effect";
-import { limitMcpContent, type McpClientService, type OutputSaver, toMcpModelContent } from "@effectified/pi-mcp";
+import {
+	limitMcpContent,
+	type McpClientService,
+	McpServerName,
+	McpToolName,
+	type OutputSaver,
+	toMcpModelContent,
+} from "@effectified/pi-mcp";
 
 const forModel = (client: McpClientService, saveOutput: OutputSaver) =>
 	Effect.gen(function* () {
-		const result = yield* client.callTool("fetch", { url: "https://example.com" });
-		const content = yield* toMcpModelContent("web", result, { saveOutput, readResourceTool: "read_mcp_resource" });
+		const result = yield* client.callTool(McpToolName.make("fetch"), { url: "https://example.com" });
+		const options = { saveOutput, readResourceTool: "read_mcp_resource" };
+		const content = yield* toMcpModelContent(McpServerName.make("web"), result, options);
 		return yield* limitMcpContent(content, saveOutput);
 	});
 ```
@@ -140,8 +154,9 @@ pi-mcp's pure helpers come as they are: `createMcpToolName`, `mcpNamespace`, `mc
 ## OAuth
 
 `@effectified/pi-mcp/oauth` signs in to an OAuth-protected server and authenticates its connections. The token store
-is an `OAuthStore` of Effects (`load`, `save`, `withRefreshLock`); `memoryOAuthStore()` is pi-mcp's memory store for
-one process.
+is an `OAuthStore` of Effects (`load`, an `Option` of Pi's state; `save`; `withRefreshLock`); `memoryOAuthStore` makes
+a store on pi-mcp's memory store, for one process. The client settings are Pi's, with the `clientSecret` of a
+pre-registered client a `Redacted` (as `Config.redacted` reads one), revealed only where it is handed to Pi.
 
 ```typescript
 import { Effect } from "effect";
@@ -189,7 +204,7 @@ application with the same store. Discovery (`discoverOAuthServerInfo`, ...) and 
 
 ## Testing
 
-`inMemoryTransportPair()` links a client transport to a peer the test plays the server on: the client's messages
+`inMemoryTransportPair` links a new client transport to a peer the test plays the server on: the client's messages
 arrive as a Stream, and the peer's `send` delivers to the client.
 
 ```typescript
@@ -198,7 +213,7 @@ import { isJsonRpcRequest, LATEST_PROTOCOL_VERSION, McpClient } from "@effectifi
 import { inMemoryTransportPair } from "@effectified/pi-mcp/testing";
 
 const pingInMemory = Effect.gen(function* () {
-	const { client, server } = yield* inMemoryTransportPair();
+	const { client, server } = yield* inMemoryTransportPair;
 	const serverInfo = { name: "fake", version: "1.0.0" };
 	const initialized = { protocolVersion: LATEST_PROTOCOL_VERSION, capabilities: {}, serverInfo };
 	yield* Effect.forkScoped(

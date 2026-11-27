@@ -11,17 +11,17 @@ describe("events", () => {
 			Effect.gen(function* () {
 				const root = yield* primed(1);
 				yield* Swarm.start(Measure, {
-					id: "watched",
+					id: Swarm.SwarmId.make("watched"),
 					source: root.id,
 					jobs: jobsOf(["a", "bad", "ccc"]),
 					cap: 2,
 					onFailure: "collect",
 				});
-				const watching = yield* Effect.forkChild(Stream.runCollect(Swarm.events("watched")));
-				yield* Swarm.result(Measure, "watched");
+				const watching = yield* Effect.forkChild(Stream.runCollect(Swarm.events(Swarm.SwarmId.make("watched"))));
+				yield* Swarm.result(Measure, Swarm.SwarmId.make("watched"));
 				const live = yield* Fiber.join(watching);
 				// A host that attaches when all is over gets the same story, folded.
-				return { live, late: yield* Stream.runCollect(Swarm.events("watched")) };
+				return { live, late: yield* Stream.runCollect(Swarm.events(Swarm.SwarmId.make("watched"))) };
 			}).pipe(
 				Effect.provide(
 					harness(

@@ -48,6 +48,33 @@ describe("make", () => {
 	});
 });
 
+describe("collect", () => {
+	it("folds the entries of its kind among stored records, in order and decoded, and skips the others", async () => {
+		const records = [
+			record("app.receipt", { paidAt: "2026-11-24T10:00:00.000Z", cents: 1 }),
+			record("app.note", { text: "skipped" }),
+			record("app.receipt", { paidAt: "2026-11-24T10:00:00.000Z", cents: 2 }),
+		];
+		const kept = await Effect.runPromise(Stream.run(Stream.fromIterable(records), Entry.collect(Receipt)));
+		expect(kept.map((entry) => entry.data)).toEqual([
+			{ paidAt, cents: 1 },
+			{ paidAt, cents: 2 },
+		]);
+		// A fresh fold per run: the second run does not see the first one's entries.
+		const again = await Effect.runPromise(
+			Stream.run(Stream.fromIterable(records.slice(0, 1)), Entry.collect(Receipt)),
+		);
+		expect(again).toHaveLength(1);
+	});
+
+	it("fails the run with SchemaDecodeError for an entry of its kind outside the schema", async () => {
+		const failure = await Effect.runPromise(
+			Effect.flip(Stream.run(Stream.make(record("app.receipt", { cents: "many" })), Entry.collect(Receipt))),
+		);
+		expect(failure._tag).toBe("SchemaDecodeError");
+	});
+});
+
 describe("typed", () => {
 	it("is none when nothing was found", async () => {
 		const found = await Effect.runPromise(Entry.typed(Receipt, Effect.succeedNone));

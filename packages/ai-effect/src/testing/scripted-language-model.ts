@@ -1,6 +1,18 @@
 // A scripted effect/ai `LanguageModel` for tests: each request takes the next queued response.
 
-import { Context, Effect, Layer, Stream } from "effect";
+import {
+	Array as Arr,
+	Context,
+	Effect,
+	Formatter,
+	Layer,
+	Match,
+	Option,
+	pipe,
+	Ref,
+	String as Str,
+	Stream,
+} from "effect";
 import { AiError, LanguageModel, type Response } from "effect/ai";
 
 /**
@@ -22,7 +34,7 @@ export interface ScriptedLanguageModelService {
 
 /** A scripted effect/ai model for tests: no network, no keys, responses in the order they were queued. */
 export class ScriptedLanguageModel extends Context.Service<ScriptedLanguageModel, ScriptedLanguageModelService>()(
-	"@effectified/pi-ai/testing/ScriptedLanguageModel",
+	"@effectified/pi-ai/testing/scripted-language-model/ScriptedLanguageModel",
 ) {
 	/**
 	 * A fresh scripted `LanguageModel` and its controls. `generateText` returns a response's parts as they are;
@@ -34,29 +46,34 @@ export class ScriptedLanguageModel extends Context.Service<ScriptedLanguageModel
 	): Layer.Layer<ScriptedLanguageModel | LanguageModel.LanguageModel> {
 		return Layer.effectContext(
 			Effect.gen(function* () {
-				let queue = [...responses];
-				const requests: LanguageModel.ProviderOptions[] = [];
-				const next = (request: LanguageModel.ProviderOptions): ScriptedResponse =>
-					Effect.suspend(() => {
-						requests.push(request);
-						return queue.shift() ?? Effect.fail(noResponse(requests.length));
-					});
+				const queue = yield* Ref.make(responses);
+				const requests = yield* Ref.make<ReadonlyArray<LanguageModel.ProviderOptions>>([]);
+				const next = Effect.fn("ScriptedLanguageModel.next")(function* (request: LanguageModel.ProviderOptions) {
+					const asked = yield* Ref.updateAndGet(requests, Arr.append(request));
+					const response = yield* Ref.modify(queue, (queued) => [Arr.head(queued), Arr.drop(queued, 1)] as const);
+					if (Option.isNone(response)) return yield* noResponse(asked.length);
+					return yield* response.value;
+				});
 				const model = yield* LanguageModel.make({
-					generateText: (request) => Effect.map(next(request), (parts) => [...parts]),
+					generateText: (request) => Effect.map(next(request), Arr.fromIterable),
 					streamText: (request) =>
-						Stream.unwrap(Effect.map(next(request), (parts) => Stream.fromIterable(parts.flatMap(streamParts)))),
+						Stream.unwrap(
+							Effect.map(next(request), (parts) => Stream.fromIterable(Arr.flatMap(parts, streamParts))),
+						),
 				});
 				return Context.make(LanguageModel.LanguageModel, model).pipe(
 					Context.add(ScriptedLanguageModel, {
-						setResponses: (replacement) =>
-							Effect.sync(() => {
-								queue = [...replacement];
-							}),
-						appendResponses: (more) =>
-							Effect.sync(() => {
-								queue.push(...more);
-							}),
-						requests: Effect.sync(() => [...requests]),
+						setResponses: Effect.fn("ScriptedLanguageModel.setResponses")(function* (
+							replacement: ReadonlyArray<ScriptedResponse>,
+						) {
+							yield* Ref.set(queue, replacement);
+						}),
+						appendResponses: Effect.fn("ScriptedLanguageModel.appendResponses")(function* (
+							more: ReadonlyArray<ScriptedResponse>,
+						) {
+							yield* Ref.update(queue, Arr.appendAll(more));
+						}),
+						requests: Ref.get(requests),
 					}),
 				);
 			}),
@@ -68,51 +85,52 @@ function noResponse(request: number): AiError.AiError {
 	return AiError.make({
 		module: "ScriptedLanguageModel",
 		method: "next",
-		reason: new AiError.UnknownError({ description: `No scripted response is queued for request ${request}` }),
+		reason: AiError.UnknownError.make({ description: `No scripted response is queued for request ${request}` }),
 	});
 }
 
 /** The stream form of one finished part; `index` makes the id of its text or reasoning block. */
 function streamParts(part: Response.PartEncoded, index: number): ReadonlyArray<Response.StreamPartEncoded> {
 	const id = String(index);
-	switch (part.type) {
-		case "text":
-			return [
+	return Match.value(part).pipe(
+		Match.discriminators("type")({
+			text: ({ text }): ReadonlyArray<Response.StreamPartEncoded> => [
 				{ type: "text-start", id },
-				...pieces(part.text).map((delta) => ({ type: "text-delta" as const, id, delta })),
+				...Arr.map(pieces(text), (delta) => ({ type: "text-delta" as const, id, delta })),
 				{ type: "text-end", id },
-			];
-		case "reasoning":
-			return [
+			],
+			reasoning: ({ text }): ReadonlyArray<Response.StreamPartEncoded> => [
 				{ type: "reasoning-start", id },
-				...pieces(part.text).map((delta) => ({ type: "reasoning-delta" as const, id, delta })),
+				...Arr.map(pieces(text), (delta) => ({ type: "reasoning-delta" as const, id, delta })),
 				{ type: "reasoning-end", id },
-			];
-		case "tool-call":
-			return [
+			],
+			"tool-call": (call): ReadonlyArray<Response.StreamPartEncoded> => [
 				{
 					type: "tool-params-start",
-					id: part.id,
-					name: part.name,
-					providerExecuted: part.providerExecuted ?? false,
+					id: call.id,
+					name: call.name,
+					providerExecuted: call.providerExecuted ?? false,
 				},
-				...pieces(JSON.stringify(part.params)).map((delta) => ({
+				...Arr.map(pieces(Formatter.formatJson(call.params)), (delta) => ({
 					type: "tool-params-delta" as const,
-					id: part.id,
+					id: call.id,
 					delta,
 				})),
-				{ type: "tool-params-end", id: part.id },
-				part,
-			];
-		default:
-			return [part];
-	}
+				{ type: "tool-params-end", id: call.id },
+				call,
+			],
+		}),
+		Match.orElse((other): ReadonlyArray<Response.StreamPartEncoded> => [other]),
+	);
 }
 
 const DELTA_SIZE = 4;
 
-function pieces(text: string): string[] {
-	const result: string[] = [];
-	for (let start = 0; start < text.length; start += DELTA_SIZE) result.push(text.slice(start, start + DELTA_SIZE));
-	return result;
+/** `text` in pieces of `DELTA_SIZE` characters; none for no text. */
+function pieces(text: string): ReadonlyArray<string> {
+	return Arr.unfold(0, (start) =>
+		start < text.length
+			? Option.some([pipe(text, Str.slice(start, start + DELTA_SIZE)), start + DELTA_SIZE] as const)
+			: Option.none(),
+	);
 }

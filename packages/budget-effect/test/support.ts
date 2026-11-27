@@ -17,6 +17,7 @@ import {
 	LeaseFenced,
 	type ModelPrice,
 	Prices,
+	Reservation,
 	type Settlement,
 	Shares,
 	type Spend,
@@ -65,13 +66,13 @@ export class TestLease extends Context.Service<TestLease, TestLeaseState>()("tes
 							if (state.fenced !== undefined) {
 								state.steps.push({ step: "fenced", reason: state.fenced });
 								changed();
-								return Effect.fail(new LeaseFenced({ reason: state.fenced }));
+								return Effect.fail(LeaseFenced.make({ reason: state.fenced }));
 							}
 							reservations += 1;
 							const token = `r${reservations}`;
 							state.steps.push({ step: "reserve", token, estimate, request });
 							changed();
-							return Effect.succeed(token);
+							return Effect.succeed(Reservation.make(token));
 						}),
 					settle: (token, settlement) =>
 						Effect.suspend(() => {
@@ -102,7 +103,9 @@ export function expectedCost(usage: Pick<Usage, "input" | "output" | "cacheRead"
 }
 
 /** The price table of a suite: the scripted provider's first model at `PRICE`, and `more`. */
-export function prices(more: ReadonlyArray<ModelPrice> = []): Layer.Layer<Prices, never, ScriptedModels> {
+export function prices(
+	more: ReadonlyArray<typeof ModelPrice.Encoded> = [],
+): Layer.Layer<Prices, never, ScriptedModels> {
 	return Layer.unwrap(
 		ScriptedModels.use(({ model }) =>
 			Effect.succeed(
@@ -126,7 +129,7 @@ export type Budgeted = Models | BudgetEvents | Spend | Shares | TestLease | Scri
  * reaches the provider.
  */
 export function budgetedModels(options?: {
-	readonly prices?: ReadonlyArray<ModelPrice>;
+	readonly prices?: ReadonlyArray<typeof ModelPrice.Encoded>;
 	readonly provider?: Parameters<typeof ScriptedModels.layer>[0];
 }): Layer.Layer<Budgeted> {
 	return BudgetedModels.layerWithShares.pipe(
@@ -146,7 +149,7 @@ export interface HarnessOptions<E, R> {
 	/** Options of the scripted provider. Default: the api name `scripted`. */
 	readonly provider?: Parameters<typeof ScriptedModels.layer>[0];
 	/** Prices the table lists beside the scripted model's. */
-	readonly prices?: ReadonlyArray<ModelPrice>;
+	readonly prices?: ReadonlyArray<typeof ModelPrice.Encoded>;
 }
 
 /** A harness opened on the budgeted models of `budgetedModels`, with the shares attached to it. */

@@ -1,4 +1,4 @@
-import { Extension, Registry } from "@effectified/pi-durable";
+import { Extension, Registry, ToolName } from "@effectified/pi-durable";
 import { Context, Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { extension, Inbox, type Policy } from "../src/index.ts";
@@ -16,7 +16,7 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ?
 
 describe("extension", () => {
 	it("is named approvals and holds the gate, then the record", () => {
-		const approvals = extension({ tools: ["write"], expiresAfter: "1 hour" });
+		const approvals = extension({ tools: [ToolName.make("write")], expiresAfter: "1 hour" });
 		expect(approvals.name).toBe("approvals");
 		expect(approvals.hooks).toHaveLength(2);
 		expect(approvals.tools).toBeUndefined();
@@ -34,7 +34,7 @@ describe("extension", () => {
 			Layer.provide(Layer.succeed(Limits, { longest: 5 })),
 		);
 		// Without a rule, only the Inbox is needed.
-		const plain = Registry.layer([extension({ tools: ["write"], expiresAfter: "1 hour" })]);
+		const plain = Registry.layer([extension({ tools: [ToolName.make("write")], expiresAfter: "1 hour" })]);
 		const plainRequirements: Equal<Layer.Services<typeof plain>, Inbox> = true;
 		expect([requirements, plainRequirements]).toEqual([true, true]);
 		expect([unprovided, half].every(Layer.isLayer)).toBe(true);

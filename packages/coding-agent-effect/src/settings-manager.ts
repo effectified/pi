@@ -159,7 +159,8 @@ export const AWAITS = ["reload", "flush"] as const;
 
 /** Settings: every public method of Pi's `SettingsManager` as an Effect, under its name. */
 export interface SettingsManagerHandle
-	extends Reads<PiSettingsManager, (typeof READS)[number]>,
+	extends
+		Reads<PiSettingsManager, (typeof READS)[number]>,
 		Writes<PiSettingsManager, (typeof WRITES)[number]>,
 		Awaits<PiSettingsManager, (typeof AWAITS)[number]> {
 	/** Pi's manager, for what takes one as it is: `createAgentSession`, a resource loader. */
@@ -168,7 +169,7 @@ export interface SettingsManagerHandle
 
 /** The settings a session runs with. */
 export class SettingsManager extends Context.Service<SettingsManager, SettingsManagerHandle>()(
-	"@effectified/pi-coding-agent/SettingsManager",
+	"@effectified/pi-coding-agent/settings-manager/SettingsManager",
 ) {
 	/** `SettingsManager` from an Effect that makes one, such as `SettingsManager.inMemory()`. */
 	static layer<E, R>(
@@ -181,30 +182,36 @@ export class SettingsManager extends Context.Service<SettingsManager, SettingsMa
 	 * The settings files of `agentDir` (default: `~/.pi/agent`) and of `cwd`'s project, merged. Its queued saves are
 	 * waited for when the scope closes.
 	 */
-	static create(
-		cwd: string,
-		agentDir?: string,
-		options?: SettingsManagerCreateOptions,
-	): Effect.Effect<SettingsManagerHandle, CodingAgentFailure, Scope.Scope> {
-		return Effect.acquireRelease(
-			Effect.try({
-				try: () => SettingsManager.fromPi(PiSettingsManager.create(cwd, agentDir, options)),
-				catch: fromPi,
-			}),
-			(settings) => Effect.ignore(settings.flush()),
-		);
-	}
+	static readonly create = Effect.fn("SettingsManager.create")(
+		(
+			cwd: string,
+			agentDir?: string,
+			options?: SettingsManagerCreateOptions,
+		): Effect.Effect<SettingsManagerHandle, CodingAgentFailure, Scope.Scope> =>
+			Effect.acquireRelease(
+				Effect.try({
+					try: () => SettingsManager.fromPi(PiSettingsManager.create(cwd, agentDir, options)),
+					catch: fromPi,
+				}),
+				(settings) => Effect.ignore(settings.flush()),
+			),
+	);
 
 	/** Settings kept in memory only, starting from `settings`. */
-	static inMemory(
+	// Written out: the declaration build cannot name Pi's `Settings`, which its package does not export.
+	static readonly inMemory: (
 		settings?: Parameters<typeof PiSettingsManager.inMemory>[0],
 		options?: SettingsManagerCreateOptions,
-	): Effect.Effect<SettingsManagerHandle, CodingAgentFailure> {
-		return Effect.try({
-			try: () => SettingsManager.fromPi(PiSettingsManager.inMemory(settings, options)),
-			catch: fromPi,
-		});
-	}
+	) => Effect.Effect<SettingsManagerHandle, CodingAgentFailure> = Effect.fn("SettingsManager.inMemory")(
+		(
+			settings?: Parameters<typeof PiSettingsManager.inMemory>[0],
+			options?: SettingsManagerCreateOptions,
+		): Effect.Effect<SettingsManagerHandle, CodingAgentFailure> =>
+			Effect.try({
+				try: () => SettingsManager.fromPi(PiSettingsManager.inMemory(settings, options)),
+				catch: fromPi,
+			}),
+	);
 
 	/** Pi's manager as a handle. It stays the caller's. */
 	static fromPi(pi: PiSettingsManager): SettingsManagerHandle {

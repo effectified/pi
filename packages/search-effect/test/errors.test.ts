@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+	ProviderName,
 	type SearchError,
 	SearchProviderFailure,
 	SearchRateLimited,
@@ -12,13 +13,13 @@ import {
 describe("the provider errors", () => {
 	it("each say in one sentence what happened", () => {
 		const errors: ReadonlyArray<SearchError> = [
-			new SearchRateLimited({ provider: "exa", retryAfterMillis: 1500 }),
-			new SearchRateLimited({ provider: "exa" }),
-			new SearchUnauthorized({ provider: "exa", status: 401 }),
-			new SearchProviderFailure({ provider: "exa", status: 500, detail: "Internal error" }),
-			new SearchProviderFailure({ provider: "exa", status: 503 }),
-			new SearchTransportFailure({ provider: "exa", detail: "connection reset" }),
-			new SearchResponseInvalid({ provider: "exa", detail: "Expected string, got 1" }),
+			new SearchRateLimited({ provider: ProviderName.make("exa"), retryAfterMillis: 1500 }),
+			new SearchRateLimited({ provider: ProviderName.make("exa") }),
+			new SearchUnauthorized({ provider: ProviderName.make("exa"), status: 401 }),
+			new SearchProviderFailure({ provider: ProviderName.make("exa"), status: 500, detail: "Internal error" }),
+			new SearchProviderFailure({ provider: ProviderName.make("exa"), status: 503 }),
+			new SearchTransportFailure({ provider: ProviderName.make("exa"), detail: "connection reset" }),
+			new SearchResponseInvalid({ provider: ProviderName.make("exa"), detail: "Expected string, got 1" }),
 		];
 		expect(errors.map((error) => [error._tag, error.message])).toEqual([
 			// A hint is rounded up to whole seconds: waiting less would be refused again.
@@ -34,7 +35,7 @@ describe("the provider errors", () => {
 
 	it("are failures an Effect program handles by tag", async () => {
 		const waited = await Effect.runPromise(
-			Effect.fail(new SearchRateLimited({ provider: "exa", retryAfterMillis: 7000 })).pipe(
+			Effect.fail(new SearchRateLimited({ provider: ProviderName.make("exa"), retryAfterMillis: 7000 })).pipe(
 				Effect.catchTag("SearchRateLimited", (error) => Effect.succeed(error.retryAfterMillis)),
 			),
 		);

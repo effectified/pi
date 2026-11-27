@@ -2,7 +2,7 @@
 // time for a finalizer, and rivetkit ties the engine to its parent's end on Linux only.
 
 import { spawn } from "node:child_process";
-import { Effect, type Scope } from "effect";
+import { Array as Arr, Config, Effect, Option, type Scope } from "effect";
 import * as EngineProcess from "./engine-process.ts";
 
 /** The watch over one start's engine. */
@@ -19,17 +19,25 @@ export interface Watch {
  * Keeps watch over the engine of `directory` for the scope. The watcher is a shell that reads a pipe from this
  * process: the pipe ends when this process does, however it ends, and the shell then stops the engine, with the
  * terminate signal and after ten seconds with the kill signal. Closing the scope ends the watcher without stopping
- * anything: the engine is its starter's to stop then.
+ * anything: the engine is its starter's to stop then. The shell finds `ps` and `kill` on the `PATH` of the
+ * `ConfigProvider`.
  *
  * Without a shell at `/bin/sh` nothing keeps watch, and the engine of a killed process is stopped by the next start
  * on its directory.
+ *
+ * Node's `spawn`, not Effect's `ChildProcessSpawner`: the watcher must be killed before its pipe ends (an end is what
+ * makes it stop engines), and neither it nor its pipe may keep this process alive. The spawner ends a child's input
+ * while it kills the child, does not kill one it was told to unreference, and gives no way to unreference the pipe.
  */
-export function keep(directory: string): Effect.Effect<Watch, never, Scope.Scope> {
-	return Effect.map(
+export const keep: (directory: string) => Effect.Effect<Watch, never, Scope.Scope> = Effect.fnUntraced(function* (
+	directory: string,
+) {
+	const path = yield* Effect.option(Config.String("PATH"));
+	return yield* Effect.map(
 		Effect.acquireRelease(
 			Effect.sync(() => {
 				const watcher = spawn("/bin/sh", ["-c", SCRIPT], {
-					env: { PATH: process.env.PATH, ENGINE_CONFIG: EngineProcess.config(directory) },
+					env: { PATH: Option.getOrUndefined(path), ENGINE_CONFIG: EngineProcess.config(directory) },
 					stdio: ["pipe", "ignore", "ignore"],
 					// A session of its own: a signal to this process's group, such as an interrupt from the terminal, is not its.
 					detached: true,
@@ -50,16 +58,16 @@ export function keep(directory: string): Effect.Effect<Watch, never, Scope.Scope
 					watcher.stdin.destroy();
 				}),
 		),
-		(watcher) => ({
+		(watcher): Watch => ({
 			// Done once the runtime took the line, or the watcher is gone. Bun says so before the line is in the pipe: a
 			// process killed in that moment has said nothing, and its watcher stops every engine of the directory.
 			engines: (pids) =>
 				Effect.callback<void>((resume) => {
-					watcher.stdin.write(`${pids.join(" ")}\n`, () => resume(Effect.void));
+					watcher.stdin.write(`${Arr.join(Arr.map(pids, String), " ")}\n`, () => resume(Effect.void));
 				}),
 		}),
 	);
-}
+});
 
 // Each line of the pipe names the engine's processes, and the last one counts. Without a line the engines are the
 // ones that run on the directory when the pipe ends: the configuration path comes by the environment, so that the

@@ -2,13 +2,14 @@
 // rivetkit did not stop it.
 
 import { join, resolve } from "node:path";
-import { Effect, Schedule } from "effect";
+import { Array as Arr, Effect, Schedule, String as Str } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { EngineUnavailable } from "../errors.ts";
 
 /**
  * The configuration file rivetkit starts the engine of `directory` with, which lies in the engine's data directory.
- * It is the argument an engine's process is found by, whole: `engines/org-1` is no engine of `engines/org-10`.
+ * It is the argument an engine's process is found by, whole: `engines/org-1` is no engine of `engines/org-10`. A pure
+ * function on Node's `path`, resolved against the working directory, so the watcher's start needs no service for it.
  */
 export function config(directory: string): string {
 	return join(resolve(directory), ".rivetkit", "var", "engine", "config.json");
@@ -20,17 +21,18 @@ export function config(directory: string): string {
  * on its command line is an engine of the directory. On Linux an engine that ended and was not waited for yet has no
  * command line, and is not listed. Fails with the code `environment` when the process list cannot be read.
  */
-export function running(
+export const running: (
 	directory: string,
-): Effect.Effect<ReadonlyArray<number>, EngineUnavailable, ChildProcessSpawner.ChildProcessSpawner> {
-	const argument = `--config ${config(directory)}`;
-	return Effect.map(processes, (lines) =>
-		lines.flatMap((line) => {
+) => Effect.Effect<ReadonlyArray<number>, EngineUnavailable, ChildProcessSpawner.ChildProcessSpawner> =
+	// Untraced: it is asked every few hundred milliseconds while an engine starts or stops.
+	Effect.fnUntraced(function* (directory: string) {
+		const argument = `--config ${config(directory)}`;
+		const lines = yield* processes;
+		return Arr.flatMap(lines, (line) => {
 			const [, pid, command] = /^\s*(\d+)\s+(.*)$/.exec(line) ?? [];
-			return pid !== undefined && command?.includes(argument) ? [Number(pid)] : [];
-		}),
-	);
-}
+			return pid !== undefined && command !== undefined && Str.includes(argument)(command) ? [Number(pid)] : [];
+		});
+	});
 
 /**
  * Stops the engines started on `directory` and succeeds once none is left: the terminate signal first, and the kill
@@ -38,10 +40,10 @@ export function running(
  * ready shuts down; it leaves the engine of a start that failed or was interrupted, and the engine of a process that
  * was killed, which is what this is for. Fails as `running` does.
  */
-export function stop(
+export const stop: (
 	directory: string,
-): Effect.Effect<void, EngineUnavailable, ChildProcessSpawner.ChildProcessSpawner> {
-	return Effect.gen(function* () {
+) => Effect.Effect<void, EngineUnavailable, ChildProcessSpawner.ChildProcessSpawner> = Effect.fn("EngineProcess.stop")(
+	function* (directory: string) {
 		for (const signal of ["SIGTERM", "SIGKILL"] as const) {
 			const pids = yield* running(directory);
 			if (pids.length === 0) return;
@@ -50,8 +52,8 @@ export function stop(
 			});
 			yield* Effect.timeoutOption(gone(directory), WAIT_MILLIS);
 		}
-	});
-}
+	},
+);
 
 const WAIT_MILLIS = 5_000;
 
@@ -67,14 +69,12 @@ function gone(directory: string): Effect.Effect<void, EngineUnavailable, ChildPr
 
 /** Every process as `<pid> <command line>`, from `ps`, which has the same options on macOS and Linux. */
 const processes = ChildProcessSpawner.ChildProcessSpawner.use((spawner) =>
-	Effect.mapError(
-		spawner.lines(ChildProcess.make("ps", ["-axww", "-o", "pid=,command="])),
-		(error) =>
-			new EngineUnavailable({
-				code: "environment",
-				message: `The process list could not be read with ps, so no engine process can be found: ${error.message}`,
-				retryable: false,
-			}),
+	Effect.mapError(spawner.lines(ChildProcess.make("ps", ["-axww", "-o", "pid=,command="])), (error) =>
+		EngineUnavailable.make({
+			code: "environment",
+			message: `The process list could not be read with ps, so no engine process can be found: ${error.message}`,
+			retryable: false,
+		}),
 	),
 );
 

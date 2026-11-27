@@ -101,6 +101,7 @@ describe("the coverage of pi-evals", () => {
 			"Docker",
 			"DockerFailed",
 			"Environment",
+			"EvalsError",
 			"Harness",
 			"InvalidPlan",
 			"InvalidSetting",
@@ -115,8 +116,12 @@ describe("the coverage of pi-evals", () => {
 			"formatEvalComparisonReport",
 			"summarizeEvalObservations",
 		]);
-		expect(Object.keys(Package.Plan).sort()).toEqual(["createTaskPlan", "parseDiscoveredCases"]);
-		expect(Object.keys(Package.Report).sort()).toEqual(["readTaskObservation"]);
+		expect(Object.keys(Package.Plan).sort()).toEqual([
+			"createTaskPlan",
+			"parseDiscoveredCases",
+			"readDiscoveredCases",
+		]);
+		expect(Object.keys(Package.Report).sort()).toEqual(["EvalObservation", "readTaskObservation", "summarize"]);
 		expect(Object.keys(Package.Environment).sort()).toEqual(["documentationVariant", "isolated", "modelSelection"]);
 		expect(Object.keys(Package.SystemPrompt).sort()).toEqual(["excludeDocumentation", "verify"]);
 		expect(Object.keys(Package.Harness).sort()).toEqual(["make", "makeDocumentation"]);

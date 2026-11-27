@@ -1,7 +1,7 @@
 // Where the agent's model responses come from: Pi's stream function as a service, from `Models` or through a proxy.
 
 import { type StreamFn as PiStreamFn, type ProxyStreamOptions, streamProxy } from "@earendil-works/pi-agent-core";
-import { Models } from "@effectified/pi-ai";
+import { Models, withoutParentSpan } from "@effectified/pi-ai";
 import { Context, Effect, Layer } from "effect";
 import { runner } from "./runner.ts";
 
@@ -15,7 +15,7 @@ export interface ProxyOptions<R> extends Pick<ProxyStreamOptions, "proxyUrl"> {
  * can be handed to anything that takes one. It replaces Pi's process-wide default (`setDefaultStreamFn`): each
  * program provides its own.
  */
-export class StreamFn extends Context.Service<StreamFn, PiStreamFn>()("@effectified/pi-agent/StreamFn") {
+export class StreamFn extends Context.Service<StreamFn, PiStreamFn>()("@effectified/pi-agent/stream-fn/StreamFn") {
 	/** Requests go to the providers of `Models`, through its `streamSimple`. */
 	static readonly models: Layer.Layer<StreamFn, never, Models> = Layer.effect(
 		StreamFn,
@@ -26,15 +26,17 @@ export class StreamFn extends Context.Service<StreamFn, PiStreamFn>()("@effectif
 
 	/**
 	 * Requests go to a server that calls the providers (Pi's `streamProxy`): `POST <proxyUrl>/api/stream` with the
-	 * token `authToken` gives, asked for each request. The request's abort signal interrupts the token's Effect.
+	 * token `authToken` gives, asked for each request under a span of its own, `StreamFn.authToken`. The request's
+	 * abort signal interrupts the token's Effect.
 	 */
 	static proxy<R>(options: ProxyOptions<R>): Layer.Layer<StreamFn, never, R> {
 		return Layer.effect(
 			StreamFn,
 			Effect.map(Effect.context<R>(), (context): PiStreamFn => {
-				const run = runner(context);
+				// The Layer's service outlives this Effect: each request's spans start their own trace.
+				const run = runner(withoutParentSpan(context));
 				return (model, transcript, request) =>
-					run(options.authToken, request?.signal).then((authToken) =>
+					run(Effect.withSpan(options.authToken, "StreamFn.authToken"), request?.signal).then((authToken) =>
 						streamProxy(model, transcript, { ...request, authToken, proxyUrl: options.proxyUrl }),
 					);
 			}),

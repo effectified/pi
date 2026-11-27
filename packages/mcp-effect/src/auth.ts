@@ -1,15 +1,18 @@
 // pi-mcp's `AuthProvider` port in Effect terms: where an HTTP transport gets its bearer token, and what it does after
-// a 401, written as Effects and handed to Pi as its promise callbacks.
+// a 401, written as Effects and handed to Pi as its promise callbacks. The token is `Redacted` until Pi sends it.
 
 import type { AuthProvider, UnauthorizedContext } from "@earendil-works/pi-mcp";
-import { Effect } from "effect";
+import { Effect, Option, Redacted } from "effect";
 import { fromPi, type McpFailure } from "./errors.ts";
 import type { RunInPi } from "./run-in-pi.ts";
 
 /** The bearer tokens of an MCP HTTP transport. Made by the application, or by the OAuth subpath's auth provider. */
 export interface Auth<R = never> {
-	/** The token for the next request. May refresh it first: the transport asks only before requests it waits on. */
-	readonly token: Effect.Effect<string | undefined, McpFailure, R>;
+	/**
+	 * The token for the next request, or none (the request goes without one). May refresh it first: the transport asks
+	 * only before requests it waits on.
+	 */
+	readonly token: Effect.Effect<Option.Option<Redacted.Redacted<string>>, McpFailure, R>;
 	/**
 	 * Runs after a 401, or a 403 asking for more scope; the transport then retries once with `token`. Failing fails the
 	 * request with that failure.
@@ -21,7 +24,8 @@ export interface Auth<R = never> {
 export function toAuthProvider<R>(auth: Auth<R>, run: RunInPi<R>): AuthProvider {
 	const { onUnauthorized } = auth;
 	return {
-		token: () => run(auth.token),
+		// The token leaves `Redacted` here, where Pi writes it into the request's Authorization header.
+		token: () => run(Effect.map(auth.token, (token) => Option.getOrUndefined(Option.map(token, Redacted.value)))),
 		...(onUnauthorized === undefined ? {} : { onUnauthorized: (context) => run(onUnauthorized(context)) }),
 	};
 }
@@ -30,7 +34,9 @@ export function toAuthProvider<R>(auth: Auth<R>, run: RunInPi<R>): AuthProvider 
 export function fromAuthProvider(provider: AuthProvider): Auth {
 	const { onUnauthorized } = provider;
 	return {
-		token: Effect.tryPromise({ try: () => provider.token(), catch: fromPi }),
+		token: Effect.map(Effect.tryPromise({ try: () => provider.token(), catch: fromPi }), (token) =>
+			Option.map(Option.fromUndefinedOr(token), (value) => Redacted.make(value)),
+		),
 		...(onUnauthorized === undefined
 			? {}
 			: {

@@ -9,7 +9,7 @@ import { answer, held } from "@effectified/pi-durable/testing";
 import * as Review from "@effectified/pi-review";
 import { Effect, Fiber, Option, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { ReviewerSharesFamily, Thread, ThreadNotFound, Threads } from "../src/index.ts";
+import { ReviewerSharesFamily, Thread, ThreadKey, ThreadNotFound, Threads } from "../src/index.ts";
 import {
 	BACKUP,
 	committed,
@@ -53,7 +53,9 @@ describe("the review of a thread's answer", () => {
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				const outcome = yield* threads.work(work("t1", "What is six times seven?"));
-				const verdicts = yield* Stream.runCollect(Review.verdicts(yield* threads.conversation("t1")));
+				const verdicts = yield* Stream.runCollect(
+					Review.verdicts(yield* threads.conversation(ThreadKey.make("t1"))),
+				);
 				return { outcome, verdicts: verdicts.map((entry) => [entry.data.pass, entry.data.outcome._tag]) };
 			}),
 		);
@@ -105,17 +107,17 @@ describe("the review of a thread's answer", () => {
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				const held = yield* threads.work(work("t1", "What is six times seven?"));
-				const probe = yield* threads.probe("t1");
-				const accepted = yield* threads.release("t1", { _tag: "Accept", by: "user:ada" });
-				const conversation = yield* threads.conversation("t1");
+				const probe = yield* threads.probe(ThreadKey.make("t1"));
+				const accepted = yield* threads.release(ThreadKey.make("t1"), { _tag: "Accept", by: "user:ada" });
+				const conversation = yield* threads.conversation(ThreadKey.make("t1"));
 				const entries = yield* Stream.runCollect(conversation.entries({ order: "ascending" }));
 				return {
 					held,
 					probe,
 					accepted,
-					after: yield* threads.probe("t1"),
+					after: yield* threads.probe(ThreadKey.make("t1")),
 					// A second decision finds no hold.
-					again: yield* Effect.flip(threads.release("t1", { _tag: "Accept", by: "user:bob" })),
+					again: yield* Effect.flip(threads.release(ThreadKey.make("t1"), { _tag: "Accept", by: "user:bob" })),
 					conversation: conversation.id,
 					releases: (yield* Effect.forEach(entries, Review.ReleaseEntry.read)).flatMap(Option.toArray),
 				};
@@ -175,8 +177,8 @@ describe("the review of a thread's answer", () => {
 				const refused = yield* Effect.flip(threads.work(work("t1", "What is six times seven?")));
 				return {
 					refused,
-					probe: yield* threads.probe("t1"),
-					outcome: yield* Effect.flip(threads.outcome("t1")),
+					probe: yield* threads.probe(ThreadKey.make("t1")),
+					outcome: yield* Effect.flip(threads.outcome(ThreadKey.make("t1"))),
 					requests: [labs.author.state.callCount, labs.reviewer.state.callCount],
 					// The check is about a review: a thread that asks for none starts with the same tables.
 					unreviewed: yield* threads.work({ ...work("t2", "What is six times seven?"), review: false }),
@@ -188,7 +190,7 @@ describe("the review of a thread's answer", () => {
 		// against the reviewer alias's one route, which is the author's own model.
 		expect(result.refused).toEqual(
 			new ReviewerSharesFamily({
-				thread: "t1",
+				thread: ThreadKey.make("t1"),
 				conflicts: [
 					{ family: "alpha", author: WRITER, reviewer: WRITER },
 					{ family: "alpha", author: BACKUP, reviewer: WRITER },
@@ -198,7 +200,7 @@ describe("the review of a thread's answer", () => {
 		expect(result.refused.message).toContain("author-lab/writer reviews backup-lab/writer-b (alpha)");
 		// No thread exists, and no provider and no lease was asked.
 		expect(result.probe).toEqual({ alive: false });
-		expect(result.outcome).toEqual(new ThreadNotFound({ thread: "t1" }));
+		expect(result.outcome).toEqual(new ThreadNotFound({ thread: ThreadKey.make("t1") }));
 		expect(result.requests).toEqual([0, 0]);
 		expect(result.unreviewed).toMatchObject({ _tag: "Answered", counts: { turns: 1 } });
 		expect(reservations(state).map(({ request }) => request.model)).toEqual(["author"]);
@@ -216,7 +218,7 @@ describe("the review of a thread's answer", () => {
 		// The reviewer alias is of family beta in the policy, and its first route is: the second one is not.
 		expect(refused).toEqual(
 			new ReviewerSharesFamily({
-				thread: "t1",
+				thread: ThreadKey.make("t1"),
 				conflicts: [
 					{ family: "alpha", author: WRITER, reviewer: WRITER },
 					{ family: "alpha", author: BACKUP, reviewer: WRITER },
@@ -283,7 +285,7 @@ describe("the review of a thread's answer", () => {
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				const held = yield* threads.work(work("t1", "What is six times seven?"));
-				const corrected = yield* threads.release("t1", {
+				const corrected = yield* threads.release(ThreadKey.make("t1"), {
 					_tag: "Correct",
 					by: "user:ada",
 					correction: "Multiply again.",
@@ -312,16 +314,18 @@ describe("the review of a thread's answer", () => {
 				const threads = yield* Threads.Threads;
 				const working = yield* Effect.forkScoped(threads.work(work("t1", "What is six times seven?")));
 				yield* judging.requested;
-				yield* threads.cancel("t1");
+				yield* threads.cancel(ThreadKey.make("t1"));
 				const outcome = yield* Fiber.join(working);
-				const conversation = yield* threads.conversation("t1");
-				const submission = yield* Harness.commit((tx) => Thread.newestIn(tx, conversation.id, "t1"));
+				const conversation = yield* threads.conversation(ThreadKey.make("t1"));
+				const submission = yield* Harness.commit((tx) =>
+					Thread.newestIn(tx, conversation.id, ThreadKey.make("t1")),
+				);
 				return {
 					outcome,
 					status: Option.getOrThrow(submission).record.status,
 					state: yield* Review.state(conversation),
 					// A cancelled thread stays cancelled: a resume neither continues nor reviews it.
-					resumed: yield* threads.resume("t1"),
+					resumed: yield* threads.resume(ThreadKey.make("t1")),
 				};
 			}),
 		);
@@ -351,8 +355,12 @@ describe("the review of a thread's answer", () => {
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				const held = yield* threads.work(work("t1", "What is six times seven?"));
-				yield* threads.cancel("t1");
-				return { held: held._tag, cancelled: yield* threads.resume("t1"), probe: yield* threads.probe("t1") };
+				yield* threads.cancel(ThreadKey.make("t1"));
+				return {
+					held: held._tag,
+					cancelled: yield* threads.resume(ThreadKey.make("t1")),
+					probe: yield* threads.probe(ThreadKey.make("t1")),
+				};
 			}),
 		);
 		expect(result.held).toBe("Held");
@@ -385,7 +393,7 @@ describe("what the sink is told of a review", () => {
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				yield* threads.work(work("t1", "What is six times seven?"));
-				const conversation = yield* threads.conversation("t1");
+				const conversation = yield* threads.conversation(ThreadKey.make("t1"));
 				return {
 					conversation: conversation.id,
 					verdicts: yield* Stream.runCollect(Review.verdicts(conversation)),
@@ -513,21 +521,23 @@ describe("a review that could not be asked for", () => {
 				// The call returns: a deferred review ends the thread as far as it goes by itself.
 				const stopped = yield* threads.work(work("t1", "What is six times seven?"));
 				const paused = {
-					probe: yield* threads.probe("t1"),
-					stored: yield* threads.outcome("t1"),
+					probe: yield* threads.probe(ThreadKey.make("t1")),
+					stored: yield* threads.outcome(ThreadKey.make("t1")),
 					// A resume while the lease is still fenced asks again, is refused again, and stops again.
-					again: yield* threads.resume("t1"),
+					again: yield* threads.resume(ThreadKey.make("t1")),
 					requests: labs.reviewer.state.callCount,
 				};
 				state.lease.fenced = undefined;
-				const resumed = yield* threads.resume("t1");
-				const verdicts = yield* Stream.runCollect(Review.verdicts(yield* threads.conversation("t1")));
+				const resumed = yield* threads.resume(ThreadKey.make("t1"));
+				const verdicts = yield* Stream.runCollect(
+					Review.verdicts(yield* threads.conversation(ThreadKey.make("t1"))),
+				);
 				return {
 					stopped,
 					paused,
 					resumed,
 					verdicts: verdicts.map(({ data }) => [data.pass, data.outcome._tag, data.answer]),
-					after: yield* threads.probe("t1"),
+					after: yield* threads.probe(ThreadKey.make("t1")),
 				};
 			}),
 		);
@@ -612,7 +622,11 @@ describe("a review that could not be asked for", () => {
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				const deferred = yield* threads.work(work("t1", "What is six times seven?"));
-				return { deferred, probe: yield* threads.probe("t1"), resumed: yield* threads.resume("t1") };
+				return {
+					deferred,
+					probe: yield* threads.probe(ThreadKey.make("t1")),
+					resumed: yield* threads.resume(ThreadKey.make("t1")),
+				};
 			}),
 		);
 		// The provider's own words, unchanged: no budget refusal decodes from them.
@@ -649,8 +663,12 @@ describe("a review that could not be asked for", () => {
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				const deferred = yield* threads.work(work("t1", "What is six times seven?"));
-				yield* threads.cancel("t1");
-				return { deferred: deferred._tag, resumed: yield* threads.resume("t1"), probe: yield* threads.probe("t1") };
+				yield* threads.cancel(ThreadKey.make("t1"));
+				return {
+					deferred: deferred._tag,
+					resumed: yield* threads.resume(ThreadKey.make("t1")),
+					probe: yield* threads.probe(ThreadKey.make("t1")),
+				};
 			}),
 		);
 		expect(result.deferred).toBe("ReviewDeferred");
@@ -670,14 +688,14 @@ describe("a thread that asks for no review", () => {
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				const outcome = yield* threads.work({ ...work("t1", "What is six times seven?"), review: false });
-				const conversation = yield* threads.conversation("t1");
+				const conversation = yield* threads.conversation(ThreadKey.make("t1"));
 				const agent = yield* conversation.agent;
 				return {
 					outcome,
 					extensions: agent.extensions.map((extension) => extension.name),
 					state: yield* Review.state(conversation),
-					probe: yield* threads.probe("t1"),
-					resumed: yield* threads.resume("t1"),
+					probe: yield* threads.probe(ThreadKey.make("t1")),
+					resumed: yield* threads.resume(ThreadKey.make("t1")),
 				};
 			}),
 		);

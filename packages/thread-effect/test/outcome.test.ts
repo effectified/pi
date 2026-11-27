@@ -1,6 +1,7 @@
 // The outcome and the work input as data: both cross a host boundary as JSON and come back equal.
 
 import { LeaseFenced, ShareExhausted } from "@effectified/pi-budget";
+import { Conversation } from "@effectified/pi-durable";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Outcome, Threads } from "../src/index.ts";
@@ -44,7 +45,11 @@ describe("the outcome of a thread", () => {
 		{ _tag: "ReviewDeferred", counts, verdict: deferred, attempt: 2, reason: "overloaded" },
 		{ _tag: "BudgetStopped", counts, refusal: new LeaseFenced({ reason: "expired" }) },
 		{ _tag: "BudgetStopped", counts, refusal: new LeaseFenced({ reason: "expired" }), review: deferred },
-		{ _tag: "BudgetStopped", counts, refusal: new ShareExhausted({ conversation: 4, cap: 400n, settled: 536n }) },
+		{
+			_tag: "BudgetStopped",
+			counts,
+			refusal: new ShareExhausted({ conversation: Conversation.Id.make(4), cap: 400n, settled: 536n }),
+		},
 		{ _tag: "Errored", counts, reason: "model_error", detail: "invalid request" },
 		{ _tag: "Errored", counts, reason: "turn_limit", detail: null },
 		{ _tag: "Cancelled", counts },

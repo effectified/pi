@@ -10,6 +10,7 @@ export {
 	ModelNotCleared,
 	ReservedExtension,
 	Unguarded,
+	UnguardedReason,
 	UnknownClassification,
 } from "./errors.ts";
 export * as Grant from "./grant.ts";

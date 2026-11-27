@@ -5,6 +5,7 @@ import { answer, held, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+	Check,
 	type Finding,
 	NAME,
 	release,
@@ -260,7 +261,10 @@ describe("state", () => {
 					...PARTIES,
 					findings: [],
 					failures: [
-						{ check: "review.model", error: "The reviewer reviewer-lab/judge did not answer: overloaded" },
+						{
+							check: Check.Name.make("review.model"),
+							error: "The reviewer reviewer-lab/judge did not answer: overloaded",
+						},
 					],
 					outcome: { _tag: "Deferred" as const, task: 9_999 as TaskId, attempt: 1 },
 					time: 1,

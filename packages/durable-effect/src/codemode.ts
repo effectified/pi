@@ -85,7 +85,7 @@ export const store: BuiltinDoc.BuiltinDoc<Store, "rewindable"> = {
 	writer: "pi",
 	encode: () =>
 		Effect.fail(
-			new SchemaDecodeError({
+			SchemaDecodeError.make({
 				issues: [{ path: "", message: "Document pi.codemode.store is written by Pi alone" }],
 			}),
 		),

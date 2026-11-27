@@ -15,6 +15,7 @@ import {
 	Cancelled,
 	ConversationBusy,
 	ConversationIdle,
+	DurableError,
 	ReadAfterWrite,
 	ReadOnlySession,
 	SessionFailed,
@@ -23,6 +24,24 @@ import {
 } from "../src/index.ts";
 
 const conversationId = 7 as ConversationId;
+
+describe("DurableError", () => {
+	it("is the union schema of every failure: one handler per tag, and a guard per tag", () => {
+		const busy = fromRejection(new PiConversationBusy(conversationId));
+		const said = DurableError.match(busy, {
+			ConversationBusy: (error) => `busy ${error.conversationId}`,
+			ConversationIdle: () => "idle",
+			ReadAfterWrite: () => "read after write",
+			ReadOnlySession: () => "read only",
+			SessionFailed: () => "failed",
+			StorageRequestError: () => "bad request",
+			Cancelled: () => "cancelled",
+			UnexpectedError: () => "unexpected",
+		});
+		expect(said).toBe("busy 7");
+		expect([DurableError.guards.ConversationBusy(busy), DurableError.guards.Cancelled(busy)]).toEqual([true, false]);
+	});
+});
 
 describe("fromRejection", () => {
 	it("gives each Pi Durable error class its tagged error, with Pi's message", () => {

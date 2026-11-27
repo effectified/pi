@@ -6,8 +6,9 @@ import { Cause, type Context, Effect, Exit } from "effect";
 export type Run<R> = <A, E>(effect: Effect.Effect<A, E, R>, signal: AbortSignal | undefined) => Promise<A>;
 
 /**
- * A `Run` whose Effects get `context`. An aborted `signal` interrupts the fiber. A failure, a defect and the
- * interruption reject with the error itself, which is how throwing code reaches Pi.
+ * A `Run` whose Effects get `context`, its current span included: a runner kept beyond that span (an agent's, a
+ * Layer's) is given a context `withoutParentSpan` of `@effectified/pi-ai`. An aborted `signal` interrupts the fiber.
+ * A failure, a defect and the interruption reject with the error itself, which is how throwing code reaches Pi.
  */
 export function runner<R>(context: Context.Context<R>): Run<R> {
 	const runExit = Effect.runPromiseExitWith(context);

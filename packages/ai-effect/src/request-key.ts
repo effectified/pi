@@ -1,7 +1,16 @@
 // The key of a request of a conversation: what it asks at one point, the same each time that request is sent.
 
-import type { Context as PiContext } from "@earendil-works/pi-ai";
-import { Effect } from "effect";
+import type { Context as PiContext, StreamOptions } from "@earendil-works/pi-ai";
+import { Array as Arr, Effect, Formatter, Order, Predicate, pipe, Record, Schema, String as Str } from "effect";
+
+/** The key of a request: 64 lower-case hexadecimal digits, the SHA-256 of the request's canonical JSON. */
+export const RequestKey = Schema.String.pipe(Schema.brand("RequestKey"));
+
+/** The key of a request. */
+export type RequestKey = typeof RequestKey.Type;
+
+/** The provider session a request belongs to: pi-ai's `sessionId`. */
+type Session = NonNullable<StreamOptions["sessionId"]>;
 
 /**
  * The key of a request with a provider session: the SHA-256, in 64 lower-case hexadecimal digits, of the canonical
@@ -19,29 +28,32 @@ import { Effect } from "effect";
  * It is one function for every plugin that names a request: the router's route events and the budget's reservations
  * carry the same key because both ask here.
  */
-export function requestKey(session: string, context: PiContext): Effect.Effect<string> {
+export const requestKey = Effect.fn("RequestKey.requestKey")(function* (
+	session: Session,
+	context: PiContext,
+): Effect.fn.Return<RequestKey> {
 	const text = canonical({ session, context });
-	return Effect.map(
-		Effect.promise(() => crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))),
-		(hash) => Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join(""),
-	);
+	const hash = yield* Effect.promise(() => crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+	return RequestKey.make(Arr.join(Arr.map(Arr.fromIterable(new Uint8Array(hash)), hexByte), ""));
+});
+
+function hexByte(byte: number): string {
+	return pipe(byte.toString(16), Str.padStart(2, "0"));
 }
 
 /**
  * `value` as JSON with the keys of every object sorted, as RFC 8785 orders them, so the key does not depend on the
  * order in which a process built an object. What JSON leaves out it leaves out: an `undefined` property, and symbol
- * keys such as those of a tool's parameter schema.
+ * keys such as those of a tool's parameter schema. A key and a primitive are written as `JSON.stringify` writes them.
  */
 function canonical(value: unknown): string {
-	if (isList(value)) return `[${value.map(canonical).join(",")}]`;
-	if (typeof value !== "object" || value === null) return JSON.stringify(value) ?? "null";
-	const members: Array<string> = [];
-	for (const key of Object.keys(value).sort()) {
-		const member: unknown = Reflect.get(value, key);
-		if (member !== undefined) members.push(`${JSON.stringify(key)}:${canonical(member)}`);
-	}
-	return `{${members.join(",")}}`;
+	if (Arr.isArray(value)) return `[${Arr.join(Arr.map(value, canonical), ",")}]`;
+	if (!Predicate.isObject(value)) return Formatter.formatJson(value);
+	const record: Record.ReadonlyRecord<string, unknown> = value;
+	const keys: ReadonlyArray<string> = Arr.sort(Record.keys(record), Order.String);
+	const members = Arr.flatMap(keys, (key) => {
+		const member = record[key];
+		return member === undefined ? [] : [`${Formatter.formatJson(key)}:${canonical(member)}`];
+	});
+	return `{${Arr.join(members, ",")}}`;
 }
-
-// `Array.isArray` narrows `unknown` to `any[]`.
-const isList: (value: unknown) => value is ReadonlyArray<unknown> = Array.isArray;

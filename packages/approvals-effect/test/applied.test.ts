@@ -1,4 +1,5 @@
 import type { EntryRecord } from "@earendil-works/pi-durable";
+import { ToolName } from "@effectified/pi-durable";
 import { answer, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Option, Stream } from "effect";
 import { TestClock } from "effect/testing";
@@ -87,7 +88,7 @@ describe("the record on the tool result", () => {
 
 	it("joins a tool's own object details, and is absent for a call that never asked", async () => {
 		const { published, layer } = scene({
-			policy: { tools: ["read"], expiresAfter: "1 hour" },
+			policy: { tools: [ToolName.make("read")], expiresAfter: "1 hour" },
 			responses: [
 				toolCall("read", { path: "a.txt" }, { id: "call-1" }),
 				toolCall("write", { text: "hi" }, { id: "call-2" }),
@@ -117,7 +118,7 @@ describe("the record on the tool result", () => {
 
 	it("leaves details that are no object as the tool reported them, without a record", async () => {
 		const { published, layer } = scene({
-			policy: { tools: ["list"], expiresAfter: "1 hour" },
+			policy: { tools: [ToolName.make("list")], expiresAfter: "1 hour" },
 			responses: [toolCall("list", { path: "." }, { id: "call-1" }), answer("Done.")],
 		});
 		const seen = await Effect.runPromise(

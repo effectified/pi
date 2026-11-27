@@ -1,8 +1,10 @@
 // A copied storage has settled nothing itself: what a host runs on a copy of a whole harness storage before its first
 // request, so that money stored in two storages is counted once.
 
+import type { SessionId } from "@effectified/pi-ai";
+import type { ConversationId } from "@effectified/pi-durable";
 import { Doc, Harness } from "@effectified/pi-durable";
-import { Effect, Option, Schema, Stream } from "effect";
+import { Array as Arr, Effect, Option, Schema, Stream } from "effect";
 import { forget, type Share, ShareDocument, Shares, seedOf, sessionOf } from "./shares.ts";
 
 /**
@@ -27,14 +29,18 @@ import { forget, type Share, ShareDocument, Shares, seedOf, sessionOf } from "./
  * It reads and writes the storage of the `Harness` of the context, so it needs no `Shares.attach`; the `Shares` is
  * the budget's, which then reads the moved shares again instead of going on from what it counted in memory.
  */
-export function onStorageFork(copy: string): Effect.Effect<void, Doc.Failure, Harness.Harness | Shares> {
-	return Effect.gen(function* () {
-		const mark = yield* Harness.snapshot(Copy);
-		if (Option.getOrUndefined(mark)?.copy === copy) return;
-		const settled = yield* spent;
-		yield* Harness.commit((tx) =>
-			Effect.gen(function* () {
-				for (const [session, share] of settled) {
+export const onStorageFork: (copy: string) => Effect.Effect<void, Doc.Failure, Harness.Harness | Shares> = Effect.fn(
+	"StorageFork.onStorageFork",
+)(function* (copy) {
+	const mark = yield* Harness.snapshot(Copy);
+	if (Option.getOrUndefined(mark)?.copy === copy) return;
+	const settled = yield* spent;
+	yield* Harness.commit((tx) =>
+		Effect.gen(function* () {
+			// One commit's writes, in order.
+			yield* Effect.forEach(
+				settled,
+				Effect.fnUntraced(function* ([session, share]) {
 					const document = yield* tx.doc(ShareDocument, session, seedOf(share));
 					// Read as the body runs: the amount moved is the one stored now.
 					yield* document.update((current) => ({
@@ -42,16 +48,19 @@ export function onStorageFork(copy: string): Effect.Effect<void, Doc.Failure, Ha
 						settled: 0n,
 						inherited: (current.inherited ?? 0n) + current.settled,
 					}));
-				}
-				yield* Effect.flatMap(tx.doc(Copy), (document) => document.set({ copy }));
-			}),
-		);
-		yield* forget(
-			yield* Shares,
-			settled.map(([session]) => session),
-		);
-	});
-}
+				}),
+				{ concurrency: 1, discard: true },
+			);
+			const marked = yield* tx.doc(Copy);
+			yield* marked.set({ copy });
+		}),
+	);
+	const shares = yield* Shares;
+	yield* forget(
+		shares,
+		Arr.map(settled, ([session]) => session),
+	);
+});
 
 /**
  * The mark of a copied storage, kind `budget.copy`: the name of the copy whose shares were last made its own; null in
@@ -67,22 +76,27 @@ const Copy = Doc.make({
 	checkpointWhen: () => true,
 });
 
+/** A share that has settled something, by its provider session. */
+type Spent = readonly [session: SessionId, share: Share];
+
 /**
  * Every share of the storage that has settled something, by its provider session. Pi lists no documents, so a share
  * is found through its conversation; and it is read outside a commit, where a document that does not exist is none:
  * a commit would create a share for every conversation it looked at.
  */
-const spent: Effect.Effect<ReadonlyArray<readonly [string, Share]>, Doc.Failure, Harness.Harness> = Effect.gen(
-	function* () {
-		const found: Array<readonly [string, Share]> = [];
-		yield* Stream.runForEach(Harness.scanConversations(), (conversation) =>
-			Effect.gen(function* () {
-				const session = yield* sessionOf(conversation.id);
-				if (Option.isNone(session)) return;
-				const share = yield* Harness.snapshot(ShareDocument, session.value);
-				if (Option.isSome(share) && share.value.settled > 0n) found.push([session.value, share.value]);
-			}),
-		);
-		return found;
-	},
+const spent: Effect.Effect<ReadonlyArray<Spent>, Doc.Failure, Harness.Harness> = Effect.map(
+	Stream.runCollect(Stream.mapEffect(Harness.scanConversations(), (conversation) => spentOf(conversation.id))),
+	Arr.getSomes,
 );
+
+/** The share of `conversation` when it has one that has settled something. Once per conversation of the storage. */
+const spentOf = Effect.fnUntraced(function* (
+	conversation: ConversationId,
+): Effect.fn.Return<Option.Option<Spent>, Doc.Failure, Harness.Harness> {
+	const session = yield* sessionOf(conversation);
+	if (Option.isNone(session)) return Option.none();
+	const share = yield* Harness.snapshot(ShareDocument, session.value);
+	return Option.flatMap(share, (found) =>
+		found.settled > 0n ? Option.some<Spent>([session.value, found]) : Option.none(),
+	);
+});

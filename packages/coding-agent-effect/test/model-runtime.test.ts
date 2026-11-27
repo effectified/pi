@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { runTest, ScriptedModels } from "@effectified/pi-ai/testing";
-import { Effect } from "effect";
+import { ModelId, ProviderId } from "@effectified/pi-ai";
+import { Effect, Redacted } from "effect";
 import { describe, expect, it } from "vitest";
 import { ModelRuntime, readStoredCredential, resolveModelScopeWithDiagnostics } from "../src/index.ts";
 import { scripted, tempDir } from "./scripted.ts";
@@ -14,14 +15,15 @@ describe("ModelRuntime.layer", () => {
 				const authPath = join(dir, "auth.json");
 				const runtime = yield* ModelRuntime.make({ authPath, modelsPath: null, refreshOnCreate: false });
 				yield* runtime.registerNativeProvider(models.provider);
-				yield* runtime.setRuntimeApiKey(models.model.provider, "runtime-key");
-				const found = yield* runtime.getModel(models.model.provider, models.model.id);
+				const provider = ProviderId.make(models.model.provider);
+				yield* runtime.setRuntimeApiKey(provider, Redacted.make("runtime-key"));
+				const found = yield* runtime.getModel(provider, ModelId.make(models.model.id));
 				return {
 					found: found?.id,
 					// Pi checks credentials asynchronously; `hasConfiguredAuth` reads the snapshot such a check leaves.
-					auth: (yield* runtime.checkAuth(models.model.provider))?.type,
+					auth: (yield* runtime.checkAuth(provider))?.type,
 					// A runtime key is for this process only: nothing was stored.
-					stored: yield* readStoredCredential(models.model.provider, authPath),
+					stored: yield* readStoredCredential(provider, authPath),
 				};
 			}).pipe(Effect.provide(scripted)),
 		);

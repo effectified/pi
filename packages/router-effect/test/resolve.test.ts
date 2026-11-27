@@ -1,7 +1,8 @@
+import { ModelId } from "@effectified/pi-ai";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { type Constraints, type RouteTable, resolveRoutes } from "../src/index.ts";
-import { route, table } from "./scripted.ts";
+import { AUTHOR, route, table } from "./scripted.ts";
 
 // Four routes: what each may see and where it runs.
 const ROUTES = [
@@ -19,7 +20,9 @@ const TABLE: RouteTable = table([
 /** The providers of the routes that may serve `alias`, in order. */
 function providers(alias: string, constraints?: Constraints): Promise<string[]> {
 	return Effect.runPromise(
-		Effect.map(resolveRoutes(TABLE, alias, constraints), (routes) => routes.map((entry) => entry.provider)),
+		Effect.map(resolveRoutes(TABLE, ModelId.make(alias), constraints), (routes) =>
+			routes.map((entry) => entry.provider),
+		),
 	);
 }
 
@@ -67,7 +70,7 @@ describe("resolveRoutes", () => {
 
 	it("fails with NoRouteAvailable, naming why each route is excluded, when none is left", async () => {
 		const error = await Effect.runPromise(
-			Effect.flip(resolveRoutes(TABLE, "author", { classification: "secret", regions: ["us"] })),
+			Effect.flip(resolveRoutes(TABLE, AUTHOR, { classification: "secret", regions: ["us"] })),
 		);
 		expect(error._tag).toBe("NoRouteAvailable");
 		expect(error).toMatchObject({
@@ -103,7 +106,7 @@ describe("resolveRoutes", () => {
 		]);
 		const served = (alias: string, constraints?: Constraints, imposed?: Constraints) =>
 			Effect.runPromise(
-				Effect.map(resolveRoutes(labelled, alias, constraints, imposed), (routes) =>
+				Effect.map(resolveRoutes(labelled, ModelId.make(alias), constraints, imposed), (routes) =>
 					routes.map((entry) => entry.provider),
 				),
 			);
@@ -119,7 +122,7 @@ describe("resolveRoutes", () => {
 		expect(await served("author", { requires: ["batch"] }, { requires: ["zero-data-retention"] })).toEqual(["both"]);
 
 		const error = await Effect.runPromise(
-			Effect.flip(resolveRoutes(labelled, "author", { requires: ["batch", "byok"] }, { requires: ["batch"] })),
+			Effect.flip(resolveRoutes(labelled, AUTHOR, { requires: ["batch", "byok"] }, { requires: ["batch"] })),
 		);
 		expect(error._tag).toBe("NoRouteAvailable");
 		expect(error).toMatchObject({
@@ -141,7 +144,7 @@ describe("resolveRoutes", () => {
 	it("gives the first reason a route is excluded: classification, then region, then label", async () => {
 		const error = await Effect.runPromise(
 			Effect.flip(
-				resolveRoutes(TABLE, "author", { classification: "internal", regions: ["eu"], requires: ["batch"] }),
+				resolveRoutes(TABLE, AUTHOR, { classification: "internal", regions: ["eu"], requires: ["batch"] }),
 			),
 		);
 		expect(error).toMatchObject({
@@ -164,7 +167,7 @@ describe("resolveRoutes", () => {
 	it("lets what the product imposes only narrow: the stricter classification, the regions both allow", async () => {
 		const imposed = (constraints: Constraints | undefined, product: Constraints, alias = "author") =>
 			Effect.runPromise(
-				Effect.map(resolveRoutes(TABLE, alias, constraints, product), (routes) =>
+				Effect.map(resolveRoutes(TABLE, ModelId.make(alias), constraints, product), (routes) =>
 					routes.map((entry) => entry.provider),
 				),
 			);
@@ -195,9 +198,7 @@ describe("resolveRoutes", () => {
 
 		// Regions that share nothing leave no route: the request does not get its own regions back.
 		const none = await Effect.runPromise(
-			Effect.flip(
-				resolveRoutes(TABLE, "author", { classification: "public", regions: ["us"] }, { regions: ["eu"] }),
-			),
+			Effect.flip(resolveRoutes(TABLE, AUTHOR, { classification: "public", regions: ["us"] }, { regions: ["eu"] })),
 		);
 		expect(none).toMatchObject({
 			_tag: "NoRouteAvailable",
@@ -215,7 +216,7 @@ describe("resolveRoutes", () => {
 
 	it("fails with InvalidConstraints for a classification the product imposes and the table does not list", async () => {
 		const error = await Effect.runPromise(
-			Effect.flip(resolveRoutes(TABLE, "author", { classification: "public" }, { classification: "topsecret" })),
+			Effect.flip(resolveRoutes(TABLE, AUTHOR, { classification: "public" }, { classification: "topsecret" })),
 		);
 		expect(error).toMatchObject({
 			_tag: "InvalidConstraints",
@@ -225,15 +226,13 @@ describe("resolveRoutes", () => {
 	});
 
 	it("fails with UnknownAlias for a name the table does not have", async () => {
-		const error = await Effect.runPromise(Effect.flip(resolveRoutes(TABLE, "nope")));
+		const error = await Effect.runPromise(Effect.flip(resolveRoutes(TABLE, ModelId.make("nope"))));
 		expect(error._tag).toBe("UnknownAlias");
 		expect(error.message).toBe('The route table has no alias "nope"');
 	});
 
 	it("fails with InvalidConstraints for a classification the table does not list", async () => {
-		const error = await Effect.runPromise(
-			Effect.flip(resolveRoutes(TABLE, "author", { classification: "topsecret" })),
-		);
+		const error = await Effect.runPromise(Effect.flip(resolveRoutes(TABLE, AUTHOR, { classification: "topsecret" })));
 		expect(error._tag).toBe("InvalidConstraints");
 		expect(error).toMatchObject({
 			alias: "author",

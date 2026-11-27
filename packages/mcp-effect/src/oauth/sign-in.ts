@@ -12,11 +12,16 @@ import {
 import { Effect } from "effect";
 import { fromPi, type McpFailure } from "../errors.ts";
 import { currentRunner } from "../run-in-pi.ts";
+import { type OAuthSettings, toPiSettings } from "./settings.ts";
 import { type OAuthStore, toPiStore } from "./store.ts";
 
-/** Pi's sign-in options with an `OAuthStore`. The fiber owns cancellation. Pass the same to both halves. */
-export interface SignInOptions<R = never> extends Omit<McpSignInOptions, "store" | "signal"> {
+/**
+ * Pi's sign-in options with an `OAuthStore` and the client secret `Redacted`. The fiber owns cancellation. Pass the
+ * same to both halves.
+ */
+export interface SignInOptions<R = never> extends Omit<McpSignInOptions, "store" | "settings" | "signal"> {
 	readonly store: OAuthStore<R>;
+	readonly settings: OAuthSettings;
 }
 
 /** `SignInOptions`, and the browser step and its answer, for `completeMcpSignIn`. */
@@ -31,28 +36,28 @@ export interface CompleteSignInOptions<R = never> extends SignInOptions<R> {
  * the browser step (`redirect`: open `authorizationUrl`). Interrupting it cancels the sign-in; a refresh already sent
  * still completes and saves its tokens, as in Pi.
  */
-export function startMcpSignIn<R = never>(options: SignInOptions<R>): Effect.Effect<McpSignInStart, McpFailure, R> {
-	return Effect.gen(function* () {
+export const startMcpSignIn: <R = never>(options: SignInOptions<R>) => Effect.Effect<McpSignInStart, McpFailure, R> =
+	Effect.fn("McpOAuth.startMcpSignIn")(function* <R>(options: SignInOptions<R>) {
 		const run = yield* currentRunner<R>();
-		const { store, ...rest } = options;
+		const { store, settings, ...rest } = options;
 		return yield* Effect.tryPromise({
-			try: (signal) => piStartMcpSignIn({ ...rest, store: toPiStore(store, run), signal }),
+			try: (signal) =>
+				piStartMcpSignIn({ ...rest, settings: toPiSettings(settings), store: toPiStore(store, run), signal }),
 			catch: fromPi,
 		});
 	});
-}
 
 /**
  * Second half of a sign-in: Pi's `completeMcpSignIn`. Exchanges the authorization code of `response` and saves the
  * tokens. A redirect URL the user pasted goes through `responseFromRedirectUrl` first.
  */
-export function completeMcpSignIn<R = never>(options: CompleteSignInOptions<R>): Effect.Effect<void, McpFailure, R> {
-	return Effect.gen(function* () {
+export const completeMcpSignIn: <R = never>(options: CompleteSignInOptions<R>) => Effect.Effect<void, McpFailure, R> =
+	Effect.fn("McpOAuth.completeMcpSignIn")(function* <R>(options: CompleteSignInOptions<R>) {
 		const run = yield* currentRunner<R>();
-		const { store, ...rest } = options;
+		const { store, settings, ...rest } = options;
 		yield* Effect.tryPromise({
-			try: (signal) => piCompleteMcpSignIn({ ...rest, store: toPiStore(store, run), signal }),
+			try: (signal) =>
+				piCompleteMcpSignIn({ ...rest, settings: toPiSettings(settings), store: toPiStore(store, run), signal }),
 			catch: fromPi,
 		});
 	});
-}

@@ -1,22 +1,27 @@
 // The child setup port: what the product does to a child conversation as it is created, such as grants and budgets.
 
-import type { ConversationId, Tx } from "@effectified/pi-durable";
-import { Context, Effect, Layer } from "effect";
+import { Conversation, type Tx } from "@effectified/pi-durable";
+import { Context, Effect, Layer, Schema } from "effect";
+import { Depth, Mode } from "./child.ts";
 import type { ChildSetupFailed } from "./errors.ts";
+import { Name } from "./subagent-name.ts";
 
 /** The child a setup is asked about. */
-export interface Child {
+export const Child = Schema.Struct({
 	/** The child conversation, created in this commit. */
-	readonly conversationId: ConversationId;
+	conversationId: Conversation.Id,
 	/** The conversation whose model asked for the child. */
-	readonly parentId: ConversationId;
+	parentId: Conversation.Id,
 	/** The name of the declaration the child runs as. */
-	readonly subagent: string;
+	subagent: Name,
 	/** Whether the parent's tool call waits for the child (`foreground`) or goes on without it (`background`). */
-	readonly mode: "foreground" | "background";
+	mode: Mode,
 	/** How deep the child is: 1 for the child of a conversation that is no subagent. */
-	readonly depth: number;
-}
+	depth: Depth,
+});
+
+/** The child a setup is asked about. */
+export type Child = typeof Child.Type;
 
 /** What the product decides about every child. */
 export interface ChildSetupService {
@@ -40,7 +45,7 @@ export interface ChildSetupService {
  * wants nothing done says so with `none`.
  */
 export class ChildSetup extends Context.Service<ChildSetup, ChildSetupService>()(
-	"@effectified/pi-subagent/ChildSetup",
+	"@effectified/pi-subagent/child-setup/ChildSetup",
 ) {}
 
 /** A setup that does nothing, for a product without guards and budgets: the stated choice, never a default. */

@@ -173,11 +173,13 @@ export type BuiltinDocsCovered = Assert<
 
 /** The exports of Pi Durable that are document tokens. */
 type DocTokens = {
-	[K in keyof typeof PiDurable as (typeof PiDurable)[K] extends {
-		readonly definition: { readonly kind: string; readonly scope: unknown };
-	}
-		? K
-		: never]: true;
+	[
+		K in keyof typeof PiDurable as (typeof PiDurable)[K] extends {
+			readonly definition: { readonly kind: string; readonly scope: unknown };
+		}
+			? K
+			: never
+	]: true;
 };
 
 // Schemas and unions written by hand: equal to Pi's types both ways, or covering every member.
@@ -201,11 +203,13 @@ type Continuation =
 /** What an `afterTools` task completes with is exactly Pi's. */
 export type AfterToolsDecisionSame = Assert<Conform<Hook.AfterToolsDecision, PiAfterToolsDecision>>;
 
-/** The model of an agent change is exactly Pi's `ModelRef`. */
-export type ModelRefSame = Assert<Conform<Agent.ModelRef, PiModelRef>>;
+/** The model of an agent change, encoded, is exactly Pi's `ModelRef` (its type has the ids branded). */
+export type ModelRefSame = Assert<Conform<typeof Agent.ModelRef.Encoded, PiModelRef>>;
 
 /** The JSON form of an agent change is Pi's `AgentChange` with every tool and extension a name. */
-export type ByNameSame = Assert<Conform<Agent.ByName, { readonly [K in keyof AgentChange]?: Names<AgentChange[K]> }>>;
+export type ByNameSame = Assert<
+	Conform<typeof Agent.ByName.Encoded, { readonly [K in keyof AgentChange]?: Names<AgentChange[K]> }>
+>;
 
 /** `T` with every list of named Pi objects as a list of names. */
 type Names<T> = T extends readonly (infer Item)[]
@@ -259,11 +263,9 @@ export type ErrorClassesTagged = Assert<Conform<Errors.TaggedClass, keyof PiErro
 
 /** The exports of Pi Durable whose instances are `Error`s. */
 type PiErrorClasses = {
-	[K in keyof typeof PiDurable as (typeof PiDurable)[K] extends abstract new (
-		...args: never[]
-	) => Error
-		? K
-		: never]: true;
+	[
+		K in keyof typeof PiDurable as (typeof PiDurable)[K] extends abstract new (...args: never[]) => Error ? K : never
+	]: true;
 };
 
 /** Each tagged error carries every field Pi's error class adds to `Error`, with Pi's type. */

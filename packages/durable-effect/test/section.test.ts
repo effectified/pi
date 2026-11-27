@@ -98,7 +98,7 @@ describe("Section.make", () => {
 					Extension.make({
 						name: "app",
 						sections: [
-							Section.make("broken", () => Effect.fail(new Error("no motto"))),
+							Section.make("broken", () => Effect.die(new Error("no motto"))),
 							Section.make("kept", () => Effect.succeedSome("Kept.")),
 						],
 					}),

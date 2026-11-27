@@ -5,16 +5,17 @@ import { ForkRetryLater } from "../src/driver.ts";
 import { check, MAX_ATTEMPTS, notifyKey, retryDelay, type Site, start } from "../src/fan-out.ts";
 import { type Job, planned } from "../src/job.ts";
 import { type Fake, type FakeOptions, fake } from "./fake-driver.ts";
+import { ForkId, JobKey, SwarmId } from "../src/ids.ts";
 import { Measure, measured, noSetup } from "./support.ts";
 
 const NOW = 10_000;
-const job = { index: 4, key: "job-a", input: { word: "a" } };
+const job = { index: 4, key: JobKey.make("job-a"), input: { word: "a" } };
 
 function site(driver: Fake): Site {
 	return {
 		work: Measure.work,
 		driver: driver.driver,
-		swarmId: "s",
+		swarmId: SwarmId.make("s"),
 		coordinatorTaskId: Task.Id.make(7),
 		sourceConversationId: Conversation.Id.make(1),
 		at: Entry.Id.make(3),
@@ -35,8 +36,8 @@ describe("keys and delays", () => {
 	});
 
 	it("waits as long as the driver says, else twice as long each time, up to half a minute", () => {
-		const hinted = new ForkRetryLater({ operation: "fork", reason: "busy", afterMillis: 75 });
-		const plain = new ForkRetryLater({ operation: "fork", reason: "busy" });
+		const hinted = ForkRetryLater.make({ operation: "fork", reason: "busy", afterMillis: 75 });
+		const plain = ForkRetryLater.make({ operation: "fork", reason: "busy" });
 		expect(retryDelay(hinted, 5)).toBe(75);
 		expect([0, 1, 2, 3].map((attempts) => retryDelay(plain, attempts))).toEqual([200, 400, 800, 1600]);
 		expect(retryDelay(plain, 20)).toBe(30_000);
@@ -77,7 +78,13 @@ describe("start", () => {
 		});
 		// The next attempt does not ask for the fork again.
 		const next = await Effect.runPromise(
-			start(site(noRun.driver), job, { status: "starting", fork: "fake-1-job-a", attempts: 1, busy: 0, retryAt: 0 }),
+			start(site(noRun.driver), job, {
+				status: "starting",
+				fork: ForkId.make("fake-1-job-a"),
+				attempts: 1,
+				busy: 0,
+				retryAt: 0,
+			}),
 		);
 		expect(next).toMatchObject({ status: "starting", attempts: 2 });
 		expect(noRun.driver.forkCalls.get("job-a")).toBe(1);
@@ -127,7 +134,7 @@ describe("check", () => {
 		correction = 0,
 	): Extract<Job, { status: "running" }> => ({
 		status: "running",
-		fork: "fake-1-job-a",
+		fork: ForkId.make("fake-1-job-a"),
 		correction,
 		wait,
 		attempts: 0,

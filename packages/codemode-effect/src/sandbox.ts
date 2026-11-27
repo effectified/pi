@@ -8,7 +8,7 @@ import type {
 	CodemodeSandboxBaseOptions,
 	CodemodeTool,
 } from "@earendil-works/pi-codemode/portable";
-import type { SchemaConversionError, Tool } from "@effectified/pi-agent";
+import type { SchemaConversionError, Tool, ToolName } from "@effectified/pi-agent";
 import { Context, type Effect, Layer, type Scope } from "effect";
 import type { RunRejected, SandboxClosed, ToolRejected } from "./errors.ts";
 import type * as Run from "./run.ts";
@@ -27,8 +27,8 @@ export interface Sandbox {
 	readonly globals: ReadonlyArray<CodemodeTool>;
 	/** Adds a tool for later executions. Fails with `ToolRejected` when one of that name is registered. */
 	readonly register: <R>(tool: Tool.Any<R>) => Effect.Effect<void, ToolRejected | SchemaConversionError, R>;
-	/** Removes a tool for later executions; whether there was one. */
-	readonly unregister: (name: string) => Effect.Effect<boolean>;
+	/** Removes a tool for later executions (`sandbox.unregister(Lookup.name)`); whether there was one. */
+	readonly unregister: (name: ToolName) => Effect.Effect<boolean>;
 	/**
 	 * Runs `code`, the body of an async function, to its result. A script that fails is a result with `ok: false`,
 	 * not a failure. Interrupting the fiber aborts the execution (Pi's tool calls are aborted and the VM is asked to
@@ -57,7 +57,7 @@ export interface Options<R> extends Omit<CodemodeSandboxBaseOptions, "tools" | "
 }
 
 /** The sandbox a program runs its scripts in. */
-export class Current extends Context.Service<Current, Sandbox>()("@effectified/pi-codemode/Sandbox/Current") {}
+export class Current extends Context.Service<Current, Sandbox>()("@effectified/pi-codemode/sandbox/Current") {}
 
 /** `Current` from a scoped Effect that makes a sandbox, such as `WorkerSandbox.make`; released with the Layer. */
 export function layer<E, R>(acquire: Effect.Effect<Sandbox, E, R>): Layer.Layer<Current, E, Exclude<R, Scope.Scope>> {

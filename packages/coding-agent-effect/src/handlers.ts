@@ -53,22 +53,33 @@ export interface Answers {
 }
 
 /** What the handler of `K` answers: its answer, or `undefined` to leave things as they are. */
-// biome-ignore lint/suspicious/noConfusingVoidType: as Pi's handlers, one that answers nothing may succeed with anything.
+// `void`, as Pi's handlers: one that answers nothing may succeed with anything.
 export type AnswerOf<K extends EventType> = K extends keyof Answers ? Answers[K] | undefined : void;
 
 /**
  * The handlers of an extension, each an Effect of the event that runs with `ExtensionContext` (and `project_trust`'s
- * with `ProjectTrustContext`). A failure or a defect is reported by Pi as an extension error, as a throw is.
+ * with `ProjectTrustContext`), failing with `E` and needing `R` besides. A failure or a defect is reported by Pi as an
+ * extension error, as a throw is. Without arguments: handlers of any failures and services, what `Extension.make`
+ * takes.
  */
-export type Handlers = {
-	readonly [K in EventType]?: (event: EventOf<K>) => Effect.Effect<AnswerOf<K>, unknown, unknown>;
+export type Handlers<E = unknown, R = unknown> = {
+	readonly [K in EventType]?: (event: EventOf<K>) => Effect.Effect<AnswerOf<K>, E, R | ExtensionContext>;
 } & {
-	readonly project_trust?: (event: ProjectTrustEvent) => Effect.Effect<ProjectTrustEventResult, unknown, unknown>;
+	readonly project_trust?: (
+		event: ProjectTrustEvent,
+	) => Effect.Effect<ProjectTrustEventResult, E, R | ProjectTrustContext>;
 };
 
 /** The services the handlers of `H` need besides the contexts they are given. */
 export type Services<H> = {
 	[K in keyof H]-?: NonNullable<H[K]> extends (...args: never[]) => Effect.Effect<infer _A, infer _E, infer R>
 		? Exclude<R, ExtensionContext | ProjectTrustContext>
+		: never;
+}[keyof H];
+
+/** What the handlers of `H` fail with. */
+export type Failures<H> = {
+	[K in keyof H]-?: NonNullable<H[K]> extends (...args: never[]) => Effect.Effect<infer _A, infer E, infer _R>
+		? E
 		: never;
 }[keyof H];

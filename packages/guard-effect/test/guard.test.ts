@@ -1,5 +1,5 @@
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { Extension, Harness, Hook, Registry, Tool, type Tx } from "@effectified/pi-durable";
+import { Extension, Harness, Hook, Registry, Tool, ToolName, type Tx } from "@effectified/pi-durable";
 import { answer, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
@@ -13,7 +13,7 @@ import {
 	ReservedExtension,
 	Rule,
 } from "../src/index.ts";
-import { harnessOn, offering, tools } from "./guarded.ts";
+import { harnessOn, names, offering, tools } from "./guarded.ts";
 
 const verbs = Matcher.firstWord(["approve", "sign", "export", "send", "delete"]);
 const policy: Policy.Policy = { ...Policy.empty, denied: [verbs] };
@@ -33,8 +33,8 @@ class Journal extends Context.Service<Journal, { readonly note: (text: string) =
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
 /** Builds the Layer and gives what it failed with. */
-const failure = <E, R>(layer: Layer.Layer<Registry.Registry | Guard.Guard, E, R>) =>
-	Effect.runPromise(Effect.flip(Effect.scoped(Layer.build(layer))) as Effect.Effect<E>);
+const failure = <E>(layer: Layer.Layer<Registry.Registry | Guard.Guard, E>) =>
+	Effect.runPromise(Effect.flip(Effect.scoped(Layer.build(layer))));
 
 describe("layer", () => {
 	it("fails with DeniedTool for a tool under a denied verb, in snake case and in camel case", async () => {
@@ -45,7 +45,7 @@ describe("layer", () => {
 				extensions: [Extension.make({ name: "app", tools: [Search, named("approve_claim")] })],
 			}),
 		);
-		expect(snake).toEqual(new DeniedTool({ tool: "approve_claim", extension: "app", rule: verbs }));
+		expect(snake).toEqual(DeniedTool.make({ tool: ToolName.make("approve_claim"), extension: "app", rule: verbs }));
 		expect(snake.message).toBe(
 			"Tool approve_claim of extension app can never be registered: the policy denies the first word approve, sign, export, send, delete",
 		);
@@ -58,13 +58,13 @@ describe("layer", () => {
 				],
 			}),
 		);
-		expect(camel).toEqual(new DeniedTool({ tool: "signDocument", extension: "office", rule: verbs }));
+		expect(camel).toEqual(DeniedTool.make({ tool: ToolName.make("signDocument"), extension: "office", rule: verbs }));
 	});
 
 	it("fails for every verb of the list, and builds when the verb is only part of a longer word", async () => {
 		for (const name of ["export_pdf", "sendMail", "delete", "Approve", "SIGN_ALL"]) {
 			const error = await failure(Guard.layer({ policy, extensions: [{ name: "app", tools: [named(name)] }] }));
-			expect(error).toEqual(new DeniedTool({ tool: name, extension: "app", rule: verbs }));
+			expect(error).toEqual(DeniedTool.make({ tool: ToolName.make(name), extension: "app", rule: verbs }));
 		}
 		const layer = Guard.layer({
 			policy,
@@ -84,10 +84,10 @@ describe("layer", () => {
 			}),
 		);
 		expect(invalid).toEqual(
-			new InvalidPolicy({ reason: "The ceiling public of tool search is not a classification" }),
+			InvalidPolicy.make({ reason: "The ceiling public of tool search is not a classification" }),
 		);
 		const reserved = await failure(Guard.layer({ policy, extensions: [{ name: "guard", tools: [] }] }));
-		expect(reserved).toEqual(new ReservedExtension({ extension: "guard" }));
+		expect(reserved).toEqual(ReservedExtension.make({ extension: "guard" }));
 		expect(reserved.message).toBe("The extension name guard is the guard's own");
 	});
 
@@ -113,7 +113,8 @@ describe("layer", () => {
 			["app", "search"],
 			["app", "read"],
 		]);
-		expect(built.guard.policy).toBe(policy);
+		// The guard holds the policy decoded, its names branded: equal to the one written.
+		expect(built.guard.policy).toEqual(policy);
 	});
 
 	it("requires what the tools, the hooks and the rules need, and not the guard it gives them", () => {
@@ -148,10 +149,12 @@ describe("fromPolicy", () => {
 		const guard = await Effect.runPromise(
 			Guard.Guard.use((service) => Effect.succeed(service)).pipe(Effect.provide(Guard.fromPolicy(policy))),
 		);
-		expect(guard.policy).toBe(policy);
+		expect(guard.policy).toEqual(policy);
 		const invalid = Guard.fromPolicy({ ...policy, toolCeilings: { search: "public" } });
 		const error = await Effect.runPromise(Effect.flip(Effect.scoped(Layer.build(invalid))));
-		expect(error).toEqual(new InvalidPolicy({ reason: "The ceiling public of tool search is not a classification" }));
+		expect(error).toEqual(
+			InvalidPolicy.make({ reason: "The ceiling public of tool search is not a classification" }),
+		);
 		const needsNothing: Equal<Layer.Services<typeof invalid>, never> = true;
 		expect(needsNothing).toBe(true);
 	});
@@ -175,13 +178,13 @@ describe("registry", () => {
 			Layer.provide(Guard.fromPolicy(policy)),
 		);
 		expect(await Effect.runPromise(Effect.flip(Effect.scoped(Layer.build(denied))))).toEqual(
-			new DeniedTool({ tool: "sign_off", extension: "app", rule: verbs }),
+			DeniedTool.make({ tool: ToolName.make("sign_off"), extension: "app", rule: verbs }),
 		);
 		const reserved = Guard.registry({ extensions: [{ name: "guard", tools: [] }] }).pipe(
 			Layer.provide(Guard.fromPolicy(policy)),
 		);
 		expect(await Effect.runPromise(Effect.flip(Effect.scoped(Layer.build(reserved))))).toEqual(
-			new ReservedExtension({ extension: "guard" }),
+			ReservedExtension.make({ extension: "guard" }),
 		);
 	});
 });
@@ -206,7 +209,7 @@ describe("a service that requires the guard, required by a tool of the registry 
 				held.push(guard);
 				return {
 					created: (tx, child) =>
-						Conversations.grantIn(tx, child, { tools: ["search"] }).pipe(
+						Conversations.grantIn(tx, child, { tools: names("search") }).pipe(
 							Effect.provideService(Guard.Guard, guard),
 						),
 				};
@@ -276,7 +279,7 @@ describe("a service that requires the guard, required by a tool of the registry 
 				const { model } = yield* TestHarness.agent;
 				const parent = yield* Conversations.create({
 					ownership: { kind: "ownerless" },
-					grant: { tools: ["spawn"] },
+					grant: { tools: names("spawn") },
 					model,
 				});
 				yield* parent.prompt("Delegate.");
@@ -288,7 +291,7 @@ describe("a service that requires the guard, required by a tool of the registry 
 				};
 			}).pipe(Effect.provide(layer)),
 		);
-		expect(seen).toEqual({ same: true, built: 1, granted: { tools: ["search"] } });
+		expect(seen).toEqual({ same: true, built: 1, granted: { tools: names("search") } });
 		expect(offered).toEqual([["search"]]);
 		expect(ran).toEqual(["search:c"]);
 	});
@@ -298,7 +301,7 @@ describe("a service that requires the guard, required by a tool of the registry 
 		// Two Layer values are two guards: the port's built no registry.
 		const Setup = Layer.succeed(ChildSetup, {
 			created: (tx, child) =>
-				Conversations.grantIn(tx, child, { tools: ["search"] }).pipe(
+				Conversations.grantIn(tx, child, { tools: names("search") }).pipe(
 					Effect.provide(Layer.orDie(Guard.fromPolicy(Policy.empty))),
 				),
 		});
@@ -314,7 +317,7 @@ describe("a service that requires the guard, required by a tool of the registry 
 				const { model } = yield* TestHarness.agent;
 				const parent = yield* Conversations.create({
 					ownership: { kind: "ownerless" },
-					grant: { tools: ["spawn"] },
+					grant: { tools: names("spawn") },
 					model,
 				});
 				yield* parent.prompt("Delegate.");
@@ -331,7 +334,9 @@ describe("a registry built the ordinary way", () => {
 	it("gives no guard: a grant on it does not type check until a guard is provided", () => {
 		const { Search } = tools();
 		const ordinary = Registry.layer([Extension.make({ name: "app", tools: [Search] })]);
-		const granting = Harness.commit((tx) => Conversations.grantIn(tx, 1 as ConversationId, { tools: ["search"] }));
+		const granting = Harness.commit((tx) =>
+			Conversations.grantIn(tx, 1 as ConversationId, { tools: names("search") }),
+		);
 		const needs: Equal<Effect.Services<typeof granting>, Guard.Guard | Harness.Harness> = true;
 		const gives: Equal<Layer.Success<typeof ordinary>, Registry.Registry> = true;
 		// @ts-expect-error The ordinary registry provides no `Guard`, which the grant requires.

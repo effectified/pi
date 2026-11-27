@@ -1,15 +1,16 @@
+import { ProviderId } from "@effectified/pi-ai";
 import { Context, Effect, Exit, Fiber, Layer, Schema, Scope, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { RouteEvent, RouteEvents } from "../src/index.ts";
-import { route } from "./scripted.ts";
+import { RouteEvent, RouteEvents, RouterRequestId } from "../src/index.ts";
+import { FAST, route } from "./scripted.ts";
 
 /** A route event of attempt `attempt`, as the router writes one. */
 function event(attempt: number): RouteEvent {
 	return {
-		router: "router",
+		router: ProviderId.make("router"),
 		request: 1,
-		requestId: "router-a-1",
-		alias: "fast",
+		requestId: RouterRequestId.make("router-a-1"),
+		alias: FAST,
 		route: route("a"),
 		attempt,
 		outcome: "served",

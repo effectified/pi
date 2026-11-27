@@ -8,6 +8,7 @@ import {
 	contentText,
 	createAssistantMessageEventStream,
 	createProvider,
+	formatThrownValue,
 	getCurrentTools,
 	getSystemMessageText,
 	type ImageContent,
@@ -29,13 +30,29 @@ import {
 	type Usage,
 } from "@earendil-works/pi-ai";
 import { transformMessages } from "@earendil-works/pi-ai/api/transform-messages";
-import { Cause, Clock, Effect, Exit, FiberSet, type JsonSchema, Layer, Predicate, type Scope, Stream } from "effect";
-import { LanguageModel, Prompt, type Response, Tool, Toolkit } from "effect/ai";
+import {
+	Array as Arr,
+	Cause,
+	Clock,
+	Effect,
+	Exit,
+	FiberSet,
+	Formatter,
+	type JsonSchema,
+	Layer,
+	Match,
+	Predicate,
+	Schema,
+	type Scope,
+	Stream,
+} from "effect";
+import { type AiError, LanguageModel, Prompt, type Response, Tool, Toolkit } from "effect/ai";
+import type { ModelId, ProviderId } from "./ids.ts";
 import type { ErrorReason } from "./request.ts";
 
 /** One chat model of an Effect-backed provider: what pi-ai needs to know about it. Unset fields use the defaults. */
 export interface EffectModel {
-	readonly id: Model<Api>["id"];
+	readonly id: ModelId;
 	/** Display name. Default: `id`. */
 	readonly name?: Model<Api>["name"];
 	/** The size of the model's context window in tokens; Pi compacts a conversation against it. */
@@ -53,7 +70,7 @@ export interface EffectModel {
 /** What `make` builds a provider from. */
 export interface MakeOptions<E, R> {
 	/** The provider id models are looked up under. */
-	readonly id: string;
+	readonly id: ProviderId;
 	/** Display name. Default: `id`. */
 	readonly name?: string;
 	/** The chat models the provider lists. `layer` serves every one of them. */
@@ -80,42 +97,42 @@ const KEYLESS: ProviderAuth = { apiKey: { name: "Effect layer", resolve: () => P
  * and the other request options, pi-ai's replay signatures, and provider-executed tool calls, files and sources of
  * the response.
  */
-export function make<E, R>(options: MakeOptions<E, R>): Effect.Effect<Provider, E, R | Scope.Scope> {
-	return Effect.gen(function* () {
-		const services = yield* Layer.build(options.layer);
-		const clock = yield* Clock.Clock;
-		const runFork = yield* Effect.provideContext(
-			FiberSet.makeRuntime<LanguageModel.LanguageModel, void, unknown>(),
-			services,
-		);
-		const request = (
-			model: Model<Api>,
-			transcript: TranscriptContext,
-			requestOptions?: SimpleStreamOptions,
-		): AssistantMessageEventStream => {
-			const events = createAssistantMessageEventStream();
-			const response = new ResponseWriter(events, model, clock.currentTimeMillisUnsafe());
-			// The observer also runs for a request that never started (an aborted signal, a closed scope), so the
-			// pi-ai stream always ends.
-			runFork(respond(model, transcript, requestOptions?.toolChoice, response), {
-				signal: requestOptions?.signal,
-			}).addObserver((exit) => response.end(exit));
-			return events;
-		};
-		return createProvider({
-			id: options.id,
-			name: options.name,
-			auth: KEYLESS,
-			models: options.models.map((model) => toPiModel(options.id, model)),
-			api: { stream: request, streamSimple: request },
-		});
+export const make = Effect.fn("EffectProvider.make")(function* <E, R>(
+	options: MakeOptions<E, R>,
+): Effect.fn.Return<Provider, E, R | Scope.Scope> {
+	const services = yield* Layer.build(options.layer);
+	const clock = yield* Clock.Clock;
+	const runFork = yield* Effect.provideContext(
+		FiberSet.makeRuntime<LanguageModel.LanguageModel, void, ResponseFailure>(),
+		services,
+	);
+	const request = (
+		model: Model<Api>,
+		transcript: TranscriptContext,
+		requestOptions?: SimpleStreamOptions,
+	): AssistantMessageEventStream => {
+		const events = createAssistantMessageEventStream();
+		const response = new ResponseWriter(events, model, clock.currentTimeMillisUnsafe());
+		// The observer also runs for a request that never started (an aborted signal, a closed scope), so the
+		// pi-ai stream always ends.
+		runFork(respond(model, transcript, requestOptions?.toolChoice, response), {
+			signal: requestOptions?.signal,
+		}).addObserver((exit) => response.end(exit));
+		return events;
+	};
+	return createProvider({
+		id: options.id,
+		name: options.name,
+		auth: KEYLESS,
+		models: Arr.map(options.models, (model) => toPiModel(options.id, model)),
+		api: { stream: request, streamSimple: request },
 	});
-}
+});
 
 /** The `api` of every model of an Effect-backed provider. */
 const API = "effect-ai";
 
-function toPiModel(provider: string, model: EffectModel): Model<Api> {
+function toPiModel(provider: ProviderId, model: EffectModel): Model<Api> {
 	return {
 		id: model.id,
 		name: model.name ?? model.id,
@@ -131,13 +148,25 @@ function toPiModel(provider: string, model: EffectModel): Model<Api> {
 	};
 }
 
+/** What ends a response early: the model's failure, or an error part of its stream. */
+type ResponseFailure = AiError.AiError | ErrorPart;
+
+/** An error part of an effect/ai response stream, as a failure; its message is the error's. */
+class ErrorPart extends Schema.TaggedError<ErrorPart, { readonly brand: unique symbol }>()("ErrorPart", {
+	error: Schema.Defect(),
+}) {
+	override get message(): string {
+		return formatThrownValue(this.error);
+	}
+}
+
 /** Runs one request on the `LanguageModel` and writes its parts to `response`. Fails with what ended the response. */
-const respond = Effect.fnUntraced(function* (
+const respond = Effect.fn("EffectProvider.respond")(function* (
 	model: Model<Api>,
 	transcript: TranscriptContext,
 	toolChoice: ToolChoice | undefined,
 	response: ResponseWriter,
-): Effect.fn.Return<void, unknown, LanguageModel.LanguageModel> {
+): Effect.fn.Return<void, ResponseFailure, LanguageModel.LanguageModel> {
 	const languageModel = yield* LanguageModel.LanguageModel;
 	const systemInHistory =
 		languageModel.supportsSystemMessagesInHistory === undefined
@@ -145,22 +174,26 @@ const respond = Effect.fnUntraced(function* (
 			: yield* languageModel.supportsSystemMessagesInHistory;
 	// What every pi-ai API adapter does before a request: failed turns dropped, unanswered tool calls answered.
 	const messages = transformMessages(resolveTranscript(transcript, systemInHistory).messages, model);
-	const toolkit = yield* Toolkit.make(...getCurrentTools(transcript.messages).map(toClientTool));
+	const toolkit = yield* Toolkit.make(...Arr.map(getCurrentTools(transcript.messages), toClientTool));
 	yield* languageModel
 		.streamText({
-			prompt: Prompt.fromMessages(messages.flatMap(toPromptMessages)),
+			prompt: Prompt.fromMessages(Arr.flatMap(messages, toPromptMessages)),
 			toolkit,
 			toolChoice: toolChoice ?? "auto",
 			// Pi runs tools. Effect only declares them, and hands every call over as the model made it.
 			disableToolCallResolution: true,
 			toolCallValidation: "deferred",
 		})
-		.pipe(
-			Stream.runForEach((part) =>
-				part.type === "error" ? Effect.fail(part.error) : Effect.sync(() => response.write(part)),
-			),
-		);
+		.pipe(Stream.runForEach(writePart(response)));
 });
+
+/** Writes each part of a response, failing at its error part. Per part, so untraced. */
+function writePart(response: ResponseWriter) {
+	return Effect.fnUntraced(function* (part: ResponsePart | Response.ErrorPart): Effect.fn.Return<void, ErrorPart> {
+		if (part.type === "error") return yield* ErrorPart.make({ error: part.error });
+		response.write(part);
+	});
+}
 
 /** A pi-ai tool as an effect/ai tool the application runs: declared to the model, with no handler. */
 function toClientTool(tool: PiTool) {
@@ -173,43 +206,43 @@ function toClientTool(tool: PiTool) {
 }
 
 /** One pi-ai message as effect/ai prompt messages; a system message without text (tools only) is none. */
-function toPromptMessages(message: Message, index: number): Prompt.Message[] {
-	switch (message.role) {
-		case "system": {
-			// The first message is the whole prompt; a later one is a change to it, which pi-ai frames for the model.
-			const content = index === 0 ? getSystemMessageText(message) : renderSystemMessageUpdate(message);
-			return content === "" ? [] : [Prompt.makeMessage("system", { content })];
-		}
-		case "user":
-			return [
+function toPromptMessages(message: Message, index: number): ReadonlyArray<Prompt.Message> {
+	return Match.value(message).pipe(
+		Match.discriminatorsExhaustive("role")({
+			system: (system): ReadonlyArray<Prompt.Message> => {
+				// The first message is the whole prompt; a later one is a change to it, which pi-ai frames for the model.
+				const content = index === 0 ? getSystemMessageText(system) : renderSystemMessageUpdate(system);
+				return content === "" ? [] : [Prompt.makeMessage("system", { content })];
+			},
+			user: (user): ReadonlyArray<Prompt.Message> => [
 				Prompt.makeMessage("user", {
-					content:
-						typeof message.content === "string"
-							? [Prompt.makePart("text", { text: message.content })]
-							: message.content.map(toPromptPart),
+					content: Predicate.isString(user.content)
+						? [Prompt.makePart("text", { text: user.content })]
+						: Arr.map(user.content, toPromptPart),
 				}),
-			];
-		case "assistant":
-			return [Prompt.makeMessage("assistant", { content: message.content.map(toAssistantPart) })];
-		case "toolResult":
-			return [
+			],
+			assistant: (assistant): ReadonlyArray<Prompt.Message> => [
+				Prompt.makeMessage("assistant", { content: Arr.map(assistant.content, toAssistantPart) }),
+			],
+			toolResult: (result): ReadonlyArray<Prompt.Message> => [
 				Prompt.makeMessage("tool", {
 					content: [
 						Prompt.makePart("tool-result", {
-							id: message.toolCallId,
-							name: message.toolName,
-							isFailure: message.isError,
-							result: contentText(message.content),
+							id: result.toolCallId,
+							name: result.toolName,
+							isFailure: result.isError,
+							result: contentText(result.content),
 							// Images cannot be part of `result`; `modelOutput` is what the model gets in its place.
-							...(message.content.some((block) => block.type === "image")
-								? { modelOutput: message.content.map(toPromptPart) }
+							...(Arr.some(result.content, (block) => block.type === "image")
+								? { modelOutput: Arr.map(result.content, toPromptPart) }
 								: {}),
 							providerExecuted: false,
 						}),
 					],
 				}),
-			];
-	}
+			],
+		}),
+	);
 }
 
 function toPromptPart(block: TextContent | ImageContent): Prompt.TextPart | Prompt.FilePart {
@@ -218,21 +251,19 @@ function toPromptPart(block: TextContent | ImageContent): Prompt.TextPart | Prom
 		: Prompt.makePart("file", { mediaType: block.mimeType, data: block.data });
 }
 
-function toAssistantPart(block: TextContent | ThinkingContent | ToolCall): Prompt.AssistantMessagePart {
-	switch (block.type) {
-		case "text":
-			return Prompt.makePart("text", { text: block.text });
-		case "thinking":
-			return Prompt.makePart("reasoning", { text: block.thinking });
-		case "toolCall":
-			return Prompt.makePart("tool-call", {
+const toAssistantPart = Match.type<TextContent | ThinkingContent | ToolCall>().pipe(
+	Match.discriminatorsExhaustive("type")({
+		text: (block): Prompt.AssistantMessagePart => Prompt.makePart("text", { text: block.text }),
+		thinking: (block): Prompt.AssistantMessagePart => Prompt.makePart("reasoning", { text: block.thinking }),
+		toolCall: (block): Prompt.AssistantMessagePart =>
+			Prompt.makePart("tool-call", {
 				id: block.id,
 				name: block.name,
 				params: block.arguments,
 				providerExecuted: false,
-			});
-	}
-}
+			}),
+	}),
+);
 
 /** A part `ResponseWriter` takes. An `error` part ends the response instead. */
 type ResponsePart = Exclude<Response.StreamPart<Record<string, Tool.Any>, "deferred">, Response.ErrorPart>;
@@ -276,6 +307,7 @@ class ResponseWriter {
 	/** Applies one part of the response to the message and emits the pi-ai event it stands for, if any. */
 	write(part: ResponsePart): void {
 		const partial = this.#message;
+		// idiom-allow match: called for every part of a streamed response (each token); a switch costs no matcher per part.
 		switch (part.type) {
 			case "response-metadata":
 				if (part.id !== undefined) partial.responseId = part.id;
@@ -381,7 +413,7 @@ class ResponseWriter {
 	}
 
 	/** Ends the pi-ai stream with `done`, or with `error` when the request failed, was aborted or was refused. */
-	end(exit: Exit.Exit<void, unknown>): void {
+	end(exit: Exit.Exit<void, ResponseFailure>): void {
 		const message = this.#message;
 		const failure = Exit.isSuccess(exit) ? refusal(this.#finishReason) : describeFailure(exit.cause);
 		if (failure !== undefined) {
@@ -393,7 +425,7 @@ class ResponseWriter {
 			const reason =
 				this.#finishReason === "length"
 					? "length"
-					: message.content.some((block) => block.type === "toolCall")
+					: Arr.some(message.content, (block) => block.type === "toolCall")
 						? "toolUse"
 						: "stop";
 			message.stopReason = reason;
@@ -426,10 +458,9 @@ function refusal(reason: Response.FinishReason | undefined): Failure | undefined
 }
 
 /** Interruption (the request's abort signal, the provider's closed scope) is pi-ai's `aborted`; the rest is `error`. */
-function describeFailure(cause: Cause.Cause<unknown>): Failure {
+function describeFailure(cause: Cause.Cause<ResponseFailure>): Failure {
 	if (Cause.hasInterruptsOnly(cause)) return { reason: "aborted", message: "Request was aborted" };
-	const error = Cause.squash(cause);
-	return { reason: "error", message: error instanceof Error ? error.message : String(error) };
+	return { reason: "error", message: formatThrownValue(Cause.squash(cause)) };
 }
 
 /**
@@ -440,7 +471,7 @@ function toArguments(params: unknown): Pick<ToolCall, "arguments" | "argumentsEr
 	return Predicate.isObject(params)
 		? // A decode boundary: the object came out of the provider's JSON parser, so its values are JSON.
 			{ arguments: params as JsonObject }
-		: { arguments: {}, argumentsError: `Tool call arguments are not a JSON object: ${JSON.stringify(params)}` };
+		: { arguments: {}, argumentsError: `Tool call arguments are not a JSON object: ${Formatter.formatJson(params)}` };
 }
 
 /** effect/ai usage as pi-ai usage, priced with the model's rates. No usage yet is all zeros. */

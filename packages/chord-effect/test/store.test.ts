@@ -47,7 +47,7 @@ const memoryBackend = Effect.map(
 	(database) => sqliteBackend(database),
 );
 
-class Unreadable extends Schema.TaggedError<Unreadable>()("Unreadable", {}) {}
+class Unreadable extends Schema.TaggedError<Unreadable, { readonly brand: unique symbol }>()("Unreadable", {}) {}
 
 describe("Store.open", () => {
 	it("opens a store for the scope, at seq 0, and closes it with the scope", async () => {

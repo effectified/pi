@@ -3,7 +3,7 @@ import { HttpClient, HttpClientError, type HttpClientRequest, HttpClientResponse
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import * as Exa from "../src/exa.ts";
-import { type SearchError, SearchProvider } from "../src/provider/index.ts";
+import { ProviderName, type SearchError, SearchProvider } from "../src/provider/index.ts";
 
 const KEY = "exa-key-3f9a7c21";
 const NOW = Date.UTC(2026, 10, 25, 12, 0, 0);
@@ -225,7 +225,11 @@ describe("a failure", () => {
 
 	it("401 and 403 are SearchUnauthorized", async () => {
 		const unauthorized = await failed({ kind: "response", status: 401, body: errorBody("Invalid API key", "X") });
-		expect(unauthorized).toMatchObject({ _tag: "SearchUnauthorized", provider: "exa", status: 401 });
+		expect(unauthorized).toMatchObject({
+			_tag: "SearchUnauthorized",
+			provider: ProviderName.make("exa"),
+			status: 401,
+		});
 		expect(unauthorized.message).toBe("exa rejected the credentials (HTTP 401).");
 		expect(await failed({ kind: "response", status: 403, body: "" })).toMatchObject({
 			_tag: "SearchUnauthorized",
@@ -237,7 +241,11 @@ describe("a failure", () => {
 		const limited = (headers?: HeadersInit) =>
 			failed({ kind: "response", status: 429, body: errorBody("Slow down", "RATE_LIMIT_EXCEEDED"), headers });
 		const seconds = await limited({ "retry-after": "7" });
-		expect(seconds).toMatchObject({ _tag: "SearchRateLimited", provider: "exa", retryAfterMillis: 7000 });
+		expect(seconds).toMatchObject({
+			_tag: "SearchRateLimited",
+			provider: ProviderName.make("exa"),
+			retryAfterMillis: 7000,
+		});
 		expect(seconds.message).toBe("exa is rate limited. Retry after 7 s.");
 		const date = await limited({ "retry-after": new Date(NOW + 30_000).toUTCString() });
 		expect(date).toMatchObject({ _tag: "SearchRateLimited", retryAfterMillis: 30_000 });
@@ -256,7 +264,7 @@ describe("a failure", () => {
 		});
 		expect(failure).toMatchObject({
 			_tag: "SearchProviderFailure",
-			provider: "exa",
+			provider: ProviderName.make("exa"),
 			status: 500,
 			detail: "Internal error (INTERNAL_ERROR)",
 		});
@@ -273,7 +281,7 @@ describe("a failure", () => {
 
 	it("a connection that never answers is SearchTransportFailure", async () => {
 		const failure = await failed({ kind: "refused", cause: new Error("connect ECONNREFUSED 127.0.0.1:443") });
-		expect(failure).toMatchObject({ _tag: "SearchTransportFailure", provider: "exa" });
+		expect(failure).toMatchObject({ _tag: "SearchTransportFailure", provider: ProviderName.make("exa") });
 		expect(failure.message).toBe(
 			"exa could not be reached: Transport error (POST https://api.exa.ai/search): connect ECONNREFUSED 127.0.0.1:443",
 		);
@@ -281,7 +289,7 @@ describe("a failure", () => {
 
 	it("a success whose body is not Exa's is SearchResponseInvalid", async () => {
 		const notJson = await failed(ok("<html>maintenance</html>"));
-		expect(notJson).toMatchObject({ _tag: "SearchResponseInvalid", provider: "exa" });
+		expect(notJson).toMatchObject({ _tag: "SearchResponseInvalid", provider: ProviderName.make("exa") });
 		expect(notJson.message).toMatch(/^exa answered with a response that could not be read: /);
 		const wrongShape = await failed(ok(JSON.stringify({ results: [{ title: "no url" }] })));
 		expect(wrongShape._tag).toBe("SearchResponseInvalid");

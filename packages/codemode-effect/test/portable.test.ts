@@ -11,8 +11,9 @@ describe("the portable entry", () => {
 			Effect.gen(function* () {
 				// Off Cloudflare, the module comes from the root entry; on Cloudflare, from `/cloudflare`.
 				const wasm = yield* Wasm.load();
+				const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
 				const served: CodemodeRemote = {
-					execute: (request, exchange) => Effect.runPromise(RemoteSandbox.serve(request, exchange, { wasm })),
+					execute: (request, exchange) => runPromise(RemoteSandbox.serve(request, exchange, { wasm })),
 				};
 				const script = `return await tools.greet({ name: "portable" });`;
 				const onThread = yield* InlineSandbox.make({ wasm, tools: [greet] });

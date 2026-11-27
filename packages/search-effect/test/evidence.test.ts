@@ -1,11 +1,11 @@
 import { DateTime, Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import { Evidence, type Retrieval } from "../src/provider/index.ts";
+import { Evidence, ProviderName, type Retrieval } from "../src/provider/index.ts";
 
 const RAW = '{"results": [ {"url":"https://a.example/","score":1.0} ]}';
 
 const retrieval: Retrieval = {
-	provider: "exa",
+	provider: ProviderName.make("exa"),
 	request: { method: "POST", url: "https://api.exa.ai/search", body: { query: "q", numResults: 3 } },
 	retrievedAt: DateTime.makeUnsafe("2026-11-25T12:00:00.000Z"),
 	raw: RAW,
@@ -16,7 +16,7 @@ const retrieval: Retrieval = {
 describe("Evidence", () => {
 	it("has a JSON form with the body as it came and the time as ISO 8601, without the hits", async () => {
 		expect(await Effect.runPromise(Evidence.toJson(retrieval))).toStrictEqual({
-			provider: "exa",
+			provider: ProviderName.make("exa"),
 			request: { method: "POST", url: "https://api.exa.ai/search", body: { query: "q", numResults: 3 } },
 			retrievedAt: "2026-11-25T12:00:00.000Z",
 			raw: RAW,
@@ -33,7 +33,9 @@ describe("Evidence", () => {
 	});
 
 	it("fails on JSON that is not evidence", async () => {
-		const error = await Effect.runPromise(Effect.flip(Evidence.fromJson({ provider: "exa", raw: 1 })));
+		const error = await Effect.runPromise(
+			Effect.flip(Evidence.fromJson({ provider: ProviderName.make("exa"), raw: 1 })),
+		);
 		expect(error._tag).toBe("SchemaError");
 		expect((await Effect.runPromise(Effect.flip(Evidence.fromJson(undefined))))._tag).toBe("SchemaError");
 	});

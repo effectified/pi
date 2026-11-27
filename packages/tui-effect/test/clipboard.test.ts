@@ -24,9 +24,8 @@ describe("nativeClipboard", () => {
 	it("is pi-tui's helper for this platform, or none", async () => {
 		const clipboard = await run(nativeClipboard);
 		// The helper depends on the machine (a prebuilt module, a display on Linux); the test reads no clipboard.
-		expect(Option.isOption(clipboard)).toBe(true);
-		if (process.platform === "linux" && process.env.DISPLAY === undefined)
-			expect(Option.isNone(clipboard)).toBe(true);
+		const headless = process.platform === "linux" && process.env.DISPLAY === undefined;
+		expect(headless ? Option.isNone(clipboard) : Option.isOption(clipboard)).toBe(true);
 	});
 });
 

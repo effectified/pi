@@ -27,6 +27,7 @@ export {
 // The schema failure building a tool can fail with, so a caller needs no second import to name it.
 export { SchemaConversionError } from "@effectified/pi-agent";
 export {
+	AdmissionDenied,
 	type CodemodeFailure,
 	CodemodeSourceError,
 	DeliveryRejected,
@@ -37,7 +38,7 @@ export {
 } from "./errors.ts";
 export * as InlineSandbox from "./inline-sandbox.ts";
 export * as RemoteSandbox from "./remote-sandbox.ts";
-export type * as Run from "./run.ts";
+export * as Run from "./run.ts";
 export * as Sandbox from "./sandbox.ts";
 export * as ScriptTool from "./script-tool.ts";
 export * as Source from "./source.ts";

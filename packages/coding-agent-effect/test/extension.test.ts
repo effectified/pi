@@ -11,6 +11,11 @@ class Greetings extends Context.Service<Greetings, { readonly greet: (name: stri
 
 const GreetingsLive = Layer.succeed(Greetings, { greet: (name) => Effect.succeed(`Hello, ${name}!`) });
 
+/** A failure of a handler, as an extension would have one. */
+class HandlerFailed extends Schema.TaggedError<HandlerFailed, { readonly brand: unique symbol }>()("HandlerFailed", {
+	message: Schema.String,
+}) {}
+
 const greet = Tool.make("greet", {
 	label: "Greet",
 	description: "Greets someone by name.",
@@ -121,7 +126,7 @@ describe("Extension.make", () => {
 		const errors = await runTest(
 			Effect.gen(function* () {
 				const failing = Extension.make("failing", {
-					on: { agent_start: () => Effect.fail(new Error("the handler failed")) },
+					on: { agent_start: () => Effect.fail(HandlerFailed.make({ message: "the handler failed" })) },
 				});
 				const { session, models } = yield* openSession({ extensions: [failing] });
 				const reported = yield* session.extensionErrors;

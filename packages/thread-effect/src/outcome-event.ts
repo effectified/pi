@@ -2,6 +2,7 @@
 
 import { Submission } from "@effectified/pi-durable";
 import { Schema } from "effect";
+import { EventId, RequestKey, ThreadKey } from "./ids.ts";
 import { Outcome } from "./outcome.ts";
 
 /** The state an event tells: `Started`, or the `_tag` of the outcome reached. */
@@ -20,50 +21,50 @@ const STATES = [
 /** What both events say of the submission they are about. */
 const about = {
 	/** The product's key of the thread. */
-	thread: Schema.String,
+	thread: ThreadKey,
 	/** The request key the submission was admitted under: the one `Threads.admit` or `Threads.takeOn` was given. */
-	key: Schema.String,
+	key: RequestKey,
 	/** The number of the submission among the thread's: 0 is its task, 1 and up are continuations. */
 	attempt: Schema.Int,
 };
 
 /**
- * The thread's work started: its task, or a continuation of a run that ended without an answer, was admitted. One per
- * submission of the thread.
+ * What an outcome sink is told: `Started` once per submission of a thread, then every outcome the thread reaches by
+ * it. A thread parked for a person's approval is no event here: its submission is open, so it has no outcome, and
+ * the product's `Approvals.Inbox` is told of every parked call under the request's own id. Choose with
+ * `OutcomeEvent.match`.
  *
- * `id` is `<thread>:<submission>:started`, with Pi's id of the submission.
+ * - `Started`: the thread's work started: its task, or a continuation of a run that ended without an answer, was
+ *   admitted. One per submission of the thread. `id` is `<thread>:<submission>:started`, with Pi's id of the
+ *   submission.
+ * - `Reached`: the thread reached an outcome, any member of `Outcome`, as `Threads.outcome` gives it, with the counts
+ *   as they were when the state was first read for delivery. A thread reaches several in a row when a held answer is
+ *   released or a deferred review is asked for again: `Held`, then `Reviewed`. Each wait of the review is one, also
+ *   one the thread left before it was told. `id` is `<thread>:<submission>:<entry>:<state>`: Pi's id of the
+ *   submission the state rests on, the entry it rests on, and the outcome's `_tag`. A wait of the review (`Held`,
+ *   `ReviewDeferred`, or `BudgetStopped` with the deferred verdict) rests on the verdict that began it; any other
+ *   outcome on the newest entry of the thread's conversation when it was read (0 for none). A state of one submission
+ *   that comes again, such as a second hold, rests on a newer entry: the verdict that holds it.
  */
-export const Started = Schema.TaggedStruct("Started", { id: Schema.String, ...about });
+export const OutcomeEvent = Schema.TaggedUnion({
+	Started: { id: EventId, ...about },
+	Reached: { id: EventId, ...about, outcome: Outcome },
+});
+
+/** What an outcome sink is told. */
+export type OutcomeEvent = typeof OutcomeEvent.Type;
+
+/** The thread's work started: a submission of it was admitted. */
+export const Started = OutcomeEvent.cases.Started;
 
 /** The thread's work started. */
 export type Started = typeof Started.Type;
 
-/**
- * The thread reached an outcome: any member of `Outcome`, as `Threads.outcome` gives it, with the counts as they were
- * when the state was first read for delivery. A thread reaches several in a row when a held answer is released or a
- * deferred review is asked for again: `Held`, then `Reviewed`. Each wait of the review is one, also one the thread
- * left before it was told.
- *
- * `id` is `<thread>:<submission>:<entry>:<state>`: Pi's id of the submission the state rests on, the entry it rests
- * on, and the outcome's `_tag`. A wait of the review (`Held`, `ReviewDeferred`, or `BudgetStopped` with the deferred
- * verdict) rests on the verdict that began it; any other outcome on the newest entry of the thread's conversation when
- * it was read (0 for none). A state of one submission that comes again, such as a second hold, rests on a newer
- * entry: the verdict that holds it.
- */
-export const Reached = Schema.TaggedStruct("Reached", { id: Schema.String, ...about, outcome: Outcome });
+/** The thread reached an outcome. */
+export const Reached = OutcomeEvent.cases.Reached;
 
 /** The thread reached an outcome. */
 export type Reached = typeof Reached.Type;
-
-/**
- * What an outcome sink is told: `Started` once per submission of a thread, then every outcome the thread reaches by
- * it. A thread parked for a person's approval is no event here: its submission is open, so it has no outcome, and
- * the product's `Approvals.Inbox` is told of every parked call under the request's own id.
- */
-export const OutcomeEvent = Schema.Union([Started, Reached]);
-
-/** What an outcome sink is told. */
-export type OutcomeEvent = typeof OutcomeEvent.Type;
 
 /**
  * What identifies a delivered event beside its thread: the submission, the entry the state rests on (0 for
@@ -72,7 +73,7 @@ export type OutcomeEvent = typeof OutcomeEvent.Type;
  */
 export const Mark = Schema.Struct({
 	submission: Submission.Id,
-	entry: Schema.Number,
+	entry: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	state: Schema.Literals(STATES),
 });
 
@@ -80,8 +81,10 @@ export const Mark = Schema.Struct({
 export type Mark = typeof Mark.Type;
 
 /** The id of the event `mark` of the thread `thread`. */
-export function idOf(thread: string, mark: Mark): string {
-	return mark.state === "Started"
-		? `${thread}:${mark.submission}:started`
-		: `${thread}:${mark.submission}:${mark.entry}:${mark.state}`;
+export function idOf(thread: ThreadKey, mark: Mark): EventId {
+	return EventId.make(
+		mark.state === "Started"
+			? `${thread}:${mark.submission}:started`
+			: `${thread}:${mark.submission}:${mark.entry}:${mark.state}`,
+	);
 }

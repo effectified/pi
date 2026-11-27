@@ -40,9 +40,10 @@ describe("make and serve", () => {
 		const result = await runTest(
 			Effect.gen(function* () {
 				const wasm = yield* Wasm.load();
+				const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
 				const remote: CodemodeRemote = {
 					execute: (request, exchange) =>
-						Effect.runPromise(RemoteSandbox.serve(request, exchange, { wasm, maxInterruptBudget: 100 })),
+						runPromise(RemoteSandbox.serve(request, exchange, { wasm, maxInterruptBudget: 100 })),
 				};
 				const sandbox = yield* RemoteSandbox.make({ remote: Effect.succeed(remote), interruptBudget: 1_000_000 });
 				return yield* sandbox.execute("while (true) {}");

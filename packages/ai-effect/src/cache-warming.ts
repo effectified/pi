@@ -10,7 +10,7 @@ import {
 	getPromptCacheTtlMs as piGetPromptCacheTtlMs,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
-import { Config, Effect, Option } from "effect";
+import { Config, Effect, Option, String as Str } from "effect";
 import type { ModelRequestError } from "./errors.ts";
 import type { Models } from "./models.ts";
 import { completeSimple, type RequestOptions } from "./request.ts";
@@ -21,14 +21,13 @@ import { completeSimple, type RequestOptions } from "./request.ts";
  * is `PI_CACHE_RETENTION` (`long`, or `short` otherwise) from `options.env`, or else from `Config`. None when the model
  * has no lifetime for that tier or caching is off.
  */
-export function getPromptCacheTtlMs(
+export const getPromptCacheTtlMs = Effect.fn("CacheWarming.getPromptCacheTtlMs")(function* (
 	model: Model<Api>,
 	options?: RequestOptions<SimpleStreamOptions>,
-): Effect.Effect<Option.Option<number>, Config.ConfigError> {
-	return Effect.map(cacheRetention(options), (cacheRetention) =>
-		Option.fromUndefinedOr(piGetPromptCacheTtlMs(model, { ...options, cacheRetention })),
-	);
-}
+): Effect.fn.Return<Option.Option<number>, Config.ConfigError> {
+	const retention = yield* cacheRetention(options);
+	return Option.fromUndefinedOr(piGetPromptCacheTtlMs(model, { ...options, cacheRetention: retention }));
+});
 
 /**
  * Sends the refresh of a request's prompt cache entry: the request again with pi-ai's refresh options (one output
@@ -36,20 +35,18 @@ export function getPromptCacheTtlMs(
  * to send it is pi-ai's `evaluateCacheWarming` and `isCacheWarmingReplayable`; when, `getCacheWarmingDelayMs` of the
  * entry's lifetime, waited with `Effect.sleep`.
  */
-export function warmCache(
+export const warmCache = Effect.fn("CacheWarming.warmCache")(function* (
 	model: Model<Api>,
 	context: PiContext,
 	options?: RequestOptions<SimpleStreamOptions>,
-): Effect.Effect<AssistantMessage, ModelRequestError, Models> {
-	return Effect.suspend(() => {
-		// pi-ai puts the given signal in the options; the request below owns cancellation and adds its own.
-		const { signal: _signal, ...refresh } = getCacheWarmingRequestOptions(
-			options ?? {},
-			new AbortController().signal,
-		);
-		return completeSimple(model, context, refresh);
-	});
-}
+): Effect.fn.Return<AssistantMessage, ModelRequestError, Models> {
+	// pi-ai puts the signal it is given in the options. The request below owns cancellation and adds its own, so the
+	// one given here only fills pi-ai's parameter and is dropped.
+	const { signal: _signal, ...refresh } = yield* Effect.scoped(
+		Effect.map(Effect.abortSignal, (signal) => getCacheWarmingRequestOptions(options ?? {}, signal)),
+	);
+	return yield* completeSimple(model, context, refresh);
+});
 
 const RETENTION = "PI_CACHE_RETENTION";
 
@@ -62,6 +59,10 @@ function cacheRetention(
 ): Effect.Effect<NonNullable<SimpleStreamOptions["cacheRetention"]>, Config.ConfigError> {
 	if (options?.cacheRetention !== undefined) return Effect.succeed(options.cacheRetention);
 	const scoped = options?.env?.[RETENTION];
-	const value = scoped ? Effect.succeed(Option.some(scoped)) : Config.option(Config.String(RETENTION));
+	// As pi-ai: an empty value in the request's `env` counts as unset.
+	const value =
+		scoped !== undefined && Str.isNonEmpty(scoped)
+			? Effect.succeedSome(scoped)
+			: Config.option(Config.String(RETENTION));
 	return Effect.map(value, (retention) => (Option.getOrUndefined(retention) === "long" ? "long" : "short"));
 }

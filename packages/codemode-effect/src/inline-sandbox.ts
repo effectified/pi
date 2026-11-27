@@ -7,7 +7,7 @@ import {
 	type InlineCodemodeSandboxOptions,
 } from "@earendil-works/pi-codemode/portable";
 import type { SchemaConversionError } from "@effectified/pi-agent";
-import type { Effect, Scope } from "effect";
+import { Effect, type Scope } from "effect";
 import { acquire } from "./acquire.ts";
 import type { ToolRejected } from "./errors.ts";
 import type * as Sandbox from "./sandbox.ts";
@@ -21,21 +21,25 @@ export interface Options<R> extends Sandbox.Options<R>, Pick<InlineCodemodeSandb
 /**
  * A sandbox whose VMs run on the calling thread: a script that computes blocks it until it awaits a tool or uses up
  * its interrupt budget (then it ends with `kind: "timeout"`). Needs no worker threads, files or Node built-ins.
- * Closed when the scope closes.
+ * Closed when the scope closes. Untraced, as the sandbox keeps this Effect's context for its tools.
  */
-export function make<R = never>(
+export const make: <R = never>(
 	options: Options<R>,
-): Effect.Effect<Sandbox.Sandbox, ToolRejected | SchemaConversionError, R | Scope.Scope> {
-	return acquire(
-		options,
-		(tools, globals) =>
-			new InlineCodemodeSandbox({
-				tools,
-				globals,
-				timeoutMs: options.timeoutMs,
-				memoryLimitBytes: options.memoryLimitBytes,
-				wasm: options.wasm,
-				interruptBudget: options.interruptBudget,
-			}),
-	);
-}
+) => Effect.Effect<Sandbox.Sandbox, ToolRejected | SchemaConversionError, R | Scope.Scope> = Effect.fnUntraced(
+	function* <R>(
+		options: Options<R>,
+	): Effect.fn.Return<Sandbox.Sandbox, ToolRejected | SchemaConversionError, R | Scope.Scope> {
+		return yield* acquire(
+			options,
+			(tools, globals) =>
+				new InlineCodemodeSandbox({
+					tools,
+					globals,
+					timeoutMs: options.timeoutMs,
+					memoryLimitBytes: options.memoryLimitBytes,
+					wasm: options.wasm,
+					interruptBudget: options.interruptBudget,
+				}),
+		);
+	},
+);

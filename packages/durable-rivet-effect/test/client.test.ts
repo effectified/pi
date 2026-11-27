@@ -3,7 +3,7 @@
 
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import { type CallError, Client } from "../src/index.ts";
+import { ActorId, type CallError, Client } from "../src/index.ts";
 import { Agent, type Refused } from "./agent.ts";
 
 /**
@@ -14,7 +14,7 @@ const unreachable = Client.layer({ endpoint: "http://127.0.0.1:9", disableMetada
 
 describe("Client", () => {
 	it("types a call by the action's schemas", () => {
-		const handle: Client.Handle<typeof Agent> = { definition: Agent, actorId: "none", key: ["none"] };
+		const handle: Client.Handle<typeof Agent> = { definition: Agent, actorId: ActorId.make("none"), key: ["none"] };
 		// An action with an error schema fails with that error, decoded; one without has no failure of its own.
 		const refuse: Effect.Effect<null, Client.ActionFailure<Refused> | CallError, Client.RivetClient> = Client.call(
 			handle,

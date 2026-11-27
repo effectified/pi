@@ -8,13 +8,16 @@ import {
 	type SchemaDecodeError,
 	toJsonSchema,
 } from "@effectified/pi-schema";
-import { Effect, Formatter, Predicate, type Schema } from "effect";
+// effect's `Result` is `Res` here: this module exports a `Result` of its own, the reply of a handler.
+import { Effect, Formatter, Match, Predicate, Result as Res, type Schema } from "effect";
+import { ToolFailed } from "./errors.ts";
+import { ToolCallId, ToolName } from "./ids.ts";
 import { runner } from "./runner.ts";
 
 /** What a handler may use besides its arguments. */
 export interface Api {
 	/** The id of the model's tool call. */
-	readonly toolCallId: string;
+	readonly toolCallId: ToolCallId;
 	/**
 	 * Reports progress: Pi emits it as a `tool_execution_update` event. Ignored once the call has finished, as Pi
 	 * ignores late updates.
@@ -56,14 +59,13 @@ export interface Options<P extends Schema.Constraint, S extends Schema.Constrain
 
 /** A tool made by `make`. */
 export interface Tool<Name extends string, P extends Schema.Constraint, S extends Schema.Constraint, E, R>
-	extends Options<P, S, E, R>,
-		Any<Requirements<P, S, R>> {
-	readonly name: Name;
+	extends Options<P, S, E, R>, Any<Requirements<P, S, R>> {
+	readonly name: Name & ToolName;
 }
 
 /** Any tool, whatever its schemas: what an agent, a loop and `runToolCall` take. */
 export interface Any<R> {
-	readonly name: string;
+	readonly name: ToolName;
 	/** Builds Pi's tool; its handler runs with the services of the context this Effect runs in. */
 	readonly agentTool: Effect.Effect<AgentTool, SchemaConversionError, R>;
 }
@@ -76,7 +78,11 @@ export type Requirements<P extends Schema.Constraint, S extends Schema.Constrain
 
 const ReplyTypeId = "~@effectified/pi-agent/Tool/Reply";
 
-/** What a handler succeeds with instead of the bare success value: a result with extras, or an error result. */
+/**
+ * What a handler succeeds with instead of the bare success value: a result with extras, or an error result. Not a
+ * Schema: it is generic in the success value, its extras are Pi's types, and telling it from a success value of any
+ * shape takes the type id a value of the handler's own cannot carry by accident.
+ */
 export type Reply<A> = Result<A> | ErrorResult;
 
 /** What a result may carry besides what the model reads. All of it is Pi's, passed on unchanged. */
@@ -109,57 +115,92 @@ export function error(text: string, extras?: Omit<Extras, "content">): Reply<nev
 /**
  * Defines a tool. Pi validates a call's arguments against the JSON Schema of `parameters`; the handler then gets them
  * decoded. The model reads the result as text: a string as it is, anything else as JSON. Arguments the schema rejects
- * after Pi accepted them, a handler failure and a result `success` cannot encode each reject the call with the
- * failure's message, which Pi turns into its own error result.
+ * after Pi accepted them, a handler failure and a result `success` cannot encode each reject the call with
+ * `ToolFailed`, whose message Pi turns into its own error result. The JSON Schemas are built once, when the tool is
+ * first built, so every agent and loop given the tool shares them (pi-ai compiles one validator per schema object).
  */
 export function make<const Name extends string, P extends Schema.Constraint, S extends Schema.Constraint, E, R>(
 	name: Name,
 	options: Options<P, S, E, R>,
 ): Tool<Name, P, S, E, R> {
-	return { ...options, name, agentTool: agentTool(name, options) };
+	// The brand checks nothing of a string, so the branded name keeps the literal type it was given.
+	const branded = ToolName.make(name) as Name & ToolName;
+	return { ...options, name: branded, agentTool: agentTool(branded, options, jsonSchemas(branded, options)) };
 }
 
-function agentTool<P extends Schema.Constraint, S extends Schema.Constraint, E, R>(
-	name: string,
+/** The JSON Schemas Pi gets for a tool: its parameters, and its success value when the tool is `structured`. */
+interface JsonSchemas {
+	readonly parameters: object;
+	readonly outputSchema: object | undefined;
+}
+
+/** The JSON Schemas of a tool, converted on the first evaluation and kept with the tool for the next ones. */
+function jsonSchemas<P extends Schema.Constraint, S extends Schema.Constraint, E, R>(
+	name: ToolName,
 	options: Options<P, S, E, R>,
-): Effect.Effect<AgentTool, SchemaConversionError, Requirements<P, S, R>> {
-	return Effect.gen(function* () {
-		const parameters = yield* objectSchema(name, "parameters", options.parameters);
-		const outputSchema =
-			options.structured === true ? yield* objectSchema(name, "success", options.success) : undefined;
-		const run = runner(yield* Effect.context<Requirements<P, S, R>>());
-		const decode = decodeUnknown(options.parameters);
-		const encodeSuccess = encode(options.success);
-		const call = (args: unknown, api: Api) =>
-			decode(args).pipe(
-				Effect.flatMap((params) => options.handler(params, api)),
-				Effect.flatMap((returned) =>
-					answer(isReply(returned) ? returned : result(returned), encodeSuccess, outputSchema !== undefined),
-				),
-				// Pi reads a thrown error's message; a tagged error's own message may be empty.
-				Effect.mapError((failure) => new Error(failureText(failure))),
-			);
-		return {
-			name,
-			label: options.label,
-			description: options.description,
-			parameters,
-			...(outputSchema === undefined ? {} : { outputSchema }),
-			...(options.executionMode === undefined ? {} : { executionMode: options.executionMode }),
-			...(options.replay === undefined ? {} : { replay: options.replay }),
-			...(options.prepareArguments === undefined ? {} : { prepareArguments: options.prepareArguments }),
-			...(options.constrainedSampling === undefined ? {} : { constrainedSampling: options.constrainedSampling }),
-			execute: (toolCallId, args, signal, onUpdate) =>
-				run(
-					call(args, {
-						toolCallId,
-						update: (partial) => Effect.sync(() => onUpdate?.(partial)),
-					}),
-					signal,
-				),
-		};
+): Effect.Effect<JsonSchemas, SchemaConversionError> {
+	let converted: Res.Result<JsonSchemas, SchemaConversionError> | undefined;
+	return Effect.suspend(() => {
+		converted ??= Res.all({
+			parameters: objectSchema(name, "parameters", options.parameters),
+			outputSchema:
+				options.structured === true ? objectSchema(name, "success", options.success) : Res.succeed(undefined),
+		});
+		return Effect.fromResult(converted);
 	});
 }
+
+/**
+ * Pi's tool for a tool of `make`. Untraced: the tool it builds keeps this Effect's context for every call, which a span
+ * of the build would not outlive; each call has its own span, `Tool.execute`.
+ */
+const agentTool: <P extends Schema.Constraint, S extends Schema.Constraint, E, R>(
+	name: ToolName,
+	options: Options<P, S, E, R>,
+	schemas: Effect.Effect<JsonSchemas, SchemaConversionError>,
+) => Effect.Effect<AgentTool, SchemaConversionError, Requirements<P, S, R>> = Effect.fnUntraced(function* <
+	P extends Schema.Constraint,
+	S extends Schema.Constraint,
+	E,
+	R,
+>(name: ToolName, options: Options<P, S, E, R>, schemas: Effect.Effect<JsonSchemas, SchemaConversionError>) {
+	const { parameters, outputSchema } = yield* schemas;
+	const context = yield* Effect.context<Requirements<P, S, R>>();
+	const run = runner(context);
+	const decode = decodeUnknown(options.parameters);
+	const encodeSuccess = encode(options.success);
+	const structured = outputSchema !== undefined;
+	// A span per call of the model, never per token.
+	const call = Effect.fn("Tool.execute")(
+		function* (args: unknown, api: Api) {
+			yield* Effect.annotateCurrentSpan({ "pi.tool.name": name, "pi.tool.call_id": api.toolCallId });
+			const params = yield* decode(args);
+			const returned = yield* options.handler(params, api);
+			return yield* answer(isReply(returned) ? returned : result(returned), encodeSuccess, structured);
+		},
+		// Pi reads a thrown error's message; a tagged error's own message may be empty.
+		Effect.mapError((failure) => ToolFailed.make({ tool: name, message: failureText(failure), cause: failure })),
+	);
+	return {
+		name,
+		label: options.label,
+		description: options.description,
+		parameters,
+		...(outputSchema === undefined ? {} : { outputSchema }),
+		...(options.executionMode === undefined ? {} : { executionMode: options.executionMode }),
+		...(options.replay === undefined ? {} : { replay: options.replay }),
+		...(options.prepareArguments === undefined ? {} : { prepareArguments: options.prepareArguments }),
+		...(options.constrainedSampling === undefined ? {} : { constrainedSampling: options.constrainedSampling }),
+		execute: (toolCallId, args, signal, onUpdate) =>
+			run(
+				call(args, {
+					toolCallId: ToolCallId.make(toolCallId),
+					update: (partial) => Effect.sync(() => onUpdate?.(partial)),
+				}),
+				signal,
+			),
+	} satisfies AgentTool;
+});
 
 /** Pi's result for a reply. `structured`: a result carries its value as JSON too. */
 function answer<A, R>(
@@ -167,32 +208,29 @@ function answer<A, R>(
 	encodeSuccess: (value: A) => Effect.Effect<Schema.Json, SchemaDecodeError, R>,
 	structured: boolean,
 ): Effect.Effect<AgentToolResult, SchemaDecodeError, R> {
-	switch (reply._tag) {
-		case "Result":
-			return Effect.map(
-				encodeSuccess(reply.value),
-				(json): AgentToolResult => ({
-					content: reply.content ?? [{ type: "text", text: readable(json) }],
-					details: reply.details,
-					...(structured ? { structuredContent: stored(json) } : {}),
-					...(reply.usage === undefined ? {} : { usage: reply.usage }),
-					...(reply.terminate === undefined ? {} : { terminate: reply.terminate }),
-				}),
-			);
-		case "Error":
-			return Effect.succeed({
-				content: [{ type: "text", text: reply.text }],
-				details: reply.details,
+	return Match.valueTags(reply, {
+		Result: (success) =>
+			Effect.map(encodeSuccess(success.value), (json): AgentToolResult => ({
+				content: success.content ?? [{ type: "text", text: readable(json) }],
+				details: success.details,
+				...(structured ? { structuredContent: stored(json) } : {}),
+				...(success.usage === undefined ? {} : { usage: success.usage }),
+				...(success.terminate === undefined ? {} : { terminate: success.terminate }),
+			})),
+		Error: (refusal) =>
+			Effect.succeed<AgentToolResult>({
+				content: [{ type: "text", text: refusal.text }],
+				details: refusal.details,
 				isError: true,
-				...(reply.usage === undefined ? {} : { usage: reply.usage }),
-				...(reply.terminate === undefined ? {} : { terminate: reply.terminate }),
-			});
-	}
+				...(refusal.usage === undefined ? {} : { usage: refusal.usage }),
+				...(refusal.terminate === undefined ? {} : { terminate: refusal.terminate }),
+			}),
+	});
 }
 
 /** JSON as the model reads it: a string as it is, anything else as JSON text. */
 function readable(json: Schema.Json): string {
-	return Predicate.isString(json) ? json : JSON.stringify(json);
+	return Predicate.isString(json) ? json : Formatter.formatJson(json);
 }
 
 /** JSON as Pi takes it. A decode boundary: Effect types JSON read-only, pi-ai types the same values mutable. */
@@ -200,24 +238,23 @@ function stored(json: Schema.Json): AgentToolResult["structuredContent"] {
 	return json as AgentToolResult["structuredContent"];
 }
 
-/** Whether a handler's value is a `Reply`: a success value is of any type, so the brand tells them apart. */
+/** Whether a handler's value is a `Reply`: a success value is of any type, so the type id tells them apart. */
 function isReply<A>(returned: A | Reply<A>): returned is Reply<A> {
 	return Predicate.hasProperty(returned, ReplyTypeId);
 }
 
 /** The JSON Schema Pi gets for one of the tool's schemas. Pi takes an object, never a boolean schema. */
 function objectSchema(
-	name: string,
+	name: ToolName,
 	what: "parameters" | "success",
 	schema: Schema.Constraint,
-): Effect.Effect<object, SchemaConversionError> {
-	return Effect.try({
+): Res.Result<object, SchemaConversionError> {
+	return Res.try({
 		try: () => toJsonSchema(schema),
-		catch: (cause) => new SchemaConversionError({ reason: `Tool ${name}: ${failureText(cause)}` }),
+		catch: (cause) => SchemaConversionError.make({ reason: `Tool ${name}: ${failureText(cause)}` }),
 	}).pipe(
-		Effect.filterOrFail(
-			Predicate.isObject,
-			() => new SchemaConversionError({ reason: `Tool ${name}: the JSON Schema of the ${what} is not an object` }),
+		Res.filterOrFail(Predicate.isObject, () =>
+			SchemaConversionError.make({ reason: `Tool ${name}: the JSON Schema of the ${what} is not an object` }),
 		),
 	);
 }

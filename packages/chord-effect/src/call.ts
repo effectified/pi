@@ -5,6 +5,7 @@ import { type Context, withAbortSignal } from "@earendil-works/chord/context";
 import { Effect } from "effect";
 import { type ChordCallError, fromChord, SqliteError } from "./errors.ts";
 import { ParentContext } from "./parent-context.ts";
+import { untilSettled } from "./settled.ts";
 import { traced } from "./traced.ts";
 
 /** `attempt` with Chord's runtime rejections: its error classes as `ChordCallError`, anything else a defect. */
@@ -23,14 +24,7 @@ export function attempt<A, E>(
 	rejected: (thrown: unknown) => Effect.Effect<never, E>,
 ): Effect.Effect<A, E> {
 	return Effect.flatMap(currentContext, (under) =>
-		Effect.callback<A, E>((resume, signal) => {
-			// A promise executor turns a synchronous throw of `run` into a rejection too.
-			const done = new Promise<A>((resolve) => resolve(run(withAbortSignal(signal, under)))).then(
-				(value) => resume(Effect.succeed(value)),
-				(thrown: unknown) => resume(rejected(thrown)),
-			);
-			return Effect.promise(() => done);
-		}),
+		untilSettled((signal) => run(withAbortSignal(signal, under)), rejected),
 	);
 }
 
@@ -59,5 +53,5 @@ export function rejection(thrown: unknown): Effect.Effect<never, ChordCallError>
 
 /** What a store call threw: its `ChordCallError`, or the database's own error as `SqliteError`. */
 export function storeRejection(thrown: unknown): Effect.Effect<never, ChordCallError | SqliteError> {
-	return Effect.fail(fromChord(thrown) ?? new SqliteError({ cause: thrown }));
+	return Effect.fail(fromChord(thrown) ?? SqliteError.make({ cause: thrown }));
 }

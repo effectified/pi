@@ -44,8 +44,15 @@ export type Services<A> = {
 		: never;
 }[keyof A];
 
-/** One answer, whatever its hook. */
-type Answer = (...args: ReadonlyArray<unknown>) => Effect.Effect<unknown, unknown, unknown>;
+/** What the answers `A` fail with: the union over the hooks they answer. */
+type Failures<A> = {
+	readonly [K in keyof A]-?: NonNullable<A[K]> extends (...args: never) => Effect.Effect<infer _A, infer E, infer _R>
+		? E
+		: never;
+}[keyof A];
+
+/** One answer, whatever its hook: it fails with `E` and needs `R`. */
+type Answer<E, R> = (...args: ReadonlyArray<unknown>) => Effect.Effect<unknown, E, R>;
 
 /**
  * Answers `hooks` in an extension (Pi's `hook(task, handlers)` for a task of this package): the registry asks them
@@ -56,23 +63,21 @@ export function answer<H extends Handlers, const A extends Answers<H>>(
 	hooks: TaskHooks<H>,
 	answers: A,
 ): Hook.Hook<Services<A>> {
+	// The answers by name, each a handler: `Answers` types each by its hook, which a walk over them loses; each fails
+	// with some of `Failures<A>` and needs some of `Services<A>`.
+	const byName = answers as unknown as { readonly [name: string]: Answer<Failures<A>, Services<A>> };
 	return {
-		registration: Effect.map(
-			Effect.context<Services<A>>(),
-			(context): HookRegistration => ({
-				task: hooks.task,
-				handlers: Record.map(
-					// The answers by name, each a handler: `Answers` types each by its hook, which a walk over them loses.
-					answers as unknown as { readonly [name: string]: Answer },
-					(handler) =>
-						(...args: ReadonlyArray<unknown>) =>
-							// The context holds what every answer needs (`Services<A>`), so what this one needs too.
-							Effect.provideContext(
-								Effect.suspend(() => handler(...args)) as Effect.Effect<unknown, unknown, Services<A>>,
-								context,
-							),
-				),
-			}),
-		),
+		registration: Effect.map(Effect.context<Services<A>>(), (context): HookRegistration => ({
+			task: hooks.task,
+			handlers: Record.map(
+				byName,
+				(handler) =>
+					(...args: ReadonlyArray<unknown>) =>
+						Effect.provideContext(
+							Effect.suspend(() => handler(...args)),
+							context,
+						),
+			),
+		})),
 	};
 }

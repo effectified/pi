@@ -4,9 +4,10 @@ import { Context, Effect, Layer, Schema } from "effect";
 import type { OutcomeEvent } from "./outcome-event.ts";
 
 /** A sink could not take an event; `cause` is what the product's store failed with. The event is delivered again. */
-export class OutcomeSinkError extends Schema.TaggedError<OutcomeSinkError>()("OutcomeSinkError", {
-	cause: Schema.Defect(),
-}) {
+export class OutcomeSinkError extends Schema.TaggedError<OutcomeSinkError, { readonly brand: unique symbol }>()(
+	"OutcomeSinkError",
+	{ cause: Schema.Defect() },
+) {
 	override get message(): string {
 		return "The outcome sink failed";
 	}
@@ -28,7 +29,7 @@ export interface OutcomeSinkService {
  * works the thread.
  */
 export class OutcomeSink extends Context.Service<OutcomeSink, OutcomeSinkService>()(
-	"@effectified/pi-thread/OutcomeSink",
+	"@effectified/pi-thread/outcome-sink/OutcomeSink",
 ) {
 	/**
 	 * A sink that takes every event and keeps none: for a product that asks instead (`Threads.outcome`, `ended`,

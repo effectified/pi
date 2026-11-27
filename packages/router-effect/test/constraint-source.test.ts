@@ -1,9 +1,14 @@
+import { ModelId, SessionId } from "@effectified/pi-ai";
 import { Effect, Fiber } from "effect";
 import { describe, expect, it } from "vitest";
 import { imposedBy } from "../src/constraint-source.ts";
 import { type ConstraintRequest, ConstraintSource, ConstraintsUnavailable } from "../src/index.ts";
 
-const REQUEST: ConstraintRequest = { alias: "author", sessionId: "session-7", metadata: { user_id: "u1" } };
+const REQUEST: ConstraintRequest = {
+	alias: ModelId.make("author"),
+	sessionId: SessionId.make("session-7"),
+	metadata: { user_id: "u1" },
+};
 
 /** Asks the source of the context about `REQUEST`. */
 const ask = Effect.gen(function* () {
@@ -41,7 +46,7 @@ describe("imposedBy", () => {
 	});
 
 	it("fails with the source's own error when the source fails", async () => {
-		const failure = new ConstraintsUnavailable({ alias: "author", reason: "no grant for session-7" });
+		const failure = new ConstraintsUnavailable({ alias: REQUEST.alias, reason: "no grant for session-7" });
 		const error = await Effect.runPromise(
 			Effect.flip(imposedBy({ constraintsOf: () => Effect.fail(failure) }, REQUEST)),
 		);

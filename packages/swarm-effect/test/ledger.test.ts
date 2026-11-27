@@ -4,10 +4,11 @@ import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { failed, type Job, planned } from "../src/job.ts";
 import { Copy, Jobs, progressOf, report, Swarms } from "../src/ledger.ts";
+import { ForkId, JobKey, SwarmId } from "../src/ids.ts";
 
 const running: Job = {
 	status: "running",
-	fork: "f",
+	fork: ForkId.make("f"),
 	correction: 0,
 	wait: { _tag: "Poll", at: 1, everyMillis: 1 },
 	attempts: 0,
@@ -33,17 +34,23 @@ describe("what a swarm stores beside its task", () => {
 	it("writes the jobs whose status changed, and nothing when none did", async () => {
 		const seen = await Effect.runPromise(
 			Effect.gen(function* () {
-				const keys = ["a", "b", "c"];
+				const keys = [JobKey.make("a"), JobKey.make("b"), JobKey.make("c")];
 				yield* Harness.commit((tx) =>
-					report(tx, "s", keys, [planned, planned, planned], [planned, planned, planned]),
+					report(tx, SwarmId.make("s"), keys, [planned, planned, planned], [planned, planned, planned]),
 				);
 				const untouched = yield* Harness.snapshot(Jobs, "s");
 				yield* Harness.commit((tx) =>
-					report(tx, "s", keys, [planned, planned, planned], [running, planned, planned]),
+					report(tx, SwarmId.make("s"), keys, [planned, planned, planned], [running, planned, planned]),
 				);
 				const first = yield* Harness.snapshot(Jobs, "s");
 				yield* Harness.commit((tx) =>
-					report(tx, "s", keys, [running, planned, planned], [running, failed(null, "cancelled", "x"), planned]),
+					report(
+						tx,
+						SwarmId.make("s"),
+						keys,
+						[running, planned, planned],
+						[running, failed(null, "cancelled", "x"), planned],
+					),
 				);
 				return {
 					untouched,

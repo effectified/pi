@@ -9,9 +9,12 @@ import type { Threads } from "../src/index.ts";
 type Fields = "model" | "instructions" | "maxTurns";
 
 /**
- * What a thread's work sets of its agent is Pi's own type of each field, without `null`: a field Pi renames or retypes
+ * What a thread's work sets of its agent, encoded, is Pi's own type of each field, without `null`: a field Pi renames or retypes
  * fails here. (The bounds Pi's `configure` adds, such as turns of 1 or more, `admit` checks through `Agent.ByName`.)
  */
 export type WorkAgentFields = Assert<
-	Conform<Required<Pick<Threads.Work, Fields>>, { readonly [K in Fields]-?: NonNullable<AgentChange[K]> }>
+	Conform<
+		Required<Pick<typeof Threads.Work.Encoded, Fields>>,
+		{ readonly [K in Fields]-?: NonNullable<AgentChange[K]> }
+	>
 >;

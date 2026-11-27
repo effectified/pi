@@ -6,10 +6,12 @@ import {
 	type McpClientOptions,
 	type McpTransport,
 	McpClient as PiMcpClient,
+	type Tool as PiTool,
 	type Root,
 } from "@earendil-works/pi-mcp";
-import { Context, Deferred, type Duration, Effect, Exit, Layer, Queue, type Scope, Stream } from "effect";
+import { Array as Arr, Context, Deferred, type Duration, Effect, Layer, Queue, type Scope, Stream } from "effect";
 import { fromPi, type McpError, type McpFailure } from "./errors.ts";
+import { McpToolName } from "./names.ts";
 import { type PiRequestOptions, type RequestOptions, request } from "./request.ts";
 import { currentRunner } from "./run-in-pi.ts";
 
@@ -20,6 +22,9 @@ export interface ClientOptions<R = never> extends Omit<McpClientOptions, "reques
 	/** Answers the server's `roots/list`; given, the client declares the `roots` capability. */
 	readonly roots?: Effect.Effect<ReadonlyArray<Root>, McpFailure, R>;
 }
+
+/** A tool of the server as Pi lists it, its name branded: what `callTool` takes. */
+export type Tool = Omit<PiTool, "name"> & { readonly name: McpToolName };
 
 /** What a call of Pi's client resolves with. */
 type Resolved<K extends keyof PiMcpClient> = PiMcpClient[K] extends (...args: never[]) => Promise<infer A> ? A : never;
@@ -39,7 +44,7 @@ export interface McpClientService {
 	/** Pings the server. */
 	readonly ping: (options?: RequestOptions) => Effect.Effect<void, McpFailure>;
 	/** Every tool of the server, following its pages. */
-	readonly listTools: (options?: RequestOptions) => Effect.Effect<Resolved<"listTools">, McpFailure>;
+	readonly listTools: (options?: RequestOptions) => Effect.Effect<ReadonlyArray<Tool>, McpFailure>;
 	/** Every resource of the server, following its pages. */
 	readonly listResources: (options?: RequestOptions) => Effect.Effect<Resolved<"listResources">, McpFailure>;
 	/** One page of resources, starting at `cursor`. */
@@ -63,7 +68,7 @@ export interface McpClientService {
 	) => Effect.Effect<Resolved<"readResource">, McpFailure>;
 	/** Calls the tool `name`. A tool that failed is a result with `isError`, not a failure of the Effect. */
 	readonly callTool: (
-		name: string,
+		name: McpToolName,
 		args?: Record<string, unknown>,
 		options?: RequestOptions,
 	) => Effect.Effect<Resolved<"callTool">, McpFailure>;
@@ -90,7 +95,7 @@ export interface McpClientService {
 }
 
 /** The connected MCP client of this program. */
-export class McpClient extends Context.Service<McpClient, McpClientService>()("@effectified/pi-mcp/McpClient") {
+export class McpClient extends Context.Service<McpClient, McpClientService>()("@effectified/pi-mcp/client/McpClient") {
 	/**
 	 * Connects a client over `transport` and initializes the session. The scope closes the client and its transport;
 	 * interrupting or timing out the connection closes them at once.
@@ -118,63 +123,108 @@ export class McpClient extends Context.Service<McpClient, McpClientService>()("@
 const DEFAULT_REQUEST_TIMEOUT: Duration.Input = "30 seconds";
 
 /** `McpClient.connect`: Pi's client created, connected and closed with the scope. */
-function connect<R = never>(
+const connect: <R = never>(
 	transport: McpTransport,
 	options: ClientOptions<R>,
-): Effect.Effect<McpClientService, McpFailure, Scope.Scope | R> {
-	return Effect.gen(function* () {
-		const run = yield* currentRunner<R>();
-		const { requestTimeout = DEFAULT_REQUEST_TIMEOUT, roots, ...rest } = options;
-		const client = yield* Effect.acquireRelease(
-			Effect.sync(
-				() =>
-					new PiMcpClient({
-						...rest,
-						// Pi's timer is off: `request` keeps every deadline on `Clock`.
-						requestTimeoutMs: 0,
-						...(roots === undefined ? {} : { roots: () => run(roots) }),
-					}),
-			),
-			(client) => Effect.promise(() => client.close()),
-		);
-		const closed = yield* Deferred.make<void>();
-		client.onClose(() => Deferred.doneUnsafe(closed, Effect.void));
-		const initialize = yield* request(() => client.connect(transport), requestTimeout, undefined).pipe(
-			Effect.onExit((exit) => (Exit.isFailure(exit) ? Effect.promise(() => client.close()) : Effect.void)),
-		);
-		const call = <A>(start: (options: PiRequestOptions) => Promise<A>, options: RequestOptions | undefined) =>
-			request(start, options?.timeout ?? requestTimeout, options?.progress);
-		return {
-			initialize,
-			request: (method, params, options) => call((pi) => client.request(method, params, pi), options),
-			notify: (method, params) => Effect.tryPromise({ try: () => client.notify(method, params), catch: fromPi }),
-			ping: (options) => call((pi) => client.ping(pi), options),
-			listTools: (options) => call((pi) => client.listTools(pi), options),
-			listResources: (options) => call((pi) => client.listResources(pi), options),
-			listResourcesPage: (cursor, options) => call((pi) => client.listResourcesPage(cursor, pi), options),
-			listResourceTemplates: (options) => call((pi) => client.listResourceTemplates(pi), options),
-			listResourceTemplatesPage: (cursor, options) =>
-				call((pi) => client.listResourceTemplatesPage(cursor, pi), options),
-			readResource: (uri, options) => call((pi) => client.readResource(uri, pi), options),
-			callTool: (name, args, options) => call((pi) => client.callTool(name, args, pi), options),
-			notifications: (method) => untilClosed(client, (emit) => client.onNotification(method, emit)),
-			errors: untilClosed(client, (emit) => client.onError((error) => emit(fromPi(error)))),
-			closed: Deferred.await(closed),
-			handle: <RHandler>(
-				method: string,
-				handler: (params: unknown) => Effect.Effect<unknown, McpError, RHandler>,
-			): Effect.Effect<void, never, Scope.Scope | RHandler> =>
-				Effect.gen(function* () {
-					const answer = yield* currentRunner<RHandler>();
-					yield* Effect.acquireRelease(
-						Effect.sync(() =>
-							client.setRequestHandler(method, (params, { signal }) => answer(handler(params), signal)),
-						),
-						(remove) => Effect.sync(remove),
-					);
+) => Effect.Effect<McpClientService, McpFailure, Scope.Scope | R> = Effect.fn("McpClient.connect")(function* <R>(
+	transport: McpTransport,
+	options: ClientOptions<R>,
+) {
+	const run = yield* currentRunner<R>();
+	const { requestTimeout = DEFAULT_REQUEST_TIMEOUT, roots, ...rest } = options;
+	const client = yield* Effect.acquireRelease(
+		Effect.sync(
+			() =>
+				new PiMcpClient({
+					...rest,
+					// Pi's timer is off: `request` keeps every deadline on `Clock`.
+					requestTimeoutMs: 0,
+					...(roots === undefined ? {} : { roots: () => run(roots) }),
 				}),
-		} satisfies McpClientService;
-	});
+		),
+		(client) => Effect.promise(() => client.close()),
+	);
+	const closed = yield* Deferred.make<void>();
+	client.onClose(() => Deferred.doneUnsafe(closed, Effect.void));
+	const initialize = yield* request(() => client.connect(transport), requestTimeout, undefined).pipe(
+		Effect.onError(() => Effect.promise(() => client.close())),
+	);
+	return service(client, initialize, requestTimeout, Deferred.await(closed));
+});
+
+/** The calls of the connected `client` as the service's Effects, each with a span of its own. */
+function service(
+	client: PiMcpClient,
+	initialize: InitializeResult,
+	requestTimeout: Duration.Input,
+	closed: Effect.Effect<void>,
+): McpClientService {
+	const call = <A>(start: (options: PiRequestOptions) => Promise<A>, options: RequestOptions | undefined) =>
+		request(start, options?.timeout ?? requestTimeout, options?.progress);
+	return {
+		initialize,
+		request: Effect.fn("McpClient.request")(function* (
+			method: string,
+			params?: Record<string, unknown>,
+			options?: RequestOptions,
+		) {
+			yield* Effect.annotateCurrentSpan("mcp.method", method);
+			return yield* call((pi) => client.request(method, params, pi), options);
+		}),
+		notify: Effect.fn("McpClient.notify")(function* (method: string, params?: Record<string, unknown>) {
+			yield* Effect.annotateCurrentSpan("mcp.method", method);
+			yield* Effect.tryPromise({ try: () => client.notify(method, params), catch: fromPi });
+		}),
+		ping: Effect.fn("McpClient.ping")((options?: RequestOptions) => call((pi) => client.ping(pi), options)),
+		listTools: Effect.fn("McpClient.listTools")((options?: RequestOptions) =>
+			Effect.map(
+				call((pi) => client.listTools(pi), options),
+				// The names enter here, from the server: the brand marks them as the server's names of its tools.
+				Arr.map((tool): Tool => ({ ...tool, name: McpToolName.make(tool.name) })),
+			),
+		),
+		listResources: Effect.fn("McpClient.listResources")((options?: RequestOptions) =>
+			call((pi) => client.listResources(pi), options),
+		),
+		listResourcesPage: Effect.fn("McpClient.listResourcesPage")((cursor?: string, options?: RequestOptions) =>
+			call((pi) => client.listResourcesPage(cursor, pi), options),
+		),
+		listResourceTemplates: Effect.fn("McpClient.listResourceTemplates")((options?: RequestOptions) =>
+			call((pi) => client.listResourceTemplates(pi), options),
+		),
+		listResourceTemplatesPage: Effect.fn("McpClient.listResourceTemplatesPage")(
+			(cursor?: string, options?: RequestOptions) =>
+				call((pi) => client.listResourceTemplatesPage(cursor, pi), options),
+		),
+		readResource: Effect.fn("McpClient.readResource")(function* (uri: string, options?: RequestOptions) {
+			yield* Effect.annotateCurrentSpan("mcp.resource", uri);
+			return yield* call((pi) => client.readResource(uri, pi), options);
+		}),
+		callTool: Effect.fn("McpClient.callTool")(function* (
+			name: McpToolName,
+			args?: Record<string, unknown>,
+			options?: RequestOptions,
+		) {
+			yield* Effect.annotateCurrentSpan("mcp.tool", name);
+			return yield* call((pi) => client.callTool(name, args, pi), options);
+		}),
+		notifications: (method) => untilClosed(client, (emit) => client.onNotification(method, emit)),
+		errors: untilClosed(client, (emit) => client.onError((error) => emit(fromPi(error)))),
+		closed,
+		handle: Effect.fn("McpClient.handle")(function* <R>(
+			method: string,
+			handler: (params: unknown) => Effect.Effect<unknown, McpError, R>,
+		) {
+			yield* Effect.annotateCurrentSpan("mcp.method", method);
+			const answer = yield* currentRunner<R>();
+			yield* Effect.acquireRelease(
+				Effect.sync(() =>
+					client.setRequestHandler(method, (params, { signal }) => answer(handler(params), signal)),
+				),
+				(remove) => Effect.sync(remove),
+			);
+		}),
+	};
 }
 
 /** The values a Pi listener receives from when the Stream starts until the client closes. */

@@ -1,9 +1,11 @@
+import { fromPiModelRef } from "@effectified/pi-ai";
 import { Option, Schema } from "effect";
+import { pipe } from "effect/Function";
 import { describe, expect, it } from "vitest";
 import { Policy } from "../src/index.ts";
 
-const WRITER = { provider: "author-lab", modelId: "writer" };
-const JUDGE = { provider: "reviewer-lab", modelId: "judge" };
+const WRITER = fromPiModelRef({ provider: "author-lab", modelId: "writer" });
+const JUDGE = fromPiModelRef({ provider: "reviewer-lab", modelId: "judge" });
 
 describe("Policy", () => {
 	const decode = Schema.decodeUnknownSync(Policy.Policy);
@@ -48,12 +50,18 @@ describe("familyOf", () => {
 	});
 
 	it("gives none for a model that is not listed, also one that shares a provider or an id", () => {
-		expect(Policy.familyOf(families, { provider: "author-lab", modelId: "judge" })).toEqual(Option.none());
+		expect(Policy.familyOf(families, fromPiModelRef({ provider: "author-lab", modelId: "judge" }))).toEqual(
+			Option.none(),
+		);
 		expect(Policy.familyOf([], WRITER)).toEqual(Option.none());
 	});
 
 	it("gives none for a model listed under two labels, and its family when the rows agree", () => {
 		expect(Policy.familyOf([...families, { ...WRITER, family: "gamma" }], WRITER)).toEqual(Option.none());
 		expect(Policy.familyOf([...families, { ...WRITER, family: "alpha" }], WRITER)).toEqual(Option.some("alpha"));
+	});
+
+	it("pipes: data-last on the table", () => {
+		expect(pipe(families, Policy.familyOf(JUDGE))).toEqual(Option.some("beta"));
 	});
 });

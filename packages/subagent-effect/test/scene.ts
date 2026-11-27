@@ -10,6 +10,7 @@ import {
 	type SchemaDecodeError,
 	type Storage,
 	Tool,
+	ToolName,
 } from "@effectified/pi-durable";
 import { answer, type FauxResponseFactory, type FauxResponseStep, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
@@ -105,7 +106,13 @@ export function harness<E = never, R = never>(scene: Scene<E, R>) {
 export const parent = Harness.rootWith({
 	agent: {
 		model: PARENT,
-		tools: ["a", "b", Subagents.TOOLS.foreground, Subagents.TOOLS.background, Subagents.TOOLS.status],
+		tools: [
+			ToolName.make("a"),
+			ToolName.make("b"),
+			Subagents.TOOLS.foreground,
+			Subagents.TOOLS.background,
+			Subagents.TOOLS.status,
+		],
 	},
 });
 

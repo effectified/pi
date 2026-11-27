@@ -35,13 +35,19 @@ export interface ServeOptions extends Omit<CodemodeServeOptions, "wasm"> {
 /**
  * A sandbox whose VMs run on a remote while its tools run here. A script that computes without calling a tool is
  * limited by the remote's interrupt budget, not by `timeoutMs`; after a deadline, an abort or the scope's close the
- * remote VM stops at its next tool call. Closed when the scope closes.
+ * remote VM stops at its next tool call. Closed when the scope closes. Untraced, as the sandbox keeps this Effect's
+ * context for its tools and its remote.
  */
-export function make<R = never>(
+export const make: <R = never>(
 	options: Options<R>,
-): Effect.Effect<Sandbox.Sandbox, ToolRejected | SchemaConversionError, R | Scope.Scope> {
-	return Effect.flatMap(Effect.context<R>(), (context) =>
-		acquire(
+) => Effect.Effect<Sandbox.Sandbox, ToolRejected | SchemaConversionError, R | Scope.Scope> = Effect.fnUntraced(
+	function* <R>(
+		options: Options<R>,
+	): Effect.fn.Return<Sandbox.Sandbox, ToolRejected | SchemaConversionError, R | Scope.Scope> {
+		const services = yield* Effect.context<R>();
+		// Pi asks for the remote synchronously, once per execution.
+		const remote = Effect.runSyncWith(services);
+		return yield* acquire(
 			options,
 			(tools, globals) =>
 				new RemoteCodemodeSandbox({
@@ -50,21 +56,21 @@ export function make<R = never>(
 					timeoutMs: options.timeoutMs,
 					memoryLimitBytes: options.memoryLimitBytes,
 					interruptBudget: options.interruptBudget,
-					remote: () => Effect.runSyncWith(context)(options.remote),
+					remote: () => remote(options.remote),
 				}),
-		),
-	);
-}
+		);
+	},
+);
 
 /**
  * The remote end: runs one execution's VM on this thread, sending what it reports through `exchange`, until the VM
  * stopped and its outcome was delivered, or the client asked it to stop. Never fails. Pi takes no abort signal here:
  * interrupting the fiber stops waiting, and the VM runs on until the client stops it or its budget runs out.
  */
-export function serve(
+export const serve = Effect.fn("RemoteSandbox.serve")(function* (
 	request: CodemodeRemoteRequest,
 	exchange: CodemodeRemoteExchange,
 	options: ServeOptions,
-): Effect.Effect<void> {
-	return Effect.promise(() => serveCodemodeRemote(request, exchange, options));
-}
+): Effect.fn.Return<void> {
+	return yield* Effect.promise(() => serveCodemodeRemote(request, exchange, options));
+});

@@ -44,6 +44,8 @@ the packages and their state are in `effect/COMPAT.md`; the first consumer's bin
   before using a function. Do not write Effect code from memory.
 - Every public function returns `Effect`, `Stream` or `Layer`. No promise, callback or `any` in a public signature.
 - Errors are `Schema.TaggedError` classes. No `throw` in library code.
+- The packages are Effect-native, not Effect-wrapped: a user who knows Effect finds Effect's own vocabulary in every
+  signature. The section "Effect-native design" below is binding for every package source.
 - Interruption is cancellation in both directions: interrupting a fiber cancels the Pi call, and a Pi abort
   interrupts the Effect it runs.
 - Time and ids come from services (`Clock`), so `TestClock` drives a test.
@@ -65,6 +67,75 @@ the packages and their state are in `effect/COMPAT.md`; the first consumer's bin
 - The style model is `packages/schema-effect`: one concept per file, a first-line comment saying what the file is
   for, one doc comment per export, a test file per source file.
 
+## Effect-native design
+
+Two tools hold the package sources to this section; neither has an exception without a reason written at the site.
+
+- `node effect/scripts/types.ts` (gate step `types`): the types and the Effect team's presets `correctness`,
+  `antipattern`, `strict` and `effect-native` as errors (`effect/tsconfig.json` says which rules and why two are off),
+  in one pass of the Effect-patched tsrs, the Rust port of TypeScript 7 that `@effect/tsgo` ships (about 4 s for the
+  whole repository). `--package <dir> --summary` counts one package's errors by rule; without `--summary` it lists
+  them. A site that must break a rule says why on the line above: `// @effect-diagnostics-next-line <rule>:off <why>`.
+  tsrs follows TypeScript 7.1: an error it finds in an upstream file is listed and fails nothing (upstream checks its
+  own files with its pinned 7.0.2; `node effect/scripts/build.ts` checks the packages' sources with it too).
+- `node effect/scripts/style.ts [--write] [<path> ...]` (gate step `style`): VoidZero's oxc tools on the packages and
+  `effect/`. oxfmt formats (`effect/oxfmt.json`); oxlint lints (`effect/oxlint.json`) with the rules of this section a
+  syntax rule can see, the oxlint plugin `effect/idioms/plugin.ts` (`idioms/effect-fn`, `effect-fn-arrow`,
+  `effect-fn-name`, `match`, `branded-id`). A site that must break one says why in the comment lines right above it:
+  `// idiom-allow <rule>: <why>`. Upstream's Biome leaves these paths to them (root `biome.json`, listed in
+  `effect/boundary.json`).
+
+The rules, with the Effect module each one names:
+
+- **Functions.** A function that returns an Effect is `Effect.fn("<Module>.<name>")(function* (...) { ... })`: every
+  call gets a span and a stack frame. Service methods too. A per-item hot path (per token, per row, per frame) uses
+  `Effect.fnUntraced`. A signature that must be written out goes on the binding:
+  `export const make: <R>(options: Options<R>) => Effect.Effect<A, E, R> = Effect.fn("Agent.make")(function* (options) { ... })`.
+- **Data.** A value type of ours is a Schema and its TypeScript type is derived from it (`typeof Call.Type`), never
+  written beside it: `Schema.Class<Self, { readonly brand: unique symbol }>("Name")({ ... })` for a record with
+  behaviour or identity, `Schema.Struct` for a plain shape, `Schema.TaggedClass`/`Schema.TaggedStruct` for a case and
+  `Schema.TaggedUnion` for a set of cases. Construct with `X.make(...)`. Numbers are `Schema.Finite`/`Schema.Int`,
+  optional fields `Schema.optionalKey`, defaults `Schema.withConstructorDefault`/`Schema.withDecodingDefault`. A Pi
+  type stays Pi's (derived, never restated); a Schema that must mirror one is asserted in `test/pi-conformance.ts`.
+- **Branded types.** Ids, keys and names that must not mix are branded schemas (`Schema.String.pipe(Schema.brand("ToolName"))`,
+  on `Schema.NonEmptyString`, `Schema.Int` and the like), exported by the package that owns them and used in its
+  signatures. Pi's own brands (`TaskId`) stay Pi's. A plain `string` in a public signature where a brand exists is a bug.
+- **Errors.** `Schema.TaggedError<Self, { readonly brand: unique symbol }>()("Tag", { ... })`, one class per failure a
+  caller handles differently. Variants of one failure are a `reason` field holding a tagged union, so a caller picks
+  them with `Effect.catchReason`/`Effect.catchReasons`. A foreign cause is kept as `cause: Schema.Defect()`. A Pi call
+  that throws or rejects becomes a typed failure where it is made (`Effect.try`/`Effect.tryPromise` with `catch`); a
+  defect is a broken invariant, never a failure a caller could handle.
+- **Pattern matching.** A choice over a union is `Match`: `Match.valueTags`/`Match.tagsExhaustive` on `_tag`,
+  `Match.discriminatorsExhaustive("type")` on Pi's `type`-tagged unions, `Match.value(x).pipe(Match.when(...),
+  Match.exhaustive)` otherwise, or the union schema's own `.match`. `switch` only on a per-item hot path.
+- **Traits.** Values compared or used as keys have structural `Equal`/`Hash` (Schema classes and plain data do; a
+  class of ours with identity implements `[Equal.symbol]`/`[Hash.symbol]`). Collections keyed by value are
+  `HashMap`/`HashSet`/`MutableHashMap`. Sorting takes an `Order` (`Order.mapInput`), comparing an `Equivalence`
+  (`Schema.toEquivalence`). Native arrays, records and strings go through `Array`, `Record` and `String` of `effect`,
+  imported as `Array as Arr` and `String as Str`, so `Array.isArray` is never a question of which `Array`; `dual`,
+  `pipe` and `absurd` are imported by name, never through `Function`.
+- **Streams and sinks.** What yields values over time is a `Stream`: a Pi listener or `onX(callback)` through
+  `Stream.callback`, an event feed through `PubSub` and `Stream.fromPubSub`, observable state as a `SubscriptionRef`
+  (`.changes`). Folding a stream (usage totals, collected text, a transcript) is a `Sink`, exported where a user
+  needs it. Buffers and back-pressure are explicit (`Stream.buffer`, a bounded `Queue`).
+- **Concurrency.** Every `Effect.forEach` and `Effect.all` names its `concurrency`. Background fibers belong to a
+  `FiberSet`, `FiberMap` or `FiberHandle` in a scope; never an unscoped `Effect.runFork`. Exclusion per key is
+  `PartitionedSemaphore` or `Semaphore`; hand-offs are `Deferred`, `Latch` and `Queue`; shared mutable state is
+  `Ref`/`SynchronizedRef`/`SubscriptionRef`.
+- **Caching and batching.** A repeated lookup with a stable key is a `Cache` (`Cache.make({ lookup, capacity,
+  timeToLive })`) or `Effect.cached`/`Effect.cachedWithTTL`; a shared keyed resource with a lifetime is an `RcMap`,
+  `ScopedCache` or `LayerMap`. Lookups a store can answer together are `Request`s served by a `RequestResolver`, so
+  concurrent callers batch and dedupe. A cache belongs to a service's scope, never to a module.
+- **Platform and configuration.** Files, paths, processes, terminals and HTTP go through Effect's services
+  (`FileSystem`, `Path`, `ChildProcessSpawner`, `Terminal`, `HttpClient`), provided by `@effect/platform-node` or
+  `@effect/platform-bun` in the platform subpaths. The environment is read as `Config` (`Config.Redacted` for a
+  secret) through the `ConfigProvider`, never `process.env`. Logs are `Effect.log*` with `Effect.annotateLogs`,
+  measurements `Metric`; no `console`.
+- **JSON.** Encoded and decoded through Schema (`Schema.fromJsonString`, `Schema.toCodecJson`); no `JSON.parse` or
+  `JSON.stringify`.
+- **Dual APIs.** An exported operation whose first parameter is its module's own type has a data-first and a
+  data-last signature (`Function.dual`), so it pipes.
+
 ## Commands
 
 Run from the repository root. One heavy command at a time: `npm run check`, `npm run build` and `./test.sh` each use
@@ -76,15 +147,16 @@ every core.
 | **The gate: every check below and every package's tests on Node and on Bun, one line per step** | `node effect/scripts/gate.ts` |
 | The gate for what you changed: all checks, and the tests of the changed packages and of those that depend on them | `node effect/scripts/gate.ts --changed` |
 | Model data the type check needs (gitignored, fetched) | `npm run hydrate:model-data` |
-| Upstream's check: Biome, dependency checks, `tsc` | `npm run check` |
+| Upstream's check: Biome (upstream's files only), dependency checks, `tsc` | `npm run check` |
 | Upstream's build (pi-effect packages resolve Pi's `dist`) | `npm run build` |
 | The pi-effect packages' release build, as CI runs it: their declarations must emit. A type the gate accepts can still name a Pi type no `.d.ts` can import; write such a type out. Run it after `npm run build` whenever a package's public types change | `node effect/scripts/build.ts` |
 | Build the pi-effect packages in dependency order | `node effect/scripts/build.ts` |
-| Fast type check of the pi-effect packages only | `node_modules/.bin/tsc --noEmit -p effect/tsconfig.json` |
+| Types and Effect rules of the pi-effect packages, in Rust (tsrs); one package's, counted by rule | `node effect/scripts/types.ts [--package <dir>] [--summary]` |
+| The same types with upstream's pinned TypeScript 7.0.2, no Effect rules | `node_modules/.bin/tsc --noEmit -p effect/tsconfig.json` |
 | One package's tests on Node | `cd packages/<name> && node ../../node_modules/vitest/dist/cli.js --run` |
 | Every package's tests on Bun | `node effect/scripts/test-bun.ts` |
 | Boundary and dependency rules | `node effect/scripts/check-boundary.ts && node effect/scripts/check-deps.ts` |
-| The rules of this file as Effect diagnostics (`@effect/tsgo` through `npm exec`) | `node effect/scripts/effect-diagnostics.ts` |
+| Format and lint of the packages and `effect/` with oxfmt and oxlint, the idiom rules included; `--write` formats | `node effect/scripts/style.ts [--write] [<path> ...]` |
 | Record of the Pi declarations the packages use (`effect/pi-surface/`): write, or check | `node effect/scripts/pi-surface.ts [--check]` |
 | Pins, release, `COMPAT.md` row and surface record against the tree | `node effect/scripts/sync.ts check` |
 | A sync, after `git merge --no-commit --no-ff main` | `node effect/scripts/sync.ts bump` |
@@ -93,8 +165,8 @@ every core.
 - After code changes: `node effect/scripts/gate.ts --changed`, and the whole gate before a commit that others build
   on. It is what CI's `boundary` and `check` jobs judge, it changes no file, and it prints one line per step, the end
   of a failed step's output, and where the whole output is. Upstream's `npm run check` also type-checks upstream
-  and rewrites every file Biome would format, another agent's unfinished ones included: run it only when a change
-  could reach upstream's own checks. `--skip=<step>` leaves a step out (`--skip=bun` while a lane has the machine).
+  and rewrites every upstream file Biome would format, another agent's unfinished ones included: run it only when a
+  change could reach upstream's own checks. `--skip=<step>` leaves a step out (`--skip=bun` while a lane has the machine).
 - When several agents share the checkout, a failure in a file you did not touch is theirs: name it in one line and
   go on. The gate's types step covers every package, so it is red while any lane's work is half-written; your
   package alone is checked with the temporary `tsconfig.json` described at the end of this file.

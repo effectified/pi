@@ -1,7 +1,7 @@
 // The ports of a local engine: which ones it listens on for the port it is given, and how a free set is found.
 
 import { createServer, type Server } from "node:net";
-import { Effect, Option, Random } from "effect";
+import { Array as Arr, Effect, Option, Random } from "effect";
 import { EngineUnavailable } from "../errors.ts";
 
 /**
@@ -24,7 +24,7 @@ export const free: Effect.Effect<number, EngineUnavailable> = Effect.gen(functio
 		const port = yield* Random.nextIntBetween(FIRST_PORT, LAST_PORT);
 		if (yield* isFree(port)) return port;
 	}
-	return yield* new EngineUnavailable({
+	return yield* EngineUnavailable.make({
 		code: "port",
 		message: `No free set of ports for a local engine in ${CANDIDATES} tries between ${FIRST_PORT} and ${LAST_PORT}`,
 		retryable: true,
@@ -35,18 +35,20 @@ export const free: Effect.Effect<number, EngineUnavailable> = Effect.gen(functio
  * `port`, when nothing listens on any port of its set now: a port its caller chose. Something that listens there may
  * be another engine, and rivetkit would use an engine that answers on the port in place of starting its own.
  */
-export function only(port: number): Effect.Effect<number, EngineUnavailable> {
-	return Effect.flatMap(isFree(port), (free) =>
-		free
-			? Effect.succeed(port)
-			: Effect.fail(
-					new EngineUnavailable({
-						code: "port",
-						message: `A port of the set of ${port} is in use: ${OFFSETS.map((offset) => port + offset).join(", ")}`,
-						retryable: true,
-					}),
-				),
-	);
+export const only: (port: number) => Effect.Effect<number, EngineUnavailable> = Effect.fn("Ports.only")(function* (
+	port: number,
+) {
+	if (yield* isFree(port)) return port;
+	return yield* EngineUnavailable.make({
+		code: "port",
+		message: `A port of the set of ${port} is in use: ${Arr.join(Arr.map(setOf(port), String), ", ")}`,
+		retryable: true,
+	});
+});
+
+/** The ports the engine listens on for `port`. */
+export function setOf(port: number): ReadonlyArray<number> {
+	return Arr.map(OFFSETS, (offset) => port + offset);
 }
 
 const FIRST_PORT = 20_000;
@@ -60,9 +62,9 @@ const LOOPBACK = "127.0.0.1";
 /** Whether nothing listens on any port of the set of `port`: all of them are bound at once, then released. */
 export function isFree(port: number): Effect.Effect<boolean> {
 	return Effect.acquireUseRelease(
-		Effect.forEach(OFFSETS, (offset) => Effect.option(listen(port + offset))),
-		(bound) => Effect.succeed(bound.every(Option.isSome)),
-		(bound) => Effect.forEach(bound.flatMap(Option.toArray), close, { discard: true }),
+		Effect.forEach(setOf(port), (each) => Effect.option(listen(each)), { concurrency: 1 }),
+		(bound) => Effect.succeed(Arr.every(bound, Option.isSome)),
+		(bound) => Effect.forEach(Arr.getSomes(bound), close, { concurrency: "unbounded", discard: true }),
 	);
 }
 

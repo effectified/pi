@@ -1,34 +1,38 @@
 // The reviewer's request as a model call record: what `ReviewCalls.modelCall` makes of a verdict's record, and what
 // the wrapped sink is given.
 
-import { RecordSink, type Records } from "@effectified/pi-recorder";
-import { Effect, Layer, Option, type Schema } from "effect";
+import { RecordSink, Records } from "@effectified/pi-recorder";
+import { Effect, Layer, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { ReviewCalls } from "../src/index.ts";
 
+/** A record written as plain data, with its ids branded as the recorder's are. */
+const decodeEntry = Schema.decodeSync(Records.Entry);
+
 /** A verdict's record as the recorder delivers it, with `call` as the reviewer's request. */
-const verdict = (call: Schema.Json | undefined): Records.Entry => ({
-	_tag: "Entry",
-	id: "3:21:entry",
-	conversation: 3,
-	entry: 21,
-	kind: "review.verdict",
-	data: {
-		answer: 19,
-		pass: 1,
-		corrections: 0,
-		author: { provider: "author-lab", modelId: "writer", family: "alpha" },
-		reviewer: { provider: "reviewer-lab", modelId: "judge", family: "beta" },
-		...(call === undefined ? {} : { call }),
-		findings: [],
-		failures: [],
-		outcome: { _tag: "Passed" },
+const verdict = (call: Schema.Json | undefined): Records.Entry =>
+	decodeEntry({
+		_tag: "Entry",
+		id: "3:21:entry",
+		conversation: 3,
+		entry: 21,
+		kind: "review.verdict",
+		data: {
+			answer: 19,
+			pass: 1,
+			corrections: 0,
+			author: { provider: "author-lab", modelId: "writer", family: "alpha" },
+			reviewer: { provider: "reviewer-lab", modelId: "judge", family: "beta" },
+			...(call === undefined ? {} : { call }),
+			findings: [],
+			failures: [],
+			outcome: { _tag: "Passed" },
+			time: 1_700_000_000_000,
+		},
+		task: 20,
 		time: 1_700_000_000_000,
-	},
-	task: 20,
-	time: 1_700_000_000_000,
-	advisory: false,
-});
+		advisory: false,
+	});
 
 /** The reviewer's request as the review stores it since it keeps the whole response: pi-ai's fields, as given. */
 const ANSWERED = {
@@ -194,15 +198,17 @@ describe("the model call of a verdict's record", () => {
 		expect(ReviewCalls.modelCall({ ...verdict(ANSWERED), data: { call: { provider: 7 } } })).toEqual(Option.none());
 		expect(ReviewCalls.modelCall({ ...verdict(ANSWERED), kind: "review.release" })).toEqual(Option.none());
 		expect(
-			ReviewCalls.modelCall({
-				_tag: "ModelCallRequested",
-				id: "3:20:requested",
-				conversation: 3,
-				after: 20,
-				task: 9,
-				time: 5,
-				advisory: true,
-			}),
+			ReviewCalls.modelCall(
+				Schema.decodeSync(Records.Record)({
+					_tag: "ModelCallRequested",
+					id: "3:20:requested",
+					conversation: 3,
+					after: 20,
+					task: 9,
+					time: 5,
+					advisory: true,
+				}),
+			),
 		).toEqual(Option.none());
 	});
 });
@@ -213,7 +219,7 @@ describe("the record sink behind `ReviewCalls.layer`", () => {
 		const product = Layer.succeed(RecordSink, {
 			deliver: (records) => Effect.sync(() => void taken.push(records)),
 		});
-		const note: Records.Entry = { ...verdict(undefined), id: "3:22:entry", entry: 22, kind: "app.note", data: null };
+		const note = decodeEntry({ ...verdict(undefined), id: "3:22:entry", entry: 22, kind: "app.note", data: null });
 		const batch = [verdict(ANSWERED), note, verdict(undefined)];
 		await Effect.runPromise(
 			RecordSink.use((sink) => Effect.andThen(sink.deliver(batch), sink.deliver([]))).pipe(

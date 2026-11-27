@@ -1,10 +1,13 @@
 // Argument rules: what the product decides about one call of one tool, from its decoded arguments, as an Effect.
 
-import type { ConversationId, JsonObject } from "@effectified/pi-durable";
-import { Effect, Predicate, Schema } from "effect";
-import type { Grant } from "./grant.ts";
+import { Conversation, type JsonObject, ToolCallId, ToolName } from "@effectified/pi-durable";
+import { type Cause, Effect, Predicate, Schema } from "effect";
+import { Grant } from "./grant.ts";
 
-/** What a rule answers: the call goes on, does not run, or goes on with other arguments. */
+/**
+ * What a rule answers: the call goes on, does not run, or goes on with other arguments. Interfaces, not a Schema: a
+ * rewrite holds the tool's own parameters, whose type a Schema here cannot name. Choose with `Match.valueTags`.
+ */
 export type Outcome<A> = Allow | Block | Rewrite<A>;
 
 /** The call goes on to the next rule, and runs when none stops it. */
@@ -41,32 +44,35 @@ export function rewrite<A>(args: A): Outcome<A> {
 export type Arguments = { readonly [key: string]: unknown };
 
 /** The call a rule decides about, besides its arguments. */
-export interface Call {
+export const Call = Schema.Struct({
 	/** The tool's name. */
-	readonly name: string;
-	readonly conversationId: ConversationId;
+	name: ToolName,
+	conversationId: Conversation.Id,
 	/** The id the model gave the call; a nested call's is `<caller's id>/<key>`. */
-	readonly callId: string;
+	callId: ToolCallId,
 	/** Whether another tool made the call (`executeTool`), not the model. */
-	readonly nested: boolean;
+	nested: Schema.Boolean,
 	/** The grant that holds for the conversation. */
-	readonly grant: Grant;
-}
+	grant: Grant,
+});
 
-/** A rule made by `make`: what a guard runs before a call of `tool`. */
-export interface Rule<R> {
+/** The call a rule decides about, besides its arguments. */
+export type Call = typeof Call.Type;
+
+/** A rule made by `make`: what a guard runs before a call of `tool`. Its failure `E` blocks the call. */
+export interface Rule<R, E = unknown> {
 	/** Published with a refusal of this rule. */
 	readonly name: string;
 	/** The name of the tool whose calls it decides about. */
-	readonly tool: string;
-	/** The rule over the arguments as Pi holds them, JSON. Its failure blocks the call. */
-	readonly run: (args: Arguments, call: Call) => Effect.Effect<Outcome<JsonObject>, unknown, R>;
+	readonly tool: ToolName;
+	/** The rule over the arguments as Pi holds them, JSON. */
+	readonly run: (args: Arguments, call: Call) => Effect.Effect<Outcome<JsonObject>, E, R>;
 }
 
-/** Any rule, whatever it needs. */
+/** Any rule, whatever it needs and fails with. */
 export interface Any {
 	readonly name: string;
-	readonly tool: string;
+	readonly tool: ToolName;
 	readonly run: (args: Arguments, call: Call) => Effect.Effect<Outcome<JsonObject>, unknown, unknown>;
 }
 
@@ -78,38 +84,34 @@ export type Services<T> = T extends {
 	: never;
 
 /**
- * Defines a rule for the calls of `tool`. `check` gets the arguments decoded by the tool's `parameters`, as its
- * handler would, and answers `allow`, `block(reason)` or `rewrite(arguments)`. A guard fails closed: when `check`
- * fails, with a failure or a defect, or the arguments do not decode, the call is blocked. Rules of one tool run in
- * the order they were given to the guard. Pi asks again on every wake of a parked call, so keep what `check` does
- * outside idempotent.
+ * Defines a rule for the calls of `tool`, a `Tool` or anything with its `name` and `parameters`. `check` gets the
+ * arguments decoded by the tool's `parameters`, as its handler would, and answers `allow`, `block(reason)` or
+ * `rewrite(arguments)`. A guard fails closed: when `check` fails, with a failure or a defect, or the arguments do not
+ * decode, the call is blocked. Rules of one tool run in the order they were given to the guard. Pi asks again on every
+ * wake of a parked call, so keep what `check` does outside idempotent. Each run is a span `Rule.run` that names the
+ * rule and the tool.
  */
 export function make<P extends Schema.Constraint, E, R>(
 	name: string,
-	tool: { readonly name: string; readonly parameters: P },
+	tool: { readonly name: ToolName; readonly parameters: P },
 	check: (params: P["Type"], call: Call) => Effect.Effect<Outcome<P["Type"]>, E, R>,
-): Rule<R | P["DecodingServices"] | P["EncodingServices"]> {
+): Rule<R | P["DecodingServices"] | P["EncodingServices"], E | Schema.SchemaError | Cause.NoSuchElementError> {
 	const codec = Schema.toCodecJson(tool.parameters);
 	// As the tool's handler reads them: every issue, and no property the schema does not know.
 	const decode = Schema.decodeUnknownEffect(codec, { errors: "all", onExcessProperty: "error" });
 	const encode = Schema.encodeEffect(codec, { errors: "all" });
-	return {
-		name,
-		tool: tool.name,
-		run: (args, call) =>
-			Effect.flatMap(decode(args), (params) =>
-				Effect.flatMap(
-					Effect.suspend(() => check(params, call)),
-					(outcome): Effect.Effect<Outcome<JsonObject>, unknown, P["EncodingServices"]> =>
-						outcome._tag === "Rewrite"
-							? Effect.map(Effect.filterOrFail(encode(outcome.arguments), isJsonObject), rewrite)
-							: Effect.succeed(outcome),
-				),
-			),
-	};
+	const run = Effect.fn("Rule.run")(function* (args: Arguments, call: Call) {
+		yield* Effect.annotateCurrentSpan({ rule: name, tool: tool.name });
+		const params = yield* decode(args);
+		const outcome = yield* check(params, call);
+		if (outcome._tag !== "Rewrite") return outcome;
+		const encoded = yield* Effect.filterOrFail(encode(outcome.arguments), isJsonObject);
+		return rewrite(encoded);
+	});
+	return { name, tool: tool.name, run };
 }
 
-/** Whether encoded arguments are what Pi takes: a JSON object. A decode boundary: Effect types the JSON as unknown. */
-function isJsonObject(encoded: unknown): encoded is JsonObject {
-	return Predicate.isObject(encoded) && !Array.isArray(encoded);
+/** Whether encoded arguments are what Pi takes: a JSON object. A decode boundary: Effect types the JSON as `Json`. */
+function isJsonObject(encoded: Schema.Json): encoded is JsonObject {
+	return Predicate.isObject(encoded);
 }

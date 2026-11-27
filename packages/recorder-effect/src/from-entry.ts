@@ -10,10 +10,10 @@ import type {
 	Usage,
 	UserMessage,
 } from "@effectified/pi-ai";
-import { contentText } from "@effectified/pi-ai";
-import { type EntryRecord, type ToolDiagnostic, ToolResultEntry } from "@effectified/pi-durable";
-import { absurd } from "effect/Function";
-import type * as Records from "./record.ts";
+import { contentText, reported, ToolCallId } from "@effectified/pi-ai";
+import { type EntryRecord, type ToolDiagnostic, ToolName, ToolResultEntry } from "@effectified/pi-durable";
+import { Array as Arr, Match, Option, Schema, String as Str } from "effect";
+import * as Records from "./record.ts";
 
 /**
  * The records of one entry, in order. An entry with model messages gives the records of each message: none for a
@@ -23,8 +23,10 @@ import type * as Records from "./record.ts";
  */
 export function fromEntry(entry: EntryRecord): ReadonlyArray<Records.Record> {
 	const messages = entry.model ?? [];
-	if (messages.length > 0) return messages.flatMap((message, index) => fromMessage(entry, message, index));
-	return entry.kind.startsWith(PI_KINDS) ? [] : [stored(entry)];
+	if (Arr.isReadonlyArrayNonEmpty(messages)) {
+		return Arr.flatMap(messages, (message, index) => fromMessage(entry, message, index));
+	}
+	return Str.startsWith(PI_KINDS)(entry.kind) ? [] : [stored(entry)];
 }
 
 /** The prefix of the entry kinds Pi writes itself; `Entry.make` refuses it for every other writer. */
@@ -34,7 +36,7 @@ const PI_KINDS = "pi.";
 function stored(entry: EntryRecord): Records.Entry {
 	return {
 		_tag: "Entry",
-		id: `${entry.conversationId}:${entry.id}:entry`,
+		id: Records.Id.make(`${entry.conversationId}:${entry.id}:entry`),
 		conversation: entry.conversationId,
 		entry: entry.id,
 		kind: entry.kind,
@@ -45,30 +47,33 @@ function stored(entry: EntryRecord): Records.Entry {
 	};
 }
 
-/** The `time` an entry's data names, when it is a number. Stored data of any shape: a trust boundary. */
+/** What an entry's data may say of its time: a `time` field in epoch milliseconds, any finite number. */
+const Timed = Schema.Struct({ time: Schema.Finite });
+
+/** Stored data of any shape: a trust boundary, read through `Timed`. */
+const decodeTimed = Schema.decodeUnknownOption(Timed);
+
+/** The `time` an entry's data names, when it is a finite number of milliseconds. */
 function timeOf(data: EntryRecord["data"]): number | null {
-	if (typeof data !== "object" || data === null || Array.isArray(data)) return null;
-	const time = data.time;
-	return typeof time === "number" ? time : null;
+	return Option.getOrNull(Option.map(decodeTimed(data), ({ time }) => time));
 }
 
+/** The records of the message `index` of `entry`, by its role. */
 function fromMessage(entry: EntryRecord, message: Message, index: number): ReadonlyArray<Records.Record> {
-	switch (message.role) {
-		case "system":
-			return [];
-		case "user":
-			return [userMessage(entry, message, index)];
-		case "assistant":
-			return fromResponse(entry, message, index);
-		case "toolResult":
-			return [toolCallResult(entry, message, index)];
-	}
+	return Match.value(message).pipe(
+		Match.discriminatorsExhaustive("role")({
+			system: () => [],
+			user: (user) => [userMessage(entry, user, index)],
+			assistant: (response) => fromResponse(entry, response, index),
+			toolResult: (result) => [toolCallResult(entry, result, index)],
+		}),
+	);
 }
 
 /** What every record of the message `index` of `entry` starts with; `part` tells the message's records apart. */
 function committed(entry: EntryRecord, index: number, time: number, part: string) {
 	return {
-		id: `${entry.conversationId}:${entry.id}:${index}:${part}`,
+		id: Records.Id.make(`${entry.conversationId}:${entry.id}:${index}:${part}`),
 		conversation: entry.conversationId,
 		entry: entry.id,
 		time,
@@ -129,23 +134,25 @@ type Response = Recorded<AssistantMessage, typeof RESPONSE>;
 
 /** A model response: the call, its text when it has any, and the tool calls it asks for, in call order. */
 function fromResponse(entry: EntryRecord, message: Response, index: number): ReadonlyArray<Records.Record> {
-	const records: Array<Records.Record> = [modelCall(entry, message, index)];
 	const said = text(message.content);
-	if (said !== "") {
-		records.push({
-			_tag: "Message",
-			...committed(entry, index, message.timestamp, "message"),
-			role: "assistant",
-			entryKind: entry.kind,
-			text: said,
-			images: [],
-		});
-	}
-	const calls = message.content.flatMap((part) => (part.type === "toolCall" ? [part] : []));
-	for (const [call, part] of calls.entries()) {
-		records.push(toolCallRequested(committed(entry, index, message.timestamp, `call:${call}`), part));
-	}
-	return records;
+	const saying: ReadonlyArray<Records.Record> =
+		said === ""
+			? []
+			: [
+					{
+						_tag: "Message",
+						...committed(entry, index, message.timestamp, "message"),
+						role: "assistant",
+						entryKind: entry.kind,
+						text: said,
+						images: [],
+					},
+				];
+	const calls = Arr.filter(message.content, (part): part is ToolCall => part.type === "toolCall");
+	const requested = Arr.map(calls, (part, call) =>
+		toolCallRequested(committed(entry, index, message.timestamp, `call:${call}`), part),
+	);
+	return [modelCall(entry, message, index), ...saying, ...requested];
 }
 
 /**
@@ -169,8 +176,9 @@ function toolCallRequested(
 	return {
 		_tag: "ToolCallRequested",
 		...at,
-		callId: call.id,
-		name: call.name,
+		// pi-ai's ids and names are plain strings: branded where they enter a record.
+		callId: ToolCallId.make(call.id),
+		name: ToolName.make(call.name),
 		arguments: call.arguments,
 		argumentsError: call.argumentsError ?? null,
 	};
@@ -221,11 +229,11 @@ function toolCallResult(
 	return {
 		_tag: "ToolCallResult",
 		...committed(entry, index, message.timestamp, "result"),
-		callId: message.toolCallId,
-		name: message.toolName,
+		callId: ToolCallId.make(message.toolCallId),
+		name: ToolName.make(message.toolName),
 		isError: message.isError,
-		codes: diagnostics.flatMap((diagnostic) => (diagnostic.code === undefined ? [] : [diagnostic.code])),
-		diagnostics: diagnostics.map((diagnostic) => ({
+		codes: Arr.flatMap(diagnostics, (diagnostic) => (diagnostic.code === undefined ? [] : [diagnostic.code])),
+		diagnostics: Arr.map(diagnostics, (diagnostic) => ({
 			severity: diagnostic.severity,
 			code: diagnostic.code ?? null,
 			message: diagnostic.message,
@@ -241,23 +249,23 @@ function toolCallResult(
 
 function tokens(usage: Usage): Records.Usage {
 	return {
-		input: usage.input,
-		output: usage.output,
-		cacheRead: usage.cacheRead,
-		cacheWrite: usage.cacheWrite,
-		cacheWrite1h: usage.cacheWrite1h ?? null,
-		reasoning: usage.reasoning ?? null,
-		totalTokens: usage.totalTokens,
+		input: reported(usage.input),
+		output: reported(usage.output),
+		cacheRead: reported(usage.cacheRead),
+		cacheWrite: reported(usage.cacheWrite),
+		cacheWrite1h: usage.cacheWrite1h === undefined ? null : reported(usage.cacheWrite1h),
+		reasoning: usage.reasoning === undefined ? null : reported(usage.reasoning),
+		totalTokens: reported(usage.totalTokens),
 	};
 }
 
 function cost(usage: Usage): Records.Cost {
 	return {
-		input: usage.cost.input,
-		output: usage.cost.output,
-		cacheRead: usage.cost.cacheRead,
-		cacheWrite: usage.cost.cacheWrite,
-		total: usage.cost.total,
+		input: reported(usage.cost.input),
+		output: reported(usage.cost.output),
+		cacheRead: reported(usage.cost.cacheRead),
+		cacheWrite: reported(usage.cost.cacheWrite),
+		total: reported(usage.cost.total),
 		fromProvider: usage.cost.totalFromProvider === true,
 	};
 }
@@ -272,25 +280,20 @@ function text(parts: ReadonlyArray<Part>): string {
 
 /** The image parts of a content list. */
 function images(parts: ReadonlyArray<Part>): ReadonlyArray<Records.Image> {
-	return parts.flatMap((part) => {
-		const image = imageOf(part);
-		return image === undefined ? [] : [image];
-	});
+	return Arr.getSomes(Arr.map(parts, imageOf));
 }
 
 /**
  * The image a part is, if it is one. Every kind of part is decided here, so a kind pi-ai adds fails to compile until
  * it is: text goes into `text`, a tool call into its own record, and a response's thinking is not recorded.
  */
-function imageOf(part: Part): Records.Image | undefined {
-	switch (part.type) {
-		case "image":
-			return { mimeType: part.mimeType, data: part.data };
-		case "text":
-		case "toolCall":
-		case "thinking":
-			return undefined;
-		default:
-			return absurd(part);
-	}
+function imageOf(part: Part): Option.Option<Records.Image> {
+	return Match.value(part).pipe(
+		Match.discriminatorsExhaustive("type")({
+			image: (image) => Option.some({ mimeType: image.mimeType, data: image.data }),
+			text: () => Option.none(),
+			toolCall: () => Option.none(),
+			thinking: () => Option.none(),
+		}),
+	);
 }

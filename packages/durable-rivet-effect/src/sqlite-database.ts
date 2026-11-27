@@ -1,7 +1,7 @@
 // Chord's `SqliteDatabase` over a Rivet actor's raw database, so Pi's SQLite storage runs on the actor's SQLite.
 
 import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "@effectified/pi-chord/sqlite";
-import { Effect, Semaphore } from "effect";
+import { Effect, Schema, Semaphore } from "effect";
 import * as Refusal from "./refusal.ts";
 
 /**
@@ -55,7 +55,9 @@ export function make(
 	run: Run = Effect.runPromise,
 	queue: Semaphore.Semaphore = Semaphore.makeUnsafe(1),
 ): SqliteDatabase {
-	const inTurn = <T>(operation: Effect.Effect<T, unknown>): Promise<T> => run(queue.withPermits(1)(operation));
+	// The promise rejects with what Rivet rejected with, as Chord's contract has it: the callback's own error, for one.
+	const inTurn = <T>(operation: Effect.Effect<T, Rejected>): Promise<T> =>
+		run(Effect.catch(queue.withPermits(1)(operation), (rejected) => Effect.die(rejected.cause)));
 	const asked = <T>(operation: () => Promise<T>) => inTurn(Effect.retry(attempt(operation), HINTED));
 	const direct = executor(raw);
 	return {
@@ -83,12 +85,16 @@ export function make(
 }
 
 /** One request to Rivet. Uninterruptible: an interrupted operation waits for Rivet's answer before it ends. */
-function attempt<T>(operation: () => Promise<T>): Effect.Effect<T, unknown> {
-	// The caller sees what Rivet rejected with, as Chord's contract has it: the callback's own error, for one.
-	return Effect.uninterruptible(Effect.tryPromise({ try: operation, catch: (error) => error }));
+function attempt<T>(operation: () => Promise<T>): Effect.Effect<T, Rejected> {
+	return Effect.uninterruptible(Effect.tryPromise({ try: operation, catch: (cause) => Rejected.make({ cause }) }));
 }
 
-const HINTED = Refusal.honouringHint(Refusal.retryAfterMillis);
+/** What Rivet rejected an operation with, kept as it is until the operation's promise rejects with it. */
+class Rejected extends Schema.TaggedError<Rejected, { readonly brand: unique symbol }>()("Rejected", {
+	cause: Schema.Defect(),
+}) {}
+
+const HINTED = Refusal.honouringHint((rejected: Rejected) => Refusal.retryAfterMillis(rejected.cause));
 
 // Rivet groups a transaction's profile by a static name, and warns about one without.
 const COUNTED = { name: "pi-durable-counted" };
@@ -99,21 +105,21 @@ function executor(raw: RawDatabase): SqliteExecutor {
 	// A decode boundary: SQLite gives plain rows, and each caller names the shape of the rows its statement selects.
 	const all = <T extends object>(sql: string, params: SqliteValue[]) => raw.execute(sql, ...params) as Promise<T[]>;
 	return {
-		exec: async (sql) => {
-			await raw.execute(sql);
-		},
-		run: async (sql, ...params) => {
-			await raw.execute(sql, ...params);
-		},
+		exec: (sql) => raw.execute(sql).then(nothing),
+		run: (sql, ...params) => raw.execute(sql, ...params).then(nothing),
 		runCounted: (sql, ...params) => counted(raw, sql, params),
-		get: async <T extends object>(sql: string, ...params: SqliteValue[]) => (await all<T>(sql, params))[0],
+		get: <T extends object>(sql: string, ...params: SqliteValue[]): Promise<T | undefined> =>
+			all<T>(sql, params).then((rows) => rows[0]),
 		all: <T extends object>(sql: string, ...params: SqliteValue[]) => all<T>(sql, params),
 	};
 }
 
+const nothing = (): void => undefined;
+
 /** Runs the statement, then reads SQLite's `changes()`: the caller makes sure nothing runs between the two. */
-async function counted(raw: RawDatabase, sql: string, params: SqliteValue[]): Promise<number> {
-	await raw.execute(sql, ...params);
-	const rows = await raw.execute("SELECT changes() AS changes");
-	return Number(rows[0]?.changes);
+function counted(raw: RawDatabase, sql: string, params: SqliteValue[]): Promise<number> {
+	return raw
+		.execute(sql, ...params)
+		.then(() => raw.execute("SELECT changes() AS changes"))
+		.then((rows) => Number(rows[0]?.changes));
 }

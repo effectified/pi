@@ -2,12 +2,12 @@
 // published as they happen, kept in the results for good, counted from there and delivered to the sink.
 
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
-import { Extension, Tool } from "@effectified/pi-durable";
+import { Extension, Tool, ToolName } from "@effectified/pi-durable";
 import { answer, held, toolCall } from "@effectified/pi-durable/testing";
 import { DeniedTool, Guard, Refused } from "@effectified/pi-guard";
 import { Effect, Fiber, Layer, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { Composition, Threads } from "../src/index.ts";
+import { Composition, ThreadKey, Threads } from "../src/index.ts";
 import { committed, config, outside, ports, providers, reservations, run, shape, work } from "./world.ts";
 
 /** Runs `program` while it keeps the first `count` refusals the guard publishes. */
@@ -54,7 +54,7 @@ describe("the guard in the composition", () => {
 				Effect.gen(function* () {
 					const threads = yield* Threads.Threads;
 					const outcome = yield* threads.work(work("t1", "Write a note and delete record 42.", ["lookup"]));
-					return { outcome, conversation: (yield* threads.conversation("t1")).id };
+					return { outcome, conversation: (yield* threads.conversation(ThreadKey.make("t1"))).id };
 				}),
 			),
 		);
@@ -120,7 +120,9 @@ describe("the guard in the composition", () => {
 					yield* first.requested;
 					// Not through the guard: from the next request on Pi resolves the tool, and only the guard's hook
 					// stands before it.
-					yield* (yield* threads.conversation("t1")).configure({ tools: ["lookup", "write_note"] });
+					yield* (yield* threads.conversation(ThreadKey.make("t1"))).configure({
+						tools: [ToolName.make("lookup"), ToolName.make("write_note")],
+					});
 					yield* first.release;
 					return yield* Fiber.join(working);
 				}),

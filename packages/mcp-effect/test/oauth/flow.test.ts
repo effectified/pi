@@ -20,7 +20,7 @@ describe("the flow's requests", () => {
 	it("register, authorize with PKCE, exchange the code and refresh, each an Effect", async () => {
 		const seen = await runLive(
 			Effect.gen(function* () {
-				const server = yield* authorizationServer();
+				const server = yield* authorizationServer;
 				const metadata = yield* discoverAuthorizationServerMetadata(server.origin);
 				const client = yield* registerClient(server.origin, {
 					metadata,
@@ -62,7 +62,7 @@ describe("authorizeMcp", () => {
 	it("sends Pi's OAuth client to the browser, then exchanges the code it gets back", async () => {
 		const seen = await runLive(
 			Effect.gen(function* () {
-				const server = yield* authorizationServer();
+				const server = yield* authorizationServer;
 				const redirects: URL[] = [];
 				const provider = new McpOAuthProvider({
 					serverUrl: server.serverUrl,

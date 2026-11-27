@@ -9,13 +9,18 @@ import { Effect } from "effect";
 import { type CodingAgentFailure, fromPi } from "./errors.ts";
 
 /** The shell `bash` runs commands in, and its arguments: `customShellPath`, else the one Pi finds on the machine. */
-export function getShellConfig(
+// Written out: the declaration build cannot name Pi's `ShellConfig`, which its package does not export.
+export const getShellConfig: (
 	customShellPath?: string,
-): Effect.Effect<ReturnType<typeof piGetShellConfig>, CodingAgentFailure> {
-	return Effect.try({ try: () => piGetShellConfig(customShellPath), catch: fromPi });
-}
+) => Effect.Effect<ReturnType<typeof piGetShellConfig>, CodingAgentFailure> = Effect.fn("Shell.getShellConfig")(
+	(customShellPath?: string): Effect.Effect<ReturnType<typeof piGetShellConfig>, CodingAgentFailure> =>
+		Effect.try({ try: () => piGetShellConfig(customShellPath), catch: fromPi }),
+);
 
 /** The PowerShell `powershell` runs commands in, preferring PowerShell 7, and its arguments. */
-export function getPowerShellConfig(): Effect.Effect<ReturnType<typeof piGetPowerShellConfig>, CodingAgentFailure> {
-	return Effect.try({ try: () => piGetPowerShellConfig(), catch: fromPi });
-}
+export const getPowerShellConfig: Effect.Effect<
+	ReturnType<typeof piGetPowerShellConfig>,
+	CodingAgentFailure
+> = Effect.try({ try: () => piGetPowerShellConfig(), catch: fromPi }).pipe(
+	Effect.withSpan("Shell.getPowerShellConfig"),
+);

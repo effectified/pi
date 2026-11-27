@@ -39,7 +39,7 @@ describe("currentRunner", () => {
 
 	it("interrupts the Effect when Pi aborts the signal", async () => {
 		const run = await Effect.runPromise(currentRunner());
-		const interrupted = Effect.runSync(Deferred.make<void>());
+		const interrupted = Deferred.makeUnsafe<void>();
 		const controller = new AbortController();
 		const running = run(
 			Effect.onInterrupt(Effect.never, () => Deferred.succeed(interrupted, undefined)),

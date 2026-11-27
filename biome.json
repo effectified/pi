@@ -33,6 +33,7 @@
 			"packages/coding-agent/examples/**/*.ts",
 			"packages/agent/examples/**/*.ts",
 			"!**/node_modules/**/*",
+			"!packages/*-effect/**",
 			"!**/test-sessions.ts",
 			"!**/models.generated.ts",
 			"!**/*.models.ts",

@@ -1,7 +1,7 @@
 // Chord's async iterables (archives, JSONL) as Streams, and Streams as the iterables Chord reads.
 
 import type { Context } from "@earendil-works/chord/context";
-import { Effect, Option, Stream } from "effect";
+import { Effect, Option, Ref, Stream } from "effect";
 import { scoped } from "./chord-context.ts";
 
 /**
@@ -33,19 +33,34 @@ export function fromIterable<A, E>(
 /** A Stream handed to Chord as an iterable, and its own failure, kept apart from what Chord rejects with. */
 export interface Input<A, E> {
 	readonly iterable: AsyncIterable<A>;
-	/** The Stream's failure, once it failed: Chord rejects with it as it reads the iterable. */
-	readonly failure: () => Option.Option<E>;
+	/**
+	 * What a rejection of the Chord call that read `iterable` fails with: the Stream's own failure once it failed (Chord
+	 * rejects with it as it reads), else what `otherwise` makes of the rejection.
+	 */
+	readonly rejected: <F>(
+		otherwise: (thrown: unknown) => Effect.Effect<never, F>,
+	) => (thrown: unknown) => Effect.Effect<never, E | F>;
 }
 
 /** `stream` as an iterable Chord reads, run with the services of the calling fiber. */
-export function toIterable<A, E, R>(stream: Stream.Stream<A, E, R>): Effect.Effect<Input<A, E>, never, R> {
-	return Effect.map(Effect.context<R>(), (context) => {
-		let failure = Option.none<E>();
-		const tracked = Stream.tapError(stream, (error) =>
-			Effect.sync(() => {
-				failure = Option.some(error);
-			}),
-		);
-		return { iterable: Stream.toAsyncIterableWith(tracked, context), failure: () => failure };
-	});
-}
+export const toIterable = Effect.fnUntraced(function* <A, E, R>(
+	stream: Stream.Stream<A, E, R>,
+): Effect.fn.Return<Input<A, E>, never, R> {
+	const context = yield* Effect.context<R>();
+	const failure = yield* Ref.make(Option.none<E>());
+	const tracked = Stream.tapError(stream, (error) => Ref.set(failure, Option.some(error)));
+	const input: Input<A, E> = {
+		iterable: Stream.toAsyncIterableWith(tracked, context),
+		rejected:
+			<F>(otherwise: (thrown: unknown) => Effect.Effect<never, F>) =>
+			(thrown: unknown) =>
+				Effect.flatMap(
+					Ref.get(failure),
+					Option.match({
+						onNone: (): Effect.Effect<never, E | F> => otherwise(thrown),
+						onSome: Effect.fail,
+					}),
+				),
+	};
+	return input;
+});

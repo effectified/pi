@@ -1,6 +1,6 @@
 // Decoding tool arguments into a schema's type and encoding results back to JSON, with typed errors.
 
-import { Effect, Schema, SchemaIssue } from "effect";
+import { Array as Arr, Effect, Predicate, pipe, Schema, SchemaIssue, String as Str } from "effect";
 import { type Issue, SchemaDecodeError } from "./errors.ts";
 import type { ToJsonSchemaOptions } from "./json-schema.ts";
 
@@ -30,19 +30,26 @@ export function encode<S extends Schema.Constraint>(
 const formatIssues = SchemaIssue.makeFormatterStandardSchemaV1();
 
 function toDecodeError(error: Schema.SchemaError): SchemaDecodeError {
-	return new SchemaDecodeError({
-		issues: formatIssues(error.issue).issues.map(
-			(issue): Issue => ({ path: toJsonPointer(issue.path ?? []), message: issue.message }),
-		),
+	return SchemaDecodeError.make({
+		issues: Arr.map(formatIssues(error.issue).issues, (issue): Issue => ({
+			path: toJsonPointer(issue.path ?? []),
+			message: issue.message,
+		})),
 	});
 }
 
 /** A Standard Schema path as the JSON Pointer pi-schema reports (RFC 6901: `~` is `~0`, `/` is `~1`). */
 function toJsonPointer(path: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>): string {
-	return path
-		.map((segment) => {
-			const key = typeof segment === "object" ? segment.key : segment;
-			return `/${String(key).replaceAll("~", "~0").replaceAll("/", "~1")}`;
-		})
-		.join("");
+	return Arr.join(
+		Arr.map(path, (segment) => {
+			const key = Predicate.isObject(segment) ? segment.key : segment;
+			return `/${escapeToken(String(key))}`;
+		}),
+		"",
+	);
+}
+
+/** RFC 6901: `~` is `~0`, `/` is `~1`. */
+function escapeToken(key: string): string {
+	return pipe(key, Str.replaceAll("~", "~0"), Str.replaceAll("/", "~1"));
 }

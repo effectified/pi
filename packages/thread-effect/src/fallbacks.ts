@@ -1,7 +1,7 @@
 // Settling the attempts another route takes over: the router's settlement port, implemented with the budget's `Spend`.
 
-import { Spend } from "@effectified/pi-budget";
-import { AttemptSettlement } from "@effectified/pi-router";
+import { Spend, SpendKey } from "@effectified/pi-budget";
+import { AttemptSettlement, type RouteEvent } from "@effectified/pi-router";
 import { Effect, Layer } from "effect";
 
 /**
@@ -32,17 +32,18 @@ export const layer = Layer.effect(
 	AttemptSettlement,
 	Effect.gen(function* () {
 		const spend = yield* Spend;
-		return AttemptSettlement.of({
-			settle: (event) =>
-				spend.record({
-					key: `${event.requestId}#${event.attempt}`,
-					provider: event.route.provider,
-					model: event.route.model,
-					session: event.sessionId,
-					requestKey: event.requestKey,
-					usage: event.usage,
-					outcome: "failed",
-				}),
+		const settle = Effect.fn("Fallbacks.settle")(function* (event: RouteEvent) {
+			return yield* spend.record({
+				// The attempt's own name: the request id and the attempt number.
+				key: SpendKey.make(`${event.requestId}#${event.attempt}`),
+				provider: event.route.provider,
+				model: event.route.model,
+				session: event.sessionId,
+				requestKey: event.requestKey,
+				usage: event.usage,
+				outcome: "failed",
+			});
 		});
+		return AttemptSettlement.of({ settle });
 	}),
 );

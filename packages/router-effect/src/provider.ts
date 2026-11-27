@@ -12,21 +12,23 @@ import {
 	getSupportedThinkingLevels,
 	MODEL_THINKING_LEVELS,
 	type Model,
+	ModelId,
 	type Provider,
 	type ProviderAuth,
+	type ProviderId,
 	type ResponseEvent,
 	type SimpleStreamOptions,
 	type ThinkingLevelMap,
 	type TranscriptContext,
 } from "@effectified/pi-ai";
-import { Cause, Clock, Effect, Exit, FiberSet, Option, type Scope } from "effect";
+import { Array as Arr, Cause, Clock, Effect, Exit, FiberSet, Match, Option, Predicate, type Scope } from "effect";
 import type { RouterError } from "./errors.ts";
 import type { Alias, ValidRouteTable } from "./route-table.ts";
 
 /** What the provider is built from. */
 export interface ProviderOptions {
 	/** The provider id the alias models are looked up under. */
-	readonly id: string;
+	readonly id: ProviderId;
 	/** Display name. Default: `id`. */
 	readonly name?: string;
 	readonly table: ValidRouteTable;
@@ -35,7 +37,7 @@ export interface ProviderOptions {
 	 * of the response up to and including `done`; a failure is how the request ends in pi-ai's `error` event.
 	 */
 	readonly run: (
-		alias: string,
+		alias: ModelId,
 		transcript: TranscriptContext,
 		options: SimpleStreamOptions | undefined,
 		emit: (event: ResponseEvent) => Effect.Effect<void>,
@@ -53,48 +55,49 @@ const KEYLESS: ProviderAuth = { apiKey: { name: "Route table", resolve: () => Pr
  * is the typed error's text. An attempt that could not be settled ends it with that route's message under the typed
  * error's text.
  */
-export function make(options: ProviderOptions): Effect.Effect<Provider, never, Scope.Scope> {
-	return Effect.gen(function* () {
-		const clock = yield* Clock.Clock;
-		const runFork = yield* FiberSet.makeRuntime<never, AssistantMessage, RouterError>();
-		const request = (
-			model: Model<Api>,
-			transcript: TranscriptContext,
-			requestOptions?: SimpleStreamOptions,
-		): AssistantMessageEventStream => {
-			const events = createAssistantMessageEventStream();
-			let partial: AssistantMessage | undefined;
-			const emit = (event: ResponseEvent): Effect.Effect<void> =>
-				Effect.sync(() => {
-					if (event.type !== "done") partial = event.partial;
-					events.push(event);
-				});
-			// A fiber runs up to its first wait before it sees its signal, so a request that arrives aborted is
-			// interrupted here: none of it runs.
-			const run = requestOptions?.signal?.aborted
-				? Effect.interrupt
-				: options.run(model.id, transcript, requestOptions, emit);
-			// The observer also runs for a request that never started (a closed scope), so the pi-ai stream
-			// always ends.
-			runFork(run, { signal: requestOptions?.signal }).addObserver((exit) => {
-				if (Exit.isFailure(exit)) {
-					events.push(errorEvent(exit.cause, partial ?? blank(model, clock.currentTimeMillisUnsafe())));
-				}
-				events.end();
+export const make: (options: ProviderOptions) => Effect.Effect<Provider, never, Scope.Scope> = Effect.fn(
+	"RouterProvider.make",
+)(function* (options) {
+	const clock = yield* Clock.Clock;
+	const runFork = yield* FiberSet.makeRuntime<never, AssistantMessage, RouterError>();
+	const request = (
+		model: Model<Api>,
+		transcript: TranscriptContext,
+		requestOptions?: SimpleStreamOptions,
+	): AssistantMessageEventStream => {
+		const events = createAssistantMessageEventStream();
+		let partial: AssistantMessage | undefined;
+		const emit = (event: ResponseEvent): Effect.Effect<void> =>
+			Effect.sync(() => {
+				if (event.type !== "done") partial = event.partial;
+				events.push(event);
 			});
-			return events;
-		};
-		return createProvider({
-			id: options.id,
-			name: options.name,
-			auth: KEYLESS,
-			models: options.table.aliases.map(({ entry, models }) => aliasModel(options.id, entry, models)),
-			// A route's model may have any API, so the options of one API cannot be passed on: both entry points
-			// take pi-ai's provider-neutral options.
-			api: { stream: request, streamSimple: request },
+		// A fiber runs up to its first wait before it sees its signal, so a request that arrives aborted is
+		// interrupted here: none of it runs. The alias enters from Pi here, as the id of the model it asked for.
+		const run =
+			requestOptions?.signal?.aborted === true
+				? Effect.interrupt
+				: options.run(ModelId.make(model.id), transcript, requestOptions, emit);
+		// The observer also runs for a request that never started (a closed scope), so the pi-ai stream
+		// always ends.
+		runFork(run, { signal: requestOptions?.signal }).addObserver((exit) => {
+			if (Exit.isFailure(exit)) {
+				events.push(errorEvent(exit.cause, partial ?? blank(model, clock.currentTimeMillisUnsafe())));
+			}
+			events.end();
 		});
+		return events;
+	};
+	return createProvider({
+		id: options.id,
+		name: options.name,
+		auth: KEYLESS,
+		models: Arr.map(options.table.aliases, ({ entry, models }) => aliasModel(options.id, entry, models)),
+		// A route's model may have any API, so the options of one API cannot be passed on: both entry points
+		// take pi-ai's provider-neutral options.
+		api: { stream: request, streamSimple: request },
 	});
-}
+});
 
 /** The `api` of every alias model. */
 const API = "pi-router";
@@ -137,7 +140,7 @@ type AliasField = {
  * smallest context window, offers only what each route reads and the thinking levels each route's model offers. The
  * catalog price is the first route's; the price a response is charged at is the route's, in its route event.
  */
-function aliasModel(provider: string, alias: Alias, routes: ReadonlyArray<Model<Api>>): Model<Api> {
+function aliasModel(provider: ProviderId, alias: Alias, routes: ReadonlyArray<Model<Api>>): Model<Api> {
 	const [first] = routes;
 	// Every field `ALIAS_FIELDS` sets, and no other.
 	const model: Required<Pick<Model<Api>, AliasField>> = {
@@ -147,12 +150,12 @@ function aliasModel(provider: string, alias: Alias, routes: ReadonlyArray<Model<
 		provider,
 		// pi-ai requires a base URL; nothing reads this one, each route's provider knows where to go.
 		baseUrl: `pi-router://${provider}`,
-		reasoning: routes.every((model) => model.reasoning),
+		reasoning: Arr.every(routes, (model) => model.reasoning),
 		thinkingLevelMap: thinkingLevels(routes),
-		input: first.input.filter((modality) => routes.every((model) => model.input.includes(modality))),
+		input: Arr.filter(first.input, (modality) => Arr.every(routes, (model) => Arr.contains(model.input, modality))),
 		cost: first.cost,
-		contextWindow: Math.min(...routes.map((model) => model.contextWindow)),
-		maxTokens: Math.min(...routes.map((model) => model.maxTokens)),
+		contextWindow: Math.min(...Arr.map(routes, (model) => model.contextWindow)),
+		maxTokens: Math.min(...Arr.map(routes, (model) => model.maxTokens)),
 	};
 	return model;
 }
@@ -165,10 +168,10 @@ function aliasModel(provider: string, alias: Alias, routes: ReadonlyArray<Model<
  * smallest context window. The names are never sent: a route's request maps the level with the route's own model.
  */
 function thinkingLevels(routes: ReadonlyArray<Model<Api>>): ThinkingLevelMap {
-	const offered = routes.map((model) => getSupportedThinkingLevels(model));
+	const offered = Arr.map(routes, (model) => getSupportedThinkingLevels(model));
 	const levels: ThinkingLevelMap = {};
 	for (const level of MODEL_THINKING_LEVELS) {
-		levels[level] = offered.every((supported) => supported.includes(level)) ? level : null;
+		levels[level] = Arr.every(offered, (supported) => Arr.contains(supported, level)) ? level : null;
 	}
 	return levels;
 }
@@ -201,22 +204,28 @@ function errorEvent(
 	const failure = Cause.findErrorOption(cause);
 	if (Option.isNone(failure)) {
 		const defect = Cause.squash(cause);
-		return ended("error", defect instanceof Error ? defect.message : String(defect));
+		return ended("error", Predicate.isError(defect) ? defect.message : String(defect));
 	}
-	const error = failure.value;
-	// The route's own message goes to Pi unchanged, so Pi's retry and overflow rules read pi-ai's own text.
-	if (error._tag === "ModelRequestError") return { type: "error", reason: error.reason, error: error.response };
-	if (error._tag === "RoutesExhausted" && error.response !== undefined) {
-		return { type: "error", reason: "error", error: error.response };
-	}
-	if (error._tag === "AttemptUnsettled") {
+	// No route answered: the alias model's empty message, with the typed error's text.
+	const unanswered = (error: RouterError) => ended("error", error.message);
+	return Match.valueTags(failure.value, {
+		// The route's own message goes to Pi unchanged, so Pi's retry and overflow rules read pi-ai's own text.
+		ModelRequestError: (error) => ({ type: "error", reason: error.reason, error: error.response }) as const,
+		RoutesExhausted: (error) =>
+			error.response === undefined
+				? unanswered(error)
+				: ({ type: "error", reason: "error", error: error.response } as const),
 		// The attempt's own message, so what wraps the router settles its usage at its route's price; with the router's
 		// text, because the provider's was retryable and Pi must not send this request again.
-		return {
-			type: "error",
-			reason: "error",
-			error: { ...error.response, stopReason: "error", errorMessage: error.message },
-		};
-	}
-	return ended("error", error.message);
+		AttemptUnsettled: (error) =>
+			({
+				type: "error",
+				reason: "error",
+				error: { ...error.response, stopReason: "error", errorMessage: error.message },
+			}) as const,
+		UnknownAlias: unanswered,
+		InvalidConstraints: unanswered,
+		ConstraintsUnavailable: unanswered,
+		NoRouteAvailable: unanswered,
+	});
 }

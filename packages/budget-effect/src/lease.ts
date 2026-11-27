@@ -1,7 +1,10 @@
 // The lease port: the money a product reserves for each provider request and settles after it.
 
+import { ModelId, ProviderId, RequestKey, SessionId } from "@effectified/pi-ai";
+import { Conversation } from "@effectified/pi-durable";
 import { Context, type Effect, Schema } from "effect";
-import { TokenUsage } from "./price-table.ts";
+import { type Reservation, SpendKey } from "./ids.ts";
+import { Micros, TokenUsage } from "./price-table.ts";
 
 /** One provider request as the budget sees it: what it asks of which model, and for whom. Never its content. */
 export const BudgetRequest = Schema.Struct({
@@ -10,12 +13,12 @@ export const BudgetRequest = Schema.Struct({
 	 * `classifier` are pi-ai's one-shot requests.
 	 */
 	kind: Schema.Literals(["chat", "deferred", "images", "classifier"]),
-	provider: Schema.String,
-	model: Schema.String,
+	provider: ProviderId,
+	model: ModelId,
 	/** pi-ai's `sessionId` of the request: Pi Durable sends a conversation's provider session with each request. */
-	session: Schema.optional(Schema.String),
+	session: Schema.optional(SessionId),
 	/** The conversation the session belongs to, known when the conversation has a share (see `Shares`). */
-	conversation: Schema.optional(Schema.Number),
+	conversation: Schema.optional(Conversation.Id),
 	/**
 	 * The key of what a chat request with a session asks: a digest of the session and the whole context, which the
 	 * router's route events of the request carry too. Every send of one request has it, by this process or a later
@@ -25,12 +28,12 @@ export const BudgetRequest = Schema.Struct({
 	 * retry. Copies of a storage repeat it (the lease tells them apart by who asks). It is no charge's identity: every
 	 * send is billed. A spend recorded for a request's failed route attempt carries the request's key too.
 	 */
-	requestKey: Schema.optional(Schema.String),
+	requestKey: Schema.optional(RequestKey),
 	/**
 	 * The caller's key of a spend recorded through `Spend`; absent for a request of the budgeted `Models`. It is the
 	 * same when the same spend is told again, also by a later process, so a lease can refuse to charge it twice.
 	 */
-	key: Schema.optional(Schema.String),
+	key: Schema.optional(SpendKey),
 });
 
 /** One provider request as the budget sees it. */
@@ -50,7 +53,7 @@ export const Settlement = Schema.Struct({
 	/** What the provider reported, also for a failed or aborted request; zeros when it reported nothing. */
 	usage: TokenUsage,
 	/** `usage` at the price table, in micro units of its currency. */
-	cost: Schema.BigInt,
+	cost: Micros,
 	outcome: Outcome,
 });
 
@@ -61,7 +64,7 @@ export type Settlement = typeof Settlement.Type;
  * The lease no longer covers a request: it is gone, it expired, or it is out of money. `reason` is the product's own
  * label for which.
  */
-export class LeaseFenced extends Schema.TaggedError<LeaseFenced>()("LeaseFenced", {
+export class LeaseFenced extends Schema.TaggedError<LeaseFenced, { readonly brand: unique symbol }>()("LeaseFenced", {
 	reason: Schema.String,
 }) {
 	override get message(): string {
@@ -76,13 +79,13 @@ export interface LeaseService {
 	 * `LeaseFenced`: the request is then not sent. It runs uninterruptibly, so that a reservation made is never lost:
 	 * keep it short, or give it a timeout of its own.
 	 */
-	readonly reserve: (estimate: bigint, request: BudgetRequest) => Effect.Effect<string, LeaseFenced>;
+	readonly reserve: (estimate: bigint, request: BudgetRequest) => Effect.Effect<Reservation, LeaseFenced>;
 	/**
 	 * Replaces the reservation by what the request really cost. Called exactly once for every token `reserve` gave,
 	 * however the request ended, and uninterruptibly.
 	 */
-	readonly settle: (reservation: string, settlement: Settlement) => Effect.Effect<void>;
+	readonly settle: (reservation: Reservation, settlement: Settlement) => Effect.Effect<void>;
 }
 
 /** The lease every provider request of a budget draws on. The product provides it. */
-export class Lease extends Context.Service<Lease, LeaseService>()("@effectified/pi-budget/Lease") {}
+export class Lease extends Context.Service<Lease, LeaseService>()("@effectified/pi-budget/lease") {}

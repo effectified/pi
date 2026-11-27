@@ -14,7 +14,8 @@ import {
 	type Store,
 	type StoreOptions,
 } from "@earendil-works/chord";
-import { Effect, Option, Queue, type Scope, Stream } from "effect";
+import { Effect, Queue, type Scope, Stream } from "effect";
+import { dual } from "effect/Function";
 import { attempt, rejection, storeRejection } from "./call.ts";
 import type { ChordCallError, SqliteError } from "./errors.ts";
 import { fromIterable, toIterable } from "./iterable.ts";
@@ -60,11 +61,7 @@ export function importArchive<E, R>(
 ): Effect.Effect<Store, StoreError | E, Scope.Scope | R> {
 	return Effect.flatMap(toIterable(parts), (input) =>
 		Effect.acquireRelease(
-			attempt(
-				(context) => piImportStore(backend, input.iterable, context, options),
-				(thrown): Effect.Effect<never, StoreError | E> =>
-					Option.match(input.failure(), { onNone: () => storeRejection(thrown), onSome: Effect.fail }),
-			),
+			attempt((context) => piImportStore(backend, input.iterable, context, options), input.rejected(storeRejection)),
 			close,
 		),
 	);
@@ -111,11 +108,14 @@ export function archive(store: Store): Stream.Stream<ArchivePart, StoreError> {
 
 /**
  * Chord's `exportHostData`: the records and rows of `store` belonging to `address` as a host's data archive, holding
- * the commit queue as `archive` does.
+ * the commit queue as `archive` does. Data-first or data-last (`pipe(store, Store.hostArchive(address))`).
  */
-export function hostArchive(store: Store, address: Address): Stream.Stream<ArchivePart, StoreError> {
-	return fromIterable((context) => piExportHostData(store, address, context), storeRejection);
-}
+export const hostArchive: {
+	(address: Address): (store: Store) => Stream.Stream<ArchivePart, StoreError>;
+	(store: Store, address: Address): Stream.Stream<ArchivePart, StoreError>;
+} = dual(2, (store: Store, address: Address): Stream.Stream<ArchivePart, StoreError> =>
+	fromIterable((context) => piExportHostData(store, address, context), storeRejection),
+);
 
 /**
  * Chord's `readHostArchive`: reads and checks a host's data archive (a trust boundary), every part in archive order.
@@ -125,11 +125,7 @@ export function readHostArchive<E, R>(
 	parts: Stream.Stream<unknown, E, R>,
 ): Effect.Effect<HostArchive, ChordCallError | E, R> {
 	return Effect.flatMap(toIterable(parts), (input) =>
-		attempt(
-			(context) => piReadHostArchive(input.iterable, context),
-			(thrown): Effect.Effect<never, ChordCallError | E> =>
-				Option.match(input.failure(), { onNone: () => rejection(thrown), onSome: Effect.fail }),
-		),
+		attempt((context) => piReadHostArchive(input.iterable, context), input.rejected(rejection)),
 	);
 }
 
@@ -137,11 +133,8 @@ export function readHostArchive<E, R>(
 export function encodeJsonl<E, R>(parts: Stream.Stream<ArchivePart, E, R>): Stream.Stream<Uint8Array, E, R> {
 	return Stream.unwrap(
 		Effect.map(toIterable(parts), (input) =>
-			fromIterable(
-				() => piEncodeJsonl(input.iterable),
-				(thrown): Effect.Effect<never, E> =>
-					Option.match(input.failure(), { onNone: () => Effect.die(thrown), onSome: Effect.fail }),
-			),
+			// Chord's encoder throws only what it reads, the Stream's failure: anything else is a defect.
+			fromIterable(() => piEncodeJsonl(input.iterable), input.rejected(Effect.die)),
 		),
 	);
 }
@@ -155,11 +148,7 @@ export function decodeJsonl<E, R>(
 ): Stream.Stream<unknown, ChordCallError | E, R> {
 	return Stream.unwrap(
 		Effect.map(toIterable(bytes), (input) =>
-			fromIterable(
-				() => piDecodeJsonl(input.iterable),
-				(thrown): Effect.Effect<never, ChordCallError | E> =>
-					Option.match(input.failure(), { onNone: () => rejection(thrown), onSome: Effect.fail }),
-			),
+			fromIterable(() => piDecodeJsonl(input.iterable), input.rejected(rejection)),
 		),
 	);
 }

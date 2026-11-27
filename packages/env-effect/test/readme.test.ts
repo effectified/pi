@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { runLive } from "@effectified/pi-ai/testing";
 import { Effect, Fiber, Stream } from "effect";
 import { describe, expect, it } from "vitest";
+import { Env } from "../src/index.ts";
 import { Connection, HostKey, Local, Process, Remote, Ssh, Terminal } from "../src/node.ts";
 import { fakeSsh } from "./fake-ssh.ts";
 import { daemon, NO_DAEMON, tempDir } from "./fixtures.ts";
@@ -83,7 +84,7 @@ const trust = (target: Ssh.ConnectOptions) =>
 const remote = (target: Ssh.ConnectOptions, cwd: string) =>
 	Effect.gen(function* () {
 		const { connection, remote } = yield* Ssh.connect(target);
-		const env = yield* Remote.make({ connection, id: `pi-env:${target.hostKeyAlias}`, cwd });
+		const env = yield* Remote.make({ connection, id: Env.Id.make(`pi-env:${target.hostKeyAlias}`), cwd });
 		const { exitCode } = yield* env.exec("test -d .");
 		return { platform: remote.platform, exitCode };
 	});

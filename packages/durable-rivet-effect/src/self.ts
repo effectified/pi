@@ -15,40 +15,47 @@ export type Actions = Readonly<Record<string, Action.Any>>;
  * and `actions`. Inside an actor its own `Actor.Definition` is not a value, since the definition is made of the code
  * that runs here; the actions a plugin or a product defines beside it are.
  */
-export function definition<const A extends Actions>(
+export const definition: <const A extends Actions>(
 	actions: A,
-): Effect.Effect<Client.Target<string, A>, never, ActorInfo> {
-	return ActorInfo.use((info) => Effect.succeed({ name: info.name, actions }));
-}
+) => Effect.Effect<Client.Target<string, A>, never, ActorInfo> = Effect.fn("Self.definition")(function* <
+	const A extends Actions,
+>(actions: A) {
+	const info = yield* ActorInfo;
+	return { name: info.name, actions };
+});
 
 /** A handle of the actor this Effect runs in, for `Client.fork`, `Client.status` and the rest. */
-export function handle<const A extends Actions>(
+export const handle: <const A extends Actions>(
 	actions: A,
-): Effect.Effect<Client.Handle<Client.Target<string, A>>, never, ActorInfo> {
-	return ActorInfo.use((info) =>
-		Effect.succeed({ definition: { name: info.name, actions }, actorId: info.actorId, key: info.key }),
-	);
-}
+) => Effect.Effect<Client.Handle<Client.Target<string, A>>, never, ActorInfo> = Effect.fn("Self.handle")(function* <
+	const A extends Actions,
+>(actions: A) {
+	const info = yield* ActorInfo;
+	return { definition: { name: info.name, actions }, actorId: info.actorId, key: info.key };
+});
 
 /** The actor of this actor's definition under `key`, if there is one: `Client.find`. It never creates one. */
-export function find<const A extends Actions>(
+export const find: <const A extends Actions>(
 	actions: A,
 	key: Client.Key,
-): Effect.Effect<
+) => Effect.Effect<
 	Option.Option<Client.Handle<Client.Target<string, A>>>,
 	EngineUnavailable,
 	ActorInfo | Client.RivetClient
-> {
-	return Effect.flatMap(definition(actions), (own) => Client.find(own, key));
-}
+> = Effect.fn("Self.find")(function* <const A extends Actions>(actions: A, key: Client.Key) {
+	const own = yield* definition(actions);
+	return yield* Client.find(own, key);
+});
 
 /** The actor of this actor's definition under `key`, created empty when there is none: `Client.getOrCreate`. */
-export function getOrCreate<const A extends Actions>(
+export const getOrCreate: <const A extends Actions>(
 	actions: A,
 	key: Client.Key,
-): Effect.Effect<Client.Handle<Client.Target<string, A>>, EngineUnavailable, ActorInfo | Client.RivetClient> {
-	return Effect.flatMap(definition(actions), (own) => Client.getOrCreate(own, key));
-}
+) => Effect.Effect<Client.Handle<Client.Target<string, A>>, EngineUnavailable, ActorInfo | Client.RivetClient> =
+	Effect.fn("Self.getOrCreate")(function* <const A extends Actions>(actions: A, key: Client.Key) {
+		const own = yield* definition(actions);
+		return yield* Client.getOrCreate(own, key);
+	});
 
 /**
  * The `RivetClient` of an actor: Rivet's own client of the engine the actor runs on, made by rivetkit from the

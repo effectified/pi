@@ -11,14 +11,16 @@
 import type { FauxResponseFactory } from "@earendil-works/pi-ai";
 import * as Approvals from "@effectified/pi-approvals";
 import { LeaseFenced } from "@effectified/pi-budget";
+import { ToolName } from "@effectified/pi-durable";
 import { answer, held, toolCall } from "@effectified/pi-durable/testing";
 import { Client, NotIdle } from "@effectified/pi-durable-rivet";
 import type * as LocalEngine from "@effectified/pi-durable-rivet/node";
 import * as Testing from "@effectified/pi-durable-rivet/testing";
+import * as Swarm from "@effectified/pi-swarm";
 import * as Rivet from "@effectified/pi-swarm/rivet";
 import { Context, Effect, Exit, Layer, Option, Queue, Schedule, Scope } from "effect";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { ReviewerSharesFamily, ThreadNotFound } from "../src/index.ts";
+import { RequestKey, ReviewerSharesFamily, ThreadKey, ThreadNotFound } from "../src/index.ts";
 import { OperationFailed, Remote, SwarmId } from "../src/rivet.ts";
 import {
 	Cloned,
@@ -60,9 +62,9 @@ import {
 const CLEAN = answer('{"findings":[]}');
 
 const JOBS = [
-	{ key: "rust", input: { topic: "Rust" } },
-	{ key: "go", input: { topic: "Go" } },
-	{ key: "zig", input: { topic: "Zig" } },
+	{ key: Swarm.JobKey.make("rust"), input: { topic: "Rust" } },
+	{ key: Swarm.JobKey.make("go"), input: { topic: "Go" } },
+	{ key: Swarm.JobKey.make("zig"), input: { topic: "Zig" } },
 ];
 
 /**
@@ -91,7 +93,7 @@ export function registerRivetSuite(runtime: string, engines: typeof LocalEngine)
 type Handle = Client.Handle<typeof Thread>;
 
 function suite(runtime: string, engines: typeof LocalEngine): void {
-	const scope = Effect.runSync(Scope.make());
+	const scope = Scope.makeUnsafe();
 	let client: Context.Context<Client.RivetClient>;
 	let remote: Remote.Service;
 	let cloned: Remote.Service;
@@ -141,10 +143,10 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		run(Effect.map(Client.find(Thread, [thread]), Option.getOrThrow));
 
 	/** The thread's outcome, once it has one. */
-	const ended = (thread: string) => run(remote.threads.ended(thread, POLL));
+	const ended = (thread: string) => run(remote.threads.ended(ThreadKey.make(thread), POLL));
 
 	/** The swarm's typed result, once its coordinator ended: found by the swarm id alone, which names its thread. */
-	const fannedIn = (swarmId: string) =>
+	const fannedIn = (swarmId: Swarm.SwarmId) =>
 		run(
 			Effect.map(
 				Effect.repeat(remote.swarms.result(Covers, swarmId), { until: Option.isSome, schedule: POLL }),
@@ -154,7 +156,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 
 	/** The actor that is the fork of a job, if the engine has one. */
 	const forkOf = (thread: string, swarmId: string, jobKey: string) =>
-		run(Client.find(Thread, Rivet.forkKey([thread], swarmId, jobKey)));
+		run(Client.find(Thread, Rivet.forkKey([thread], Swarm.SwarmId.make(swarmId), Swarm.JobKey.make(jobKey))));
 
 	const eventsOf = (handle: Handle): ReadonlyArray<Testing.Lifecycle> => Effect.runSync(Testing.lifecycle(handle));
 
@@ -200,11 +202,11 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		]);
 		labs.reviewer.setResponses([CLEAN]);
 		const input = work("basic", "What is record 42 called?");
-		const before = await run(remote.threads.probe("basic"));
-		const started = await run(remote.threads.start(input, "job-1"));
+		const before = await run(remote.threads.probe(ThreadKey.make("basic")));
+		const started = await run(remote.threads.start(input, RequestKey.make("job-1")));
 		// The same key again is the same work, and so is any key once the thread exists: the first one stands.
-		const again = await run(remote.threads.start(input, "job-1"));
-		const other = await run(remote.threads.start({ ...input, task: "Something else." }, "job-2"));
+		const again = await run(remote.threads.start(input, RequestKey.make("job-1")));
+		const other = await run(remote.threads.start({ ...input, task: "Something else." }, RequestKey.make("job-2")));
 		const outcome = await ended("basic");
 		const handle = await actorOf("basic");
 		expect(before).toEqual({ alive: false });
@@ -218,8 +220,8 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 			verdict: { pass: 1, corrections: 0, findings: [], outcome: { _tag: "Passed" } },
 		});
 		// The outcome is read from the actor's storage: a second read says the same, to the last field.
-		expect(await run(remote.threads.outcome("basic"))).toEqual(Option.some(outcome));
-		expect(await run(remote.threads.probe("basic"))).toEqual({ alive: false });
+		expect(await run(remote.threads.outcome(ThreadKey.make("basic")))).toEqual(Option.some(outcome));
+		expect(await run(remote.threads.probe(ThreadKey.make("basic")))).toEqual({ alive: false });
 		// One piece of work: two author requests, one review, the tool once.
 		expect([labs.author.state.callCount, labs.backup.state.callCount, labs.reviewer.state.callCount]).toEqual([
 			2, 0, 1,
@@ -268,7 +270,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		]);
 		expect(events[1]).toMatchObject({ _tag: "Reached", outcome });
 		expect(new Set(state.told.by)).toEqual(new Set([handle.actorId]));
-		const recorded = committed(state).map((record) => record.id);
+		const recorded: ReadonlyArray<string> = committed(state).map((record) => record.id);
 		expect(state.told.recorded[1]?.filter((id) => recorded.includes(id))).toEqual(recorded);
 		expect(state.told.calls).toBe(2);
 	}, 60_000);
@@ -277,7 +279,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		const turn = held(answer("It is 42."));
 		labs.author.setResponses([turn.response]);
 		labs.reviewer.setResponses([CLEAN]);
-		await run(remote.threads.start(work("refused", "What is six times seven?"), "job-1"));
+		await run(remote.threads.start(work("refused", "What is six times seven?"), RequestKey.make("job-1")));
 		await Effect.runPromise(turn.requested);
 		// `Started` is in the sink. The sink refuses its next call, which is the outcome's.
 		await Effect.runPromise(toldEvents(state, (events) => events.length === 1));
@@ -318,7 +320,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		expect(offered).toEqual([events[1], events[1]]);
 		expect(state.told.calls).toBe(3);
 		// It is the outcome the client reads, and once it is delivered nothing is live: the actor may sleep for good.
-		expect(await run(remote.threads.outcome("refused"))).toEqual(
+		expect(await run(remote.threads.outcome(ThreadKey.make("refused")))).toEqual(
 			Option.some(offered[0]?._tag === "Reached" ? offered[0].outcome : undefined),
 		);
 		const idle = await run(
@@ -335,21 +337,25 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		const result = await run(
 			Effect.gen(function* () {
 				return {
-					probe: yield* remote.threads.probe("nobody"),
-					outcome: yield* Effect.flip(remote.threads.outcome("nobody")),
-					resume: yield* Effect.flip(remote.threads.resume("nobody", "job-1")),
-					cancel: yield* Effect.flip(remote.threads.cancel("nobody")),
+					probe: yield* remote.threads.probe(ThreadKey.make("nobody")),
+					outcome: yield* Effect.flip(remote.threads.outcome(ThreadKey.make("nobody"))),
+					resume: yield* Effect.flip(remote.threads.resume(ThreadKey.make("nobody"), RequestKey.make("job-1"))),
+					cancel: yield* Effect.flip(remote.threads.cancel(ThreadKey.make("nobody"))),
 					// With the thread given, a swarm id is taken as it is.
-					swarm: yield* Effect.flip(remote.swarms.probe("nobody", "covers-0")),
-					named: yield* Effect.flip(remote.swarms.probe("nobody/covers-0")),
+					swarm: yield* Effect.flip(remote.swarms.probe(ThreadKey.make("nobody"), Swarm.SwarmId.make("covers-0"))),
+					named: yield* Effect.flip(remote.swarms.probe(Swarm.SwarmId.make("nobody/covers-0"))),
 					fork: yield* Effect.flip(
-						remote.forks.destroy({ thread: "nobody", swarmId: "covers-0", jobKey: "rust" }),
+						remote.forks.destroy({
+							thread: ThreadKey.make("nobody"),
+							swarmId: Swarm.SwarmId.make("covers-0"),
+							jobKey: Swarm.JobKey.make("rust"),
+						}),
 					),
 					actor: yield* Client.find(Thread, ["nobody"]),
 				};
 			}),
 		);
-		const missing = new ThreadNotFound({ thread: "nobody" });
+		const missing = new ThreadNotFound({ thread: ThreadKey.make("nobody") });
 		expect(result).toEqual({
 			probe: { alive: false },
 			outcome: missing,
@@ -363,9 +369,11 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		// An actor that exists and holds no such swarm fails the operation, with the swarm's own word for it.
 		labs.author.setResponses([answer("Hi.")]);
 		labs.reviewer.setResponses([CLEAN]);
-		await run(remote.threads.start(work("lonely", "Say hi.", []), "job-1"));
+		await run(remote.threads.start(work("lonely", "Say hi.", []), RequestKey.make("job-1")));
 		await ended("lonely");
-		const failed = await run(Effect.flip(remote.swarms.probe("lonely", "covers-0")));
+		const failed = await run(
+			Effect.flip(remote.swarms.probe(ThreadKey.make("lonely"), Swarm.SwarmId.make("covers-0"))),
+		);
 		expect(failed).toEqual(
 			new OperationFailed({ operation: "probeSwarm", reason: "SwarmNotFound", message: "No swarm covers-0" }),
 		);
@@ -373,17 +381,19 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 
 	it("does not start a thread whose reviewer is of its author's family: the refusal crosses with its routes", async () => {
 		labs.author.setResponses([answer("It is 42.")]);
-		const refused = await run(Effect.flip(cloned.threads.start(work("family", "What is six times seven?"), "job-1")));
+		const refused = await run(
+			Effect.flip(cloned.threads.start(work("family", "What is six times seven?"), RequestKey.make("job-1"))),
+		);
 		expect(refused).toEqual(
 			new ReviewerSharesFamily({
-				thread: "family",
+				thread: ThreadKey.make("family"),
 				conflicts: [
 					{ family: "alpha", author: WRITER, reviewer: WRITER },
 					{ family: "alpha", author: BACKUP, reviewer: WRITER },
 				],
 			}),
 		);
-		expect(await run(cloned.threads.probe("family"))).toEqual({ alive: false });
+		expect(await run(cloned.threads.probe(ThreadKey.make("family")))).toEqual({ alive: false });
 		expect(labs.author.state.callCount).toBe(0);
 		expect(state.lease.steps).toEqual([]);
 	}, 60_000);
@@ -391,7 +401,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 	it("parks a call that needs approval, sleeps, lists the request, and wakes for a decision through the client", async () => {
 		labs.author.setResponses([toolCall("transfer", { to: "bob", amount: 250 }, { id: "call-1" }), answer("Sent.")]);
 		labs.reviewer.setResponses([CLEAN]);
-		await run(remote.threads.start(work("approval", "Send bob 250.", ["transfer"]), "job-1"));
+		await run(remote.threads.start(work("approval", "Send bob 250.", ["transfer"]), RequestKey.make("job-1")));
 		const request = await Effect.runPromise(Queue.take(state.inbox));
 		const handle = await actorOf("approval");
 		// Parked: live work that cannot run, so the host's wake keeper lets the actor sleep. Rivet's forced sleep
@@ -401,25 +411,25 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		await seen(handle, "sleep");
 		expect(eventsOf(handle)).toEqual(["wake", "sleep"]);
 		// The request is listed from the actor's storage, by an actor that just woke, and the thread has no outcome.
-		const pending = await run(remote.threads.pending("approval"));
+		const pending = await run(remote.threads.pending(ThreadKey.make("approval")));
 		expect(pending).toEqual([request]);
 		expect(request).toMatchObject({ tool: "transfer", callId: "call-1", arguments: { amount: 250, to: "bob" } });
-		expect(await run(remote.threads.probe("approval"))).toEqual({ alive: true });
-		expect(await run(remote.threads.outcome("approval"))).toEqual(Option.none());
+		expect(await run(remote.threads.probe(ThreadKey.make("approval")))).toEqual({ alive: true });
+		expect(await run(remote.threads.outcome(ThreadKey.make("approval")))).toEqual(Option.none());
 		expect(state.ran).toEqual({});
 		// Asleep again, with no caller: the decision is what wakes the actor.
 		await parked(handle);
 		await run(Testing.sleep(handle));
 		await seen(handle, "sleep", 2);
 		const decision = await Effect.runPromise(Approvals.approve(request, "user:ada"));
-		expect(await run(remote.threads.decide("approval", request, decision))).toBe("delivered");
+		expect(await run(remote.threads.decide(ThreadKey.make("approval"), request, decision))).toBe("delivered");
 		const outcome = await ended("approval");
 		expect(eventsOf(handle)).toEqual(["wake", "sleep", "wake", "sleep", "wake"]);
 		expect(outcome).toMatchObject({ _tag: "Reviewed", counts: { turns: 2, toolCalls: 1, refusedToolCalls: 0 } });
 		expect(state.ran).toEqual({ transfer: 1 });
 		// A second decision reaches nothing, and nothing is pending any more.
-		expect(await run(remote.threads.decide("approval", request, decision))).toBe("gone");
-		expect(await run(remote.threads.pending("approval"))).toEqual([]);
+		expect(await run(remote.threads.decide(ThreadKey.make("approval"), request, decision))).toBe("gone");
+		expect(await run(remote.threads.pending(ThreadKey.make("approval")))).toEqual([]);
 		// No model request was repeated; the request was published again at each wake, under the same id.
 		expect([labs.author.state.callCount, labs.reviewer.state.callCount]).toEqual([2, 1]);
 		expect(reservations(state).map(({ settlements }) => settlements.map((settled) => settled.outcome))).toEqual([
@@ -451,7 +461,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		};
 		labs.author.setResponses(Array.from({ length: 4 }, () => author));
 		labs.reviewer.setResponses([CLEAN]);
-		await run(remote.threads.start(work("sleeper", "What is record 42 called?"), "job-1"));
+		await run(remote.threads.start(work("sleeper", "What is record 42 called?"), RequestKey.make("job-1")));
 		await reached.promise;
 		const handle = await actorOf("sleeper");
 		// While the thread works, the host's wake keeper holds the actor awake and keeps one recovery wake scheduled.
@@ -493,7 +503,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 			answer("Record 42 is titled Answer."),
 		]);
 		labs.reviewer.setResponses([CLEAN]);
-		await run(remote.threads.start(work("fenced", "What is record 42 called?"), "job-1"));
+		await run(remote.threads.start(work("fenced", "What is record 42 called?"), RequestKey.make("job-1")));
 		const stopped = await ended("fenced");
 		const first = reservations(state)[0]?.settlements[0]?.cost ?? 0n;
 		// The refusal crosses the actor boundary typed, with the product's own reason.
@@ -502,18 +512,18 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 			refusal: new LeaseFenced({ reason: "expired" }),
 			counts: { turns: 1, toolCalls: 1, refusedToolCalls: 0, settledMicros: first },
 		});
-		expect(await run(remote.threads.probe("fenced"))).toEqual({ alive: false });
+		expect(await run(remote.threads.probe(ThreadKey.make("fenced")))).toEqual({ alive: false });
 		expect(state.lease.steps.map((step) => step.step)).toEqual(["reserve", "settle", "fenced"]);
 		// A resume while the lease is still fenced continues, and stops again without a request.
-		expect(await run(remote.threads.resume("fenced", "job-2"))).toBe("continued");
+		expect(await run(remote.threads.resume(ThreadKey.make("fenced"), RequestKey.make("job-2")))).toBe("continued");
 		expect(await ended("fenced")).toEqual(stopped);
 		expect(labs.author.state.callCount).toBe(1);
 		state.lease.fenced = undefined;
 		// The key that was used continues nothing: the same key is the same work. A new one does.
-		expect(await run(remote.threads.resume("fenced", "job-2"))).toBe("unchanged");
-		expect(await run(remote.threads.resume("fenced", "job-3"))).toBe("continued");
+		expect(await run(remote.threads.resume(ThreadKey.make("fenced"), RequestKey.make("job-2")))).toBe("unchanged");
+		expect(await run(remote.threads.resume(ThreadKey.make("fenced"), RequestKey.make("job-3")))).toBe("continued");
 		const finished = await run(
-			Effect.repeat(remote.threads.ended("fenced", POLL), {
+			Effect.repeat(remote.threads.ended(ThreadKey.make("fenced"), POLL), {
 				until: (outcome) => outcome._tag !== "BudgetStopped",
 				schedule: POLL,
 			}),
@@ -523,7 +533,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 			counts: { turns: 2, toolCalls: 1, refusedToolCalls: 0, settledMicros: told() },
 			verdict: { outcome: { _tag: "Passed" } },
 		});
-		expect(await run(remote.threads.resume("fenced", "job-4"))).toBe("unchanged");
+		expect(await run(remote.threads.resume(ThreadKey.make("fenced"), RequestKey.make("job-4")))).toBe("unchanged");
 		expect(state.ran).toEqual({ lookup: 1 });
 		expect([labs.author.state.callCount, labs.reviewer.state.callCount]).toEqual([2, 1]);
 		expect(state.lease.steps.map((step) => step.step)).toEqual([
@@ -541,19 +551,19 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 	it("is cancelled in the middle of a model request, and its probe says so before, during and after", async () => {
 		const turn = held(answer("Never said."));
 		labs.author.setResponses([turn.response]);
-		const before = await run(remote.threads.probe("cancelled"));
-		await run(remote.threads.start(work("cancelled", "Say hi."), "job-1"));
+		const before = await run(remote.threads.probe(ThreadKey.make("cancelled")));
+		await run(remote.threads.start(work("cancelled", "Say hi."), RequestKey.make("job-1")));
 		await Effect.runPromise(turn.requested);
 		const during = {
-			probe: await run(remote.threads.probe("cancelled")),
-			outcome: await run(remote.threads.outcome("cancelled")),
+			probe: await run(remote.threads.probe(ThreadKey.make("cancelled"))),
+			outcome: await run(remote.threads.outcome(ThreadKey.make("cancelled"))),
 		};
-		await run(remote.threads.cancel("cancelled"));
+		await run(remote.threads.cancel(ThreadKey.make("cancelled")));
 		const outcome = await ended("cancelled");
-		const after = await run(remote.threads.probe("cancelled"));
+		const after = await run(remote.threads.probe(ThreadKey.make("cancelled")));
 		// A second cancel, and a resume, change nothing: a cancelled thread is not continued.
-		await run(remote.threads.cancel("cancelled"));
-		expect(await run(remote.threads.resume("cancelled", "job-2"))).toBe("unchanged");
+		await run(remote.threads.cancel(ThreadKey.make("cancelled")));
+		expect(await run(remote.threads.resume(ThreadKey.make("cancelled"), RequestKey.make("job-2")))).toBe("unchanged");
 		expect(before).toEqual({ alive: false });
 		expect(during).toEqual({ probe: { alive: true }, outcome: Option.none() });
 		expect(outcome).toEqual({
@@ -573,37 +583,51 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		labs.author.setResponses(Array.from({ length: 4 }, () => scripted));
 		labs.reviewer.setResponses([CLEAN]);
 		// The thread holds two tools; the swarm's allowance names one of them and one the thread does not hold.
-		await run(remote.threads.start(work("swarm", "Read this record: ...", ["lookup", "transfer"]), "job-1"));
+		await run(
+			remote.threads.start(work("swarm", "Read this record: ...", ["lookup", "transfer"]), RequestKey.make("job-1")),
+		);
 		const primed = await ended("swarm");
 		const source = await actorOf("swarm");
 		const sourceRecords = deliveries().map(({ record }) => record.id);
 		// A swarm's id begins with its thread's key, so the id alone finds the actor its coordinator lives in.
-		const id = SwarmId.of("swarm", "covers-1");
+		const id = SwarmId.of(ThreadKey.make("swarm"), "covers-1");
 		expect(id).toBe("swarm/covers-1");
 		const plan = {
 			id,
-			thread: "swarm",
+			thread: ThreadKey.make("swarm"),
 			jobs: JOBS,
 			cap: 2,
 			onFailure: "collect",
-			pins: ["rust"],
-			fork: { tools: ["lookup", "write_note"], cap: FORK.cap },
+			pins: [Swarm.JobKey.make("rust")],
+			fork: { tools: [ToolName.make("lookup"), ToolName.make("write_note")], cap: FORK.cap },
 		} as const;
 		// An id that names no thread, or another one, starts nothing: the refusal is the client's, before any call.
-		expect(await run(Effect.flip(remote.swarms.run(Covers, { ...plan, id: "covers-1" })))).toEqual(
-			new SwarmId.SwarmIdNotOfThread({ swarmId: "covers-1", thread: "swarm" }),
+		expect(
+			await run(Effect.flip(remote.swarms.run(Covers, { ...plan, id: Swarm.SwarmId.make("covers-1") }))),
+		).toEqual(
+			new SwarmId.SwarmIdNotOfThread({ swarmId: Swarm.SwarmId.make("covers-1"), thread: ThreadKey.make("swarm") }),
 		);
-		expect(await run(Effect.flip(remote.swarms.run(Covers, { ...plan, id: "other/covers-1" })))).toEqual(
-			new SwarmId.SwarmIdNotOfThread({ swarmId: "other/covers-1", thread: "swarm" }),
+		expect(
+			await run(Effect.flip(remote.swarms.run(Covers, { ...plan, id: Swarm.SwarmId.make("other/covers-1") }))),
+		).toEqual(
+			new SwarmId.SwarmIdNotOfThread({
+				swarmId: Swarm.SwarmId.make("other/covers-1"),
+				thread: ThreadKey.make("swarm"),
+			}),
 		);
-		expect(await run(Effect.flip(remote.swarms.probe("covers-1")))).toEqual(
-			new SwarmId.SwarmIdNotOfThread({ swarmId: "covers-1" }),
+		expect(await run(Effect.flip(remote.swarms.probe(Swarm.SwarmId.make("covers-1"))))).toEqual(
+			new SwarmId.SwarmIdNotOfThread({ swarmId: Swarm.SwarmId.make("covers-1") }),
 		);
 		// The actor checks the same, whoever calls it.
 		expect(
 			await run(
 				Effect.flip(
-					Client.call(source, "runSwarm", { ...plan, swarm: Covers.name, id: "covers-1", pins: ["rust"] }),
+					Client.call(source, "runSwarm", {
+						...plan,
+						swarm: Covers.name,
+						id: Swarm.SwarmId.make("covers-1"),
+						pins: [Swarm.JobKey.make("rust")],
+					}),
 				),
 			),
 		).toMatchObject({ _tag: "ActionFailed", error: { _tag: "OperationFailed", reason: "SwarmIdNotOfThread" } });
@@ -616,11 +640,11 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		expect(again).toEqual({ created: false });
 		expect(during).toEqual({ alive: true, jobKeys: ["rust", "go", "zig"] });
 		// With the thread given, an operation says the same: the two-argument form stands.
-		expect(await run(remote.swarms.probe("swarm", id))).toEqual({
+		expect(await run(remote.swarms.probe(ThreadKey.make("swarm"), id))).toEqual({
 			alive: false,
 			jobKeys: ["rust", "go", "zig"],
 		});
-		expect(await run(remote.swarms.result(Covers, "swarm", id))).toEqual(Option.some(outcome));
+		expect(await run(remote.swarms.result(Covers, ThreadKey.make("swarm"), id))).toEqual(Option.some(outcome));
 		expect(outcome.ending).toBe("completed");
 		expect(outcome.jobs).toEqual([
 			{ _tag: "Success", key: "rust", value: { topic: "Rust", covered: true } },
@@ -684,7 +708,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		// and all of it is what the lease was told.
 		const whole = primed.counts.settledMicros + costs[0] + costs[1] + costs[2];
 		const thread = Option.some({ ...primed, counts: { ...primed.counts, settledMicros: whole } });
-		expect(await run(remote.threads.outcome("swarm"))).toEqual(thread);
+		expect(await run(remote.threads.outcome(ThreadKey.make("swarm")))).toEqual(thread);
 		expect(told()).toBe(whole);
 		// The records of each fork's work are in the sink, each once, delivered by the fork's own actor, also those
 		// of the forks that were destroyed. A fork delivered nothing of what its source delivered.
@@ -721,7 +745,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 				.reduce((sum, { settlements }) => sum + (settlements[0]?.cost ?? 0n), 0n),
 		);
 		expect(primed.counts.settledMicros > 0n).toBe(true);
-		expect(await run(Client.call(pinned, "outcome", { thread: "swarm" }))).toEqual(
+		expect(await run(Client.call(pinned, "outcome", { thread: ThreadKey.make("swarm") }))).toEqual(
 			Option.some({ ...primed, counts: { ...primed.counts, settledMicros: 0n } }),
 		);
 		expect(await run(Client.call(pinned, "forkAccount", null))).toEqual(Option.some(costs[0]));
@@ -737,14 +761,14 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		expect(labs.author.state.callCount).toBe(4);
 		// A janitor destroys the pinned fork later, through the fork operation, by its swarm and its job alone: once,
 		// with the same answer twice.
-		const fork = { swarmId: id, jobKey: "rust" };
+		const fork = { swarmId: id, jobKey: Swarm.JobKey.make("rust") };
 		const destroyed = await run(remote.forks.destroy(fork));
 		expect(Option.getOrThrow(destroyed.bytesWritten)).toBeGreaterThanOrEqual(0);
-		expect(await run(remote.forks.destroy({ ...fork, thread: "swarm" }))).toEqual(destroyed);
+		expect(await run(remote.forks.destroy({ ...fork, thread: ThreadKey.make("swarm") }))).toEqual(destroyed);
 		expect(Option.isNone(await forkOf("swarm", id, "rust"))).toBe(true);
 		// Its money outlives it too: per job, and in the thread's own amount, which no longer asks the fork for it.
-		expect(await run(remote.swarms.spent("swarm", id))).toEqual(spent);
-		expect(await run(remote.threads.outcome("swarm"))).toEqual(thread);
+		expect(await run(remote.swarms.spent(ThreadKey.make("swarm"), id))).toEqual(spent);
+		expect(await run(remote.threads.outcome(ThreadKey.make("swarm")))).toEqual(thread);
 		// The outcome sink was told of the thread, by the thread's own actor, and of nothing else. A fork is no
 		// thread: no event for a job's conversation. And no fork told again of the thread it was copied with, the
 		// pinned one included, which was woken and asked for the thread's outcome above.
@@ -762,17 +786,22 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		// reviewer's alias as the model of the forks.
 		labs.author.setResponses([scripted]);
 		labs.reviewer.setResponses([CLEAN, scripted, scripted]);
-		await run(remote.threads.start(work("agents", "Read this record: ...", ["lookup", "write_note"]), "job-1"));
+		await run(
+			remote.threads.start(
+				work("agents", "Read this record: ...", ["lookup", "write_note"]),
+				RequestKey.make("job-1"),
+			),
+		);
 		await ended("agents");
-		const id = SwarmId.of("agents", "covers-1");
+		const id = SwarmId.of(ThreadKey.make("agents"), "covers-1");
 		const plan = {
 			id,
-			thread: "agents",
+			thread: ThreadKey.make("agents"),
 			jobs: JOBS.slice(0, 2),
 			cap: 2,
 			onFailure: "collect",
 			// A fork may have all its thread holds.
-			fork: { tools: ["lookup", "write_note"], cap: FORK.cap },
+			fork: { tools: [ToolName.make("lookup"), ToolName.make("write_note")], cap: FORK.cap },
 		} as const;
 		// A change that is no data does not cross: nothing is sent.
 		expect(await run(Effect.flip(remote.swarms.run(Covers, { ...plan, agent: { maxTurns: 0 } })))).toMatchObject({
@@ -781,7 +810,9 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		});
 		expect(await run(Effect.flip(remote.swarms.probe(id)))).toMatchObject({ reason: "SwarmNotFound" });
 		// Data that names a tool nothing is installed under crosses, and the actor refuses it: nothing is stored.
-		expect(await run(Effect.flip(remote.swarms.run(Covers, { ...plan, agent: { tools: ["lokup"] } })))).toEqual(
+		expect(
+			await run(Effect.flip(remote.swarms.run(Covers, { ...plan, agent: { tools: [ToolName.make("lokup")] } }))),
+		).toEqual(
 			new OperationFailed({
 				operation: "runSwarm",
 				reason: "InvalidPlan",
@@ -806,7 +837,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 					compaction,
 					// One tool a fork may have, by its name, and one it may not, by an object that carries its name:
 					// neither the thread's grant nor the allowance has `transfer`.
-					tools: ["lookup", { name: "transfer" }],
+					tools: [ToolName.make("lookup"), { name: ToolName.make("transfer") }],
 				},
 			}),
 		);
@@ -828,7 +859,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		// The jobs ran on the model the plan names: the author's lab served the priming alone, and each fork's actor
 		// reserved and settled one request to the reviewer's alias, which its route served.
 		expect([labs.author.state.callCount, labs.reviewer.state.callCount]).toEqual([1, 3]);
-		const actors = outcome.forks.map((fork) => fork.forkId);
+		const actors: ReadonlyArray<string> = outcome.forks.map((fork) => fork.forkId);
 		expect(new Set(actors).size).toBe(2);
 		expect(
 			reservations(state)
@@ -855,21 +886,21 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 			answer("It covers Rust, I think."),
 		]);
 		labs.reviewer.setResponses([CLEAN]);
-		await run(remote.threads.start(work("capped", "Read this record: ...", []), "job-1"));
+		await run(remote.threads.start(work("capped", "Read this record: ...", []), RequestKey.make("job-1")));
 		await ended("capped");
 		const source = await actorOf("capped");
 		const [job] = JOBS;
 		await run(
 			remote.swarms.run(Covers, {
-				id: "capped/covers-2",
-				thread: "capped",
+				id: Swarm.SwarmId.make("capped/covers-2"),
+				thread: ThreadKey.make("capped"),
 				jobs: [job],
 				cap: 1,
 				onFailure: "collect",
 				fork: { tools: [], cap: 1n },
 			}),
 		);
-		const outcome = await fannedIn("capped/covers-2");
+		const outcome = await fannedIn(Swarm.SwarmId.make("capped/covers-2"));
 		// The check is against settled amounts: the request that crosses the cap is served, the next one is refused,
 		// inside the fork's actor, by the share the fork setup wrote there.
 		expect(outcome.jobs).toMatchObject([{ _tag: "Failure", key: "rust", reason: "unanswered" }]);
@@ -877,7 +908,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		const [fork] = reservations(state).filter(({ actor }) => actor !== source.actorId);
 		const cost = fork?.settlements[0]?.cost ?? 0n;
 		expect(cost > 1n).toBe(true);
-		expect(await run(remote.swarms.spent("capped/covers-2"))).toEqual([
+		expect(await run(remote.swarms.spent(Swarm.SwarmId.make("capped/covers-2")))).toEqual([
 			{ key: "rust", settledMicros: Option.some(cost) },
 		]);
 		expect(reservations(state).filter(({ actor }) => actor !== source.actorId)).toHaveLength(1);
@@ -895,12 +926,12 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		const stuck = [held(answer("never")), held(answer("never"))];
 		labs.author.setResponses([scripted, ...stuck.map((turn) => turn.response)]);
 		labs.reviewer.setResponses([CLEAN]);
-		await run(remote.threads.start(work("stopped", "Read this record: ...", []), "job-1"));
+		await run(remote.threads.start(work("stopped", "Read this record: ...", []), RequestKey.make("job-1")));
 		await ended("stopped");
 		await run(
 			remote.swarms.run(Covers, {
-				id: "stopped/covers-3",
-				thread: "stopped",
+				id: Swarm.SwarmId.make("stopped/covers-3"),
+				thread: ThreadKey.make("stopped"),
 				jobs: JOBS,
 				cap: 2,
 				onFailure: "collect",
@@ -909,8 +940,8 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		);
 		// Two forks work, under the cap; the third job has not started.
 		await Effect.runPromise(Effect.forEach(stuck, (turn) => turn.requested));
-		expect(await run(remote.swarms.cancel("stopped/covers-3"))).toBe("cancelling");
-		const outcome = await fannedIn("stopped/covers-3");
+		expect(await run(remote.swarms.cancel(Swarm.SwarmId.make("stopped/covers-3")))).toBe("cancelling");
+		const outcome = await fannedIn(Swarm.SwarmId.make("stopped/covers-3"));
 		expect(outcome.ending).toBe("cancelled");
 		expect(outcome.jobs.map((job) => [job.key, job._tag, job._tag === "Failure" ? job.reason : ""])).toEqual([
 			["rust", "Failure", "cancelled"],
@@ -918,11 +949,13 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 			["zig", "Failure", "cancelled"],
 		]);
 		expect(outcome.forks.map((fork) => fork.fate)).toEqual(["destroyed", "destroyed"]);
-		expect(await run(remote.swarms.probe("stopped/covers-3"))).toEqual({
+		expect(await run(remote.swarms.probe(Swarm.SwarmId.make("stopped/covers-3")))).toEqual({
 			alive: false,
 			jobKeys: ["rust", "go", "zig"],
 		});
-		expect(await run(remote.swarms.cancel("stopped", "stopped/covers-3"))).toBe("ended");
+		expect(await run(remote.swarms.cancel(ThreadKey.make("stopped"), Swarm.SwarmId.make("stopped/covers-3")))).toBe(
+			"ended",
+		);
 		for (const { key } of JOBS) expect(Option.isNone(await forkOf("stopped", "stopped/covers-3", key))).toBe(true);
 		// The third job never reached a provider; the two requests in flight were aborted and settled.
 		expect(labs.author.state.callCount).toBe(3);
@@ -933,7 +966,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 			["aborted"],
 		]);
 		// The two forks that worked had a share with nothing settled; the job that never started had no fork.
-		expect(await run(remote.swarms.spent("stopped/covers-3"))).toEqual([
+		expect(await run(remote.swarms.spent(Swarm.SwarmId.make("stopped/covers-3")))).toEqual([
 			{ key: "rust", settledMicros: Option.some(0n) },
 			{ key: "go", settledMicros: Option.some(0n) },
 			{ key: "zig", settledMicros: Option.none() },
@@ -945,31 +978,37 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		labs.reviewer.setResponses([CLEAN, CLEAN]);
 		const product = await run(Remote.product(Desk, { actorKey: deskOf }));
 		// No actor yet: a product action creates none unless it is asked to, and a probe creates none either.
-		expect(await run(Effect.flip(product.call("front/a", "desk", { threads: [] })))).toEqual(
-			new ThreadNotFound({ thread: "front/a" }),
+		expect(await run(Effect.flip(product.call(ThreadKey.make("front/a"), "desk", { threads: [] })))).toEqual(
+			new ThreadNotFound({ thread: ThreadKey.make("front/a") }),
 		);
-		expect(await run(desks.threads.probe("front/a"))).toEqual({ alive: false });
+		expect(await run(desks.threads.probe(ThreadKey.make("front/a")))).toEqual({ alive: false });
 		expect(await run(Client.find(Desk, ["front"]))).toEqual(Option.none());
 		// The product gives the actor what it works from before `start`: the actor is created by that call.
-		expect(await run(product.callOrCreate("front/a", "brief", { text: "Read this record: ..." }))).toBeNull();
+		expect(
+			await run(product.callOrCreate(ThreadKey.make("front/a"), "brief", { text: "Read this record: ..." })),
+		).toBeNull();
 		const desk = Option.getOrThrow(await run(Client.find(Desk, ["front"])));
 		// The product's own Layer was built on the actor's open harness, on the composition's services, at its wake.
 		expect(opened).toEqual([{ actor: desk.actorId, alive: false }]);
-		expect(await run(product.call("front/b", "desk", { threads: ["front/a", "front/b"] }))).toEqual({
+		expect(await run(product.call(ThreadKey.make("front/b"), "desk", { threads: ["front/a", "front/b"] }))).toEqual({
 			key: ["front"],
 			brief: "Read this record: ...",
 			alive: [false, false],
 		});
 		// Two threads of the desk: each has its own key, conversation and outcome, in the one actor.
-		const first = await run(desks.threads.start(work("front/a", "Read this record: ...", []), "job-a"));
-		const second = await run(desks.threads.start(work("front/b", "Read that record: ...", []), "job-b"));
+		const first = await run(
+			desks.threads.start(work("front/a", "Read this record: ...", []), RequestKey.make("job-a")),
+		);
+		const second = await run(
+			desks.threads.start(work("front/b", "Read that record: ...", []), RequestKey.make("job-b")),
+		);
 		expect([first, second]).toEqual([
 			{ created: true, key: "job-a" },
 			{ created: true, key: "job-b" },
 		]);
 		const outcomes = [
-			await run(desks.threads.ended("front/a", POLL)),
-			await run(desks.threads.ended("front/b", POLL)),
+			await run(desks.threads.ended(ThreadKey.make("front/a"), POLL)),
+			await run(desks.threads.ended(ThreadKey.make("front/b"), POLL)),
 		];
 		expect(outcomes.map((outcome) => [outcome._tag, outcome.counts.turns])).toEqual([
 			["Reviewed", 1],
@@ -987,23 +1026,25 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 			["Started", "front/b", "job-b"],
 		]);
 		// A product action runs on the composition's own services: it reads both threads from the actor's storage.
-		expect(await run(product.call("front/a", "desk", { threads: ["front/a", "front/b", "front/c"] }))).toEqual({
+		expect(
+			await run(product.call(ThreadKey.make("front/a"), "desk", { threads: ["front/a", "front/b", "front/c"] })),
+		).toEqual({
 			key: ["front"],
 			brief: "Read this record: ...",
 			alive: [false, false, false],
 		});
 		// A swarm of one of the threads: its id names the thread, the thread names the desk, and its fork is an actor
 		// fork of the desk's actor, under the actor's own key. So every operation finds it by the swarm id alone.
-		const id = SwarmId.of("front/a", "covers-1");
+		const id = SwarmId.of(ThreadKey.make("front/a"), "covers-1");
 		expect(id).toBe("front/a/covers-1");
 		const started = await run(
 			desks.swarms.run(Covers, {
 				id,
-				thread: "front/a",
-				jobs: [{ key: "rust", input: { topic: "Rust" } }],
+				thread: ThreadKey.make("front/a"),
+				jobs: [{ key: Swarm.JobKey.make("rust"), input: { topic: "Rust" } }],
 				cap: 1,
 				onFailure: "collect",
-				pins: ["rust"],
+				pins: [Swarm.JobKey.make("rust")],
 				fork: FORK,
 			}),
 		);
@@ -1013,7 +1054,9 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		);
 		expect(result.jobs).toEqual([{ _tag: "Success", key: "rust", value: { topic: "Rust", covered: true } }]);
 		expect(await run(desks.swarms.probe(id))).toEqual({ alive: false, jobKeys: ["rust"] });
-		const fork = Option.getOrThrow(await run(Client.find(Desk, Rivet.forkKey(["front"], id, "rust"))));
+		const fork = Option.getOrThrow(
+			await run(Client.find(Desk, Rivet.forkKey(["front"], id, Swarm.JobKey.make("rust")))),
+		);
 		expect(result.forks.map((made) => [made.jobKey, made.fate, made.forkId])).toEqual([
 			["rust", "pinned", fork.actorId],
 		]);
@@ -1025,17 +1068,19 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 			key: ["front", "swarm", id, "rust"],
 			brief: "Read this record: ...",
 		});
-		const destroyed = await run(desks.forks.destroy({ swarmId: id, jobKey: "rust" }));
+		const destroyed = await run(desks.forks.destroy({ swarmId: id, jobKey: Swarm.JobKey.make("rust") }));
 		expect(Option.isSome(destroyed.bytesWritten)).toBe(true);
-		expect(await run(Client.find(Desk, Rivet.forkKey(["front"], id, "rust")))).toEqual(Option.none());
-		expect(await run(desks.forks.destroy({ swarmId: id, jobKey: "rust" }))).toEqual(destroyed);
+		expect(await run(Client.find(Desk, Rivet.forkKey(["front"], id, Swarm.JobKey.make("rust"))))).toEqual(
+			Option.none(),
+		);
+		expect(await run(desks.forks.destroy({ swarmId: id, jobKey: Swarm.JobKey.make("rust") }))).toEqual(destroyed);
 	}, 120_000);
 
 	it("never forks a thread's actor while the thread has a request in flight, a parked call or a held answer", async () => {
 		const turn = held(answer("I have read it."));
 		labs.author.setResponses([turn.response, scripted]);
 		labs.reviewer.setResponses([CLEAN]);
-		await run(remote.threads.start(work("busy", "Read this record: ...", []), "job-1"));
+		await run(remote.threads.start(work("busy", "Read this record: ...", []), RequestKey.make("job-1")));
 		await Effect.runPromise(turn.requested);
 		const handle = await actorOf("busy");
 		// The host's idle rule: an unsettled submission and a live generation refuse a fork, so no request is copied
@@ -1049,8 +1094,8 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		const [job] = JOBS;
 		await run(
 			remote.swarms.run(Covers, {
-				id: "busy/covers-4",
-				thread: "busy",
+				id: Swarm.SwarmId.make("busy/covers-4"),
+				thread: ThreadKey.make("busy"),
 				jobs: [job],
 				cap: 1,
 				onFailure: "collect",
@@ -1058,12 +1103,15 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 			}),
 		);
 		await new Promise((resolve) => setTimeout(resolve, 1_000));
-		expect(await run(remote.swarms.probe("busy/covers-4"))).toEqual({ alive: true, jobKeys: ["rust"] });
+		expect(await run(remote.swarms.probe(Swarm.SwarmId.make("busy/covers-4")))).toEqual({
+			alive: true,
+			jobKeys: ["rust"],
+		});
 		expect(Option.isNone(await forkOf("busy", "busy/covers-4", "rust"))).toBe(true);
 		expect(streams).toEqual([]);
 		// Once the thread has ended, the fork is made, of a transcript that holds the thread's whole answer.
 		await Effect.runPromise(turn.release);
-		const outcome = await fannedIn("busy/covers-4");
+		const outcome = await fannedIn(Swarm.SwarmId.make("busy/covers-4"));
 		expect(outcome.jobs).toEqual([{ _tag: "Success", key: "rust", value: { topic: "Rust", covered: true } }]);
 		expect(shown.get("Rust")?.transcript.slice(0, 2)).toEqual([
 			"user: Read this record: ...",
@@ -1075,7 +1123,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 
 		// A parked call is live work too: an actor that waits for a person is not forked.
 		labs.author.setResponses([toolCall("transfer", { to: "bob", amount: 250 }, { id: "call-1" })]);
-		await run(remote.threads.start(work("waiting", "Send bob 250.", ["transfer"]), "job-1"));
+		await run(remote.threads.start(work("waiting", "Send bob 250.", ["transfer"]), RequestKey.make("job-1")));
 		await Effect.runPromise(Queue.take(state.inbox));
 		const waiting = await actorOf("waiting");
 		await parked(waiting);
@@ -1083,7 +1131,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 			_tag: "NotIdle",
 			submissions: 1,
 		});
-		await run(remote.threads.cancel("waiting"));
+		await run(remote.threads.cancel(ThreadKey.make("waiting")));
 		expect(await ended("waiting")).toMatchObject({ _tag: "Cancelled" });
 		// Idle again, it is forked: the rule is about work in flight, not about the actor.
 		const copy = await run(Client.fork(waiting, { key: ["waiting", "copy"] }));
@@ -1109,24 +1157,26 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		labs.author.setResponses(Array.from({ length: 80 }, () => author));
 		labs.reviewer.setResponses([CLEAN]);
 		const topics = Array.from({ length: 50 }, (_, index) => `T${index}`);
-		const jobs = topics.map((topic) => ({ key: topic.toLowerCase(), input: { topic } }));
-		const pins = ["t0", "t49"];
+		const jobs = topics.map((topic) => ({ key: Swarm.JobKey.make(topic.toLowerCase()), input: { topic } }));
+		const pins = [Swarm.JobKey.make("t0"), Swarm.JobKey.make("t49")];
 		const started = performance.now();
-		await run(remote.threads.start({ ...work("fifty", "Read this record: ..."), maxTurns: 20 }, "job-1"));
+		await run(
+			remote.threads.start({ ...work("fifty", "Read this record: ..."), maxTurns: 20 }, RequestKey.make("job-1")),
+		);
 		const primed = await ended("fifty");
 		const primedAt = performance.now();
 		await run(
 			remote.swarms.run(Covers, {
-				id: "fifty/all",
-				thread: "fifty",
+				id: Swarm.SwarmId.make("fifty/all"),
+				thread: ThreadKey.make("fifty"),
 				jobs,
 				cap: 8,
 				onFailure: "fail",
 				pins,
-				fork: { tools: ["lookup"], cap: FORK.cap },
+				fork: { tools: [ToolName.make("lookup")], cap: FORK.cap },
 			}),
 		);
-		const outcome = await fannedIn("fifty/all");
+		const outcome = await fannedIn(Swarm.SwarmId.make("fifty/all"));
 		const swarmMillis = performance.now() - primedAt;
 		const totalMillis = performance.now() - started;
 		console.log(
@@ -1147,7 +1197,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		expect(outcome.forks.filter((fork) => fork.fate === "destroyed")).toHaveLength(48);
 		expect(outcome.forks.filter((fork) => fork.fate === "pinned").map((fork) => fork.jobKey)).toEqual(pins);
 		const source = await actorOf("fifty");
-		const spent = await run(remote.swarms.spent("fifty/all"));
+		const spent = await run(remote.swarms.spent(Swarm.SwarmId.make("fifty/all")));
 		const byForks = reservations(state)
 			.filter(({ actor }) => actor !== source.actorId)
 			.reduce((sum, { settlements }) => sum + (settlements[0]?.cost ?? 0n), 0n);
@@ -1162,7 +1212,7 @@ function suite(runtime: string, engines: typeof LocalEngine): void {
 		// destroyed and two asked of the pinned forks: what the lease was told in all.
 		expect((await ended("fifty")).counts.settledMicros).toBe(primed.counts.settledMicros + byForks);
 		expect(told()).toBe(primed.counts.settledMicros + byForks);
-		for (const jobKey of pins) await run(remote.forks.destroy({ swarmId: "fifty/all", jobKey }));
+		for (const jobKey of pins) await run(remote.forks.destroy({ swarmId: Swarm.SwarmId.make("fifty/all"), jobKey }));
 		expect(totalMillis).toBeLessThan(FIFTY_LIMIT_MILLIS);
 	}, 180_000);
 }

@@ -51,7 +51,7 @@ const live = TestHarness.layer({
 	extensions: [
 		{ name: "app", tools: [Transfer] },
 		// After every extension that blocks or rewrites tool calls.
-		Approvals.extension({ tools: ["transfer"], expiresAfter: "1 day" }),
+		Approvals.extension({ tools: [Transfer.name], expiresAfter: "1 day" }),
 	],
 	// No provider and no key: the model answers with these turns, in order.
 	responses: [toolCall("transfer", { to: "bob", amount: 250 }), answer("Sent.")],
@@ -87,7 +87,7 @@ class Limits extends Context.Service<Limits, { readonly free: number }>()("app/L
 
 const policy: Approvals.Policy<Limits> = {
 	// Every call of these tools needs approval.
-	tools: ["close_account"],
+	tools: [ToolName.make("close_account")],
 	// A call of any other tool needs it when this says so. A rule that fails means it does.
 	rule: (call) =>
 		Limits.use((limits) =>
@@ -99,8 +99,11 @@ const policy: Approvals.Policy<Limits> = {
 // A registry with `Approvals.extension(policy)` requires `Limits` and `Approvals.Inbox`.
 ```
 
-- The rule gets `{ tool, arguments, conversation, callId }`, with the arguments as the hooks before the gate left them.
-- A rule that fails or dies asks a person: the gate fails closed.
+- Tools are named by `ToolName` of `@effectified/pi-durable`: a `Tool`'s own `name`, or `ToolName.make("...")`.
+- The rule gets an `Approvals.Call`, `{ tool, arguments, conversation, callId }`, with the arguments as the hooks before
+  the gate left them.
+- A rule that fails or dies asks a person: the gate fails closed. `Policy<R, E>` names what the rule needs and what it
+  may fail with; `extension(policy)` reads both from the rule.
 - The rule is asked until a call first needs approval. From then on the call needs a decision for every change of its
   arguments, whatever the rule would say.
 - `expiresAfter` is any finite Effect `Duration` input. The expiry is fixed when a request is first made, on the
@@ -112,10 +115,10 @@ const policy: Approvals.Policy<Limits> = {
 
 | Field | |
 |---|---|
-| `id` | `<task>:<n>:<digest>`: the tool call's task, the number of the ask (from 0), the digest. The same every time |
+| `id` | A `RequestId`, `<task>:<n>:<digest>`: the tool call's task, the number of the ask (from 0), the digest. The same every time |
 | `conversation`, `task`, `callId`, `tool` | Where the call is: `task` is the tool call's task, which `decide` signals |
 | `arguments` | What the call would run with, as strict JSON in canonical key order |
-| `digest` | SHA-256 of the canonical JSON of `arguments`, 64 hexadecimal digits |
+| `digest` | An `Approvals.Digest.Digest`: SHA-256 of the canonical JSON of `arguments`, 64 lower-case hexadecimal digits |
 | `askedAt`, `expiresAt` | Epoch milliseconds on the harness clock |
 
 `Approvals.Inbox` is the port: `publish(request)` shows a request to a person. Pi asks the gate again after every
@@ -132,7 +135,8 @@ const same = yield* Approvals.Digest.of({ amount: 250, to: "bob" }); // equal to
 
 ## The decision
 
-`Approvals.Decision` is a `Schema`, a union of two:
+`Approvals.Decision` is a `Schema.TaggedUnion` of two, `Approvals.Approved` and `Approvals.Denied`; choose with
+`Approvals.Decision.match`:
 
 | | |
 |---|---|
@@ -149,7 +153,8 @@ const delivery = yield* Approvals.decide(request, denial);
 ```
 
 `Approvals.decide(request, decision)` takes a request or its address (`{ task, id }`) and delivers the decision in
-one commit that checks the request and stores the decision together. It answers:
+one commit that checks the request and stores the decision together. It answers an `Approvals.Delivery`, a `Schema`
+of five literals:
 
 | | |
 |---|---|
@@ -190,6 +195,8 @@ decodes it; a recorder can read the JSON without this package.
 | `Denied` (the decision) | The blocked result |
 | `{ _tag: "Expired" }` | The blocked result |
 | `{ _tag: "Undecided" }` | The result of a call aborted while it waited |
+
+`Approvals.Outcome` is a `Schema` of these four, with `Outcome.match`.
 
 It is there for as long as the entry is: compaction never removes entries. While the call is live, the decision is
 also in the task record, which Pi clears when the call ends.

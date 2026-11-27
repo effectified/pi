@@ -1,12 +1,19 @@
 // pi-tui's settings list with its changes and its cancel as a Stream instead of constructor callbacks.
 
 import { type SettingItem, SettingsList, type SettingsListTheme } from "@earendil-works/pi-tui";
-import { type Cause, Effect, Queue, type Scope, Stream } from "effect";
+import { type Cause, Effect, Queue, Schema, Stream } from "effect";
 
-/** What the user did in a settings list: set a setting to a value, or left the list (`tui.select.cancel`). */
-export type SettingsListEvent =
-	| { readonly kind: "change"; readonly id: SettingItem["id"]; readonly value: string }
-	| { readonly kind: "cancel" };
+/**
+ * What the user did in a settings list: set the setting `id` to `value`, or left the list (`tui.select.cancel`).
+ * `SettingsListEvent.match` takes one handler per `kind`.
+ */
+export const SettingsListEvent = Schema.Union([
+	Schema.Struct({ kind: Schema.Literal("change"), id: Schema.String, value: Schema.String }),
+	Schema.Struct({ kind: Schema.Literal("cancel") }),
+]).pipe(Schema.toTaggedUnion("kind"));
+
+/** What the user did in a settings list. */
+export type SettingsListEvent = typeof SettingsListEvent.Type;
 
 /** A settings list and what the user does in it. */
 export interface SettingsListOf {
@@ -24,23 +31,21 @@ type Options = ConstructorParameters<typeof SettingsList>[5];
  * The list shows a value the user picked itself (it sets the item's `currentValue`); a change made elsewhere is
  * shown with `updateValue`.
  */
-export function settingsList(
+export const settingsList = Effect.fn("Tui.settingsList")(function* (
 	items: SettingItem[],
 	maxVisible: number,
 	theme: SettingsListTheme,
 	options?: Options,
-): Effect.Effect<SettingsListOf, never, Scope.Scope> {
-	return Effect.gen(function* () {
-		// Ended, not shut down, when the scope closes: the events stream ends, and what was not taken yet stays to take.
-		const queue = yield* Effect.acquireRelease(Queue.unbounded<SettingsListEvent, Cause.Done>(), Queue.end);
-		const list = new SettingsList(
-			items,
-			maxVisible,
-			theme,
-			(id, value) => Queue.offerUnsafe(queue, { kind: "change", id, value }),
-			() => Queue.offerUnsafe(queue, { kind: "cancel" }),
-			options,
-		);
-		return { list, events: Stream.fromQueue(queue) };
-	});
-}
+) {
+	// Ended, not shut down, when the scope closes: the events stream ends, and what was not taken yet stays to take.
+	const queue = yield* Effect.acquireRelease(Queue.unbounded<SettingsListEvent, Cause.Done>(), Queue.end);
+	const list = new SettingsList(
+		items,
+		maxVisible,
+		theme,
+		(id, value) => Queue.offerUnsafe(queue, { kind: "change", id, value }),
+		() => Queue.offerUnsafe(queue, { kind: "cancel" }),
+		options,
+	);
+	return { list, events: Stream.fromQueue(queue) } satisfies SettingsListOf;
+});

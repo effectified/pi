@@ -10,7 +10,7 @@ import { Action, ActorDatabase, ActorInfo, type Client, type Fork } from "@effec
 import * as Testing from "@effectified/pi-durable-rivet/testing";
 import type { Records } from "@effectified/pi-recorder";
 import { Effect, Layer, Option, Queue, Schedule, Schema } from "effect";
-import { Threads } from "../src/index.ts";
+import { ThreadKey, Threads } from "../src/index.ts";
 import { ThreadActor } from "../src/rivet.ts";
 import { config, type Options, outside, ports, providers, REVIEW_POLICY, SAME_FAMILY_REVIEWER } from "./world.ts";
 
@@ -224,7 +224,7 @@ const deskActions = {
 				});
 				const service = yield* Threads.Threads;
 				const alive = yield* Effect.forEach(threads, (thread) =>
-					Effect.map(service.probe(thread), (probe) => probe.alive),
+					Effect.map(service.probe(ThreadKey.make(thread)), (probe) => probe.alive),
 				);
 				return { key: [...info.key], brief: kept?.text ?? null, alive };
 			}).pipe(Effect.orDie),
@@ -241,7 +241,7 @@ export const opened: Array<{ readonly actor: string; readonly alive: boolean }> 
 const deskServices = Layer.effectDiscard(
 	Effect.gen(function* () {
 		const info = yield* ActorInfo;
-		const probe = yield* Threads.Threads.use((threads) => threads.probe("nobody"));
+		const probe = yield* Threads.Threads.use((threads) => threads.probe(ThreadKey.make("nobody")));
 		opened.push({ actor: info.actorId, alive: probe.alive });
 	}).pipe(Effect.orDie),
 );

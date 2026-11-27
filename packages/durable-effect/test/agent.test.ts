@@ -1,7 +1,7 @@
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { Agent, Extension, Harness, Registry, Tool } from "../src/index.ts";
+import { Agent, Extension, Harness, Registry, Tool, ToolName } from "../src/index.ts";
 import { runBoth } from "./parity.ts";
 import { AGENT, harnessLayer } from "./scripted.ts";
 
@@ -37,14 +37,16 @@ const PiExtra = defineExtension({ name: "extra", tools: [piTool("extra")] });
 
 const extensions = { effect: Registry.layer([Files, Extra]), pi: [PiFiles, PiExtra] };
 
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
 describe("toPi", () => {
 	it("turns names, this package's values and Pi's objects into what Pi stores by name", () => {
 		const change = Agent.toPi({
 			model: null,
 			instructions: "Only read.",
 			extensions: { add: ["extra"], remove: [Files] },
-			tools: ["lookup", Read, PiTools[2]],
-			modelTools: { remove: [Write], add: ["extra"] },
+			tools: [ToolName.make("lookup"), Read, PiTools[2]],
+			modelTools: { remove: [Write], add: [ToolName.make("extra")] },
 		});
 		expect(change).toEqual({
 			model: null,
@@ -101,6 +103,19 @@ describe("byName and ByName", () => {
 		expect(accepts({ model: { provider: "faux" } })).toBe(false);
 	});
 
+	it("brands the tool names it decodes, and takes no extension for a tool", () => {
+		const decoded = Schema.decodeUnknownSync(Agent.ByName)({ tools: ["read"], extensions: ["files"] });
+		const typed: Equal<
+			typeof decoded.tools,
+			ReadonlyArray<ToolName> | { readonly remove: ReadonlyArray<ToolName> } | null | undefined
+		> = true;
+		expect([typed, decoded]).toEqual([true, { tools: ["read"], extensions: ["files"] }]);
+		// An extension carries a name, but not a tool's: a change does not take it for one.
+		// @ts-expect-error An extension is not a tool.
+		const mixed: Agent.Change = { tools: [Files] };
+		expect(Agent.byName(mixed)).toEqual({ tools: ["files"] });
+	});
+
 	it("keeps null, which clears a field", () => {
 		const cleared = { model: null, tools: null, modelTools: null, maxTurns: null, compaction: null };
 		expect(Agent.byName(cleared)).toEqual(cleared);
@@ -115,7 +130,7 @@ describe("parity with Pi Durable", () => {
 			extensions,
 			effect: Effect.gen(function* () {
 				const root = yield* Harness.rootWith({ agent: AGENT });
-				yield* root.configure({ tools: ["lookup", "read"], extensions: [Files] });
+				yield* root.configure({ tools: [ToolName.make("lookup"), ToolName.make("read")], extensions: [Files] });
 				const agent = yield* root.agent;
 				return {
 					tools: agent.tools.map((offered) => offered.name),
@@ -183,7 +198,9 @@ describe("a name nothing is registered under", () => {
 	it("is stored and offers nothing, as Pi's stored names outlive their code", async () => {
 		const offered = await Effect.runPromise(
 			Effect.gen(function* () {
-				const root = yield* Harness.rootWith({ agent: { ...AGENT, tools: ["lookup", "gone"] } });
+				const root = yield* Harness.rootWith({
+					agent: { ...AGENT, tools: [ToolName.make("lookup"), ToolName.make("gone")] },
+				});
 				const stored = Option.getOrThrow(yield* Harness.conversation(root.id));
 				return (yield* stored.agent).tools.map((given) => given.name);
 			}).pipe(Effect.provide(harnessLayer({ registry: extensions.effect }))),

@@ -1,3 +1,4 @@
+import { ProviderId } from "@effectified/pi-ai";
 import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
@@ -74,7 +75,7 @@ describe("loginDialog", () => {
 	it("reports a cancelled sign-in and aborts its signal", async () => {
 		const seen = await runTest(
 			Effect.gen(function* () {
-				const { component, events } = yield* loginDialog("faux", "Faux");
+				const { component, events } = yield* loginDialog(ProviderId.make("faux"), "Faux");
 				component.handleInput(ESCAPE);
 				return { event: yield* Stream.runHead(events), aborted: component.signal.aborted };
 			}).pipe(Effect.provide(onTui(new TestTerminal(80, 24)))),

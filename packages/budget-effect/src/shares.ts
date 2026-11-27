@@ -1,8 +1,12 @@
 // Shares: what one conversation has settled of the harness's lease, and a cap of its own, kept in the harness storage.
 
+import { SessionId } from "@effectified/pi-ai";
 import type { ConversationId } from "@effectified/pi-durable";
-import { BuiltinDoc, Doc, Harness, type Tx } from "@effectified/pi-durable";
+import { BuiltinDoc, Conversation, Doc, Harness, type Tx } from "@effectified/pi-durable";
 import { Context, Deferred, Effect, Layer, Option, Schema } from "effect";
+
+/** An amount in micro units as stored: a decimal text, since a document is JSON. */
+const StoredMicros = Schema.BigIntFromString.check(Schema.isGreaterThanOrEqualToBigInt(0n));
 
 /**
  * What a conversation's requests have settled so far, and its cap when it has one, in micro units of the budget's
@@ -13,19 +17,22 @@ import { Context, Deferred, Effect, Layer, Option, Schema } from "effect";
  * A cap counts both; money summed over storages counts `settled` alone.
  */
 export const Share = Schema.Struct({
-	conversation: Schema.Number,
+	conversation: Conversation.Id,
+	// Any sign: `setCap` takes any amount, and a cap below zero refuses every request of the conversation. Shares
+	// stored before 0.3.0 may hold one.
 	cap: Schema.optional(Schema.BigIntFromString),
-	settled: Schema.BigIntFromString,
-	inherited: Schema.optional(Schema.BigIntFromString),
+	settled: StoredMicros,
+	inherited: Schema.optional(StoredMicros),
 });
 
 /** What a conversation's requests have settled so far, and its cap when it has one. */
 export type Share = typeof Share.Type;
 
 /** The conversation does not exist, or Pi has given it no provider session, so no request can be attributed to it. */
-export class NoProviderSession extends Schema.TaggedError<NoProviderSession>()("NoProviderSession", {
-	conversation: Schema.Number,
-}) {
+export class NoProviderSession extends Schema.TaggedError<NoProviderSession, { readonly brand: unique symbol }>()(
+	"NoProviderSession",
+	{ conversation: Conversation.Id },
+) {
 	override get message(): string {
 		return `Conversation ${this.conversation} has no provider session`;
 	}
@@ -71,7 +78,7 @@ export interface SharesService {
  * share settles is counted and stored, and one with a cap (a subagent) stops when it has settled that much while the
  * others go on.
  */
-export class Shares extends Context.Service<Shares, SharesService>()("@effectified/pi-budget/Shares") {
+export class Shares extends Context.Service<Shares, SharesService>()("@effectified/pi-budget/shares") {
 	/**
 	 * The shares of a budget, before its harness is open: `BudgetedModels.layerWithShares` needs them to build the
 	 * `Models` the harness is opened with. Every request that names a session, and every Effect of the service that
@@ -79,24 +86,31 @@ export class Shares extends Context.Service<Shares, SharesService>()("@effectifi
 	 */
 	static readonly layer: Layer.Layer<Shares> = Layer.effect(
 		Shares,
-		Effect.map(Deferred.make<Harness.Open>(), (store) => {
-			const ledger: Ledger = { store, bySession: new Map(), changed: new Set() };
-			const service: SharesService = {
-				setCap: (conversation, cap) => stored(ledger, share(ledger, conversation, cap)),
-				setCapIn: (tx, conversation, cap) => shareIn(ledger, tx, conversation, cap),
-				track: (conversation) => stored(ledger, share(ledger, conversation, undefined)),
-				trackIn: (tx, conversation) => shareIn(ledger, tx, conversation, undefined),
-				get: (conversation) =>
-					stored(
-						ledger,
-						Effect.flatMap(sessionOf(conversation), (session) =>
-							Option.match(session, {
-								onNone: () => Effect.succeedNone,
-								onSome: (found) => Harness.snapshot(ShareDocument, found),
-							}),
-						),
-					),
+		Effect.gen(function* () {
+			const ledger: Ledger = {
+				store: yield* Deferred.make<Harness.Open>(),
+				bySession: new Map(),
+				changed: new Set(),
 			};
+			const service = Shares.of({
+				setCap: Effect.fn("Shares.setCap")(function* (conversation, cap) {
+					return yield* stored(ledger, share(ledger, conversation, cap));
+				}),
+				setCapIn: Effect.fn("Shares.setCapIn")(function* (tx, conversation, cap) {
+					return yield* shareIn(ledger, tx, conversation, cap);
+				}),
+				track: Effect.fn("Shares.track")(function* (conversation) {
+					return yield* stored(ledger, share(ledger, conversation, undefined));
+				}),
+				trackIn: Effect.fn("Shares.trackIn")(function* (tx, conversation) {
+					return yield* shareIn(ledger, tx, conversation, undefined);
+				}),
+				get: Effect.fn("Shares.get")(function* (conversation) {
+					const session = yield* stored(ledger, sessionOf(conversation));
+					if (Option.isNone(session)) return Option.none();
+					return yield* stored(ledger, Harness.snapshot(ShareDocument, session.value));
+				}),
+			});
 			ledgers.set(service, ledger);
 			return service;
 		}),
@@ -110,14 +124,15 @@ export class Shares extends Context.Service<Shares, SharesService>()("@effectifi
 	static readonly attach: Layer.Layer<never, never, Shares | Harness.Harness> = Layer.effectDiscard(
 		Effect.gen(function* () {
 			const harness = yield* Harness.Harness;
-			yield* Deferred.succeed(ledgerOf(yield* Shares).store, harness);
+			const shares = yield* Shares;
+			yield* Deferred.succeed(ledgerOf(shares).store, harness);
 		}),
 	);
 }
 
 /** What the budget knows of one session while it runs: its conversation's share, counted up as requests settle. */
 export interface ShareState {
-	readonly conversation: number;
+	readonly conversation: ConversationId;
 	/** Undefined for a share that only counts. */
 	cap: bigint | undefined;
 	settled: bigint;
@@ -134,42 +149,37 @@ export function counted(share: ShareState): bigint {
  * The share of the conversation `session` belongs to; none when it has none. Read from the harness storage the first
  * time a session is seen, and again after its share was written, then kept in memory, where `addSettled` counts.
  */
-export function shareOfSession(
+export const shareOfSession = Effect.fn("Shares.shareOfSession")(function* (
 	shares: SharesService,
-	session: string,
-): Effect.Effect<Option.Option<ShareState>, Doc.Failure> {
+	session: SessionId,
+): Effect.fn.Return<Option.Option<ShareState>, Doc.Failure> {
 	const ledger = ledgerOf(shares);
-	return Effect.suspend(() => {
-		const known = ledger.bySession.get(session);
-		// A mark set while this read is under way stays for the next request: it is taken off before the read.
-		const written = ledger.changed.delete(session);
-		if (known !== undefined && !written) return Effect.succeed(known);
-		return stored(ledger, Harness.snapshot(ShareDocument, session)).pipe(
-			Effect.map((found) => adopt(ledger, session, found)),
-			// The share is still to be read: a failed read must not leave the old one in force.
-			Effect.tapCause(() => Effect.sync(() => ledger.changed.add(session))),
-		);
-	});
-}
+	const known = ledger.bySession.get(session);
+	// A mark set while this read is under way stays for the next request: it is taken off before the read.
+	const written = ledger.changed.delete(session);
+	if (known !== undefined && !written) return known;
+	const found = yield* stored(ledger, Harness.snapshot(ShareDocument, session)).pipe(
+		// The share is still to be read: a failed read must not leave the old one in force.
+		Effect.tapCause(() => Effect.sync(() => ledger.changed.add(session))),
+	);
+	return adopt(ledger, session, found);
+});
 
 /**
  * Takes the stored share of `session` into memory. What memory counted stays: of two requests of one session, the
  * second may have read while the first settled, and a stored total may lag behind by a commit. The cap and what was
  * inherited are the stored ones.
  */
-function adopt(ledger: Ledger, session: string, found: Option.Option<Share>): Option.Option<ShareState> {
+function adopt(ledger: Ledger, session: SessionId, found: Option.Option<Share>): Option.Option<ShareState> {
 	const current = ledger.bySession.get(session);
 	const counting = current === undefined ? undefined : Option.getOrUndefined(current);
 	if (counting === undefined) {
-		const state = Option.map(
-			found,
-			({ conversation, cap, settled, inherited }): ShareState => ({
-				conversation,
-				cap,
-				settled,
-				inherited: inherited ?? 0n,
-			}),
-		);
+		const state = Option.map(found, ({ conversation, cap, settled, inherited }): ShareState => ({
+			conversation,
+			cap,
+			settled,
+			inherited: inherited ?? 0n,
+		}));
 		ledger.bySession.set(session, state);
 		return state;
 	}
@@ -185,13 +195,13 @@ function adopt(ledger: Ledger, session: string, found: Option.Option<Share>): Op
  * settlement must not fail for it: a commit that fails (the harness closed meanwhile) is logged, and the stored
  * total then lacks this request until the session's next one settles.
  */
-export function addSettled(
+export const addSettled = Effect.fn("Shares.addSettled")(function* (
 	shares: SharesService,
-	session: string,
+	session: SessionId,
 	state: ShareState,
 	cost: bigint,
-): Effect.Effect<void> {
-	if (cost === 0n) return Effect.void;
+) {
+	if (cost === 0n) return;
 	state.settled += cost;
 	const store = Harness.commit((tx) =>
 		Effect.flatMap(tx.doc(ShareDocument, session, seedOf(state)), (share) =>
@@ -199,12 +209,15 @@ export function addSettled(
 			share.update((current) => ({ ...current, settled: state.settled })),
 		),
 	);
-	return Effect.catchCause(stored(ledgerOf(shares), store), (cause) =>
+	yield* Effect.catchCause(stored(ledgerOf(shares), store), (cause) =>
 		Effect.logWarning("A conversation's settled budget was not stored", cause),
 	);
-}
+});
 
-/** The state of one `Shares`: the harness once attached, and the shares of the sessions seen so far. */
+/**
+ * The state of one `Shares`: the harness once attached, and the shares of the sessions seen so far. Keyed by the
+ * session's text, which a native `Map` already compares by value.
+ */
 interface Ledger {
 	readonly store: Deferred.Deferred<Harness.Open>;
 	/** A session read and found without a share holds none, so it is not read for every request. */
@@ -228,21 +241,17 @@ function ledgerOf(shares: SharesService): Ledger {
  * Makes `shares` read the shares of `sessions` from the harness storage again with their next request, and drop what
  * it counted for them in memory: for a writer that replaced their stored totals while no request was under way.
  */
-export function forget(shares: SharesService, sessions: ReadonlyArray<string>): Effect.Effect<void> {
-	return Effect.sync(() => {
-		const ledger = ledgerOf(shares);
-		for (const session of sessions) {
-			ledger.bySession.delete(session);
-			ledger.changed.delete(session);
-		}
-	});
-}
+export const forget = Effect.fn("Shares.forget")(function* (shares: SharesService, sessions: ReadonlyArray<string>) {
+	const ledger = ledgerOf(shares);
+	for (const session of sessions) {
+		ledger.bySession.delete(session);
+		ledger.changed.delete(session);
+	}
+});
 
 /** Runs `effect` on the attached harness, waiting for it first. */
 function stored<A, E>(ledger: Ledger, effect: Effect.Effect<A, E, Harness.Harness>): Effect.Effect<A, E> {
-	return Effect.flatMap(Deferred.await(ledger.store), (harness) =>
-		Effect.provideService(effect, Harness.Harness, harness),
-	);
+	return Effect.provideServiceEffect(effect, Harness.Harness, Deferred.await(ledger.store));
 }
 
 /**
@@ -260,7 +269,7 @@ export const ShareDocument = Doc.family({
 	version: 1,
 	scope: "session",
 	schema: Share,
-	initial: (seed: { readonly conversation: number; readonly cap: string | null }) => ({
+	initial: (seed: { readonly conversation: ConversationId; readonly cap: string | null }) => ({
 		conversation: seed.conversation,
 		...(seed.cap === null ? {} : { cap: BigInt(seed.cap) }),
 		settled: 0n,
@@ -270,7 +279,7 @@ export const ShareDocument = Doc.family({
 });
 
 /** What a missing share document is created from: the conversation, and its cap as text, since a seed is JSON. */
-export function seedOf(share: { readonly conversation: number; readonly cap?: bigint | undefined }) {
+export function seedOf(share: { readonly conversation: ConversationId; readonly cap?: bigint | undefined }) {
 	return { conversation: share.conversation, cap: share.cap === undefined ? null : String(share.cap) };
 }
 
@@ -278,9 +287,13 @@ export function seedOf(share: { readonly conversation: number; readonly cap?: bi
  * Gives `conversation` a share in a commit of its own: with `cap`, or without one, in which case a share it already
  * has keeps its cap.
  */
-const share = Effect.fnUntraced(function* (ledger: Ledger, conversation: ConversationId, cap: bigint | undefined) {
+const share = Effect.fn("Shares.share")(function* (
+	ledger: Ledger,
+	conversation: ConversationId,
+	cap: bigint | undefined,
+) {
 	const session = yield* sessionOf(conversation);
-	if (Option.isNone(session)) return yield* new NoProviderSession({ conversation });
+	if (Option.isNone(session)) return yield* NoProviderSession.make({ conversation });
 	return yield* Harness.commit((tx) => write(ledger, tx, session.value, conversation, cap));
 });
 
@@ -289,21 +302,23 @@ const share = Effect.fnUntraced(function* (ledger: Ledger, conversation: Convers
  * `pi.provider` in the commit that creates the conversation, so it is there for a conversation `tx` just made, and
  * Pi fails the commit for a conversation that does not exist.
  */
-const shareIn = Effect.fnUntraced(function* (
+const shareIn = Effect.fn("Shares.shareIn")(function* (
 	ledger: Ledger,
 	tx: Tx.Tx,
 	conversation: ConversationId,
 	cap: bigint | undefined,
 ) {
 	const provider = yield* tx.doc(BuiltinDoc.provider, conversation);
-	return yield* write(ledger, tx, (yield* provider.get).sessionId, conversation, cap);
+	const { sessionId } = yield* provider.get;
+	// Pi's provider session is a plain string: branded where it enters the budget.
+	return yield* write(ledger, tx, SessionId.make(sessionId), conversation, cap);
 });
 
 /** Writes the share of `session` through `tx`, and marks it to be read again by the session's next request. */
-const write = Effect.fnUntraced(function* (
+const write = Effect.fn("Shares.write")(function* (
 	ledger: Ledger,
 	tx: Tx.Tx,
-	session: string,
+	session: SessionId,
 	conversation: ConversationId,
 	cap: bigint | undefined,
 ) {
@@ -315,11 +330,9 @@ const write = Effect.fnUntraced(function* (
 });
 
 /** The provider session Pi sends with every request of `conversation`; none when the conversation has none. */
-export function sessionOf(
+export const sessionOf = Effect.fn("Shares.sessionOf")(function* (
 	conversation: ConversationId,
-): Effect.Effect<Option.Option<string>, Doc.Failure, Harness.Harness> {
-	return Effect.map(
-		Harness.snapshot(BuiltinDoc.provider, conversation),
-		Option.map((state) => state.sessionId),
-	);
-}
+): Effect.fn.Return<Option.Option<SessionId>, Doc.Failure, Harness.Harness> {
+	const provider = yield* Harness.snapshot(BuiltinDoc.provider, conversation);
+	return Option.map(provider, (state) => SessionId.make(state.sessionId));
+});

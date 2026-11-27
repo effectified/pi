@@ -1,3 +1,4 @@
+import { ProviderId } from "@effectified/pi-ai";
 import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
@@ -56,7 +57,7 @@ describe("priceRows", () => {
 	});
 
 	it("names the alias rows by the id the router is built with", async () => {
-		const rows = await Effect.runPromise(priceRows(TABLE, "routes"));
+		const rows = await Effect.runPromise(priceRows(TABLE, ProviderId.make("routes")));
 		expect(rows.prices.map((row) => `${row.provider}/${row.model}`)).toEqual([
 			"first/m",
 			"second/m",

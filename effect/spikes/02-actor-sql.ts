@@ -324,6 +324,7 @@ function interruptions(raw: RawAccess) {
 		let callbackEnded = false;
 		const running = Promise.withResolvers<unknown>();
 		const fiber = yield* Effect.forkChild(
+			// @effect-diagnostics-next-line effectTryWithoutCatch:off this step records the untyped bridge the spike measured
 			Effect.tryPromise(() => {
 				const done = raw.transaction(async (tx) => {
 					await tx.execute("INSERT INTO t (id, tag) VALUES (30, 'rivet')");

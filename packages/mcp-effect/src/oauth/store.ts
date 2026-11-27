@@ -2,14 +2,17 @@
 // the lock that keeps other processes from refreshing at the same time.
 
 import { type McpOAuthServerStore, type McpOAuthState, MemoryOAuthStateStore } from "@earendil-works/pi-mcp/oauth";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { fromPi, type McpFailure, type McpRefreshLockBusyError } from "../errors.ts";
 import type { RunInPi } from "../run-in-pi.ts";
 
-/** Pi's `McpOAuthServerStore` in Effect terms. The application makes it durable (a file, a database row). */
+/**
+ * Pi's `McpOAuthServerStore` in Effect terms. The application makes it durable (a file, a database row). The state is
+ * Pi's own record, which the store keeps as it is: its tokens and client secret are plain strings in it.
+ */
 export interface OAuthStore<R = never> {
-	/** The stored state, or nothing. Pi ignores a state of another server URL. */
-	readonly load: Effect.Effect<McpOAuthState | undefined, McpFailure, R>;
+	/** The stored state, or none. Pi ignores a state of another server URL. */
+	readonly load: Effect.Effect<Option.Option<McpOAuthState>, McpFailure, R>;
 	/** Replaces the stored state. */
 	readonly save: (state: McpOAuthState) => Effect.Effect<void, McpFailure, R>;
 	/**
@@ -23,24 +26,22 @@ export interface OAuthStore<R = never> {
 }
 
 /**
- * Pi's `MemoryOAuthStateStore`, with a refresh lock that only runs its Effect: for one process, and for tests. Its
- * state ends with the program.
+ * A new store on Pi's `MemoryOAuthStateStore`, with a refresh lock that only runs its Effect: for one process, and
+ * for tests. Its state ends with the program.
  */
-export function memoryOAuthStore(): Effect.Effect<OAuthStore> {
-	return Effect.sync(() => {
-		const memory = new MemoryOAuthStateStore();
-		return {
-			load: Effect.sync(() => memory.load()),
-			save: (state) => Effect.sync(() => memory.save(state)),
-			withRefreshLock: (effect) => effect,
-		};
-	});
-}
+export const memoryOAuthStore: Effect.Effect<OAuthStore> = Effect.sync(() => {
+	const memory = new MemoryOAuthStateStore();
+	return {
+		load: Effect.sync(() => Option.fromUndefinedOr(memory.load())),
+		save: (state) => Effect.sync(() => memory.save(state)),
+		withRefreshLock: (effect) => effect,
+	};
+});
 
 /** `store` as Pi's `McpOAuthServerStore`, its Effects run with `run`. */
 export function toPiStore<R>(store: OAuthStore<R>, run: RunInPi<R>): McpOAuthServerStore {
 	return {
-		load: () => run(store.load),
+		load: () => run(Effect.map(store.load, Option.getOrUndefined)),
 		save: (state) => run(store.save(state)),
 		withRefreshLock: (fn) => run(store.withRefreshLock(Effect.tryPromise({ try: fn, catch: fromPi }))),
 	};

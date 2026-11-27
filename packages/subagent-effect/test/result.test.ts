@@ -46,7 +46,7 @@ describe("Result.compile", () => {
 	it("fails with what to tell the child for text that is no JSON, and for JSON of another shape", async () => {
 		const prose = await Effect.runPromise(Effect.flip(compiled.decode("Paris, by the Seine.")));
 		const shape = await Effect.runPromise(Effect.flip(compiled.decode('{"capital":"Paris"}')));
-		expect(prose).toEqual(new ResultMismatch({ subagent: "cities", issues: "it is not JSON" }));
+		expect(prose).toEqual(ResultMismatch.make({ subagent: Subagent.Name.make("cities"), issues: "it is not JSON" }));
 		expect(shape).toBeInstanceOf(ResultMismatch);
 		expect(shape.issues).toContain('["landlocked"]');
 		expect(Result.correction(prose)).toBe(
@@ -115,8 +115,10 @@ describe("a subagent with a declared result", () => {
 		]);
 		expect(seen.record.state).toMatchObject({ _tag: "Typed", result });
 		// The host decodes what the details hold with the declaration.
-		const stored = (seen.results[0]?.details as { readonly result: unknown }).result;
-		expect(await Effect.runPromise(Subagent.result(cities, stored))).toEqual(result);
+		const kept = seen.results[0]?.details as { readonly result: unknown } | undefined;
+		expect(await Effect.runPromise(Subagent.result(cities, kept?.result))).toEqual(result);
+		// Data-last, in a pipe of what a host found.
+		expect(await Effect.runPromise(Subagent.result(kept?.result)(cities))).toEqual(result);
 		expect(seen.asked).toEqual(["parent", "child", "parent"]);
 	});
 

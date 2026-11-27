@@ -12,7 +12,9 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ?
 
 class Tenants extends Context.Service<Tenants, { readonly current: string }>()("test/Tenants") {}
 
-class Refused extends Schema.TaggedError<Refused>()("Refused", { why: Schema.String }) {}
+class Refused extends Schema.TaggedError<Refused, { readonly brand: unique symbol }>()("Refused", {
+	why: Schema.String,
+}) {}
 
 const Owner = Doc.make({
 	kind: "test.owner",

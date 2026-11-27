@@ -33,18 +33,20 @@ It runs as it stands, because both models are scripted; the same code is the tes
 [`test/readme.test.ts`](test/readme.test.ts).
 
 ```ts
-import { Models } from "@effectified/pi-ai";
+import { fromPiModelRef, Models } from "@effectified/pi-ai";
 import { fauxProvider } from "@effectified/pi-ai/testing";
 import { answer, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Stream } from "effect";
 import * as Review from "@effectified/pi-review";
 
 // Policy as data: who reviews, the family of every model, how many corrective runs, what blocks.
+const writer = fromPiModelRef({ provider: "author-lab", modelId: "writer" });
+const judge = fromPiModelRef({ provider: "reviewer-lab", modelId: "judge" });
 const policy: Review.Policy.Policy = {
-	reviewer: { provider: "reviewer-lab", modelId: "judge" },
+	reviewer: judge,
 	families: [
-		{ provider: "author-lab", modelId: "writer", family: "alpha" },
-		{ provider: "reviewer-lab", modelId: "judge", family: "beta" },
+		{ ...writer, family: "alpha" },
+		{ ...judge, family: "beta" },
 	],
 	maxCorrections: 1,
 	blocking: "block",
@@ -102,6 +104,9 @@ const policy = Schema.decodeUnknownSync(Review.Policy.Policy)({
 |---|---|
 | `reviewer` | The model that reads every answer: `{ provider, modelId }`, as Pi names models |
 | `families` | The family table: one row `{ provider, modelId, family }` per model you use, authors and reviewer. The labels are yours. This package has no model name in it |
+
+The ids are `@effectified/pi-ai`'s branded `ProviderId` and `ModelId`, as in its `ModelRef`: decoding brands them,
+and in code a row is a `ModelRef` with a family, `{ ...fromPiModelRef({ provider, modelId }), family }`.
 | `maxCorrections` | How many times one run may be sent back for a correction. A whole number from 0; 0 holds at the first blocking finding |
 | `blocking` | The lowest severity that blocks: `info`, `warn` or `block`. Severities are ordered, so `block` always blocks |
 | `instructions` | Optional: what the reviewer is told to look for, added after this package's own instructions |
@@ -183,10 +188,15 @@ const reviewed = Review.extension({ policy, checks: [Cited, Wording] });
 
 - **A check's subject** is `{ conversationId, answerId, answer, author, pass, transcript }`: the answer's entry and
   text, who wrote it, the number of this review within its run, and the run's model messages.
+- **A check's name** is a `Review.Check.Name`, a branded string: `Review.Check.make` brands the one you give, and it
+  is stored with every finding and failure of the check.
 - **The citation check** (`review.citations`) takes an extractor, `(answer) => Citation[]` with
-  `{ source, claim, location? }`, and asks the port `Review.Citations.Verifier` about each citation, one after
-  another. `verify` answers `Verified`, `Unresolved` (it does not resolve) or `Unsupported` (it does not support its
-  claim), the last two with an optional `reason`. Every citation that is not verified is a `block` finding.
+  `{ source, claim, location? }` (`Review.Citations.Citation`, a `Schema`), and asks the port
+  `Review.Citations.Verifier` about each citation, one after another. `verify` answers a
+  `Review.Citations.Verification`: `Verified`, `Unresolved` (it does not resolve) or `Unsupported` (it does not
+  support its claim), the last two with an optional `reason`. Every citation that is not verified is a `block`
+  finding. A verifier that cannot say fails with `Review.VerificationFailed` (`{ reason, cause? }`): `reason` is kept
+  in the verdict, so it quotes nothing secret, and `cause` is your own failure.
 - **A check that fails is not a finding.** A failure or a defect of a check, a verifier that fails, a reviewer
   request that failed and a reviewer answer that is not the findings object (`UndecodableReview`) are all kept as
   `failures` of the verdict. They never count as "nothing found". With a blocking finding of another check, the run
@@ -238,8 +248,11 @@ same commit as the task's decision: both are stored, or neither.
 | `call` | The reviewer's request: `{ provider, model, api?, responseModel?, responseId?, stopReason, timestamp?, durationMs?, usage?, error? }`. Absent when nobody was asked |
 | `findings` | Every finding of every check, with the check's name, blocking or not |
 | `failures` | `{ check, error }` for each check that failed |
-| `outcome` | `Passed`, `Corrected`, `Held` with the waiting task, `Deferred` with the waiting task and the `attempt`, or `NotReviewed` with the reason |
+| `outcome` | `Passed`, `Corrected`, `Held` with the waiting task, `Deferred` with the waiting task and the `attempt`, or `NotReviewed` with the reason: a `Review.Outcome`, whose `match` takes one handler per tag |
 | `time` | The harness clock when the verdict was decided, in epoch milliseconds |
+
+Counts are whole numbers (`pass` and `attempt` from 1, token counts and `corrections` from 0), costs are finite, and
+the models a verdict names have branded ids: a stored verdict that breaks any of it does not decode.
 
 - **`pass` is counted per answer.** A review that was deferred and asked for again writes a second verdict about the
   same answer with the same `pass`. `Review.state` reads the newest one.
@@ -282,7 +295,8 @@ const verdicts = yield* Stream.runCollect(Review.verdicts(root)); // every store
 const since = yield* Stream.runCollect(Review.verdicts(root, { from: entry })); // those from an entry on
 ```
 
-`Review.State` is a `Schema`, a union of eight:
+`Review.State` is a `Schema`, a tagged union of eight; `Review.State.match(state, { ... })` takes one handler per
+tag, and `Review.State.guards` tests for one:
 
 | | |
 |---|---|
@@ -316,8 +330,8 @@ then the review task of a held or deferred answer, or the conversation's agent f
 
 `Review.state` says where the conversation stands now. What it went through is in its entries: a hold and a
 deferral each begin with the verdict that put the review task to sleep, in the same commit. `Review.waitOf(verdict)`
-gives that wait from the verdict alone: the `Held` or `Deferred` state, as `Review.state` read it while the wait
-lasted, and none for a verdict that waited for nobody. It is the same however long ago the verdict was stored and
+gives that wait from the verdict alone: a `Review.Wait`, the `Held` or `Deferred` state as `Review.state` read it
+while the wait lasted, and none for a verdict that waited for nobody. It is the same however long ago the verdict was stored and
 whatever ended the wait. A verdict's `inputs` say which submission waited.
 
 ```ts

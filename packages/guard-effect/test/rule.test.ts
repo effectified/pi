@@ -1,19 +1,21 @@
 import type { ConversationId } from "@earendil-works/pi-durable";
+import { ToolCallId, ToolName } from "@effectified/pi-durable";
 import { Context, Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Rule } from "../src/index.ts";
+import { names } from "./guarded.ts";
 
 const Search = {
-	name: "search",
+	name: ToolName.make("search"),
 	parameters: Schema.Struct({ query: Schema.String, since: Schema.optionalKey(Schema.Date) }),
 };
 
 const call: Rule.Call = {
-	name: "search",
+	name: ToolName.make("search"),
 	conversationId: 7 as ConversationId,
-	callId: "call-1",
+	callId: ToolCallId.make("call-1"),
 	nested: false,
-	grant: { tools: ["search"], classification: "internal" },
+	grant: { tools: names("search"), classification: "internal" },
 };
 
 class Limits extends Context.Service<Limits, { readonly longest: number }>()("test/Limits") {}

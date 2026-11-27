@@ -1,7 +1,7 @@
 // Effect Schema to and from the JSON Schema that Pi tool parameters are written in.
 
 import type { JsonSchema as PiJsonSchema } from "@earendil-works/pi-schema";
-import { Effect, JsonSchema, Schema, SchemaRepresentation } from "effect";
+import { Effect, JsonSchema, Predicate, Record, Schema, SchemaRepresentation } from "effect";
 import { SchemaConversionError } from "./errors.ts";
 
 /** How `toJsonSchema` writes a schema. */
@@ -19,7 +19,7 @@ export interface ToJsonSchemaOptions {
  */
 export function toJsonSchema(schema: Schema.Constraint, options?: ToJsonSchemaOptions): PiJsonSchema {
 	const document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: options?.onExcessProperty ?? "error" });
-	return Object.keys(document.definitions).length === 0
+	return Record.isEmptyRecord(document.definitions)
 		? document.schema
 		: { ...document.schema, $defs: document.definitions };
 }
@@ -58,6 +58,7 @@ export function fromJsonSchema(
 				patterns: options?.patterns ?? "error",
 			}) as Schema.Decoder<unknown>;
 		},
-		catch: (cause) => new SchemaConversionError({ reason: cause instanceof Error ? cause.message : String(cause) }),
+		catch: (cause) =>
+			SchemaConversionError.make({ reason: Predicate.isError(cause) ? cause.message : String(cause) }),
 	});
 }

@@ -1,20 +1,26 @@
-import type { JsonObject } from "@earendil-works/pi-durable";
 import type { Hook } from "@effectified/pi-durable";
-import { Effect, Option } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Asks from "../src/asks.ts";
+import { Request } from "../src/index.ts";
 
-const request = (index: number, digest: string) => ({
-	id: `12:${index}:${digest}`,
-	conversation: 1,
-	task: 12,
-	callId: "call-1",
-	tool: "write",
-	arguments: { text: digest },
-	digest,
-	askedAt: 1_000 + index,
-	expiresAt: 2_000 + index,
-});
+/** The stored JSON of the ask number `index`, for arguments whose digest is 64 times `letter`. */
+const request = (index: number, letter: string) => {
+	const digest = letter.repeat(64);
+	return {
+		id: `12:${index}:${digest}`,
+		conversation: 1,
+		task: 12,
+		callId: "call-1",
+		tool: "write",
+		arguments: { text: letter },
+		digest,
+		askedAt: 1_000 + index,
+		expiresAt: 2_000 + index,
+	};
+};
+
+const decoded = Schema.decodeUnknownSync(Request);
 
 /** A task's memos as a hook's api gives them: first writer wins. `reads` counts the reads. */
 function memos(initial: Record<string, unknown> = {}) {
@@ -41,16 +47,19 @@ describe("read", () => {
 
 	it("gives every request in the order they were made, and stops at the first gap", async () => {
 		const { reads, memo } = memos({
-			"approvals.ask/0": request(0, "abc"),
-			"approvals.ask/1": request(1, "def"),
-			"approvals.ask/3": request(3, "never read"),
+			"approvals.ask/0": request(0, "a"),
+			"approvals.ask/1": request(1, "b"),
+			"approvals.ask/3": request(3, "c"),
 		});
-		expect(await Effect.runPromise(Asks.read(memo))).toEqual([request(0, "abc"), request(1, "def")]);
+		expect(await Effect.runPromise(Asks.read(memo))).toEqual([request(0, "a"), request(1, "b")]);
 		expect(reads).toEqual(["approvals.ask/0", "approvals.ask/1", "approvals.ask/2"]);
 	});
 
 	it("fails with MalformedState, naming the memo, for a stored value that is no request", async () => {
-		const { memo } = memos({ "approvals.ask/0": request(0, "abc"), "approvals.ask/1": { id: "12:1:def" } });
+		const { memo } = memos({
+			"approvals.ask/0": request(0, "a"),
+			"approvals.ask/1": { id: `12:1:${"b".repeat(64)}` },
+		});
 		const error = await Effect.runPromise(Effect.flip(Asks.read(memo)));
 		expect(error).toMatchObject({ _tag: "MalformedState", where: "approvals.ask/1" });
 	});
@@ -58,8 +67,8 @@ describe("read", () => {
 
 describe("ofRecord", () => {
 	it("reads the same requests from a task record's memos, and none from a record without memos", async () => {
-		const record = { "approvals.ask/0": request(0, "abc"), "approvals.ask/1": request(1, "def"), "pi.other": true };
-		expect(await Effect.runPromise(Asks.ofRecord(record))).toEqual([request(0, "abc"), request(1, "def")]);
+		const record = { "approvals.ask/0": request(0, "a"), "approvals.ask/1": request(1, "b"), "pi.other": true };
+		expect(await Effect.runPromise(Asks.ofRecord(record))).toEqual([request(0, "a"), request(1, "b")]);
 		expect(await Effect.runPromise(Asks.ofRecord(undefined))).toEqual([]);
 		expect(await Effect.runPromise(Asks.ofRecord({}))).toEqual([]);
 	});
@@ -73,12 +82,12 @@ describe("ofRecord", () => {
 describe("append", () => {
 	it("stores the first candidate of an ask and gives it back for every later one", async () => {
 		const { stored, memo } = memos();
-		const first = await Effect.runPromise(Asks.append(memo, 0, request(0, "abc") as JsonObject));
+		const first = await Effect.runPromise(Asks.append(memo, 0, decoded(request(0, "a"))));
 		// Pi asks again after a crash: the later candidate has another time, and the stored request stands.
 		const again = await Effect.runPromise(
-			Asks.append(memo, 0, { ...request(0, "abc"), askedAt: 9_000, expiresAt: 9_999 } as JsonObject),
+			Asks.append(memo, 0, decoded({ ...request(0, "a"), askedAt: 9_000, expiresAt: 9_999 })),
 		);
-		expect(first).toEqual(request(0, "abc"));
+		expect(first).toEqual(request(0, "a"));
 		expect(again).toEqual(first);
 		expect([...stored.keys()]).toEqual(["approvals.ask/0"]);
 	});

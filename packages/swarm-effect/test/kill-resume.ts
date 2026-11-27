@@ -72,7 +72,7 @@ export function registerKillResume(
 		return Effect.runPromise(program.pipe(Effect.provide(Layer.merge(live, client(filename)))));
 	};
 	const plan = (root: { readonly id: Swarm.Plan<unknown>["source"] }): Swarm.Plan<{ readonly word: string }> => ({
-		id: "resumed",
+		id: Swarm.SwarmId.make("resumed"),
 		source: root.id,
 		jobs: jobsOf(WORDS),
 		cap: CAP,
@@ -80,7 +80,7 @@ export function registerKillResume(
 	});
 	/** What a finished swarm left, read in the harness that finished it. */
 	const left = Effect.gen(function* () {
-		const result = yield* Swarm.result(Measure, "resumed");
+		const result = yield* Swarm.result(Measure, Swarm.SwarmId.make("resumed"));
 		const sql = yield* SqlClient;
 		const driver = yield* Swarm.ForkDriver;
 		const forks = yield* sql<{ parent: number | null; total: number }>`
@@ -90,7 +90,7 @@ export function registerKillResume(
 			SELECT kind FROM documents UNION SELECT kind FROM tasks ORDER BY kind`;
 		return {
 			result,
-			listed: yield* driver.list("resumed"),
+			listed: yield* driver.list(Swarm.SwarmId.make("resumed")),
 			forks: forks.map((row) => [row.parent, row.total]),
 			// Pi stores a document's kind as JSON text and a task's as it is.
 			ours: [...new Set(kinds.map((row) => row.kind.replaceAll('"', "")))].filter((kind) => !kind.startsWith("pi.")),
@@ -151,7 +151,11 @@ export function registerKillResume(
 					const root = yield* Harness.root;
 					const started = yield* Swarm.start(Measure, plan(root));
 					const stored = yield* Harness.commit((tx) => tx.scanConversations({}, 100));
-					return { started, status: yield* Swarm.status("resumed"), conversations: stored.items.length };
+					return {
+						started,
+						status: yield* Swarm.status(Swarm.SwarmId.make("resumed")),
+						conversations: stored.items.length,
+					};
 				}),
 				{ resume: false },
 			);
@@ -164,7 +168,7 @@ export function registerKillResume(
 				third,
 				Effect.gen(function* () {
 					// The probe after a reopen: the coordinator runs, and the jobs it planned are listed.
-					const status = yield* Swarm.status("resumed");
+					const status = yield* Swarm.status(Swarm.SwarmId.make("resumed"));
 					const again = yield* Swarm.start(Measure, plan(yield* Harness.root));
 					return { status, again, left: yield* left };
 				}),
@@ -189,9 +193,11 @@ export function registerKillResume(
 					const root = yield* primed(TURNS);
 					yield* Swarm.start(Measure, plan(root));
 					// Three jobs answer; every later one holds its fork, so the cap fills and stays full.
-					yield* until(Effect.map(tally("resumed"), (now) => now.succeeded === 3 && now.running === CAP));
+					yield* until(
+						Effect.map(tally(Swarm.SwarmId.make("resumed")), (now) => now.succeeded === 3 && now.running === CAP),
+					);
 					yield* first.when(() => first.live === CAP);
-					return yield* tally("resumed");
+					return yield* tally(Swarm.SwarmId.make("resumed"));
 				}),
 				{ holdFrom: 3 },
 			);
@@ -202,7 +208,7 @@ export function registerKillResume(
 				filename,
 				second,
 				Effect.gen(function* () {
-					const status = yield* Swarm.status("resumed");
+					const status = yield* Swarm.status(Swarm.SwarmId.make("resumed"));
 					return { status, left: yield* left };
 				}),
 			);
@@ -233,7 +239,10 @@ export function registerKillResume(
 					yield* Swarm.start(Measure, plan(root));
 					yield* Effect.promise(() => reached.promise);
 					const driver = yield* Swarm.ForkDriver;
-					return { status: yield* Swarm.status("resumed"), listed: (yield* driver.list("resumed")).length };
+					return {
+						status: yield* Swarm.status(Swarm.SwarmId.make("resumed")),
+						listed: (yield* driver.list(Swarm.SwarmId.make("resumed"))).length,
+					};
 				}),
 				// Clean-up begins with the driver's list: held there, every job has settled and no fork is destroyed.
 				{
@@ -284,7 +293,7 @@ export function registerKillResume(
 			);
 			// Each of these harnesses lives a few milliseconds: the coordinator is cut off wherever it stands.
 			for (const millis of [1, 3, 5, 8, 2, 13]) await on(Effect.andThen(Harness.resume, Effect.sleep(millis)));
-			const result = await on(Swarm.result(Measure, "resumed"));
+			const result = await on(Swarm.result(Measure, Swarm.SwarmId.make("resumed")));
 			expect(result.jobs).toEqual(
 				WORDS.map((word) => ({ _tag: "Success", key: `job-${word}`, value: measured(word) })),
 			);
@@ -340,14 +349,16 @@ export function registerKillResume(
 				Effect.gen(function* () {
 					yield* Swarm.onStorageFork;
 					yield* Harness.resume;
-					const inherited = yield* Effect.flip(Swarm.result(Measure, "resumed"));
+					const inherited = yield* Effect.flip(Swarm.result(Measure, Swarm.SwarmId.make("resumed")));
 					const root = yield* Harness.root;
-					yield* Swarm.start(Measure, { ...plan(root), id: "own", jobs: jobsOf(["a", "bb"]) });
-					return { inherited, own: yield* Swarm.result(Measure, "own") };
+					yield* Swarm.start(Measure, { ...plan(root), id: Swarm.SwarmId.make("own"), jobs: jobsOf(["a", "bb"]) });
+					return { inherited, own: yield* Swarm.result(Measure, Swarm.SwarmId.make("own")) };
 				}),
 				false,
 			);
-			expect(copied.inherited).toEqual(new Swarm.SwarmFaulted({ swarmId: "resumed", reason: "copied" }));
+			expect(copied.inherited).toEqual(
+				new Swarm.SwarmFaulted({ swarmId: Swarm.SwarmId.make("resumed"), reason: "copied" }),
+			);
 			// The copy asked the driver nothing for the swarm it inherited: no cancel, no destroy, no fork, no run.
 			expect(remote.cancelled).toEqual([]);
 			expect(remote.destroyed.filter((key) => KEYS.includes(key))).toEqual([]);

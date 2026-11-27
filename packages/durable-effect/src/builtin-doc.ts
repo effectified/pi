@@ -25,8 +25,11 @@ import type * as Doc from "./doc.ts";
  * wrote is ever rejected. `schema` only carries the type; it accepts any object. Its `history` is the token's, typed
  * as Pi types the token: `"latest" | "rewindable"` for a document Pi types as either.
  */
-export interface BuiltinDoc<T extends object, Kept extends "latest" | "rewindable">
-	extends Doc.Doc<Schema.Codec<Readonly<T>>, "conversation", Kept> {
+export interface BuiltinDoc<T extends object, Kept extends "latest" | "rewindable"> extends Doc.Doc<
+	Schema.Codec<Readonly<T>>,
+	"conversation",
+	Kept
+> {
 	/**
 	 * Who writes the document. `pi`: Pi's built-in tasks alone, so `set` and `update` of the document opened in a commit
 	 * fail with `SchemaDecodeError` and write nothing. `product`: your code may, as Pi's `configure` does.
@@ -83,14 +86,18 @@ export const nestedCall: BuiltinFamily<NestedCallState> = {
 	token: NestedCallDoc,
 	writer: "pi",
 	initial: () => NestedCallDoc.definition.initial(null),
-	encode: () => Effect.fail(new SchemaDecodeError({ issues: [writtenByPi(NestedCallDoc.definition.kind)] })),
+	encode: () => Effect.fail(SchemaDecodeError.make({ issues: [writtenByPi(NestedCallDoc.definition.kind)] })),
 	// As for the singletons: Pi's own type of what Pi stored.
 	decode: (stored) => Effect.succeed(stored as Readonly<NestedCallState>),
 };
 
 /** One of Pi's built-in task-scoped document families, written by Pi alone, created from no seed (`null`). */
-export interface BuiltinFamily<T extends object>
-	extends Doc.Family<Schema.Codec<Readonly<T>>, "task", undefined, null> {
+export interface BuiltinFamily<T extends object> extends Doc.Family<
+	Schema.Codec<Readonly<T>>,
+	"task",
+	undefined,
+	null
+> {
 	readonly writer: "pi";
 }
 
@@ -103,7 +110,7 @@ function piOwned<T extends JsonObject, D extends Definition<T>>(token: DocToken<
 	return {
 		...shared(token),
 		writer: "pi",
-		encode: () => Effect.fail(new SchemaDecodeError({ issues: [writtenByPi(token.definition.kind)] })),
+		encode: () => Effect.fail(SchemaDecodeError.make({ issues: [writtenByPi(token.definition.kind)] })),
 	};
 }
 

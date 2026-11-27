@@ -10,6 +10,6 @@ import { Effect } from "effect";
  * falls back to the system theme, as in Pi. `enableWatcher` reloads a custom theme when its file changes, for the
  * rest of the process. Not scoped: Pi offers no way to read the theme it replaces, nor to stop the watcher.
  */
-export function initTheme(themeName?: string, enableWatcher?: boolean): Effect.Effect<void> {
-	return Effect.sync(() => piInitTheme(themeName, enableWatcher));
-}
+export const initTheme = Effect.fn("Theme.initTheme")((themeName?: string, enableWatcher?: boolean) =>
+	Effect.sync(() => piInitTheme(themeName, enableWatcher)),
+);

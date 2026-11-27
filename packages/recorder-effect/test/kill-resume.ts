@@ -152,11 +152,9 @@ function expectNothingLostOrChanged(resumed: Outcome, whole: Outcome): void {
 	const all = [...resumed.first, ...resumed.second];
 	expect(new Set(ids(all))).toEqual(new Set(ids(whole.second)));
 	const first = new Map<string, Records.Record>();
-	for (const record of all) {
-		const before = first.get(record.id);
-		if (before === undefined) first.set(record.id, record);
-		else expect(record).toEqual(before);
-	}
+	for (const record of all) if (!first.has(record.id)) first.set(record.id, record);
+	// Every delivery of a record equals its first.
+	expect(all).toEqual(all.map((record) => first.get(record.id)));
 	const derived = resumed.entries.flatMap(fromEntry);
 	expect([...ids(committed([...first.values()]))].sort()).toEqual([...ids(derived)].sort());
 	for (const record of derived) expect(first.get(record.id)).toEqual(record);

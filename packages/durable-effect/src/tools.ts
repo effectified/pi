@@ -14,9 +14,10 @@ import type { Context as ChordContext } from "@effectified/pi-chord/context";
 import { Effect } from "effect";
 import type * as Extension from "./extension.ts";
 import type { Processor } from "./images/processor.ts";
-import { type Invoke, invoker } from "./invocation.ts";
+import { built, type Invoke, invoker } from "./invocation.ts";
 import { type PiTool, tool } from "./pi-made.ts";
 import * as ToolApi from "./tool-api.ts";
+import { ToolName } from "./tool-name.ts";
 
 // Every type of Pi's tools (`BashExecution`, `ReadToolDetails`, `ImageLimits`, ...).
 export type * from "@earendil-works/pi-durable/tools";
@@ -105,14 +106,15 @@ function shell<E, R>(
 ): PiTool<R> {
 	const prepare = options?.prepare;
 	return {
-		// Pi names its tool: one made without a preparation says the name.
-		name: make(undefined).name,
+		// Pi names its tool: one made without a preparation says the name, branded where it enters.
+		name: ToolName.make(make(undefined).name),
 		registration: Effect.map(Effect.context<R>(), (context) => {
-			const invoke: Invoke<R> = invoker(context);
+			const invoke: Invoke<R> = invoker(built(context));
 			return make(
 				prepare === undefined
 					? undefined
-					: (execution, api, chord) => invoke(prepare(execution, ToolApi.fromPi(api)), chord),
+					: (execution, api, chord) =>
+							invoke(Effect.withSpan(prepare(execution, ToolApi.fromPi(api)), "Tools.prepare"), chord),
 			);
 		}),
 	};

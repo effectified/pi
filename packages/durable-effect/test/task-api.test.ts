@@ -20,7 +20,9 @@ const Progress = Doc.make({
 	checkpointWhen: () => false,
 });
 
-class Refused extends Schema.TaggedError<Refused>()("Refused", { why: Schema.String }) {}
+class Refused extends Schema.TaggedError<Refused, { readonly brand: unique symbol }>()("Refused", {
+	why: Schema.String,
+}) {}
 
 const ProbeState = Schema.Union([
 	Schema.Struct({ phase: Schema.Literal("run") }),

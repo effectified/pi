@@ -9,7 +9,7 @@ import { makeTelemetryContext, spanHandle } from "./adapter.ts";
  * handed to anything that takes one (`HarnessOptions.telemetry` of a Pi Durable harness).
  */
 export class PiTelemetry extends Context.Service<PiTelemetry, TelemetryContext>()(
-	"@effectified/pi-telemetry/PiTelemetry",
+	"@effectified/pi-telemetry/pi-telemetry/PiTelemetry",
 ) {
 	/**
 	 * The adapter on the `Tracer`, `Clock`, metric registry and loggers of the context the Layer is built in. It has
@@ -24,6 +24,7 @@ export class PiTelemetry extends Context.Service<PiTelemetry, TelemetryContext>(
 	 */
 	static readonly currentSpan: Effect.Effect<TelemetrySpan, never, PiTelemetry> = Effect.gen(function* () {
 		const telemetry = yield* PiTelemetry;
-		return spanHandle(telemetry, yield* Effect.serviceOption(Tracer.ParentSpan));
+		const span = yield* Effect.serviceOption(Tracer.ParentSpan);
+		return spanHandle(telemetry, span);
 	});
 }

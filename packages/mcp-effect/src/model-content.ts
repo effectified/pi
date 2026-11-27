@@ -11,6 +11,7 @@ import {
 } from "@earendil-works/pi-mcp";
 import { Effect } from "effect";
 import type { McpFailure } from "./errors.ts";
+import type { McpServerName } from "./names.ts";
 import { currentRunner } from "./run-in-pi.ts";
 
 /**
@@ -32,38 +33,41 @@ export interface ModelContentOptions<R = never> extends Omit<McpModelContentOpti
  * The model-facing content of `server`'s result, before the output limit (`limitMcpContent`): Pi's own conversion. A
  * save that fails becomes a line saying why, as in Pi.
  */
-export function toMcpModelContent<R = never>(
-	server: string,
+export const toMcpModelContent: <R = never>(
+	server: McpServerName,
+	result: Pick<CallToolResult, "content" | "structuredContent">,
+	options?: ModelContentOptions<R>,
+) => Effect.Effect<LlmContent[], never, R> = Effect.fn("McpModelContent.toMcpModelContent")(function* <R>(
+	server: McpServerName,
 	result: Pick<CallToolResult, "content" | "structuredContent">,
 	options: ModelContentOptions<R> = {},
-): Effect.Effect<LlmContent[], never, R> {
-	return Effect.gen(function* () {
-		const run = yield* currentRunner<R>();
-		const { saveOutput, ...rest } = options;
-		return yield* Effect.promise(() =>
-			piToMcpModelContent(server, result, {
-				...rest,
-				...(saveOutput === undefined ? {} : { saveOutput: (data, extension) => run(saveOutput(data, extension)) }),
-			}),
-		);
-	});
-}
+) {
+	const run = yield* currentRunner<R>();
+	const { saveOutput, ...rest } = options;
+	return yield* Effect.promise(() =>
+		piToMcpModelContent(server, result, {
+			...rest,
+			...(saveOutput === undefined ? {} : { saveOutput: (data, extension) => run(saveOutput(data, extension)) }),
+		}),
+	);
+});
 
 /**
  * Model-facing content within `MCP_OUTPUT_MAX_BYTES`: longer text keeps its start and end, and its full text is saved
  * with `saveOutput` when given. Pi's own limit; a save that fails becomes a line saying why.
  */
-export function limitMcpContent<R = never>(
+export const limitMcpContent: <R = never>(
 	content: LlmContent[],
 	saveOutput?: OutputSaver<R>,
-): Effect.Effect<LimitedMcpContent, never, R> {
-	return Effect.gen(function* () {
-		const run = yield* currentRunner<R>();
-		return yield* Effect.promise(() =>
-			piLimitMcpContent(
-				content,
-				saveOutput === undefined ? undefined : (data, extension) => run(saveOutput(data, extension)),
-			),
-		);
-	});
-}
+) => Effect.Effect<LimitedMcpContent, never, R> = Effect.fn("McpModelContent.limitMcpContent")(function* <R>(
+	content: LlmContent[],
+	saveOutput?: OutputSaver<R>,
+) {
+	const run = yield* currentRunner<R>();
+	return yield* Effect.promise(() =>
+		piLimitMcpContent(
+			content,
+			saveOutput === undefined ? undefined : (data, extension) => run(saveOutput(data, extension)),
+		),
+	);
+});

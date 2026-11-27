@@ -15,6 +15,7 @@ import {
 	type ExtensionError,
 	type AgentSession as PiAgentSession,
 	type PromptOptions,
+	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { SchemaConversionError } from "@effectified/pi-schema";
 import { type Cause, Context, Effect, Layer, Queue, type Scope, Stream } from "effect";
@@ -123,7 +124,8 @@ export type Bindings = Pick<
 
 /** A session: every member of Pi's `AgentSession` as an Effect (or a Stream), under its name. */
 export interface AgentSessionHandle
-	extends Fields<PiAgentSession, (typeof FIELDS)[number]>,
+	extends
+		Fields<PiAgentSession, (typeof FIELDS)[number]>,
 		Reads<PiAgentSession, (typeof READS)[number]>,
 		Writes<PiAgentSession, (typeof WRITES)[number]>,
 		Awaits<PiAgentSession, (typeof AWAITS)[number]> {
@@ -179,11 +181,10 @@ export interface AgentSessionHandle
  * runtime, the settings, the session storage and the resources (Pi's defaults where one is left out), and tools of
  * this package as the custom tools.
  */
-export interface Options<R>
-	extends Omit<
-		CreateAgentSessionOptions,
-		"modelRuntime" | "settingsManager" | "sessionManager" | "resourceLoader" | "customTools"
-	> {
+export interface Options<R> extends Omit<
+	CreateAgentSessionOptions,
+	"modelRuntime" | "settingsManager" | "sessionManager" | "resourceLoader" | "customTools"
+> {
 	readonly modelRuntime?: ModelRuntimeHandle;
 	readonly settingsManager?: SettingsManagerHandle;
 	readonly sessionManager?: SessionManagerHandle;
@@ -195,11 +196,10 @@ export interface Options<R>
  * What `AgentSession.services` takes: Pi's `createAgentSessionServices` options, with this package's handles and the
  * resources' options with extensions written in Effect.
  */
-export interface ServicesOptions<R>
-	extends Pick<
-		CreateAgentSessionServicesOptions,
-		"cwd" | "agentDir" | "extensionFlagValues" | "resourceLoaderReloadOptions"
-	> {
+export interface ServicesOptions<R> extends Pick<
+	CreateAgentSessionServicesOptions,
+	"cwd" | "agentDir" | "extensionFlagValues" | "resourceLoaderReloadOptions"
+> {
 	readonly settingsManager?: SettingsManagerHandle;
 	readonly modelRuntime?: ModelRuntimeHandle;
 	readonly resources?: Omit<ResourceLoaderOptions<R>, "cwd" | "agentDir" | "settingsManager">;
@@ -214,15 +214,17 @@ export interface ServicesHandle {
 }
 
 /** What `AgentSession.fromServices` takes besides the services: Pi's options, with tools of this package. */
-export interface FromServicesOptions<R>
-	extends Omit<CreateAgentSessionFromServicesOptions, "services" | "sessionManager" | "customTools"> {
+export interface FromServicesOptions<R> extends Omit<
+	CreateAgentSessionFromServicesOptions,
+	"services" | "sessionManager" | "customTools"
+> {
 	readonly sessionManager: SessionManagerHandle;
 	readonly customTools?: ReadonlyArray<Tool.Any<R>>;
 }
 
 /** The session of the program. */
 export class AgentSession extends Context.Service<AgentSession, AgentSessionHandle>()(
-	"@effectified/pi-coding-agent/AgentSession",
+	"@effectified/pi-coding-agent/agent-session/AgentSession",
 ) {
 	/**
 	 * A session for the scope with the program's `ModelRuntime`, `SettingsManager`, `SessionManager` and
@@ -253,61 +255,67 @@ export class AgentSession extends Context.Service<AgentSession, AgentSessionHand
 	 * A new session: Pi's `createAgentSession`. Closing the scope aborts what the session runs, waits until it is idle
 	 * and disposes it. The custom tools run with the services of the context this Effect runs in.
 	 */
-	static make<R = never>(
+	static readonly make = Effect.fn("AgentSession.make")(function* <R = never>(
 		options: Options<R> = {},
-	): Effect.Effect<AgentSessionHandle, CodingAgentFailure | SchemaConversionError, R | Scope.Scope> {
+	): Effect.fn.Return<AgentSessionHandle, CodingAgentFailure | SchemaConversionError, R | Scope.Scope> {
 		const { modelRuntime, settingsManager, sessionManager, resourceLoader, customTools, ...rest } = options;
-		return Effect.gen(function* () {
-			const tools = yield* Effect.forEach(customTools ?? [], (tool) => tool.definition);
-			const created = yield* Effect.acquireRelease(
-				Effect.tryPromise({
-					try: () =>
-						createAgentSession({
-							...rest,
-							...(modelRuntime === undefined ? {} : { modelRuntime: modelRuntime.pi }),
-							...(settingsManager === undefined ? {} : { settingsManager: settingsManager.pi }),
-							...(sessionManager === undefined ? {} : { sessionManager: sessionManager.pi }),
-							...(resourceLoader === undefined ? {} : { resourceLoader: resourceLoader.pi }),
-							...(tools.length === 0 ? {} : { customTools: tools }),
-						}),
-					catch: fromPi,
-				}),
-				({ session }) => close(session),
-			);
-			return AgentSession.fromPi(created.session);
-		});
-	}
+		const tools = yield* definitions(customTools);
+		const created = yield* Effect.acquireRelease(
+			Effect.tryPromise({
+				try: () =>
+					createAgentSession({
+						...rest,
+						...(modelRuntime === undefined ? {} : { modelRuntime: modelRuntime.pi }),
+						...(settingsManager === undefined ? {} : { settingsManager: settingsManager.pi }),
+						...(sessionManager === undefined ? {} : { sessionManager: sessionManager.pi }),
+						...(resourceLoader === undefined ? {} : { resourceLoader: resourceLoader.pi }),
+						...(tools.length === 0 ? {} : { customTools: tools }),
+					}),
+				catch: fromPi,
+			}),
+			({ session }) => close(session),
+		);
+		return AgentSession.fromPi(created.session);
+	});
 
 	/**
 	 * The services of the working directory `options.cwd`: Pi's `createAgentSessionServices`, which makes what
 	 * `options` leaves out (model runtime, settings) and loads the resources. Interrupting it cancels the model
 	 * runtime's first refresh.
 	 */
-	static services<R = never>(options: ServicesOptions<R>): Effect.Effect<ServicesHandle, CodingAgentFailure, R> {
-		return Effect.map(createdServices(options), servicesHandle);
-	}
+	static readonly services = Effect.fn("AgentSession.services")(function* <R = never>(
+		options: ServicesOptions<R>,
+	): Effect.fn.Return<ServicesHandle, CodingAgentFailure, R> {
+		const services = yield* createdServices(options);
+		return servicesHandle(services);
+	});
 
 	/**
 	 * A new session over `services`: Pi's `createAgentSessionFromServices`. Closing the scope aborts what the session
 	 * runs, waits until it is idle and disposes it.
 	 */
-	static fromServices<R = never>(
+	static readonly fromServices = Effect.fn("AgentSession.fromServices")(function* <R = never>(
 		services: ServicesHandle,
 		options: FromServicesOptions<R>,
-	): Effect.Effect<AgentSessionHandle, CodingAgentFailure | SchemaConversionError, R | Scope.Scope> {
-		return Effect.map(
-			Effect.acquireRelease(createdFromServices(services.pi, options), ({ session }) => close(session)),
-			({ session }) => AgentSession.fromPi(session),
+	): Effect.fn.Return<AgentSessionHandle, CodingAgentFailure | SchemaConversionError, R | Scope.Scope> {
+		const { session } = yield* Effect.acquireRelease(createdFromServices(services.pi, options), (created) =>
+			close(created.session),
 		);
-	}
+		return AgentSession.fromPi(session);
+	});
 
-	/** Pi's session as a handle. It stays the caller's: the handle adds nothing to its lifetime. */
+	/**
+	 * Pi's session as a handle. It stays the caller's: the handle adds nothing to its lifetime. The session's own
+	 * operations (a prompt, a compaction, a move in the tree) are spans named for them; Pi's members lifted under their
+	 * names are not.
+	 */
 	static fromPi(pi: PiAgentSession): AgentSessionHandle {
 		const call = <A>(start: () => Promise<A>) => Effect.tryPromise({ try: start, catch: fromPi });
-		const prompt = (text: string, options?: Prompt) =>
+		const prompt = Effect.fn("AgentSession.prompt")((text: string, options?: Prompt) =>
 			call(() => pi.prompt(text, options)).pipe(
 				Effect.onInterrupt(() => call(() => pi.abort()).pipe(Effect.ignore)),
-			);
+			),
+		);
 		return {
 			pi,
 			...fields(pi, FIELDS),
@@ -319,6 +327,7 @@ export class AgentSession extends Context.Service<AgentSession, AgentSessionHand
 			modelRuntime: fromPiRuntime(pi.modelRuntime),
 			resourceLoader: ResourceLoader.fromPi(pi.resourceLoader),
 			prompt,
+			// The callback's buffer is unbounded: Pi's listener cannot wait for the Stream's consumer.
 			stream: (text, options) =>
 				Stream.callback<AgentSessionEvent, CodingAgentFailure>((queue) =>
 					Effect.gen(function* () {
@@ -326,73 +335,89 @@ export class AgentSession extends Context.Service<AgentSession, AgentSessionHand
 						yield* prompt(text, options);
 						yield* Queue.end(queue);
 					}),
-				),
+				).pipe(Stream.withSpan("AgentSession.stream")),
 			subscribe: subscription((listener) => pi.subscribe(listener)),
-			compact: (customInstructions) =>
+			compact: Effect.fn("AgentSession.compact")((customInstructions?: string) =>
 				call(() => pi.compact(customInstructions)).pipe(
 					Effect.onInterrupt(() => Effect.sync(() => pi.abortCompaction())),
 				),
-			navigateTree: (targetId, options) =>
+			),
+			navigateTree: Effect.fn("AgentSession.navigateTree")((targetId: string, options?: NavigateOptions) =>
 				call(() => pi.navigateTree(targetId, options)).pipe(
 					Effect.onInterrupt(() => Effect.sync(() => pi.abortBranchSummary())),
 				),
-			executeBash: (command, options) =>
+			),
+			executeBash: Effect.fn("AgentSession.executeBash")((command: string, options?: BashOptions) =>
 				call(() => pi.executeBash(command, undefined, options)).pipe(
 					Effect.onInterrupt(() => Effect.sync(() => pi.abortBash())),
 				),
-			bindExtensions: (bindings) => call(() => pi.bindExtensions({ ...bindings })),
+			),
+			bindExtensions: Effect.fn("AgentSession.bindExtensions")((bindings?: Bindings) =>
+				call(() => pi.bindExtensions({ ...bindings })),
+			),
 			extensionErrors: subscription((listener) => pi.extensionRunner.onError(listener)),
-			reload: call(() => pi.reload()),
-			summarizeForBugReport: (hint) =>
+			reload: call(() => pi.reload()).pipe(Effect.withSpan("AgentSession.reload")),
+			summarizeForBugReport: Effect.fn("AgentSession.summarizeForBugReport")((hint?: string) =>
 				Effect.tryPromise({
 					try: (signal) => pi.summarizeForBugReport({ ...(hint === undefined ? {} : { hint }), signal }),
 					catch: fromPi,
 				}),
+			),
 		};
 	}
 }
 
-/** Pi's services for `options`, the Effect extensions among the resources run with the services of the context. */
-export function createdServices<R = never>(
+/**
+ * Pi's services for `options`, the Effect extensions among the resources run with the services of the context.
+ * Untraced: `AgentSession.services` and the runtime's session factory are the spans.
+ */
+export const createdServices = Effect.fnUntraced(function* <R = never>(
 	options: ServicesOptions<R>,
-): Effect.Effect<AgentSessionServices, CodingAgentFailure, R> {
+): Effect.fn.Return<AgentSessionServices, CodingAgentFailure, R> {
 	const { settingsManager, modelRuntime, resources, ...rest } = options;
 	const { extensions, extensionFactories, ...loader } = resources ?? {};
-	return Effect.gen(function* () {
-		const inline = yield* Effect.forEach(extensions ?? [], (extension) => extension.inline);
-		return yield* Effect.tryPromise({
-			try: (signal) =>
-				createAgentSessionServices({
-					...rest,
-					...(settingsManager === undefined ? {} : { settingsManager: settingsManager.pi }),
-					...(modelRuntime === undefined ? {} : { modelRuntime: modelRuntime.pi }),
-					modelRuntimeSignal: signal,
-					resourceLoaderOptions: { ...loader, extensionFactories: [...(extensionFactories ?? []), ...inline] },
-				}),
-			catch: fromPi,
-		});
+	// One after another, as Pi loads its extension factories in order.
+	const inline = yield* Effect.forEach(extensions ?? [], (extension) => extension.inline, { concurrency: 1 });
+	return yield* Effect.tryPromise({
+		try: (signal) =>
+			createAgentSessionServices({
+				...rest,
+				...(settingsManager === undefined ? {} : { settingsManager: settingsManager.pi }),
+				...(modelRuntime === undefined ? {} : { modelRuntime: modelRuntime.pi }),
+				modelRuntimeSignal: signal,
+				resourceLoaderOptions: { ...loader, extensionFactories: [...(extensionFactories ?? []), ...inline] },
+			}),
+		catch: fromPi,
 	});
-}
+});
 
-/** Pi's session over `services`, with the custom tools of `options` built with the services of the context. */
-export function createdFromServices<R = never>(
+/**
+ * Pi's session over `services`, with the custom tools of `options` built with the services of the context.
+ * Untraced: `AgentSession.fromServices` and the runtime's session factory are the spans.
+ */
+export const createdFromServices = Effect.fnUntraced(function* <R = never>(
 	services: AgentSessionServices,
 	options: FromServicesOptions<R>,
-): Effect.Effect<CreateAgentSessionResult, CodingAgentFailure | SchemaConversionError, R> {
+): Effect.fn.Return<CreateAgentSessionResult, CodingAgentFailure | SchemaConversionError, R> {
 	const { sessionManager, customTools, ...rest } = options;
-	return Effect.gen(function* () {
-		const tools = yield* Effect.forEach(customTools ?? [], (tool) => tool.definition);
-		return yield* Effect.tryPromise({
-			try: () =>
-				createAgentSessionFromServices({
-					...rest,
-					services,
-					sessionManager: sessionManager.pi,
-					...(tools.length === 0 ? {} : { customTools: tools }),
-				}),
-			catch: fromPi,
-		});
+	const tools = yield* definitions(customTools);
+	return yield* Effect.tryPromise({
+		try: () =>
+			createAgentSessionFromServices({
+				...rest,
+				services,
+				sessionManager: sessionManager.pi,
+				...(tools.length === 0 ? {} : { customTools: tools }),
+			}),
+		catch: fromPi,
 	});
+});
+
+/** Pi's definitions of `tools`, built one after another in their order with the services of the context. */
+function definitions<R>(
+	tools: ReadonlyArray<Tool.Any<R>> | undefined,
+): Effect.Effect<ToolDefinition[], SchemaConversionError, R> {
+	return Effect.forEach(tools ?? [], (tool) => tool.definition, { concurrency: 1 });
 }
 
 /** Pi's services as a handle. */
@@ -411,16 +436,15 @@ function close(pi: PiAgentSession): Effect.Effect<void> {
 }
 
 /** Everything `subscribe` reports from now until the scope closes, as a Stream that then ends. */
-function subscription<A>(
+const subscription = Effect.fnUntraced(function* <A>(
 	subscribe: (listener: (value: A) => void) => () => void,
-): Effect.Effect<Stream.Stream<A>, never, Scope.Scope> {
-	return Effect.gen(function* () {
-		const queue = yield* Queue.unbounded<A, Cause.Done>();
-		yield* Effect.addFinalizer(() => Queue.end(queue));
-		yield* listen(subscribe, queue);
-		return Stream.fromQueue(queue);
-	});
-}
+): Effect.fn.Return<Stream.Stream<A>, never, Scope.Scope> {
+	// Unbounded: Pi's listeners cannot wait for the Stream's consumer.
+	const queue = yield* Queue.unbounded<A, Cause.Done>();
+	yield* Effect.addFinalizer(() => Queue.end(queue));
+	yield* listen(subscribe, queue);
+	return Stream.fromQueue(queue);
+});
 
 /** Offers everything `subscribe` reports to `queue` until the scope closes. */
 function listen<A, E>(

@@ -5,7 +5,7 @@ import { Harness } from "@effectified/pi-durable";
 import { Action, ActorDatabase } from "@effectified/pi-durable-rivet";
 import { Context, Effect, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { Threads } from "../src/index.ts";
+import { ThreadKey, Threads } from "../src/index.ts";
 import { ThreadActor } from "../src/rivet.ts";
 import { config, outside, ports, providers } from "./world.ts";
 
@@ -17,7 +17,7 @@ class Elsewhere extends Context.Service<Elsewhere, { readonly name: string }>()(
 
 /** An action on the actor's database, the composition's `Threads` and the product's own service. */
 const brief = Action.make({
-	input: Schema.Struct({ thread: Schema.String }),
+	input: Schema.Struct({ thread: ThreadKey }),
 	output: Schema.Struct({ desk: Schema.String, alive: Schema.Boolean }),
 	handler: ({ thread }) =>
 		Effect.gen(function* () {
@@ -33,7 +33,7 @@ const onOpen = Layer.effectDiscard(
 	Effect.gen(function* () {
 		yield* Desk;
 		yield* Harness.Harness;
-		yield* Threads.Threads.use((threads) => threads.probe("nobody"));
+		yield* Threads.Threads.use((threads) => threads.probe(ThreadKey.make("nobody")));
 	}).pipe(Effect.orDie),
 );
 

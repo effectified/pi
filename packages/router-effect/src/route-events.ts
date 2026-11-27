@@ -1,8 +1,13 @@
 // The record of routing: one event per attempt on a route, published to a hub a product subscribes to.
 
+import { ModelId, ProviderId, RequestKey, SessionId } from "@effectified/pi-ai";
 import { Context, Effect, Layer, PubSub, Schema, type Scope, Stream } from "effect";
+import { RouterRequestId } from "./ids.ts";
 import { Cost, TokenUsage } from "./price.ts";
 import { Route } from "./route-table.ts";
+
+/** A position counted from 1: a request of a router, an attempt of a request. */
+const Ordinal = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 
 /**
  * One attempt to serve a request on one route, written when the attempt ended.
@@ -15,26 +20,26 @@ import { Route } from "./route-table.ts";
  */
 export const RouteEvent = Schema.Struct({
 	/** The id of the router's provider. */
-	router: Schema.String,
+	router: ProviderId,
 	/** Counts the requests of this router from 1; the attempts of one request share it. */
-	request: Schema.Int,
+	request: Ordinal,
 	/**
 	 * The id of the request: the same for every attempt of one request, and of no other request, of this router or of
 	 * another, in this process or a later one. With `attempt` it names one attempt for good.
 	 */
-	requestId: Schema.String,
+	requestId: RouterRequestId,
 	/** pi-ai's `sessionId` of the request, when it had one: Pi Durable sends a conversation's provider session. */
-	sessionId: Schema.optional(Schema.String),
+	sessionId: Schema.optional(SessionId),
 	/**
 	 * The key of what the request asks, when it had a session (`requestKey`): unlike `requestId`, the same for every
 	 * send of one request of a conversation, a resend after a crash in a later process included, and the key the
 	 * budget's reservation of the request has. It names no attempt: a request sent again is attempted again.
 	 */
-	requestKey: Schema.optional(Schema.String),
-	alias: Schema.String,
+	requestKey: Schema.optional(RequestKey),
+	alias: ModelId,
 	route: Route,
 	/** The position of this attempt in its request, from 1. */
-	attempt: Schema.Int,
+	attempt: Ordinal,
 	outcome: Schema.Literals(["served", "failed", "aborted", "unavailable"]),
 	/**
 	 * True when the next route is tried because of this outcome. The usage of such an attempt is told by this event
@@ -52,11 +57,11 @@ export const RouteEvent = Schema.Struct({
 	 */
 	cost: Cost,
 	/** Clock time in milliseconds when the attempt began, before any wait. */
-	startedAt: Schema.Number,
+	startedAt: Schema.Finite,
 	/** Milliseconds spent waiting for a slot and for the backoff of the route's concurrency key. */
-	waitedMillis: Schema.Number,
+	waitedMillis: Schema.Finite,
 	/** Milliseconds from sending the request to its outcome; zero when nothing was sent. */
-	durationMillis: Schema.Number,
+	durationMillis: Schema.Finite,
 });
 
 /** One attempt to serve a request on one route. */
@@ -74,7 +79,7 @@ export interface RouteEventsService {
 
 /** The hub of a router's route events. A subscriber that stops reading keeps its unread events in memory. */
 export class RouteEvents extends Context.Service<RouteEvents, RouteEventsService>()(
-	"@effectified/pi-router/RouteEvents",
+	"@effectified/pi-router/route-events/RouteEvents",
 ) {
 	/** A fresh hub with no subscriber; closing the Layer's scope ends every subscriber's Stream. */
 	static readonly layer: Layer.Layer<RouteEvents> = Layer.effect(

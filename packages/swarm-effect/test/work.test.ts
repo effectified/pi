@@ -2,6 +2,7 @@ import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { InvalidValue } from "../src/errors.ts";
 import { compile } from "../src/work.ts";
+import { JobKey, SwarmId } from "../src/ids.ts";
 
 const work = compile({
 	name: "count",
@@ -11,7 +12,7 @@ const work = compile({
 });
 
 const run = Effect.runPromise;
-const job = { swarmId: "s", key: "k" };
+const job = { swarmId: SwarmId.make("s"), key: JobKey.make("k") };
 
 describe("compile", () => {
 	it("keeps the name, and gives two corrections unless the definition says otherwise", () => {

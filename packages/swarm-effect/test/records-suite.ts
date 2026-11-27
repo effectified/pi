@@ -2,22 +2,23 @@
 // `ActorSql`, registered once per driver by sqlite-suites.ts. An engine runs the record in rivet-suite.ts.
 
 import { runTest } from "@effectified/pi-ai/testing";
-import { ActorInfo, ActorSql, type Identity } from "@effectified/pi-durable-rivet";
+import { ActorId, ActorInfo, ActorSql, type Identity } from "@effectified/pi-durable-rivet";
 import { Effect, Layer, Option } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
 import { expect, it } from "vitest";
 import * as Records from "../src/rivet/records.ts";
 import type { ClientLayer } from "./kill-resume.ts";
+import { JobKey, SwarmId } from "../src/ids.ts";
 
 /** An actor with this fork chain: `source` names the actor it was forked from. */
 const actor = (actorId: string, source: Option.Option<string>): Identity => ({
-	actorId,
+	actorId: ActorId.make(actorId),
 	name: "agent",
 	key: [actorId],
 	namespace: "default",
 	forkChain: Option.match(source, {
 		onNone: () => [],
-		onSome: (from) => [{ actorId: from, key: [from], forkedAt: 1 }],
+		onSome: (from) => [{ actorId: ActorId.make(from), key: [from], forkedAt: 1 }],
 	}),
 	forkInput: Option.none(),
 });
@@ -56,7 +57,7 @@ export function registerRecords(client: ClientLayer): void {
 					readonly migration_id: number;
 				}>`SELECT migration_id FROM swarm_rivet_migrations`;
 				expect(versions.map((row) => row.migration_id)).toEqual([1]);
-				expect(yield* Records.find("s", "kept")).toEqual(
+				expect(yield* Records.find(SwarmId.make("s"), JobKey.make("kept"))).toEqual(
 					Option.some({ _tag: "Made", actorId: "fork-0", baseBytes: Option.none() }),
 				);
 			}),
@@ -67,22 +68,22 @@ export function registerRecords(client: ClientLayer): void {
 			source,
 			Effect.gen(function* () {
 				yield* Records.migrate;
-				yield* Records.intend("s", "a");
-				yield* Records.intend("s", "b");
-				yield* Records.intend("s", "c");
-				yield* Records.made("s", "b", "fork-b");
-				yield* Records.destroyed("s", "c", Option.some(42));
+				yield* Records.intend(SwarmId.make("s"), JobKey.make("a"));
+				yield* Records.intend(SwarmId.make("s"), JobKey.make("b"));
+				yield* Records.intend(SwarmId.make("s"), JobKey.make("c"));
+				yield* Records.made(SwarmId.make("s"), JobKey.make("b"), ActorId.make("fork-b"));
+				yield* Records.destroyed(SwarmId.make("s"), JobKey.make("c"), Option.some(42));
 				// A destroyed fork stays destroyed, and a job that has a record keeps it.
-				yield* Records.made("s", "c", "fork-late");
-				yield* Records.intend("s", "b");
-				const intended = Option.getOrThrow(yield* Records.find("s", "a"));
+				yield* Records.made(SwarmId.make("s"), JobKey.make("c"), ActorId.make("fork-late"));
+				yield* Records.intend(SwarmId.make("s"), JobKey.make("b"));
+				const intended = Option.getOrThrow(yield* Records.find(SwarmId.make("s"), JobKey.make("a")));
 				expect(intended._tag).toBe("Intended");
 				expect(intended._tag === "Intended" && Option.isSome(intended.baseBytes)).toBe(true);
-				expect(yield* Records.find("s", "c")).toEqual(
+				expect(yield* Records.find(SwarmId.make("s"), JobKey.make("c"))).toEqual(
 					Option.some({ _tag: "Destroyed", bytesWritten: Option.some(42) }),
 				);
-				expect(yield* Records.find("s", "none")).toEqual(Option.none());
-				const live = yield* Records.live("s");
+				expect(yield* Records.find(SwarmId.make("s"), JobKey.make("none"))).toEqual(Option.none());
+				const live = yield* Records.live(SwarmId.make("s"));
 				expect(live.map(({ jobKey, held }) => [jobKey, held._tag])).toEqual([
 					["a", "Intended"],
 					["b", "Made"],
@@ -97,7 +98,7 @@ export function registerRecords(client: ClientLayer): void {
 				yield* Records.migrate;
 				const sql = yield* SqlClient;
 				yield* sql`INSERT INTO swarm_rivet_fork (swarm_id, job_key, destroyed) VALUES ('s', 'odd', 2)`;
-				const failed = yield* Effect.flip(Records.find("s", "odd"));
+				const failed = yield* Effect.flip(Records.find(SwarmId.make("s"), JobKey.make("odd")));
 				expect(failed._tag).toBe("SwarmRecordFailure");
 				expect((failed.cause as { readonly _tag: string })._tag).toBe("SchemaError");
 			}),
@@ -108,17 +109,17 @@ export function registerRecords(client: ClientLayer): void {
 			actor("fork", Option.some("source")),
 			Effect.gen(function* () {
 				yield* Records.migrate;
-				yield* Records.intend("s", "copied");
+				yield* Records.intend(SwarmId.make("s"), JobKey.make("copied"));
 				// A fork whose hygiene did not run holds its source's record, which is not its own.
 				expect((yield* Effect.flip(Records.requireClean))._tag).toBe("SwarmForkUnclean");
 				const sql = yield* SqlClient;
 				yield* sql`CREATE TEMP TRIGGER refuse BEFORE INSERT ON swarm_rivet_owner BEGIN SELECT RAISE(ABORT, 'refused'); END`;
 				const failed = yield* Effect.flip(Records.claim);
 				expect(failed.reason).toContain("refused");
-				expect(Option.isSome(yield* Records.find("s", "copied"))).toBe(true);
+				expect(Option.isSome(yield* Records.find(SwarmId.make("s"), JobKey.make("copied")))).toBe(true);
 				yield* sql`DROP TRIGGER refuse`;
 				yield* Records.claim;
-				expect(yield* Records.find("s", "copied")).toEqual(Option.none());
+				expect(yield* Records.find(SwarmId.make("s"), JobKey.make("copied"))).toEqual(Option.none());
 				yield* Records.requireClean;
 			}),
 		));

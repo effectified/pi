@@ -21,21 +21,19 @@ export interface Watcher {
 
 /**
  * Opens a Pi watcher with `open`, which passes Pi the callback that collects its changes, and stops it when the
- * scope closes.
+ * scope closes. Untraced: the operation that opens it (`Env.watch`, `RemoteWatch.open`) is the span.
  */
-export function acquire<E>(
+export const acquire = Effect.fnUntraced(function* <E>(
 	open: (onChange: (change: FileChange) => void) => Effect.Effect<FileWatcher, E>,
-): Effect.Effect<Watcher, E, Scope.Scope> {
-	return Effect.gen(function* () {
-		// Unbounded: Pi's callback cannot wait, and a change must not be dropped before it is read.
-		const queue = yield* Queue.unbounded<WatchChange, FileFailed | Cause.Done>();
-		const watcher = yield* Effect.acquireRelease(
-			open((change) => {
-				if (change.kind === "failed") Queue.failCauseUnsafe(queue, Cause.fail(fromFileError(change.error)));
-				else Queue.offerUnsafe(queue, change);
-			}),
-			(opened) => Effect.promise(() => opened.stop(BACKGROUND_CONTEXT)).pipe(Effect.andThen(Queue.end(queue))),
-		);
-		return { mode: Effect.sync(() => watcher.mode), changes: Stream.fromQueue(queue) };
-	});
-}
+): Effect.fn.Return<Watcher, E, Scope.Scope> {
+	// Unbounded: Pi's callback cannot wait, and a change must not be dropped before it is read.
+	const queue = yield* Queue.unbounded<WatchChange, FileFailed | Cause.Done>();
+	const watcher = yield* Effect.acquireRelease(
+		open((change) => {
+			if (change.kind === "failed") Queue.failCauseUnsafe(queue, Cause.fail(fromFileError(change.error)));
+			else Queue.offerUnsafe(queue, change);
+		}),
+		(opened) => Effect.promise(() => opened.stop(BACKGROUND_CONTEXT)).pipe(Effect.andThen(Queue.end(queue))),
+	);
+	return { mode: Effect.sync(() => watcher.mode), changes: Stream.fromQueue(queue) };
+});

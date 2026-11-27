@@ -9,48 +9,40 @@ import {
 	selectResource as piSelectResource,
 } from "@earendil-works/pi-mcp/oauth";
 import { Effect } from "effect";
-import { fromPi, type McpFailure } from "../errors.ts";
+import { fromPi } from "../errors.ts";
 
 /** The options of a Pi function `F` without its abort signal, which the fiber owns. */
 type Options<F extends (...args: never[]) => unknown> = Omit<NonNullable<Parameters<F>[1]>, "signal">;
 
 /** The protected resource metadata of the MCP server at `serverUrl` (RFC 9728), as Pi discovers it. */
-export function discoverProtectedResourceMetadata(
-	serverUrl: string | URL,
-	options?: Options<typeof piDiscoverProtectedResourceMetadata>,
-): Effect.Effect<OAuthProtectedResourceMetadata, McpFailure> {
-	return Effect.tryPromise({
-		try: (signal) => piDiscoverProtectedResourceMetadata(serverUrl, { ...options, signal }),
-		catch: fromPi,
-	});
-}
+export const discoverProtectedResourceMetadata = Effect.fn("McpOAuth.discoverProtectedResourceMetadata")(
+	(serverUrl: string | URL, options?: Options<typeof piDiscoverProtectedResourceMetadata>) =>
+		Effect.tryPromise({
+			try: (signal) => piDiscoverProtectedResourceMetadata(serverUrl, { ...options, signal }),
+			catch: fromPi,
+		}),
+);
 
 /** The metadata of the authorization server at `authorizationServerUrl` (RFC 8414 or OpenID), or none. */
-export function discoverAuthorizationServerMetadata(
-	authorizationServerUrl: string | URL,
-	options?: Options<typeof piDiscoverAuthorizationServerMetadata>,
-): Effect.Effect<Awaited<ReturnType<typeof piDiscoverAuthorizationServerMetadata>>, McpFailure> {
-	return Effect.tryPromise({
-		try: (signal) => piDiscoverAuthorizationServerMetadata(authorizationServerUrl, { ...options, signal }),
-		catch: fromPi,
-	});
-}
+export const discoverAuthorizationServerMetadata = Effect.fn("McpOAuth.discoverAuthorizationServerMetadata")(
+	(authorizationServerUrl: string | URL, options?: Options<typeof piDiscoverAuthorizationServerMetadata>) =>
+		Effect.tryPromise({
+			try: (signal) => piDiscoverAuthorizationServerMetadata(authorizationServerUrl, { ...options, signal }),
+			catch: fromPi,
+		}),
+);
 
 /** The MCP server's resource metadata, its authorization server and that server's metadata, as Pi discovers them. */
-export function discoverOAuthServerInfo(
-	serverUrl: string | URL,
-	options?: Options<typeof piDiscoverOAuthServerInfo>,
-): Effect.Effect<Awaited<ReturnType<typeof piDiscoverOAuthServerInfo>>, McpFailure> {
-	return Effect.tryPromise({
-		try: (signal) => piDiscoverOAuthServerInfo(serverUrl, { ...options, signal }),
-		catch: fromPi,
-	});
-}
+export const discoverOAuthServerInfo = Effect.fn("McpOAuth.discoverOAuthServerInfo")(
+	(serverUrl: string | URL, options?: Options<typeof piDiscoverOAuthServerInfo>) =>
+		Effect.tryPromise({
+			try: (signal) => piDiscoverOAuthServerInfo(serverUrl, { ...options, signal }),
+			catch: fromPi,
+		}),
+);
 
 /** The resource a token for `serverUrl` is requested for; fails when `metadata` names a resource that does not cover it. */
-export function selectResource(
-	serverUrl: string | URL,
-	metadata?: OAuthProtectedResourceMetadata,
-): Effect.Effect<string | undefined, McpFailure> {
-	return Effect.try({ try: () => piSelectResource(serverUrl, metadata), catch: fromPi });
-}
+export const selectResource = Effect.fn("McpOAuth.selectResource")(
+	(serverUrl: string | URL, metadata?: OAuthProtectedResourceMetadata) =>
+		Effect.try({ try: () => piSelectResource(serverUrl, metadata), catch: fromPi }),
+);

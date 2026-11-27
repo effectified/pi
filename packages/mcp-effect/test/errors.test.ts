@@ -3,7 +3,7 @@
 import * as PiMcp from "@earendil-works/pi-mcp";
 import * as PiOAuth from "@earendil-works/pi-mcp/oauth";
 import { describe, expect, it } from "vitest";
-import { fromPi, type McpFailure, toPi } from "../src/errors.ts";
+import { fromPi, McpFailure, toPi } from "../src/errors.ts";
 
 /** One instance of every error class pi-mcp and its OAuth subpath export, with the tag and fields it maps to. */
 const CASES: ReadonlyArray<readonly [Error, Record<string, unknown>]> = [
@@ -62,6 +62,16 @@ describe("fromPi", () => {
 		const failure = fromPi(cause);
 		expect(failure).toMatchObject({ _tag: "McpUnexpectedError", cause, message: "fetch failed" });
 		expect(fromPi("text").message).toBe("text");
+	});
+});
+
+describe("McpFailure", () => {
+	it("is a Schema union whose guards and isAnyOf choose by tag", () => {
+		const timedOut = fromPi(new PiMcp.McpTimeoutError(5000));
+		expect(McpFailure.guards.McpTimeoutError(timedOut)).toBe(true);
+		expect(McpFailure.guards.McpError(timedOut)).toBe(false);
+		const isHttp = McpFailure.isAnyOf(["McpHttpError", "McpAuthRequiredError", "McpSessionExpiredError"]);
+		expect(CASES.map(([error]) => fromPi(error)).filter(isHttp)).toHaveLength(3);
 	});
 });
 

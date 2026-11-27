@@ -29,6 +29,7 @@ import { BACKGROUND_CONTEXT, type Context as ChordContext } from "@effectified/p
 import type { JsonValue } from "@effectified/pi-chord/json";
 import type { SchemaDecodeError } from "@effectified/pi-schema";
 import {
+	Array as Arr,
 	type Cause,
 	Context,
 	Effect,
@@ -48,7 +49,7 @@ import * as Doc from "./doc.ts";
 import { type DurableError, fromRejection } from "./errors.ts";
 import * as Idle from "./idle.ts";
 import * as Init from "./init.ts";
-import { invoker } from "./invocation.ts";
+import { built, invoker } from "./invocation.ts";
 import { Registry } from "./registry.ts";
 import * as Reports from "./report.ts";
 import * as Scans from "./scans.ts";
@@ -70,7 +71,7 @@ export interface Open extends PiHarness {}
  * The open harness of this program. The service value is Pi's own object, for what this package does not wrap yet;
  * the functions of this module are the Effect way to use it.
  */
-export class Harness extends Context.Service<Harness, Open>()("@effectified/pi-durable/Harness") {}
+export class Harness extends Context.Service<Harness, Open>()("@effectified/pi-durable/harness") {}
 
 /** Options of `layer`. `R` is what `conversationCreated` needs: the Layer requires it. */
 export interface Options<R = never> {
@@ -128,65 +129,74 @@ export function layerOn<R = never>(
 	return Layer.effect(Harness, opened(registry, options));
 }
 
-/** Opens a harness on `registry` and the storage and models of the context, closed when the scope closes. */
-function opened<R>(
+/**
+ * Opens a harness on `registry` and the storage and models of the context, closed when the scope closes. Untraced: the
+ * harness keeps the context it opens in (its timers, its report log lines) for its life, past a span of its own.
+ */
+const opened: <R>(
 	registry: RegistryReader,
 	options: Options<R>,
-): Effect.Effect<Open, DurableError, HarnessStorage | Models | R | Scope.Scope> {
-	return Effect.gen(function* () {
-		const storage = yield* HarnessStorage;
-		const models = yield* Models;
-		// Pi's timers and the report log lines are fibers of this scope, made before the harness opens: they are
-		// interrupted after it closed, so none outlives the Layer, nor reaches a closed harness.
-		const clock = yield* clockOptions;
-		const fork = yield* FiberSet.makeRuntime();
-		const services = yield* Effect.context<R>();
-		const invoke = invoker(services);
-		const seams = yield* Effect.acquireRelease(
-			Effect.all({ reports: PubSub.unbounded<Report>(), wakes: Queue.unbounded<Wake, Cause.Done>() }),
-			// Both end their streams; what a consumer has not taken yet is still its to take.
-			({ reports, wakes }) => Effect.andThen(PubSub.shutdown(reports), Queue.end(wakes)),
-		);
-		const created = options.conversationCreated;
-		const harness = yield* Effect.acquireRelease(
-			call((context) =>
-				PiHarness.open(
-					storage,
-					{
-						models,
-						registry,
-						settings: options.settings,
-						readOnly: options.readOnly,
-						telemetry: options.telemetry,
-						identity: options.identity,
-						env: options.env,
-						...clock,
-						// Both run where Pi must not be held up or failed: they only hand the value on.
-						onReport: (report) => {
-							PubSub.publishUnsafe(seams.reports, report);
-							fork(Reports.log(report));
-						},
-						...(options.hostWakes === true
-							? { onWake: (wake) => void Queue.offerUnsafe(seams.wakes, wake) }
-							: {}),
-						...(created === undefined
-							? {}
-							: {
-									// Pi gives this callback no context: the creating commit is its scope.
-									conversationCreated: (tx, conversation) =>
-										invoke(created(Tx.fromPi(tx), conversation), BACKGROUND_CONTEXT),
-								}),
+) => Effect.Effect<Open, DurableError, HarnessStorage | Models | R | Scope.Scope> = Effect.fnUntraced(function* <R>(
+	registry: RegistryReader,
+	options: Options<R>,
+) {
+	const storage = yield* HarnessStorage;
+	const models = yield* Models;
+	// Pi's timers and the report log lines are fibers of this scope, made before the harness opens: they are
+	// interrupted after it closed, so none outlives the Layer, nor reaches a closed harness.
+	const clock = yield* clockOptions;
+	const fork = yield* FiberSet.makeRuntime();
+	const services = yield* Effect.context<R>();
+	const invoke = invoker(built(services));
+	const seams = yield* Effect.acquireRelease(
+		Effect.all(
+			{ reports: PubSub.unbounded<Report>(), wakes: Queue.unbounded<Wake, Cause.Done>() },
+			{ concurrency: "unbounded" },
+		),
+		// Both end their streams; what a consumer has not taken yet is still its to take.
+		({ reports, wakes }) => Effect.andThen(PubSub.shutdown(reports), Queue.end(wakes)),
+	);
+	const created = options.conversationCreated;
+	const harness = yield* Effect.acquireRelease(
+		call((context) =>
+			PiHarness.open(
+				storage,
+				{
+					models,
+					registry,
+					settings: options.settings,
+					readOnly: options.readOnly,
+					telemetry: options.telemetry,
+					identity: options.identity,
+					env: options.env,
+					...clock,
+					// Both run where Pi must not be held up or failed: they only hand the value on.
+					onReport: (report) => {
+						PubSub.publishUnsafe(seams.reports, report);
+						fork(Reports.log(report));
 					},
-					context,
-				),
+					...(options.hostWakes === true ? { onWake: (wake) => void Queue.offerUnsafe(seams.wakes, wake) } : {}),
+					...(created === undefined
+						? {}
+						: {
+								// Pi gives this callback no context: the creating commit is its scope.
+								conversationCreated: (tx, conversation) =>
+									invoke(
+										// @effect-diagnostics-next-line anyUnknownInErrorContext:off Any failure of the option fails the creating commit: Pi takes it as a rejection, whatever it is.
+										created(Tx.fromPi(tx), conversation),
+										BACKGROUND_CONTEXT,
+									),
+							}),
+				},
+				context,
 			),
-			(opened) => Effect.orDie(call((context) => opened.close(context))),
-		);
-		hostSeams.set(harness, seams);
-		if (options.readOnly !== true && options.resume !== false) yield* Effect.sync(() => harness.resume());
-		return harness;
-	});
-}
+		),
+		(open) => Effect.orDie(call((context) => open.close(context))),
+	);
+	hostSeams.set(harness, seams);
+	if (options.readOnly !== true && options.resume !== false) yield* Effect.sync(() => harness.resume());
+	return harness;
+});
 
 /** What `layer` keeps beside a harness it opened: where Pi's host callbacks hand their values on. */
 interface Seams {
@@ -206,65 +216,71 @@ export interface CreateOptions<E = never, R = never> {
 	readonly init?: Init.Init<E, R>;
 }
 
-/** The root conversation, created empty on first use. */
-export const root: Effect.Effect<Conversation.Conversation, DurableError, Harness> = rootWith({});
+/** What the root conversation is created with on first use. */
+export interface RootOptions<E = never, R = never> {
+	readonly agent?: Agent.Change;
+	readonly init?: Init.Init<E, R>;
+}
 
 /**
  * The root conversation, created with `agent` and `init` in one commit on first use; an existing root ignores both.
  * It fails with `init`'s own failure when that failed, and no root is stored then.
  */
-export function rootWith<E = never, R = never>(options: {
-	readonly agent?: Agent.Change;
-	readonly init?: Init.Init<E, R>;
-}): Effect.Effect<Conversation.Conversation, E | DurableError, Harness | R> {
+export const rootWith: <E = never, R = never>(
+	options: RootOptions<E, R>,
+) => Effect.Effect<Conversation.Conversation, E | DurableError, Harness | R> = Effect.fn("Harness.rootWith")(function* <
+	E,
+	R,
+>(options: RootOptions<E, R>) {
+	const harness = yield* Harness;
 	const agent = options.agent === undefined ? {} : { agent: Agent.toPi(options.agent) };
-	return Effect.map(
-		Harness.use((harness) =>
-			Init.creating(options.init, (init, context) => harness.root(context, { ...agent, ...init })),
-		),
-		Conversation.fromPi,
-	);
-}
+	const root = yield* Init.creating(options.init, (init, context) => harness.root(context, { ...agent, ...init }));
+	return Conversation.fromPi(root);
+});
+
+/** The root conversation, created empty on first use. */
+export const root: Effect.Effect<Conversation.Conversation, DurableError, Harness> = rootWith({});
 
 /** The conversation with this id, if it exists. */
-export function conversation(
+export const conversation: (
 	id: ConversationId,
-): Effect.Effect<Option.Option<Conversation.Conversation>, DurableError, Harness> {
-	return Effect.map(
-		use((harness, context) => harness.conversation(id, context)),
-		(found) => Option.map(Option.fromNullishOr(found), Conversation.fromPi),
-	);
-}
+) => Effect.Effect<Option.Option<Conversation.Conversation>, DurableError, Harness> = Effect.fn("Harness.conversation")(
+	function* (id) {
+		const found = yield* use((harness, context) => harness.conversation(id, context));
+		return Option.map(Option.fromNullishOr(found), Conversation.fromPi);
+	},
+);
 
 /**
  * A new conversation, created in one commit. It fails with `init`'s own failure when that failed, and nothing is
  * stored then.
  */
-export function createConversation<E = never, R = never>(
+export const createConversation: <E = never, R = never>(
 	options: CreateOptions<E, R>,
-): Effect.Effect<Conversation.Conversation, E | DurableError, Harness | R> {
-	return Effect.map(
-		Harness.use((harness) =>
-			Init.creating(options.init, (init, context) =>
-				harness.createConversation({ ...Agent.creation(options), ...init }, context),
-			),
-		),
-		Conversation.fromPi,
-	);
-}
+) => Effect.Effect<Conversation.Conversation, E | DurableError, Harness | R> = Effect.fn("Harness.createConversation")(
+	function* <E, R>(options: CreateOptions<E, R>) {
+		const harness = yield* Harness;
+		const created = yield* Init.creating(options.init, (init, context) =>
+			harness.createConversation({ ...Agent.creation(options), ...init }, context),
+		);
+		return Conversation.fromPi(created);
+	},
+);
 
 /**
  * One atomic commit whose body is an Effect on its transaction (see `Tx`): the body's value once the commit is stored,
  * the body's own failure, with nothing stored, when it fails. The body's services come from the caller.
  */
-export function commit<A, E, R>(
+export const commit: <A, E, R>(
 	change: (tx: Tx.Tx) => Effect.Effect<A, E, R>,
 	options?: CommitOptions,
-): Effect.Effect<A, E | DurableError, R | Harness> {
-	return Harness.use((harness) =>
-		Tx.commit((body, context, given) => harness.commit(body, context, given), change, options),
-	);
-}
+) => Effect.Effect<A, E | DurableError, R | Harness> = Effect.fn("Harness.commit")(function* <A, E, R>(
+	change: (tx: Tx.Tx) => Effect.Effect<A, E, R>,
+	options?: CommitOptions,
+) {
+	const harness = yield* Harness;
+	return yield* Tx.commit((body, context, given) => harness.commit(body, context, given), change, options);
+});
 
 /** The committed value of a document, decoded; none while it does not exist. It never creates one. */
 export function snapshot<D extends Doc.Any>(
@@ -292,7 +308,7 @@ export function watchDoc<D extends Doc.Any>(
 	doc: D,
 	...address: Doc.Address<D>
 ): Stream.Stream<Watch.Change<Doc.Value<D>>, Doc.Failure, Harness> {
-	return Stream.unwrap(Harness.use((harness) => Effect.succeed(Doc.watch(harness, doc, ...address))));
+	return withHarness((harness) => Doc.watch(harness, doc, ...address));
 }
 
 /**
@@ -305,7 +321,7 @@ export function observeDoc<D extends Doc.Any>(
 	doc: D,
 	...address: Doc.Address<D>
 ): Stream.Stream<Watch.Change<Doc.Value<D>>, Doc.Failure, Harness> {
-	return Stream.unwrap(Harness.use((harness) => Effect.succeed(Doc.observe(harness, doc, ...address))));
+	return withHarness((harness) => Doc.observe(harness, doc, ...address));
 }
 
 /**
@@ -317,13 +333,9 @@ export function observeConversation(
 	id: ConversationId,
 	window?: ConversationWindow,
 ): Stream.Stream<Watch.Change<ConversationView>, DurableError, Harness> {
-	return Stream.unwrap(
-		Harness.use((harness) =>
-			Effect.succeed(
-				Watch.observed<ConversationView>((observer, context) =>
-					harness.observeConversation(id, observer, context, window),
-				),
-			),
+	return withHarness((harness) =>
+		Watch.observed<ConversationView>((observer, context) =>
+			harness.observeConversation(id, observer, context, window),
 		),
 	);
 }
@@ -333,10 +345,8 @@ export function observeConversation(
  * `observeDoc`), a `blocked` reason that changes without a commit included. Closing the stream's scope detaches the
  * observer.
  */
-export const observeTaskGraph: Stream.Stream<Watch.Change<TaskGraph>, DurableError, Harness> = Stream.unwrap(
-	Harness.use((harness) =>
-		Effect.succeed(Watch.observed<TaskGraph>((observer, context) => harness.observeTaskGraph(observer, context))),
-	),
+export const observeTaskGraph: Stream.Stream<Watch.Change<TaskGraph>, DurableError, Harness> = withHarness((harness) =>
+	Watch.observed<TaskGraph>((observer, context) => harness.observeTaskGraph(observer, context)),
 );
 
 /**
@@ -362,8 +372,8 @@ export const closed: Effect.Effect<SessionEnd, never, Harness> = Harness.use((ha
  * Pi's `watchTaskGraph` as a Stream: every live task with its owner, status and owned conversations, now and at each
  * change. Closing the stream's scope releases the watch.
  */
-export const taskGraph: Stream.Stream<Watch.Change<TaskGraph>, DurableError, Harness> = Stream.unwrap(
-	Harness.use((harness) => Effect.succeed(Watch.stream((context) => harness.watchTaskGraph(context)))),
+export const taskGraph: Stream.Stream<Watch.Change<TaskGraph>, DurableError, Harness> = withHarness((harness) =>
+	Watch.stream((context) => harness.watchTaskGraph(context)),
 );
 
 /**
@@ -372,9 +382,20 @@ export const taskGraph: Stream.Stream<Watch.Change<TaskGraph>, DurableError, Har
  * memory until taken, without a bound: a slow consumer never holds a commit up. It fails with `UnexpectedError`
  * ("session closed") when the harness closes. Closing the stream's scope detaches the observer.
  */
-export const commits: Stream.Stream<Watch.Commit, DurableError, Harness> = Stream.unwrap(
-	Harness.use((harness) => Effect.succeed(Watch.commits((observer) => harness.observeCommits(observer)))),
+export const commits: Stream.Stream<Watch.Commit, DurableError, Harness> = withHarness((harness) =>
+	Watch.commits((observer) => harness.observeCommits(observer)),
 );
+
+/**
+ * `commits` with Pi's observer attached now, for the scope: once the Effect succeeded, every commit stored is an
+ * element of the Stream it gives. For a caller that reads stored state after it and follows what changes it, and must
+ * miss no commit stored while it reads. The stream is the one observer: run it once.
+ */
+export const attachCommits: Effect.Effect<
+	Stream.Stream<Watch.Commit, DurableError>,
+	DurableError,
+	Harness | Scope.Scope
+> = Harness.use((harness) => Watch.attachCommits((observer) => harness.observeCommits(observer)));
 
 /**
  * The stored conversations `query` selects, in id order: all of them, or those a task or the tasks of a conversation
@@ -384,7 +405,7 @@ export const commits: Stream.Stream<Watch.Commit, DurableError, Harness> = Strea
 export function scanConversations(
 	query?: Scans.ConversationsQuery,
 ): Stream.Stream<ConversationRecord, DurableError, Harness> {
-	return Stream.unwrap(Harness.use((harness) => Effect.succeed(Scans.conversations(reading(harness), query))));
+	return withHarness((harness) => Scans.conversations(reading(harness), query));
 }
 
 /**
@@ -394,21 +415,21 @@ export function scanConversations(
 export function scanTasks(
 	query?: Scans.TasksQuery,
 ): Stream.Stream<TaskRecord<JsonValue, JsonValue, JsonValue>, DurableError, Harness> {
-	return Stream.unwrap(Harness.use((harness) => Effect.succeed(Scans.tasks(reading(harness), query))));
+	return withHarness((harness) => Scans.tasks(reading(harness), query));
 }
 
 /**
  * A conversation's stored record, if it exists: its id, where it was forked from (`parent`) and the task that owns it
  * (`owner`). Pi stores nothing else of a conversation's creation. Read in a commit that writes nothing.
  */
-export function conversationRecord(
+export const conversationRecord: (
 	id: ConversationId,
-): Effect.Effect<Option.Option<ConversationRecord>, DurableError, Harness> {
-	return Effect.map(
-		use((harness, context) => harness.commit((tx) => tx.conversation(id), context)),
-		Option.fromUndefinedOr,
-	);
-}
+) => Effect.Effect<Option.Option<ConversationRecord>, DurableError, Harness> = Effect.fn("Harness.conversationRecord")(
+	function* (id) {
+		const found = yield* use((harness, context) => harness.commit((tx) => tx.conversation(id), context));
+		return Option.fromUndefinedOr(found);
+	},
+);
 
 /**
  * Every report of Pi from the moment the stream runs: failures that fail no call, such as a throwing hook
@@ -451,13 +472,9 @@ export const resume: Effect.Effect<void, DurableError, Harness> = Harness.use((h
 export function usageEvents(
 	conversationId: ConversationId,
 ): Stream.Stream<Watch.Change<Readonly<UsageState>>, DurableError, Harness> {
-	return Stream.unwrap(
-		Harness.use((harness) =>
-			Effect.succeed(
-				Watch.observed<Readonly<UsageState>>((observer, context) =>
-					harness.observeDoc(UsageDoc, conversationId, observer, context),
-				),
-			),
+	return withHarness((harness) =>
+		Watch.observed<Readonly<UsageState>>((observer, context) =>
+			harness.observeDoc(UsageDoc, conversationId, observer, context),
 		),
 	);
 }
@@ -472,6 +489,15 @@ export const inspect: Effect.Effect<HarnessInspection, DurableError, Harness> = 
 	harness.inspect(context),
 );
 
+/** Whether `scope` is idle now. A harness without live tasks is: nothing is read then. */
+const idle: (scope: Idle.Scope) => Effect.Effect<boolean, DurableError, Harness> = Effect.fn("Harness.idle")(
+	function* (scope) {
+		const { tasks } = yield* inspect;
+		const live = Arr.map(tasks, (task) => task.record);
+		return Arr.isReadonlyArrayEmpty(live) ? true : yield* commit((tx) => Idle.quiet(live, scope, tx));
+	},
+);
+
 /**
  * Whether `waitForIdle` would succeed at once: no ownerless conversation has live work now. It never waits and starts
  * no scheduling. Pi has no such call: this applies Pi's idle rule to the live tasks of `inspect` (see `Idle.quiet`),
@@ -484,9 +510,8 @@ export const isIdle: Effect.Effect<boolean, DurableError, Harness> = idle({ kind
  * work that is not in the background. Otherwise as `isIdle`. Not what admission asks: a conversation is busy for
  * `submit` while a run is going on, which is `run` of its `pi.live` document (`BuiltinDoc.live`).
  */
-export function isConversationIdle(id: ConversationId): Effect.Effect<boolean, DurableError, Harness> {
-	return idle({ kind: "conversation", conversationId: id });
-}
+export const isConversationIdle: (id: ConversationId) => Effect.Effect<boolean, DurableError, Harness> = (id) =>
+	idle({ kind: "conversation", conversationId: id });
 
 /** Tokens and cost of every conversation, summed per model and per tool. */
 export const usage: Effect.Effect<UsageState, DurableError, Harness> = use((harness, context) =>
@@ -494,119 +519,117 @@ export const usage: Effect.Effect<UsageState, DurableError, Harness> = use((harn
 );
 
 /** The submission with this id, if it exists: for example to wait for it after a reopen. */
-export function submission(
+export const submission: (
 	id: SubmissionId,
-): Effect.Effect<Option.Option<Submission.Submission>, DurableError, Harness> {
-	return Effect.map(
-		use((harness, context) => harness.submission(id, context)),
-		(found) => Option.map(Option.fromNullishOr(found), Submission.fromPi),
-	);
-}
+) => Effect.Effect<Option.Option<Submission.Submission>, DurableError, Harness> = Effect.fn("Harness.submission")(
+	function* (id) {
+		const found = yield* use((harness, context) => harness.submission(id, context));
+		return Option.map(Option.fromNullishOr(found), Submission.fromPi);
+	},
+);
 
 /** What Pi did with an abort of a submission: `aborted`, or what it found instead. */
 export type AbortSubmissionResult = Awaited<ReturnType<PiHarness["abortSubmission"]>>;
 
 /** Withdraws a queued submission; `not_found` for an unknown one, or one of another conversation than `conversationId`. */
-export function abortSubmission(
+export const abortSubmission: (
 	id: SubmissionId,
 	conversationId?: ConversationId,
-): Effect.Effect<AbortSubmissionResult, DurableError, Harness> {
-	return use((harness, context) => harness.abortSubmission(id, context, conversationId));
-}
+) => Effect.Effect<AbortSubmissionResult, DurableError, Harness> = Effect.fn("Harness.abortSubmission")(
+	function* (id, conversationId) {
+		return yield* use((harness, context) => harness.abortSubmission(id, context, conversationId));
+	},
+);
 
 /** The stored record of a task, if it exists: its state, memos and outcome. */
-export function getTask<R>(
+export const getTask: <R>(
 	id: TaskId<R>,
-): Effect.Effect<Option.Option<TaskRecord<JsonValue, JsonValue, R>>, DurableError, Harness> {
-	return Effect.map(
-		use((harness, context) => harness.getTask(id, context)),
-		Option.fromNullishOr,
-	);
-}
+) => Effect.Effect<Option.Option<TaskRecord<JsonValue, JsonValue, R>>, DurableError, Harness> = Effect.fn(
+	"Harness.getTask",
+)(function* <R>(id: TaskId<R>) {
+	const found = yield* use((harness, context) => harness.getTask(id, context));
+	return Option.fromNullishOr(found);
+});
 
 /** Succeeds with the task's terminal record once it ended. Interrupting it cancels only this wait. */
-export function waitForTask<R>(id: TaskId<R>): Effect.Effect<SettledTask<R>, DurableError, Harness> {
-	return use((harness, context) => harness.waitForTask(id, context));
-}
+export const waitForTask: <R>(id: TaskId<R>) => Effect.Effect<SettledTask<R>, DurableError, Harness> = Effect.fn(
+	"Harness.waitForTask",
+)(function* <R>(id: TaskId<R>) {
+	return yield* use((harness, context) => harness.waitForTask(id, context));
+});
 
 /** `getTask` of a task of `task`'s kind: the result of an outcome it holds is decoded with the task's schema. */
-export function getTaskOf<A>(
+export const getTaskOf: <A>(
 	task: Task.Kind<never, A>,
 	id: TaskId,
-): Effect.Effect<Option.Option<TaskRecord<JsonValue, JsonValue, A>>, DurableError | SchemaDecodeError, Harness> {
-	return Effect.flatMap(
-		getTask(id),
-		Option.match({
-			onNone: () => Effect.succeedNone,
-			onSome: (stored) => Effect.asSome(Task.record(task, stored)),
-		}),
-	);
-}
+) => Effect.Effect<Option.Option<TaskRecord<JsonValue, JsonValue, A>>, DurableError | SchemaDecodeError, Harness> =
+	Effect.fn("Harness.getTaskOf")(function* <A>(task: Task.Kind<never, A>, id: TaskId) {
+		const found = yield* getTask(id);
+		if (Option.isNone(found)) return Option.none();
+		const record = yield* Task.record(task, found.value);
+		return Option.some(record);
+	});
 
 /** `waitForTask` of a task of `task`'s kind: the result of its outcome is decoded with the task's schema. */
-export function waitForTaskOf<A>(
+export const waitForTaskOf: <A>(
 	task: Task.Kind<never, A>,
 	id: TaskId,
-): Effect.Effect<Task.Settled<A>, DurableError | SchemaDecodeError, Harness> {
-	return Effect.flatMap(waitForTask(id), (stored) => Task.settled(task, stored));
-}
+) => Effect.Effect<Task.Settled<A>, DurableError | SchemaDecodeError, Harness> = Effect.fn("Harness.waitForTaskOf")(
+	function* <A>(task: Task.Kind<never, A>, id: TaskId) {
+		const settled = yield* waitForTask(id);
+		return yield* Task.settled(task, settled);
+	},
+);
 
 /** What Pi did with an abort of a task: `marked`, or `terminal` when it had ended already. */
 export type AbortTaskResult = Awaited<ReturnType<PiHarness["abortTask"]>>;
 
 /** Marks a task aborted and lets its abort handler run; `terminal` when it had ended already. */
-export function abortTask(id: TaskId): Effect.Effect<AbortTaskResult, DurableError, Harness> {
-	return use((harness, context) => harness.abortTask(id, context));
-}
+export const abortTask: (id: TaskId) => Effect.Effect<AbortTaskResult, DurableError, Harness> = Effect.fn(
+	"Harness.abortTask",
+)(function* (id) {
+	return yield* use((harness, context) => harness.abortTask(id, context));
+});
 
 /**
  * Delivers `value` to the task `taskId` under `key`, in a commit of its own, and says what Pi did with it:
  * `delivered`, `duplicate`, `invalid`, `closed` or `not_found`. A value outside the signal's schema fails with
  * `SchemaDecodeError` before Pi is called, so nothing is stored. Nothing checks who sends: authenticate in the host.
  */
-export function signal<S extends Schema.Constraint>(
+export const signal: <S extends Schema.Constraint>(
 	taskId: TaskId,
 	kind: Signal.Signal<S>,
 	key: string,
 	value: S["Type"],
-): Effect.Effect<SignalResult, DurableError | Signal.Failure, Harness | S["EncodingServices"]> {
-	return Effect.gen(function* () {
-		const token = yield* kind.token;
-		const json = yield* kind.encode(value);
-		return yield* use((harness, context) => harness.signal(taskId, token, key, json, context));
-	});
-}
+) => Effect.Effect<SignalResult, DurableError | Signal.Failure, Harness | S["EncodingServices"]> = Effect.fn(
+	"Harness.signal",
+)(function* <S extends Schema.Constraint>(taskId: TaskId, kind: Signal.Signal<S>, key: string, value: S["Type"]) {
+	const token = yield* kind.token;
+	const json = yield* kind.encode(value);
+	return yield* use((harness, context) => harness.signal(taskId, token, key, json, context));
+});
 
 /**
  * The state of `key` of `kind` in the task `taskId`, read from outside the task: none while nothing came, when there
  * is no such task, and once the task ended, since Pi drops a task's memos with its outcome. Pi has no call for it:
  * this reads the memo Pi keeps the state in (see `Signal.stateIn`), a convention of Pi's stored data.
  */
-export function signalState<S extends Schema.Constraint>(
+export const signalState: <S extends Schema.Constraint>(
 	taskId: TaskId,
 	kind: Signal.Signal<S>,
 	key: string,
-): Effect.Effect<
+) => Effect.Effect<
 	Option.Option<Signal.State<S["Type"]>>,
 	DurableError | Signal.Failure,
 	Harness | S["DecodingServices"]
-> {
-	return Effect.flatMap(
-		getTask(taskId),
-		Option.match({
-			onNone: () => Effect.succeedNone,
-			onSome: (record) => Signal.stateIn(record, kind, key),
-		}),
-	);
-}
-
-/** Whether `scope` is idle now. A harness without live tasks is: nothing is read then. */
-function idle(scope: Idle.Scope): Effect.Effect<boolean, DurableError, Harness> {
-	return Effect.flatMap(inspect, ({ tasks }) => {
-		const live = tasks.map((task) => task.record);
-		return live.length === 0 ? Effect.succeed(true) : commit((tx) => Idle.quiet(live, scope, tx));
-	});
-}
+> = Effect.fn("Harness.signalState")(function* <S extends Schema.Constraint>(
+	taskId: TaskId,
+	kind: Signal.Signal<S>,
+	key: string,
+) {
+	const record = yield* getTask(taskId);
+	return Option.isNone(record) ? Option.none() : yield* Signal.stateIn(record.value, kind, key);
+});
 
 /** Pi's table reads of a harness, each in a commit of its own that writes nothing. */
 function reading(harness: PiHarness): Scans.Read {
@@ -615,13 +638,14 @@ function reading(harness: PiHarness): Scans.Read {
 
 /** A stream of what `layer` keeps beside the harness of the context; none of it for a harness opened otherwise. */
 function fromSeams<A>(read: (seams: Seams) => Stream.Stream<A>): Stream.Stream<A, never, Harness> {
-	return Stream.unwrap(
-		Harness.use((harness) =>
-			Effect.succeed(
-				Option.match(Option.fromUndefinedOr(hostSeams.get(harness)), { onNone: () => Stream.empty, onSome: read }),
-			),
-		),
+	return withHarness((harness) =>
+		Option.match(Option.fromUndefinedOr(hostSeams.get(harness)), { onNone: () => Stream.empty, onSome: read }),
 	);
+}
+
+/** A stream `read` makes of the harness of the context. */
+function withHarness<A, E>(read: (harness: Open) => Stream.Stream<A, E>): Stream.Stream<A, E, Harness> {
+	return Stream.unwrap(Harness.useSync(read));
 }
 
 /** One call on the harness of the context. */

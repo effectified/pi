@@ -2,7 +2,7 @@
 // imports differ (the README names the package, this file the sources). The model answers from a loopback server and
 // `docker` is a fake on `PATH`.
 
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runTest } from "@effectified/pi-ai/testing";
 import { Console, Context, Effect, Stream } from "effect";
@@ -17,10 +17,11 @@ import {
 	Harness,
 	type PiCodingAgentModelSelection,
 	Plan,
+	Report,
 	summarizeEvalObservations,
 } from "../src/index.ts";
 import { fakeDocker } from "./fake-docker.ts";
-import { processEnvironment, temporaryDirectory } from "./fixtures.ts";
+import { nodeReads, processEnvironment, temporaryDirectory } from "./fixtures.ts";
 import { AZURE_MODEL, responsesServer, serverEnvironment } from "./responses-server.ts";
 import { TASK, vitestReport } from "./vitest-report.ts";
 
@@ -56,15 +57,14 @@ const compare = (files: ReadonlyArray<string>, provider: string, model: string, 
 		const context = createDockerContext(images, artifacts, authPath, provider, model, 1);
 		// Pi's runner also checks that both variants list the same cases; one is read here.
 		const listed = yield* Docker.discoverCases(context, "without_docs", files, []);
-		const discovered: unknown = JSON.parse(yield* Effect.promise(() => readFile(listed, "utf8")));
-		const tasks = yield* Plan.createTaskPlan(yield* Plan.parseDiscoveredCases(discovered), `${provider}/${model}`, 1);
-		const observations = yield* Docker.observe(context, tasks).pipe(
+		const tasks = yield* Plan.createTaskPlan(yield* Plan.readDiscoveredCases(listed), `${provider}/${model}`, 1);
+		const report = yield* Docker.observe(context, tasks).pipe(
 			Stream.tap((observation) =>
 				Console.log(`${observation.caseId} | ${observation.variant} | ${observation.outcome}`),
 			),
-			Stream.runCollect,
+			Stream.run(Report.summarize("protocol", tasks)),
 		);
-		return formatEvalComparisonReport(summarizeEvalObservations("protocol", tasks, observations));
+		return formatEvalComparisonReport(report);
 	});
 
 // README: plans and reports
@@ -73,9 +73,11 @@ const lift = Effect.gen(function* () {
 		{ name: "Add a model > adds it", file: "evals/models.docs.eval.ts" },
 	]);
 	const tasks = yield* Plan.createTaskPlan(cases, "openai/gpt-5", 1); // InvalidPlan on a model without a provider
-	const observations = tasks.map(
-		(task): EvalObservation => ({ ...task, outcome: "scored", score: task.variant === "with_docs" ? 1 : 0 }),
-	);
+	const observations = tasks.map((task): EvalObservation => ({
+		...task,
+		outcome: "scored",
+		score: task.variant === "with_docs" ? 1 : 0,
+	}));
 	const [comparison] = summarizeEvalObservations("protocol", tasks, observations).comparisons;
 	return { lift: comparison?.lift, flags: comparison?.flags }; // { lift: 1, flags: ["treatment-saturated"] }
 });
@@ -113,7 +115,9 @@ describe("the README", () => {
 				yield* Effect.promise(() => writeFile(discovery, JSON.stringify(discovered)));
 				yield* Effect.promise(() => writeFile(report, vitestReport(1)));
 				yield* fakeDocker({ discovery, report });
-				const text = yield* compare([TASK.file], "fixture", "model", join(directory, "artifacts"));
+				const text = yield* compare([TASK.file], "fixture", "model", join(directory, "artifacts")).pipe(
+					Effect.provide(nodeReads),
+				);
 				expect(text).toContain(TASK.evalSet);
 				expect(text).toContain("Pass rate  +0.0 pp (with 100.0%, without 100.0%)");
 				expect(yield* TestConsole.logLines).toEqual([

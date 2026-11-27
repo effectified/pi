@@ -8,9 +8,9 @@ export {
 	ActorEngine,
 	ActorInfo,
 	ActorSql,
-	type ForkLink,
-	type Identity,
-	type StorageOptions,
+	ForkLink,
+	Identity,
+	StorageOptions,
 	storage,
 } from "./actor-context.ts";
 export * as Client from "./client.ts";
@@ -18,15 +18,16 @@ export {
 	ActionFailed,
 	ActorDefect,
 	ActorGone,
-	type CallError,
+	CallError,
 	EngineUnavailable,
 	ForkKeyHeld,
 	ForkTooDeep,
-	type HostError,
+	HostError,
 	NotIdle,
 } from "./errors.ts";
 export * as Fork from "./fork.ts";
 export * as Host from "./host.ts";
-export type { Status } from "./protocol.ts";
+export { ActorId, ActorKey } from "./ids.ts";
+export { Status } from "./protocol.ts";
 export * as Self from "./self.ts";
 export * as SqliteDatabase from "./sqlite-database.ts";

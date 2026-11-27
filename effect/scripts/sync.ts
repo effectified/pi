@@ -150,7 +150,7 @@ function bump(): void {
 		// Upstream's whole check also fails on upstream's own tests when a model leaves the catalog its build fetched
 		// that day. As in effect-ci.yml it shows; the parts of it that read the pi-effect packages stop the gate.
 		{ kind: "shows", command: ["npm", "run", "check"] },
-		stops("node_modules/.bin/biome", "check", ...packages, "effect", ".github/workflows/effect-ci.yml"),
+		stops(process.execPath, "effect/scripts/style.ts"),
 		stops("npm", "run", "check:pinned-deps"),
 		stops("npm", "run", "check:runtime-deps"),
 		stops("npm", "run", "check:ts-imports"),

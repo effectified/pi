@@ -159,13 +159,17 @@ export function make<
 	// Layer by its ports alone, so it does not see that `layer` provides the rest of `Ports`; and what this Layer
 	// fails with is, like every failure of `services`, a harness that did not open.
 	const services =
-		options.services === undefined ? composed : (Layer.provideMerge(options.services, composed) as typeof composed);
+		options.services === undefined
+			? composed
+			: // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off The decided invariant of the comment above: `layer` provides the rest of `Ports`, and a failure is a harness that did not open.
+				(Layer.provideMerge(options.services, composed) as typeof composed);
 	const actor = Actor.make(name, {
 		layer,
 		harness: Composition.harness(composition),
 		services,
 		// The fixed actions last: by its type a product action has a name of its own.
 		actions: { ...product, ...fixed },
+		// @effect-diagnostics-next-line anyUnknownInErrorContext:off A hygiene step may fail with anything (`Fork.Hygiene`): the host makes that an `UnexpectedError`.
 		forkHygiene: [...hygiene, ...(options.forkHygiene ?? [])],
 		...(options.prefix === undefined ? {} : { prefix: options.prefix }),
 		...(options.rivet === undefined ? {} : { options: options.rivet }),

@@ -9,7 +9,7 @@ import { Context, Deferred, Effect, Layer } from "effect";
  * harness, and so is everything they need: what of that reads the harness storage waits here until it is open.
  */
 export class Opened extends Context.Service<Opened, Deferred.Deferred<Harness.Open>>()(
-	"@effectified/pi-thread/Opened",
+	"@effectified/pi-thread/opened",
 ) {}
 
 /** The place the open harness is given to: provide it under everything that waits for the harness. */
@@ -18,7 +18,9 @@ export const layer: Layer.Layer<Opened> = Layer.effect(Opened, Deferred.make<Har
 /** Gives the open harness: build it on top of `Harness.layer`. Until then every Effect of `on` waits. */
 export const attach: Layer.Layer<never, never, Opened | Harness.Harness> = Layer.effectDiscard(
 	Effect.gen(function* () {
-		yield* Deferred.succeed(yield* Opened, yield* Harness.Harness);
+		const opened = yield* Opened;
+		const harness = yield* Harness.Harness;
+		yield* Deferred.succeed(opened, harness);
 	}),
 );
 

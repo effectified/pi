@@ -1,5 +1,6 @@
 // The session index: which conversation a provider session belongs to, kept where the conversation is created.
 
+import type { SessionId } from "@effectified/pi-ai";
 import type { ConversationId } from "@effectified/pi-durable";
 import { BuiltinDoc, Conversation, Doc, Harness, type Tx } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
@@ -28,19 +29,23 @@ export const Document = Doc.family({
  * Pi creates `pi.provider` in that commit before the hook, so the session is there to read. Both are documents, so it
  * works after the commit's table writes.
  */
-export function noteIn(tx: Tx.Tx, conversation: ConversationId): Effect.Effect<void, Doc.Failure> {
-	return Effect.gen(function* () {
-		const { sessionId } = yield* (yield* tx.doc(BuiltinDoc.provider, conversation)).get;
-		yield* tx.doc(Document, sessionId, conversation);
-	});
-}
+export const noteIn = Effect.fn("Session.noteIn")(function* (
+	tx: Tx.Tx,
+	conversation: ConversationId,
+): Effect.fn.Return<void, Doc.Failure> {
+	const provider = yield* tx.doc(BuiltinDoc.provider, conversation);
+	const { sessionId } = yield* provider.get;
+	yield* tx.doc(Document, sessionId, conversation);
+});
 
-/** The conversation the provider session `session` belongs to; none for a session nothing noted. One committed read. */
-export function conversationOf(
-	session: string,
-): Effect.Effect<Option.Option<ConversationId>, Doc.Failure, Harness.Harness> {
-	return Effect.map(
-		Harness.snapshot(Document, session),
-		Option.map((noted) => noted.conversation),
-	);
-}
+/**
+ * The conversation the provider session `session` belongs to; none for a session nothing noted. One committed read,
+ * for every provider request the constraint source answers: untraced, since the router's own span of the request
+ * covers it.
+ */
+export const conversationOf = Effect.fnUntraced(function* (
+	session: SessionId,
+): Effect.fn.Return<Option.Option<ConversationId>, Doc.Failure, Harness.Harness> {
+	const noted = yield* Harness.snapshot(Document, session);
+	return Option.map(noted, (found) => found.conversation);
+});

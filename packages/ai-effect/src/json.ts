@@ -1,6 +1,6 @@
 // Parsing the JSON a model sent, with pi-ai's repair of its common mistakes, as an Effect with a typed failure.
 
-import { parseJsonWithRepair as piParseJsonWithRepair } from "@earendil-works/pi-ai";
+import { formatThrownValue, parseJsonWithRepair as piParseJsonWithRepair } from "@earendil-works/pi-ai";
 import { Effect } from "effect";
 import { MalformedJson } from "./errors.ts";
 
@@ -9,9 +9,11 @@ import { MalformedJson } from "./errors.ts";
  * control characters and stray backslashes models put in strings. Fails with `MalformedJson` when neither parses.
  * The value is unchecked: decode it with a `Schema`.
  */
-export function parseJsonWithRepair(text: string): Effect.Effect<unknown, MalformedJson> {
-	return Effect.try({
+export const parseJsonWithRepair = Effect.fn("Json.parseJsonWithRepair")(function* (
+	text: string,
+): Effect.fn.Return<unknown, MalformedJson> {
+	return yield* Effect.try({
 		try: () => piParseJsonWithRepair<unknown>(text),
-		catch: (error) => new MalformedJson({ text, message: error instanceof Error ? error.message : String(error) }),
+		catch: (error) => MalformedJson.make({ text, message: formatThrownValue(error) }),
 	});
-}
+});

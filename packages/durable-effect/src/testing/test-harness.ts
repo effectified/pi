@@ -1,7 +1,6 @@
 // A harness for tests: scripted models, memory storage and a registry of your extensions or your own, as one Layer.
 
-import type { ModelRef } from "@earendil-works/pi-durable";
-import type { Models } from "@effectified/pi-ai";
+import type { ModelRef, Models } from "@effectified/pi-ai";
 import { type FauxResponseStep, type RegisterFauxProviderOptions, ScriptedModels } from "@effectified/pi-ai/testing";
 import type { SchemaConversionError } from "@effectified/pi-schema";
 import { Effect, Layer } from "effect";
@@ -115,8 +114,8 @@ export function sqlStorage<E = never, R = never>(
 }
 
 /** The agent change that selects the scripted model: a conversation without a model answers nothing. */
-export const agent: Effect.Effect<{ readonly model: ModelRef }, never, ScriptedModels> = ScriptedModels.use(
-	({ model }) => Effect.succeed({ model: { provider: model.provider, modelId: model.id } }),
+export const agent: Effect.Effect<{ readonly model: ModelRef }, never, ScriptedModels> = ScriptedModels.use(({ ref }) =>
+	Effect.succeed({ model: ref }),
 );
 
 /** The root conversation, created on the scripted model on first use. */

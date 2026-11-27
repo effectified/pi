@@ -1,8 +1,8 @@
 // What a request tells the router about itself: the classification of its content, the regions that may serve it, and
 // the labels a route must carry.
 
-import type { JsonObject } from "@effectified/pi-ai";
-import { Effect, Schema } from "effect";
+import type { JsonObject, ModelId } from "@effectified/pi-ai";
+import { Effect, Option, Schema } from "effect";
 import { InvalidConstraints } from "./errors.ts";
 
 /**
@@ -49,17 +49,19 @@ export function constraintsToMetadata(constraints: Constraints): JsonObject {
 const decodeConstraints = Schema.decodeUnknownEffect(Constraints);
 
 /**
- * The constraints a pi-ai request to `alias` carries in its `metadata`: `undefined` when it carries none. Wire
- * input: fails with `InvalidConstraints` when the value under `METADATA_KEY` is not the shape of `Constraints`.
+ * The constraints a pi-ai request to `alias` carries in its `metadata`: none when it carries none. Wire input: fails
+ * with `InvalidConstraints` when the value under `METADATA_KEY` is not the shape of `Constraints`.
  */
-export function constraintsFromMetadata(
-	alias: string,
-	metadata: Record<string, unknown> | undefined,
-): Effect.Effect<Constraints | undefined, InvalidConstraints> {
-	const value = metadata?.[METADATA_KEY];
-	if (value === undefined) return Effect.succeed(undefined);
-	return Effect.mapError(
-		decodeConstraints(value),
-		(error) => new InvalidConstraints({ alias, reason: `metadata["${METADATA_KEY}"]: ${error.message}` }),
-	);
-}
+export const constraintsFromMetadata: (
+	alias: ModelId,
+	metadata: Readonly<Record<string, unknown>> | undefined,
+) => Effect.Effect<Option.Option<Constraints>, InvalidConstraints> = Effect.fn("Constraints.constraintsFromMetadata")(
+	function* (alias, metadata) {
+		const value = metadata?.[METADATA_KEY];
+		if (value === undefined) return Option.none();
+		const constraints = yield* Effect.mapError(decodeConstraints(value), (error) =>
+			InvalidConstraints.make({ alias, reason: `metadata["${METADATA_KEY}"]: ${error.message}` }),
+		);
+		return Option.some(constraints);
+	},
+);

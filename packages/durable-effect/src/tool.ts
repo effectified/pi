@@ -18,15 +18,22 @@ import {
 	type SchemaDecodeError,
 	toJsonSchema,
 } from "@effectified/pi-schema";
-import { Effect, Formatter, Option, Predicate, Record, Schema, Stream } from "effect";
+import { Array as Arr, Effect, Formatter, Match, Option, Predicate, Record, Schema, Stream } from "effect";
 import * as AiTool from "effect/ai/Tool";
 import type * as Toolkit from "effect/ai/Toolkit";
 import { call } from "./call.ts";
 import type { DurableError } from "./errors.ts";
-import { invoker } from "./invocation.ts";
+import { built, invoker } from "./invocation.ts";
 import * as Signal from "./signal.ts";
 import * as ToolApi from "./tool-api.ts";
+import { ToolName } from "./tool-name.ts";
 import * as Wrap from "./wrap.ts";
+
+/** The name of a tool, branded: what `Agent.Change.tools`, a nested call and `wrap` take. */
+export const Name = ToolName;
+
+/** The name of a tool, branded. */
+export type Name = ToolName;
 
 /** What a handler may use besides its arguments: commits, memos, signals, documents, nested calls, details. */
 export type Api = ToolApi.Api;
@@ -88,9 +95,14 @@ export interface Options<P extends Schema.Constraint, S extends Schema.Constrain
 }
 
 /** A tool made by `make`. */
-export interface Tool<Name extends string, P extends Schema.Constraint, S extends Schema.Constraint, E, R>
-	extends Options<P, S, E, R> {
-	readonly name: Name;
+export interface Tool<N extends string, P extends Schema.Constraint, S extends Schema.Constraint, E, R> extends Options<
+	P,
+	S,
+	E,
+	R
+> {
+	/** The name, as written and branded. */
+	readonly name: N & ToolName;
 	/** Builds the Pi tool; its handler runs with the context this Effect is run in (`Registry.layer` runs it). */
 	readonly registration: Effect.Effect<ToolRegistration, SchemaConversionError, Requirements<P, S, R>>;
 }
@@ -202,16 +214,18 @@ export function wait(options: StrictOmit<Wait, typeof ReplyTypeId | "_tag">): Re
  * become an error result with that diagnostic, as Pi writes its own. A defect of the handler rejects, which Pi turns
  * into its `tool_error` result.
  */
-export function make<const Name extends string, P extends Schema.Constraint, S extends Schema.Constraint, E, R>(
-	name: Name,
+export function make<const N extends string, P extends Schema.Constraint, S extends Schema.Constraint, E, R>(
+	name: N,
 	options: Options<P, S, E, R>,
-): Tool<Name, P, S, E, R> {
-	return { ...options, name, registration: registration(name, options) };
+): Tool<N, P, S, E, R> {
+	// The brand marks the name and keeps it as written: the literal is still the value.
+	const branded = ToolName.make(name) as N & ToolName;
+	return { ...options, name: branded, registration: registration(branded, options) };
 }
 
 /** A tool made from one tool of an `effect/ai` toolkit: what an extension holds and a registry installs. */
 export interface FromToolkit<R> {
-	readonly name: string;
+	readonly name: ToolName;
 	readonly registration: Effect.Effect<ToolRegistration, SchemaConversionError, R>;
 }
 
@@ -231,10 +245,17 @@ export type ToolkitServices<Tools extends Record<string, AiTool.Any>> =
 export function fromToolkit<Tools extends Record<string, AiTool.Any>>(
 	toolkit: Toolkit.Toolkit<Tools>,
 ): ReadonlyArray<FromToolkit<ToolkitServices<Tools>>> {
-	return Record.keys(toolkit.tools).flatMap((name) => {
+	return Arr.flatMap(Record.keys(toolkit.tools), (name) => {
 		const tool = toolkit.tools[name];
 		if (!AiTool.isUserDefined(tool)) return [];
-		const parameters: Schema.Constraint = tool.parametersSchema;
+		// A toolkit's record erases each tool's schemas (`Tool.Any`): by Effect's own typing of a toolkit, its tools'
+		// schemas need what `ToolkitServices` names, and the arguments' JSON form is JSON.
+		const parameters = tool.parametersSchema as Schema.Codec<
+			unknown,
+			Schema.Json,
+			ToolkitServices<Tools>,
+			ToolkitServices<Tools>
+		>;
 		const encodeParameters = encode(parameters);
 		const made = make(tool.name, {
 			description: AiTool.getDescription(tool) ?? "",
@@ -244,19 +265,18 @@ export function fromToolkit<Tools extends Record<string, AiTool.Any>>(
 				Effect.gen(function* () {
 					const handlers = yield* toolkit;
 					// `make` decoded the arguments for its handler; the toolkit's `handle` takes them as JSON.
-					const results = yield* handlers.handle(name, yield* encodeParameters(params), api.callId);
-					return Option.match(yield* Stream.runLast(results), {
+					const args = yield* encodeParameters(params);
+					const results = yield* handlers.handle(name, args, api.callId);
+					const last = yield* Stream.runLast(results);
+					return Option.match(last, {
 						onNone: () => error(`Tool ${tool.name} gave no result`),
 						// A decode boundary: Effect encoded the result with the JSON codec of the tool's schema.
-						onSome: (last) =>
-							last.isFailure ? error(readable(last.encodedResult)) : (last.encodedResult as Schema.Json),
+						onSome: (final) =>
+							final.isFailure ? error(readable(final.encodedResult)) : (final.encodedResult as Schema.Json),
 					});
 				}),
 		});
-		// A toolkit's record erases each tool's schemas (`Tool.Any`), so the requirement `make` infers is unknown: by
-		// Effect's own typing of a toolkit, its tools need the handlers and what the handlers and the schemas need.
-		const registered = made.registration as FromToolkit<ToolkitServices<Tools>>["registration"];
-		return [{ name: made.name, registration: registered }];
+		return [{ name: made.name, registration: made.registration }];
 	});
 }
 
@@ -289,14 +309,16 @@ export type Wrapping<E, R> = Partial<StrictOmit<ToolRegistration, "name" | "exec
  * execution's park as it is; a park of its own ends the call `invalid_park`. A failure of the execution it gives
  * becomes Pi's `tool_error` result, as a rejection of `execute` does.
  */
-export function wrap<E = never, R = never>(name: string, wrapper: (tool: Wrapped) => Wrapping<E, R>): Wrap.Wrap<R> {
+export function wrap<E = never, R = never>(name: ToolName, wrapper: (tool: Wrapped) => Wrapping<E, R>): Wrap.Wrap<R> {
 	return Wrap.registered((invoke) => ({
 		kind: "tool",
 		tool: name,
 		wrap: (tool) => {
 			const { execute, ...fields } = wrapper({
 				tool,
-				execute: (args, api) => call((context) => tool.execute(args, api.pi, context)),
+				execute: Effect.fn("Tool.wrapped")(function* (args: Args, api: Api) {
+					return yield* call((context) => tool.execute(args, api.pi, context));
+				}),
 			});
 			return {
 				...tool,
@@ -304,70 +326,88 @@ export function wrap<E = never, R = never>(name: string, wrapper: (tool: Wrapped
 				name: tool.name,
 				...(execute === undefined
 					? {}
-					: { execute: (args: Args, api, context) => invoke(execute(args, ToolApi.fromPi(api)), context) }),
+					: {
+							execute: (args: Args, api, context) => {
+								const effectApi = ToolApi.fromPi(api);
+								return invoke(
+									Effect.withSpan(execute(args, effectApi), "Tool.wrap", {
+										attributes: spanAttributes(name, effectApi),
+									}),
+									context,
+								);
+							},
+						}),
 			};
 		},
 	}));
 }
 
-function registration<P extends Schema.Constraint, S extends Schema.Constraint, E, R>(
-	name: string,
-	options: Options<P, S, E, R>,
-): Effect.Effect<ToolRegistration, SchemaConversionError, Requirements<P, S, R>> {
-	return Effect.gen(function* () {
-		const parameters = yield* objectSchema(name, "parameters", options.parameters);
-		const structured =
-			options.structured === true ? yield* objectSchema(name, "success", options.success) : undefined;
-		const invoke = invoker(yield* Effect.context<Requirements<P, S, R>>());
-		const decode = decodeUnknown(options.parameters);
-		const encodeSuccess = encode(options.success);
-		const run = (
-			args: unknown,
-			api: Api,
-		): Effect.Effect<ToolExecutionResult | ToolPark, never, Requirements<P, S, R>> =>
-			decode(args).pipe(
-				Effect.matchEffect({
-					onFailure: (failure) => Effect.succeed(errorResult("invalid_arguments", failure.message)),
-					onSuccess: (params) =>
-						options.handler(params, api).pipe(
-							Effect.flatMap((returned) =>
-								answer(
-									isReply(returned) ? returned : result(returned),
-									encodeSuccess,
-									structured !== undefined,
-								),
-							),
-							Effect.catch((failure) => Effect.succeed(errorResult("tool_error", failureText(failure)))),
+/** Builds Pi's tool for `options`, its handler run with the services of the context. Once per registry build. */
+const registration = Effect.fn("Tool.register")(function* <
+	P extends Schema.Constraint,
+	S extends Schema.Constraint,
+	E,
+	R,
+>(name: ToolName, options: Options<P, S, E, R>) {
+	const parameters = yield* objectSchema(name, "parameters", options.parameters);
+	const structured = options.structured === true ? yield* objectSchema(name, "success", options.success) : undefined;
+	const services = yield* Effect.context<Requirements<P, S, R>>();
+	const invoke = invoker(built(services));
+	const decode = decodeUnknown(options.parameters);
+	const encodeSuccess = encode(options.success);
+	// One span per call, per run after a park: a tool runs once per step of its conversation, never per token.
+	const run = Effect.fn("Tool.execute")(function* (args: unknown, api: Api) {
+		yield* Effect.annotateCurrentSpan(spanAttributes(name, api));
+		return yield* decode(args).pipe(
+			Effect.matchEffect({
+				onFailure: (failure) => Effect.succeed(errorResult("invalid_arguments", failure.message)),
+				onSuccess: (params) =>
+					options.handler(params, api).pipe(
+						Effect.flatMap((returned) =>
+							answer(isReply(returned) ? returned : result(returned), encodeSuccess, structured !== undefined),
 						),
-				}),
-			);
-		const cancel = options.cancel;
-		return defineTool({
-			name,
-			description: options.description,
-			parameters,
-			...(options.replay === undefined ? {} : { replay: options.replay }),
-			...(options.callers === undefined ? {} : { callers: options.callers }),
-			...(structured === undefined ? {} : { structuredOutputSchema: structured }),
-			...(options.executionMode === undefined ? {} : { executionMode: options.executionMode }),
-			...(options.deferred === undefined ? {} : { deferred: options.deferred }),
-			...(options.prepareArguments === undefined ? {} : { prepareArguments: options.prepareArguments }),
-			...(options.outputLimits === undefined ? {} : { outputLimits: options.outputLimits }),
-			...(options.constrainedSampling === undefined ? {} : { constrainedSampling: options.constrainedSampling }),
-			// Pi aborts the call through its context: that interrupts the handler's fiber, and the rejection that follows
-			// is what Pi expects of an aborted `execute()`.
-			execute: (args, api, context) => invoke(run(args, ToolApi.fromPi(api)), context),
-			...(cancel === undefined
-				? {}
-				: {
-						cancel: (args: unknown, api, context) =>
-							invoke(
-								Effect.flatMap(decode(args), (params) => cancel(params, ToolApi.fromPi(api))),
-								context,
-							),
-					}),
-		});
+						Effect.catch((failure) => Effect.succeed(errorResult("tool_error", failureText(failure)))),
+					),
+			}),
+		);
 	});
+	const cancel = options.cancel;
+	return defineTool({
+		name,
+		description: options.description,
+		parameters,
+		...(options.replay === undefined ? {} : { replay: options.replay }),
+		...(options.callers === undefined ? {} : { callers: options.callers }),
+		...(structured === undefined ? {} : { structuredOutputSchema: structured }),
+		...(options.executionMode === undefined ? {} : { executionMode: options.executionMode }),
+		...(options.deferred === undefined ? {} : { deferred: options.deferred }),
+		...(options.prepareArguments === undefined ? {} : { prepareArguments: options.prepareArguments }),
+		...(options.outputLimits === undefined ? {} : { outputLimits: options.outputLimits }),
+		...(options.constrainedSampling === undefined ? {} : { constrainedSampling: options.constrainedSampling }),
+		// Pi aborts the call through its context: that interrupts the handler's fiber, and the rejection that follows
+		// is what Pi expects of an aborted `execute()`.
+		execute: (args, api, context) => invoke(run(args, ToolApi.fromPi(api)), context),
+		...(cancel === undefined
+			? {}
+			: {
+					cancel: (args: unknown, api, context) => {
+						const effectApi = ToolApi.fromPi(api);
+						return invoke(
+							Effect.withSpan(
+								Effect.flatMap(decode(args), (params) => cancel(params, effectApi)),
+								"Tool.cancel",
+								{ attributes: spanAttributes(name, effectApi) },
+							),
+							context,
+						);
+					},
+				}),
+	});
+});
+
+/** What a tool's spans say about a call: the tool, the call's id, its task and its conversation. */
+function spanAttributes(name: ToolName, api: Api): { readonly [attribute: string]: string | number } {
+	return { tool: name, callId: api.callId, taskId: api.taskId, conversationId: api.conversationId };
 }
 
 /** What Pi's `execute` returns for a reply: a result or a park. `structured`: a result carries its value as JSON. */
@@ -376,41 +416,39 @@ function answer<A, R>(
 	encodeSuccess: (value: A) => Effect.Effect<Schema.Json, SchemaDecodeError, R>,
 	structured: boolean,
 ): Effect.Effect<ToolExecutionResult | ToolPark, SchemaConversionError | SchemaDecodeError, R> {
-	switch (reply._tag) {
-		case "Result":
-			return Effect.map(
-				encodeSuccess(reply.value),
-				(json): ToolExecutionResult => ({
-					...extras(reply),
-					output: reply.output ?? [{ type: "text", text: readable(json) }],
-					...(structured ? { structuredOutput: stored(json) } : {}),
-				}),
-			);
-		case "Error":
-			return Effect.succeed({ ...extras(reply), isError: true, output: [{ type: "text", text: reply.text }] });
-		case "Sleep":
-			return Effect.map(
-				Effect.forEach(reply.signals ?? [], Signal.toPiKey),
-				(signals): ToolPark => ({
-					kind: "sleep",
-					...(reply.signals === undefined ? {} : { signals }),
-					...(reply.until === undefined ? {} : { until: reply.until }),
-					...(reply.checkpoint === undefined ? {} : { checkpoint: stored(reply.checkpoint) }),
-				}),
-			);
-		case "Wait":
-			return Effect.succeed({
+	return Match.valueTags(reply, {
+		Result: (success) =>
+			Effect.map(encodeSuccess(success.value), (json): ToolExecutionResult => ({
+				...extras(success),
+				output: success.output ?? [{ type: "text", text: readable(json) }],
+				...(structured ? { structuredOutput: stored(json) } : {}),
+			})),
+		Error: (failed) =>
+			Effect.succeed<ToolExecutionResult>({
+				...extras(failed),
+				isError: true,
+				output: [{ type: "text", text: failed.text }],
+			}),
+		Sleep: (sleep) =>
+			Effect.map(Effect.forEach(sleep.signals ?? [], Signal.toPiKey, { concurrency: 1 }), (signals): ToolPark => ({
+				kind: "sleep",
+				...(sleep.signals === undefined ? {} : { signals }),
+				...(sleep.until === undefined ? {} : { until: sleep.until }),
+				...(sleep.checkpoint === undefined ? {} : { checkpoint: stored(sleep.checkpoint) }),
+			})),
+		Wait: (wait) =>
+			Effect.succeed<ToolPark>({
 				kind: "wait",
-				on: reply.on,
-				policy: reply.policy,
-				...(reply.checkpoint === undefined ? {} : { checkpoint: stored(reply.checkpoint) }),
-			});
-	}
+				on: wait.on,
+				policy: wait.policy,
+				...(wait.checkpoint === undefined ? {} : { checkpoint: stored(wait.checkpoint) }),
+			}),
+	});
 }
 
 /** JSON as the model reads it: a string as it is, anything else as JSON text. */
 function readable(json: unknown): string {
-	return Predicate.isString(json) ? json : JSON.stringify(json);
+	return Predicate.isString(json) ? json : Formatter.formatJson(json);
 }
 
 /** Whether a handler's value is a `Reply`: a success value is of any type, so the brand tells them apart. */
@@ -443,11 +481,10 @@ function objectSchema(
 ): Effect.Effect<object, SchemaConversionError> {
 	return Effect.try({
 		try: () => toJsonSchema(schema),
-		catch: (cause) => new SchemaConversionError({ reason: `Tool ${name}: ${failureText(cause)}` }),
+		catch: (cause) => SchemaConversionError.make({ reason: `Tool ${name}: ${failureText(cause)}` }),
 	}).pipe(
-		Effect.filterOrFail(
-			Predicate.isObject,
-			() => new SchemaConversionError({ reason: `Tool ${name}: the JSON Schema of the ${what} is not an object` }),
+		Effect.filterOrFail(Predicate.isObject, () =>
+			SchemaConversionError.make({ reason: `Tool ${name}: the JSON Schema of the ${what} is not an object` }),
 		),
 	);
 }

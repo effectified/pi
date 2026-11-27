@@ -7,7 +7,7 @@ import {
 	type ToolExecutionResult,
 	ToolResultEntry,
 } from "@effectified/pi-durable";
-import { Effect, Option, Predicate, Schema } from "effect";
+import { Array as Arr, Effect, Option, Predicate, Record, Schema } from "effect";
 import * as Asks from "./asks.ts";
 import { MalformedState } from "./errors.ts";
 import * as Outcome from "./outcome.ts";
@@ -37,14 +37,16 @@ const decode = Schema.decodeUnknownEffect(Applied);
  * commits for it. Details that are no object (a tool's own array or text) are left as they are, without a record; an
  * `approvals` key of the tool's own is replaced.
  */
-export const record: Hook.Hook<never> = Hook.afterTool((_call, result, api) =>
-	Effect.gen(function* () {
-		const request = (yield* Asks.read(api.memo)).at(-1);
+export const record: Hook.Hook<never> = Hook.afterTool(
+	// Untraced: `Hook.afterTool` runs it in a span of its own that names the hook, the call and its task.
+	Effect.fnUntraced(function* (_call, result, api) {
+		const asks = yield* Asks.read(api.memo);
+		const request = Arr.last(asks);
 		const details = result.details;
-		if (request === undefined || !joinable(details)) return Option.none();
-		const outcome = Outcome.of(yield* api.readSignal(Decided, request.id));
-		// A decode boundary: Effect types the JSON it encodes to read-only, Pi types the same values mutable.
-		const applied = (yield* encode({ request, outcome })) as JsonObject;
+		if (Option.isNone(request) || !joinable(details)) return Option.none();
+		const state = yield* api.readSignal(Decided, request.value.id);
+		// A decode boundary: Effect types the JSON it encodes read-only, Pi types the same values mutable.
+		const applied = (yield* encode({ request: request.value, outcome: Outcome.of(state) })) as JsonObject;
 		return Option.some({ ...result, details: { ...details, [KEY]: applied } });
 	}),
 );
@@ -53,20 +55,20 @@ export const record: Hook.Hook<never> = Hook.afterTool((_call, result, api) =>
  * The record on a tool result entry: none for an entry that is no tool result, or whose call never asked. It is there
  * for as long as the entry is, which compaction never removes.
  */
-export function applied(entry: EntryRecord): Effect.Effect<Option.Option<Applied>, MalformedState> {
+export const applied: (entry: EntryRecord) => Effect.Effect<Option.Option<Applied>, MalformedState> = Effect.fn(
+	"Approvals.applied",
+)(function* (entry) {
 	const message = ToolResultEntry.is(entry) ? entry.model?.[0] : undefined;
 	const details: unknown = message?.role === "toolResult" ? message.details : undefined;
-	if (!Predicate.isObject(details) || !Object.hasOwn(details, KEY)) return Effect.succeedNone;
-	return Effect.map(
-		Effect.mapError(
-			decode(details[KEY]),
-			(error) => new MalformedState({ where: `details.${KEY}`, reason: error.message }),
-		),
-		Option.some,
-	);
-}
+	// A trust boundary: details are JSON any tool or extension may have written.
+	if (!Predicate.isObject(details) || !Record.has(details, KEY)) return Option.none();
+	return yield* Effect.mapBoth(decode(details[KEY]), {
+		onFailure: (error) => MalformedState.make({ where: `details.${KEY}`, reason: error.message }),
+		onSuccess: Option.some,
+	});
+});
 
 /** Whether a result's details can take the record: there are none, or they are an object. */
 function joinable(details: ToolExecutionResult["details"]): details is JsonObject | undefined {
-	return details === undefined || (typeof details === "object" && details !== null && !Array.isArray(details));
+	return details === undefined || Predicate.isObject(details);
 }

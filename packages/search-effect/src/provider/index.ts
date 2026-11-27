@@ -2,7 +2,7 @@
 // can search without a harness, and a provider file imports only this.
 
 export {
-	type SearchError,
+	SearchError,
 	SearchProviderFailure,
 	SearchRateLimited,
 	SearchResponseInvalid,
@@ -11,5 +11,6 @@ export {
 } from "./errors.ts";
 export * as Evidence from "./evidence.ts";
 export { Count, FetchOptions, SearchOptions } from "./options.ts";
+export { ProviderName } from "./provider-name.ts";
 export { Hit, Retrieval, Unfetched } from "./retrieval.ts";
 export { SearchProvider, type SearchProviderService } from "./search-provider.ts";

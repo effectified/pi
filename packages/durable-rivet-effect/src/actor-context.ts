@@ -3,33 +3,42 @@
 
 import type { SqliteDatabase } from "@effectified/pi-chord/sqlite";
 import { type DurableError, Storage } from "@effectified/pi-durable";
-import { Context, type Effect, Layer, type Option, type Schema } from "effect";
+import { Context, type Effect, Layer, Schema } from "effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import type { ClientRaw } from "rivetkit/client";
+import { ActorId, ActorKey } from "./ids.ts";
 
 /** One individual actor fork behind an actor: the source it was copied from, and when. */
-export interface ForkLink {
-	readonly actorId: string;
-	readonly key: ReadonlyArray<string>;
+export const ForkLink = Schema.Struct({
+	actorId: ActorId,
+	key: ActorKey,
 	/** Epoch milliseconds on the engine's clock. */
-	readonly forkedAt: number;
-}
+	forkedAt: Schema.Finite,
+});
+
+/** One individual actor fork behind an actor. */
+export type ForkLink = typeof ForkLink.Type;
 
 /** The identity of an actor, as Rivet gives it. */
-export interface Identity {
-	readonly actorId: string;
+export const Identity = Schema.Struct({
+	actorId: ActorId,
 	/** The name the actor is registered under. */
-	readonly name: string;
-	readonly key: ReadonlyArray<string>;
-	readonly namespace: string;
+	name: Schema.String,
+	key: ActorKey,
+	namespace: Schema.String,
 	/** The actor forks behind this actor, oldest first; empty when it was never forked. */
-	readonly forkChain: ReadonlyArray<ForkLink>;
+	forkChain: Schema.Array(ForkLink),
 	/** The `input` the newest fork was made with; none for an actor that is not a fork, or a fork made without one. */
-	readonly forkInput: Option.Option<Schema.Json>;
-}
+	forkInput: Schema.Option(Schema.Json),
+});
+
+/** The identity of an actor, as Rivet gives it. */
+export type Identity = typeof Identity.Type;
 
 /** The actor an Effect runs in. Provided to the product's Layers, its actions and its fork hygiene. */
-export class ActorInfo extends Context.Service<ActorInfo, Identity>()("@effectified/pi-durable-rivet/ActorInfo") {}
+export class ActorInfo extends Context.Service<ActorInfo, Identity>()(
+	"@effectified/pi-durable-rivet/actor-context/ActorInfo",
+) {}
 
 /**
  * The actor's SQLite database as an Effect `SqlClient` of the SQLite dialect, on the one queue of the database, which
@@ -39,7 +48,7 @@ export class ActorInfo extends Context.Service<ActorInfo, Identity>()("@effectif
  * a statement Rivet refuses with a retry hint is asked again only outside a transaction (README, "Storage").
  */
 export class ActorSql extends Context.Service<ActorSql, SqlClient.SqlClient>()(
-	"@effectified/pi-durable-rivet/ActorSql",
+	"@effectified/pi-durable-rivet/actor-context/ActorSql",
 ) {}
 
 /**
@@ -50,7 +59,7 @@ export class ActorSql extends Context.Service<ActorSql, SqlClient.SqlClient>()(
  * @deprecated The promise form of `ActorSql`, kept for Pi's storage and for code written against it. Use `ActorSql`.
  */
 export class ActorDatabase extends Context.Service<ActorDatabase, SqliteDatabase>()(
-	"@effectified/pi-durable-rivet/ActorDatabase",
+	"@effectified/pi-durable-rivet/actor-context/ActorDatabase",
 ) {}
 
 /**
@@ -59,14 +68,17 @@ export class ActorDatabase extends Context.Service<ActorDatabase, SqliteDatabase
  * `Self.client` builds the `RivetClient` of an actor from, so actor code needs no endpoint of its own.
  */
 export class ActorEngine extends Context.Service<ActorEngine, { readonly connect: Effect.Effect<ClientRaw> }>()(
-	"@effectified/pi-durable-rivet/ActorEngine",
+	"@effectified/pi-durable-rivet/actor-context/ActorEngine",
 ) {}
 
 /** Options of `storage`. */
-export interface StorageOptions {
+export const StorageOptions = Schema.Struct({
 	/** Namespaces Pi's tables and this host's own in the actor database. Changing it migrates nothing. */
-	readonly prefix: string;
-}
+	prefix: Schema.String,
+});
+
+/** Options of `storage`. */
+export type StorageOptions = typeof StorageOptions.Type;
 
 /**
  * Pi's SQLite storage on the actor's database, under `prefix`, on the `ActorDatabase` adapter, whose queue `ActorSql`

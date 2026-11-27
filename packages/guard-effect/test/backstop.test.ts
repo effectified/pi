@@ -1,12 +1,12 @@
 import { defineExtension, type ToolRegistration } from "@earendil-works/pi-durable";
 import { runTest } from "@effectified/pi-ai/testing";
-import { Extension, Harness, Registry, type Tool } from "@effectified/pi-durable";
+import { Extension, Harness, Registry, ToolName } from "@effectified/pi-durable";
 import { answer, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { backstopped } from "../src/backstop.ts";
 import { Conversations, Guard, Policy } from "../src/index.ts";
-import { BLOCKED, brief, guardedHarness, recorded, toolResults, tools, watching } from "./guarded.ts";
+import { BLOCKED, brief, guardedHarness, names, recorded, toolResults, tools, watching } from "./guarded.ts";
 
 /** One call of the granted tool `search` in a conversation that selects `extensions`. */
 function searched(extensions: ReadonlyArray<string> | null) {
@@ -23,7 +23,7 @@ function searched(extensions: ReadonlyArray<string> | null) {
 				const { model } = yield* TestHarness.agent;
 				const conversation = yield* Conversations.create({
 					ownership: { kind: "ownerless" },
-					grant: { tools: ["search"] },
+					grant: { tools: names("search") },
 					model,
 				});
 				// Pi's own choice of extensions, changed without the guard.
@@ -90,7 +90,7 @@ describe("backstopped", () => {
 				const { model } = yield* TestHarness.agent;
 				const conversation = yield* Conversations.create({
 					ownership: { kind: "ownerless" },
-					grant: { tools: ["search"] },
+					grant: { tools: names("search") },
 					model,
 				});
 				// Pi replaces an installed extension of the same name in place: the guard's hooks are gone.
@@ -104,7 +104,7 @@ describe("backstopped", () => {
 			}).pipe(Effect.provide(layer)),
 		);
 		expect(ran).toEqual([]);
-		expect(seen.unguarded).toMatchObject({ _tag: "Unguarded", reason: "not-selected" });
+		expect(seen.unguarded).toMatchObject({ _tag: "Unguarded", reason: { _tag: "NotSelected" } });
 		expect(seen.records).toEqual([["search", { rule: "guard-not-first" }]]);
 	});
 
@@ -112,7 +112,7 @@ describe("backstopped", () => {
 		const { Search } = tools();
 		const names = await Effect.runPromise(
 			Effect.gen(function* () {
-				const root = yield* Harness.rootWith({ agent: { tools: ["search"] } });
+				const root = yield* Harness.rootWith({ agent: { tools: [ToolName.make("search")] } });
 				const [search] = (yield* root.agent).tools;
 				return { name: search?.name, description: search?.description, parameters: search?.parameters };
 			}).pipe(
@@ -148,9 +148,8 @@ describe("backstopped", () => {
 				};
 				// A member a later Pi might call: set on the registration, unknown to the backstop.
 				const undeclared = { ...registration, resume: () => Promise.resolve() };
-				const tool: Tool.Any = { name: "search", registration: Effect.succeed(undeclared) };
-				// `Tool.Any` types a registration's services as unknown: this one needs none and cannot fail.
-				const backed = yield* backstopped(tool, guard).registration as Effect.Effect<ToolRegistration>;
+				const tool = { name: "search", registration: Effect.succeed(undeclared) };
+				const backed = yield* backstopped(tool, guard).registration;
 				return {
 					members: Object.keys(backed).sort(),
 					passed:

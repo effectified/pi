@@ -61,8 +61,11 @@ With a real harness, `Recorder.layer()` needs the `Harness` of `Harness.layer()`
 
 ## Records
 
-`Records.Record` is a `Schema` union of plain JSON values: its type and its JSON form are the same. Times are epoch
-milliseconds, ids are Pi's numbers, and an absent value is `null`.
+`Records.Record` is a `Schema` tagged union of plain JSON values: a record's JSON form is the same value, and
+`Records.Record.match` handles each `_tag`. Times are whole epoch milliseconds, token counts and costs are numbers as
+Pi stored them, and an absent value is `null`. Ids are branded: a record's `id` is a `Records.Id`, the conversation,
+entry and task ids are Pi Durable's (`Conversation.Id`, `Entry.Id`, `Task.Id`), and a tool's `name` is its
+`ToolName`.
 
 | `_tag` | From | Carries |
 |---|---|---|
@@ -76,24 +79,19 @@ milliseconds, ids are Pi's numbers, and an absent value is `null`.
 Every record has `id`, `conversation`, `time` and `advisory`; the five derived from entries also have `entry`.
 
 ```ts
-const command = (record: Records.Record): string => {
-	switch (record._tag) {
-		case "Message":
-			return `message ${record.role}: ${record.text}`;
-		case "ModelCall":
-			return record.stopReason === "error" || record.stopReason === "aborted"
-				? `model call failed: ${record.error}`
-				: `model call returned: ${record.usage.totalTokens} tokens, ${record.cost.total}`;
-		case "ToolCallRequested":
-			return `tool ${record.name} requested`;
-		case "ToolCallResult":
-			return record.isError ? `tool ${record.name} failed: ${record.codes.join()}` : `tool ${record.name} returned`;
-		case "Entry":
-			return `entry ${record.kind}: ${JSON.stringify(record.data)}`;
-		case "ModelCallRequested":
-			return "model call requested";
-	}
-};
+const command = (record: Records.Record): string =>
+	Records.Record.match(record, {
+		Message: (message) => `message ${message.role}: ${message.text}`,
+		ModelCall: (call) =>
+			call.stopReason === "error" || call.stopReason === "aborted"
+				? `model call failed: ${call.error}`
+				: `model call returned: ${call.usage.totalTokens} tokens, ${call.cost.total}`,
+		ToolCallRequested: (call) => `tool ${call.name} requested`,
+		ToolCallResult: (result) =>
+			result.isError ? `tool ${result.name} failed: ${result.codes.join()}` : `tool ${result.name} returned`,
+		Entry: (entry) => `entry ${entry.kind}: ${Formatter.formatJson(entry.data)}`,
+		ModelCallRequested: () => "model call requested",
+	});
 ```
 
 - **Which entries.** An entry with model messages gives the records of its messages, whatever its kind. A user
@@ -109,8 +107,8 @@ const command = (record: Records.Record): string => {
   entries without a message (a plain `pi.reset`) are Pi's bookkeeping and give no record. An entry with model
   messages gives no `Entry` record: its `data` is not delivered.
 - **An entry's time.** Pi stores no time with an entry. `Entry.time` is the `time` field of the entry's data when
-  that is a number (epoch milliseconds: `review.verdict` and `review.release` carry one), and `null` otherwise. It is
-  never the time of delivery, which would make a redelivery differ from the first.
+  that is a whole number (epoch milliseconds: `review.verdict` and `review.release` carry one), and `null` otherwise.
+  It is never the time of delivery, which would make a redelivery differ from the first.
 - **Failed attempts.** Pi commits every model response as an entry, a failed one (`stopReason: "error"`, the
   provider's text in `error`) and an aborted one too, with its usage. So they are `ModelCall` records like any other.
   Pi gives the error as text only: there is no error class to pass on.
@@ -170,10 +168,14 @@ and that is what is recorded.
 ## The sink
 
 ```ts
-// A service of your program: here, a table with an upsert.
+// A service of your program: here, a table with an upsert, and what its store fails with.
+class RowsError extends Schema.TaggedError<RowsError, { readonly brand: unique symbol }>()("RowsError", {
+	cause: Schema.Defect(),
+}) {}
+
 class Rows extends Context.Service<
 	Rows,
-	{ readonly upsert: (id: string, row: Records.Record) => Effect.Effect<void, Error> }
+	{ readonly upsert: (id: Records.Id, row: Records.Record) => Effect.Effect<void, RowsError> }
 >()("app/Rows") {}
 
 const Sink = Layer.effect(
@@ -182,9 +184,10 @@ const Sink = Layer.effect(
 		const rows = yield* Rows;
 		return {
 			deliver: (records: ReadonlyArray<Records.Record>) =>
-				Effect.forEach(records, (record) => rows.upsert(record.id, record), { discard: true }).pipe(
-					Effect.mapError((cause) => new RecordSinkError({ cause })),
-				),
+				Effect.forEach(records, (record) => rows.upsert(record.id, record), {
+					concurrency: 1,
+					discard: true,
+				}).pipe(Effect.mapError((cause) => RecordSinkError.make({ cause }))),
 		};
 	}),
 );

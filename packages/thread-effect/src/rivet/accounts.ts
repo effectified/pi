@@ -3,11 +3,19 @@
 
 import { Shares } from "@effectified/pi-budget";
 import { Doc, Harness } from "@effectified/pi-durable";
-import { Action, type ActorEngine, type ActorInfo, type ActorSql, Client, Self } from "@effectified/pi-durable-rivet";
+import {
+	Action,
+	type ActorEngine,
+	ActorId,
+	type ActorInfo,
+	type ActorSql,
+	Client,
+	Self,
+} from "@effectified/pi-durable-rivet";
 import { Recorder } from "@effectified/pi-recorder";
 import * as Swarm from "@effectified/pi-swarm";
 import * as Rivet from "@effectified/pi-swarm/rivet";
-import { type Context, type Deferred, Effect, Layer, Option, Schema } from "effect";
+import { type Context, type Deferred, Effect, Layer, Option, Record, Schema } from "effect";
 import * as Forks from "../forks.ts";
 import * as Opened from "../opened.ts";
 
@@ -22,16 +30,22 @@ export const actions = {
 	forkAccount: Action.make({
 		input: Schema.Null,
 		output: Schema.Option(Schema.BigInt),
-		handler: () =>
-			Effect.gen(function* () {
-				yield* Recorder.flushAll;
-				const job = yield* Rivet.jobConversation;
-				if (Option.isNone(job)) return Option.none();
-				const share = yield* Shares.use((shares) => shares.get(job.value.id));
-				return Option.map(share, (found) => found.settled);
-			}).pipe(Effect.orDie),
+		handler: () => accountOfJob,
 	}),
 };
+
+/**
+ * `forkAccount`: the records first, then what the job's conversation settled. A failure of either is a defect the
+ * source reads as one: it does not destroy a fork that could not answer.
+ */
+const accountOfJob = Effect.gen(function* () {
+	yield* Recorder.flushAll;
+	const job = yield* Rivet.jobConversation;
+	if (Option.isNone(job)) return Option.none<bigint>();
+	const shares = yield* Shares;
+	const share = yield* shares.get(job.value.id);
+	return Option.map(share, (found) => found.settled);
+}).pipe(Effect.orDie, Effect.withSpan("Accounts.forkAccount"));
 
 /**
  * One document per swarm id, kind `thread.spent`, in the session scope of the actor the swarm runs in: per job
@@ -42,7 +56,7 @@ const Ledger = Doc.family({
 	kind: "thread.spent",
 	version: 1,
 	scope: "session",
-	schema: Schema.Struct({ jobs: Schema.Record(Schema.String, Schema.BigIntFromString) }),
+	schema: Schema.Struct({ jobs: Schema.Record(Swarm.JobKey, Schema.BigIntFromString) }),
 	initial: (_seed: null) => ({ jobs: {} }),
 	// One number per job, written once per fork.
 	checkpointWhen: () => true,
@@ -77,8 +91,10 @@ export function forks(options?: Rivet.Options): Forks.Forks<ActorInfo | ActorSql
 		Forks.Accounts,
 		Effect.map(accounts, ({ spent }) => ({ spent })),
 	);
+	// The product's options of the driver, off their schema: a harness that does not open, before any fork is asked for.
+	const driver = Layer.orDie(Rivet.layer(options));
 	return {
-		driver: Layer.merge(accounted, kept).pipe(Layer.provide(Rivet.layer(options)), Layer.provide(Self.client)),
+		driver: Layer.merge(accounted, kept).pipe(Layer.provide(driver), Layer.provide(Self.client)),
 		attach: Layer.empty,
 	};
 }
@@ -94,9 +110,10 @@ const accounts = Effect.gen(function* () {
 /** The actor the accounts run in, as a caller of `forkAccount`: every fork is an actor of its definition. */
 type Own = Client.Handle<Client.Target<string, typeof actions>>;
 
+/** The accounts of the actor `self` once its harness is `opened`: the fork is asked through the client of `context`. */
 function make(self: Own, opened: Deferred.Deferred<Harness.Open>, context: Context.Context<Needs>) {
 	/** What the fork actor says its job settled; none for a fork that is gone, or whose job got no request. */
-	const asked = (swarmId: string, jobKey: string, actorId: string) =>
+	const asked = (swarmId: Swarm.SwarmId, jobKey: Swarm.JobKey, actorId: ActorId) =>
 		Client.call(
 			{ definition: self.definition, actorId, key: Rivet.forkKey(self.key, swarmId, jobKey) },
 			"forkAccount",
@@ -105,41 +122,44 @@ function make(self: Own, opened: Deferred.Deferred<Harness.Open>, context: Conte
 			Effect.catchTag("ActorGone", () => Effect.succeedNone),
 			Effect.provideContext(context),
 		);
-	const keep = (swarmId: string, jobKey: string, settled: bigint) =>
+	const keep = (swarmId: Swarm.SwarmId, jobKey: Swarm.JobKey, settled: bigint) =>
 		Opened.on(
 			opened,
 			Harness.commit((tx) =>
 				Effect.flatMap(tx.doc(Ledger, swarmId, null), (ledger) =>
-					ledger.update((held) => ({ jobs: { ...held.jobs, [jobKey]: settled } })),
+					ledger.update((held) => ({ jobs: Record.set(held.jobs, jobKey, settled) })),
 				),
 			),
 		);
-	const keptOf = (swarmId: string, jobKey: string) =>
-		Effect.map(Opened.on(opened, Harness.snapshot(Ledger, swarmId)), (ledger) => {
-			const jobs = Option.getOrUndefined(ledger)?.jobs ?? {};
-			return Object.hasOwn(jobs, jobKey) ? Option.fromUndefinedOr(jobs[jobKey]) : Option.none<bigint>();
-		});
+	const keptOf = (swarmId: Swarm.SwarmId, jobKey: Swarm.JobKey) =>
+		Effect.map(Opened.on(opened, Harness.snapshot(Ledger, swarmId)), (ledger) =>
+			Option.flatMap(ledger, (held) => Record.get(held.jobs, jobKey)),
+		);
 	return {
 		/** Asks the fork for its account and keeps it: what the driver does before it destroys the fork. */
-		settle: (fork: Swarm.Fork): Effect.Effect<void, Swarm.ForkRetryLater> =>
-			Effect.gen(function* () {
-				const settled = yield* asked(fork.swarmId, fork.jobKey, fork.forkId);
+		settle: Effect.fn("Accounts.settle")(
+			function* (fork: Swarm.Fork) {
+				const settled = yield* asked(fork.swarmId, fork.jobKey, ActorId.make(fork.forkId));
 				if (Option.isSome(settled)) yield* keep(fork.swarmId, fork.jobKey, settled.value);
-			}).pipe(
-				// The fork exists and its account is not kept: destroying it now would lose the money of its job.
-				Effect.mapError(
-					(error) => new Swarm.ForkRetryLater({ operation: "destroy", reason: `${error._tag}: ${error.message}` }),
-				),
+			},
+			// The fork exists and its account is not kept: destroying it now would lose the money of its job.
+			Effect.mapError((error) =>
+				Swarm.ForkRetryLater.make({ operation: "destroy", reason: `${error._tag}: ${error.message}` }),
 			),
-		spent: (swarmId: string, job: Swarm.JobReport): Effect.Effect<Option.Option<bigint>, Doc.Failure> =>
-			Effect.gen(function* () {
-				const kept = yield* keptOf(swarmId, job.key);
-				if (Option.isSome(kept) || Option.isNone(job.ran)) return kept;
-				const { actorId } = job.ran.value;
-				// A fork in the swarm's own storage: the Rivet driver makes none.
-				if (actorId === null) return kept;
-				// A fork that cannot be asked now has no account to give: the caller asks again.
-				return yield* Effect.orElseSucceed(asked(swarmId, job.key, actorId), () => Option.none<bigint>());
-			}),
+		),
+		spent: Effect.fn("Accounts.spent")(function* (
+			swarmId: Swarm.SwarmId,
+			job: Swarm.JobReport,
+		): Effect.fn.Return<Option.Option<bigint>, Doc.Failure> {
+			const kept = yield* keptOf(swarmId, job.key);
+			if (Option.isSome(kept) || Option.isNone(job.ran)) return kept;
+			const { actorId } = job.ran.value;
+			// A fork in the swarm's own storage: the Rivet driver makes none.
+			if (actorId === null) return kept;
+			// A fork that cannot be asked now has no account to give: the caller asks again.
+			return yield* Effect.orElseSucceed(asked(swarmId, job.key, ActorId.make(actorId)), () =>
+				Option.none<bigint>(),
+			);
+		}),
 	};
 }

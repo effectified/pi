@@ -4,7 +4,7 @@
 
 import { fileURLToPath } from "node:url";
 import { runLive, runTest } from "@effectified/pi-ai/testing";
-import { Effect, Fiber, Queue, Stream } from "effect";
+import { Effect, Fiber, Option, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import {
@@ -14,6 +14,8 @@ import {
 	MCP_OUTPUT_MAX_BYTES,
 	McpClient,
 	type McpClientService,
+	McpServerName,
+	McpToolName,
 	type OutputSaver,
 	type ProgressNotification,
 	stdioTransport,
@@ -41,7 +43,7 @@ const echoOnce = (command: string, args: ReadonlyArray<string>) =>
 		const transport = yield* stdioTransport({ command, args });
 		const client = yield* McpClient.connect(transport, { name: "my-app", version: "1.0.0" });
 		const tools = yield* client.listTools();
-		const result = yield* client.callTool("echo", { text: "hello" });
+		const result = yield* client.callTool(McpToolName.make("echo"), { text: "hello" });
 		return { server: client.initialize.serverInfo.name, tools: tools.map((tool) => tool.name), result };
 	});
 
@@ -58,7 +60,7 @@ const toolNames = Effect.gen(function* () {
 const search = (client: McpClientService, query: string) =>
 	Effect.gen(function* () {
 		const progress = yield* Queue.unbounded<ProgressNotification>();
-		const result = yield* client.callTool("search", { query }, { timeout: "2 minutes", progress });
+		const result = yield* client.callTool(McpToolName.make("search"), { query }, { timeout: "2 minutes", progress });
 		// What the server reported while it worked.
 		const reports = yield* Queue.clear(progress);
 		return { result, reports };
@@ -76,8 +78,9 @@ const answerSampling = (client: McpClientService) =>
 // README: results for a model
 const forModel = (client: McpClientService, saveOutput: OutputSaver) =>
 	Effect.gen(function* () {
-		const result = yield* client.callTool("fetch", { url: "https://example.com" });
-		const content = yield* toMcpModelContent("web", result, { saveOutput, readResourceTool: "read_mcp_resource" });
+		const result = yield* client.callTool(McpToolName.make("fetch"), { url: "https://example.com" });
+		const options = { saveOutput, readResourceTool: "read_mcp_resource" };
+		const content = yield* toMcpModelContent(McpServerName.make("web"), result, options);
 		return yield* limitMcpContent(content, saveOutput);
 	});
 
@@ -109,7 +112,7 @@ const connectSignedIn = (serverUrl: string, store: OAuthStore) =>
 
 // README: testing
 const pingInMemory = Effect.gen(function* () {
-	const { client, server } = yield* inMemoryTransportPair();
+	const { client, server } = yield* inMemoryTransportPair;
 	const serverInfo = { name: "fake", version: "1.0.0" };
 	const initialized = { protocolVersion: LATEST_PROTOCOL_VERSION, capabilities: {}, serverInfo };
 	yield* Effect.forkScoped(
@@ -131,7 +134,7 @@ const pingInMemory = Effect.gen(function* () {
 /** A client connected to a scripted in-memory server with `handlers`. */
 const scripted = (handlers: Record<string, Handler>) =>
 	Effect.gen(function* () {
-		const pair = yield* inMemoryTransportPair();
+		const pair = yield* inMemoryTransportPair;
 		const server = yield* serve(pair.server, handlers);
 		const client = yield* McpClient.connect(pair.client, { name: "my-app", version: "1.0.0" });
 		return { server, client };
@@ -155,7 +158,7 @@ describe("the README", () => {
 	it("timeouts, progress and errors: progress reaches the queue, and a timeout is a value here", async () => {
 		const seen = await runTest(
 			Effect.gen(function* () {
-				const pair = yield* inMemoryTransportPair();
+				const pair = yield* inMemoryTransportPair;
 				yield* serve(pair.server, {
 					"tools/call": (request) => {
 						const params = request.params as { _meta: { progressToken: number }; arguments: { query: string } };
@@ -226,8 +229,8 @@ describe("the README", () => {
 	it("OAuth: signed in through the loopback callback, then connected with the stored token", async () => {
 		const seen = await runLive(
 			Effect.gen(function* () {
-				const server = yield* authorizationServer();
-				const store = yield* memoryOAuthStore();
+				const server = yield* authorizationServer;
+				const store = yield* memoryOAuthStore;
 				// The "browser" follows the authorization server's redirect to the loopback callback.
 				const openBrowser = (url: string) =>
 					Effect.asVoid(Effect.forkDetach(Effect.promise(() => fetch(url).then((response) => response.text()))));
@@ -235,7 +238,7 @@ describe("the README", () => {
 				// Signed in already: the second sign-in refreshes and never opens the browser.
 				yield* signIn(server.serverUrl, store, () => Effect.die("no browser expected"));
 				const client = yield* connectSignedIn(server.serverUrl, store);
-				return { server: client.initialize.serverInfo, tokens: (yield* store.load)?.tokens };
+				return { server: client.initialize.serverInfo, tokens: Option.getOrUndefined(yield* store.load)?.tokens };
 			}),
 		);
 		expect(seen.server).toEqual({ name: "protected", version: "1" });

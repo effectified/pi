@@ -171,7 +171,10 @@ export interface Tx {
 	readonly pi: PiTx;
 }
 
-/** The Effect form of Pi's transaction. */
+/**
+ * The Effect form of Pi's transaction. Its operations are untraced: they run inside a commit body, on the harness's
+ * line of commits, and the commit that runs the body has its span.
+ */
 export function fromPi(tx: PiTx): Tx {
 	const found = <A>(read: () => Promise<A | undefined>) => Effect.map(step(read), Option.fromUndefinedOr);
 	const entry = (id: EntryId) => found(() => tx.entry(id));
@@ -193,25 +196,33 @@ export function fromPi(tx: PiTx): Tx {
 		createConversation: (options) => step(() => tx.createConversation(options)),
 		forkConversation: (parent, at, options) => step(() => tx.forkConversation(parent, at, options)),
 		appendEntry: (conversationId, draft) => step(() => tx.appendEntry(conversationId, draft)),
-		append: (kind, conversationId, draft) =>
-			Effect.flatMap(kind.draft(draft), (encoded) =>
-				Effect.map(
-					step(() => tx.appendEntry(kind.token, conversationId, encoded)),
-					// The record Pi returns is the draft with its ids: its data is the value just encoded.
-					(record) => ({ ...record, data: draft.data }),
-				),
-			),
+		append: Effect.fnUntraced(function* <S extends Schema.Constraint>(
+			kind: Entry.Entry<S>,
+			conversationId: ConversationId,
+			draft: Entry.Draft<S["Type"]>,
+		) {
+			const encoded = yield* kind.draft(draft);
+			const record = yield* step(() => tx.appendEntry(kind.token, conversationId, encoded));
+			// The record Pi returns is the draft with its ids: its data is the value just encoded.
+			return { ...record, data: draft.data } satisfies Entry.Typed<S["Type"]>;
+		}),
 		configure: (conversationId, change) => step(() => configure(tx, conversationId, Agent.toPi(change))),
-		signal: (taskId, kind, key, value) =>
-			Effect.gen(function* () {
-				const token = yield* kind.token;
-				const json = yield* kind.encode(value);
-				return yield* step(() => tx.signal(taskId, token, key, json));
-			}),
+		signal: Effect.fnUntraced(function* <S extends Schema.Constraint>(
+			taskId: TaskId,
+			kind: Signal.Signal<S>,
+			key: string,
+			value: S["Type"],
+		) {
+			const token = yield* kind.token;
+			const json = yield* kind.encode(value);
+			return yield* step(() => tx.signal(taskId, token, key, json));
+		}),
 		doc: (doc, ...opening) => Doc.open(tx, doc, ...opening),
 		retireDoc: (doc, ...address) => Doc.retire(tx, doc, ...address),
-		createTask: (task, input, options) =>
-			Effect.flatMap(task.encodeInput(input), (json) => step(() => tx.createTask(task.token, json, options))),
+		createTask: Effect.fnUntraced(function* <I, A>(task: Task.Kind<I, A>, input: NoInfer<I>, options: TaskOptions) {
+			const json = yield* task.encodeInput(input);
+			return yield* step(() => tx.createTask(task.token, json, options));
+		}),
 		pi: tx,
 	};
 }

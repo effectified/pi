@@ -1,18 +1,22 @@
 // The constraint port: what a product says constrains the conversation a request belongs to, asked for every request.
 
-import { Cause, Context, Effect, Option } from "effect";
+import { ModelId, SessionId } from "@effectified/pi-ai";
+import { Cause, Context, Effect, Option, Predicate, Schema } from "effect";
 import type { Constraints } from "./constraints.ts";
 import { ConstraintsUnavailable } from "./errors.ts";
 
 /** What reaches the router with a request, and so what a source can tell a conversation by. */
-export interface ConstraintRequest {
+export const ConstraintRequest = Schema.Struct({
 	/** The alias the request asks for. */
-	readonly alias: string;
+	alias: ModelId,
 	/** pi-ai's `sessionId` of the request: Pi Durable sends a conversation's provider session with each request. */
-	readonly sessionId: string | undefined;
+	sessionId: Schema.UndefinedOr(SessionId),
 	/** pi-ai's request `metadata` as the caller gave it, the router's own key included. */
-	readonly metadata: Readonly<Record<string, unknown>> | undefined;
-}
+	metadata: Schema.UndefinedOr(Schema.Record(Schema.String, Schema.Unknown)),
+});
+
+/** What reaches the router with a request. */
+export type ConstraintRequest = typeof ConstraintRequest.Type;
 
 /** What a product's constraint source does for the router. */
 export interface ConstraintSourceService {
@@ -38,22 +42,24 @@ export const ConstraintSource: Context.Reference<ConstraintSourceService> = Cont
 
 /**
  * Asks `source` about `request`, failing closed: a source that fails refuses the request with its own
- * `ConstraintsUnavailable`, and one that dies refuses it with a `ConstraintsUnavailable` that names the defect. An
- * interruption stays an interruption.
+ * `ConstraintsUnavailable`, and one that dies or throws refuses it with a `ConstraintsUnavailable` that names the
+ * defect and keeps it as its `cause`. An interruption stays an interruption.
  */
-export function imposedBy(
+export const imposedBy: (
 	source: ConstraintSourceService,
 	request: ConstraintRequest,
-): Effect.Effect<Constraints, ConstraintsUnavailable> {
-	return Effect.catchCause(
-		Effect.suspend(() => source.constraintsOf(request)),
-		(cause) => {
-			if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
-			const failure = Cause.findErrorOption(cause);
-			if (Option.isSome(failure)) return Effect.fail(failure.value);
-			const defect = Cause.squash(cause);
-			const reason = `the constraint source died: ${defect instanceof Error ? defect.message : String(defect)}`;
-			return Effect.fail(new ConstraintsUnavailable({ alias: request.alias, reason }));
-		},
-	);
-}
+) => Effect.Effect<Constraints, ConstraintsUnavailable> = Effect.fn("ConstraintSource.imposedBy")(
+	function* (source, request) {
+		return yield* Effect.catchCause(
+			Effect.suspend(() => source.constraintsOf(request)),
+			(cause): Effect.Effect<never, ConstraintsUnavailable> => {
+				if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
+				const failure = Cause.findErrorOption(cause);
+				if (Option.isSome(failure)) return Effect.fail(failure.value);
+				const defect = Cause.squash(cause);
+				const reason = `the constraint source died: ${Predicate.isError(defect) ? defect.message : String(defect)}`;
+				return Effect.fail(ConstraintsUnavailable.make({ alias: request.alias, reason, cause: defect }));
+			},
+		);
+	},
+);

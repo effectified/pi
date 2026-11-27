@@ -2,7 +2,8 @@
 // product supplies.
 
 import { ModelRef as PiModelRef } from "@effectified/pi-ai";
-import { Option, Schema } from "effect";
+import { Array as Arr, Option, Schema } from "effect";
+import { dual } from "effect/Function";
 import { Severity } from "./finding.ts";
 
 /** A model as Pi names one: its provider and its id there. The schema of Pi's `ModelRef`, `@effectified/pi-ai`'s. */
@@ -11,8 +12,11 @@ export const ModelRef = PiModelRef;
 /** A model as Pi names one. */
 export type ModelRef = PiModelRef;
 
-/** One row of the family table: the family a model belongs to, in the product's own labels. */
-export const Family = Schema.Struct({ provider: Schema.String, modelId: Schema.String, family: Schema.String });
+/**
+ * One row of the family table: the family a model belongs to, in the product's own labels. The model's ids are
+ * branded as `ModelRef`'s; decoding a policy brands them.
+ */
+export const Family = Schema.Struct({ ...ModelRef.fields, family: Schema.String });
 
 /** One row of the family table. */
 export type Family = typeof Family.Type;
@@ -39,13 +43,18 @@ export const Policy = Schema.Struct({
 /** The whole policy of a review. */
 export type Policy = typeof Policy.Type;
 
-/** The family the table gives `model`: none when it is not listed, or listed under two labels. */
-export function familyOf(families: ReadonlyArray<Family>, model: ModelRef): Option.Option<string> {
-	const labels = new Set(
-		families
-			.filter((row) => row.provider === model.provider && row.modelId === model.modelId)
-			.map((row) => row.family),
-	);
-	const [label] = labels;
-	return labels.size === 1 ? Option.fromUndefinedOr(label) : Option.none();
-}
+/** Whether a row of the family table and a model name the same model: the same provider and the same id. */
+const sameModel = Schema.toEquivalence(ModelRef);
+
+/**
+ * The family the table gives `model`: none when it is not listed, or listed under two labels. Data-first, or
+ * data-last on the table.
+ */
+export const familyOf: {
+	(model: ModelRef): (families: ReadonlyArray<Family>) => Option.Option<string>;
+	(families: ReadonlyArray<Family>, model: ModelRef): Option.Option<string>;
+} = dual(2, (families: ReadonlyArray<Family>, model: ModelRef): Option.Option<string> => {
+	const rows = Arr.filter(families, (row) => sameModel(row, model));
+	const labels = Arr.dedupe(Arr.map(rows, (row) => row.family));
+	return labels.length === 1 ? Arr.head(labels) : Option.none();
+});

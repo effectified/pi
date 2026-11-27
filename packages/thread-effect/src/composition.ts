@@ -81,8 +81,11 @@ export interface Config<
 	readonly models: {
 		/** The providers the routes name. Nothing else reaches them: a request goes through the router and the budget. */
 		readonly providers: ReadonlyArray<Provider>;
-		/** The routes, with their prices: `priceRows(routes)` of the router gives the rows of the product's `Prices`. */
-		readonly routes: RouteTable;
+		/**
+		 * The routes, with their prices, as a product writes them (the table's encoded form, plain strings) or decoded:
+		 * `Router.layer` validates it. `priceRows(routes)` of the router gives the rows of the product's `Prices`.
+		 */
+		readonly routes: typeof RouteTable.Encoded;
 		readonly router?: RouterOptions;
 	};
 	readonly review: Review.Options<Checks>;

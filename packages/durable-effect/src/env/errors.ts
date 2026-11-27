@@ -28,7 +28,7 @@ export const EXECUTION_ERROR_CODES = [
  * A file operation of an environment failed (Pi's `FileError`). `aborted` means Pi stopped the operation on its own
  * side; interrupting the fiber interrupts the Effect instead.
  */
-export class FileFailed extends Schema.TaggedError<FileFailed>()("FileFailed", {
+export class FileFailed extends Schema.TaggedError<FileFailed, { readonly brand: unique symbol }>()("FileFailed", {
 	code: Schema.Literals(FILE_ERROR_CODES),
 	message: Schema.String,
 	path: Schema.optionalKey(Schema.String),
@@ -40,7 +40,7 @@ export class FileFailed extends Schema.TaggedError<FileFailed>()("FileFailed", {
  * exits with a non-zero code is not this error: its exit code is the result. `spillPath` holds the complete output
  * of a command that timed out after its output crossed the spill thresholds.
  */
-export class ExecFailed extends Schema.TaggedError<ExecFailed>()("ExecFailed", {
+export class ExecFailed extends Schema.TaggedError<ExecFailed, { readonly brand: unique symbol }>()("ExecFailed", {
 	code: Schema.Literals(EXECUTION_ERROR_CODES),
 	message: Schema.String,
 	spillPath: Schema.optionalKey(Schema.String),

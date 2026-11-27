@@ -6,7 +6,7 @@ import { fauxAssistantMessage, fauxToolCall, runTest, ScriptedModels } from "@ef
 import { Context, Effect, Fiber, Latch, Layer, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-import { Agent, AgentLoop, StreamFn, Tool } from "../src/index.ts";
+import { Agent, AgentEvents, AgentLoop, StreamFn, Tool } from "../src/index.ts";
 import { held } from "./scripted.ts";
 
 // README: quick start
@@ -110,6 +110,27 @@ describe("the events of the README", () => {
 			}).pipe(Effect.provide(Layer.provideMerge(StreamFn.models, ScriptedModels.layer()))),
 		);
 		expect(text).toBe("Hello there.");
+	});
+});
+
+// README: events
+const shown = Effect.gen(function* () {
+	const agent = yield* Agent.make({ initialState: { model: (yield* ScriptedModels).model } });
+	return yield* agent.stream("Say hello.").pipe(
+		Stream.tap((event) => (event.type === "message_end" ? Effect.log(event.message.role) : Effect.void)),
+		Stream.run(AgentEvents.messages),
+	);
+});
+
+describe("the sink of the README", () => {
+	it("gives the messages the run added", async () => {
+		const roles = await runTest(
+			Effect.gen(function* () {
+				yield* ScriptedModels.use((models) => models.setResponses([fauxAssistantMessage("Hello there.")]));
+				return (yield* shown).map((message) => message.role);
+			}).pipe(Effect.provide(Layer.provideMerge(StreamFn.models, ScriptedModels.layer()))),
+		);
+		expect(roles).toEqual(["user", "assistant"]);
 	});
 });
 

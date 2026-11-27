@@ -1,6 +1,6 @@
 import { CredentialSynchronizationError as PiCredentialSynchronizationError } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { fromPi } from "../src/errors.ts";
+import { CodingAgentFailure, fromPi } from "../src/errors.ts";
 
 describe("fromPi", () => {
 	it("maps Pi's CredentialSynchronizationError to the tagged error with its provider and operation", () => {
@@ -28,5 +28,23 @@ describe("fromPi", () => {
 		const error = new Error("No API key for faux");
 		expect(fromPi(error)).toMatchObject({ _tag: "CodingAgentError", message: "No API key for faux", cause: error });
 		expect(fromPi("plain")).toMatchObject({ _tag: "CodingAgentError", message: "plain" });
+	});
+});
+
+describe("CodingAgentFailure", () => {
+	it("picks a handler per tag and tests for one", () => {
+		const failures = [
+			fromPi(new PiCredentialSynchronizationError("faux", "logout", undefined, { cause: new Error("disk") })),
+			fromPi(new Error("No API key for faux")),
+		];
+		const described = failures.map((failure) =>
+			CodingAgentFailure.match(failure, {
+				CredentialSynchronizationError: (error) => `${error.operation} ${error.providerId}`,
+				SessionImportFileNotFound: (error) => error.message,
+				CodingAgentError: (error) => error.message,
+			}),
+		);
+		expect(described).toEqual(["logout faux", "No API key for faux"]);
+		expect(failures.map(CodingAgentFailure.guards.CodingAgentError)).toEqual([false, true]);
 	});
 });

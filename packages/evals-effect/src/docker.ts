@@ -28,60 +28,61 @@ export type DockerContext = ReturnType<typeof createDockerContext>;
 export const buildImages: Effect.Effect<BuiltImages, DockerFailed> = Effect.try({
 	try: () => piBuildImages(),
 	catch: dockerFailed,
-});
+}).pipe(Effect.withSpan("Docker.buildImages"));
 
 /**
  * The path of the agent directory's `auth.json` (`PI_CODING_AGENT_DIR`, else `~/.pi/agent`), which the containers
  * mount read-only. Fails with `InvalidSetting` when it does not exist, does not parse, or has no credential for
  * `provider`.
  */
-export function requireAuthFile(provider: string): Effect.Effect<string, InvalidSetting> {
-	return Effect.try({
+export const requireAuthFile = Effect.fn("Docker.requireAuthFile")((provider: string) =>
+	Effect.try({
 		try: () => piRequireEvalAuthFile(provider),
-		catch: (cause) => new InvalidSetting({ message: messageOf(cause) }),
-	});
-}
+		catch: (cause) => InvalidSetting.make({ message: messageOf(cause) }),
+	}),
+);
 
 /**
  * Lists the cases of `files` that `vitestArgs` select in the image of `variant`, and resolves with the path of the
- * `discovered-tests.json` it wrote (read it with `Plan.parseDiscoveredCases`). Fails with `DockerFailed` when the
+ * `discovered-tests.json` it wrote (read it with `Plan.readDiscoveredCases`). Fails with `DockerFailed` when the
  * discovery fails.
  */
-export function discoverCases(
-	context: DockerContext,
-	variant: DocumentationVariant,
-	files: readonly string[],
-	vitestArgs: readonly string[],
-): Effect.Effect<string, DockerFailed> {
-	return Effect.try({ try: () => piDiscoverCases(context, variant, files, vitestArgs), catch: dockerFailed });
-}
+export const discoverCases = Effect.fn("Docker.discoverCases")(
+	(context: DockerContext, variant: DocumentationVariant, files: readonly string[], vitestArgs: readonly string[]) =>
+		Effect.try({ try: () => piDiscoverCases(context, variant, files, vitestArgs), catch: dockerFailed }),
+);
 
 /**
  * Runs one task in a new container of its variant's image and resolves with the path of its Vitest JSON report, or
  * `undefined` when the run wrote none. A run whose eval failed is not a failure: its report says so. Fails with
  * `DockerFailed` when `docker` cannot start.
  */
-export function runTask(context: DockerContext, task: EvalTask): Effect.Effect<string | undefined, DockerFailed> {
-	return Effect.try({ try: () => piRunTask(context, task), catch: dockerFailed });
-}
+export const runTask = Effect.fn("Docker.runTask")((context: DockerContext, task: EvalTask) =>
+	Effect.try({ try: () => piRunTask(context, task), catch: dockerFailed }),
+);
 
 /**
  * The observation of each task, in order, as each container run ends: what Pi's comparison runner does with its
- * plan. A run without a report is an `errored` observation. Writing the observations and the report is the caller's.
+ * plan. A run without a report is an `errored` observation. Keeping the observations and the report is the caller's
+ * (`Report.EvalObservation`, `Report.summarize`).
  */
 export function observe(
 	context: DockerContext,
 	tasks: readonly EvalTask[],
 ): Stream.Stream<EvalObservation, DockerFailed | ArtifactFailed> {
-	return Stream.mapEffect(Stream.fromIterable(tasks), (task) =>
-		Effect.flatMap(runTask(context, task), (reportPath) =>
-			reportPath === undefined
-				? Effect.succeed(erroredObservation(task))
-				: readTaskObservation(task, reportPath, context.artifactDirectory),
-		),
+	return Stream.mapEffect(
+		Stream.fromIterable(tasks),
+		(task) =>
+			Effect.flatMap(runTask(context, task), (reportPath) =>
+				reportPath === undefined
+					? Effect.succeed(erroredObservation(task))
+					: readTaskObservation(task, reportPath, context.artifactDirectory),
+			),
+		// One container at a time, as Pi's runner: `docker` runs synchronously, and the runs share the machine.
+		{ concurrency: 1 },
 	);
 }
 
 function dockerFailed(cause: unknown): DockerFailed {
-	return new DockerFailed({ message: messageOf(cause), cause });
+	return DockerFailed.make({ message: messageOf(cause), cause });
 }

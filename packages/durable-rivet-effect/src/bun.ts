@@ -16,9 +16,10 @@ export { running, stop } from "./node/platform.ts";
  * `port` and in the `directory` given, which is kept. See `Local.serve`. It fails with `EngineUnavailable` on a
  * platform whose C library this entry does not know.
  */
-export function serve(options: Local.ServeOptions): Effect.Effect<Local.LocalEngine, EngineUnavailable, Scope.Scope> {
-	return Effect.provide(Local.serve(bunEnvironment, options), Platform.layer);
-}
+export const serve: (options: Local.ServeOptions) => Effect.Effect<Local.LocalEngine, EngineUnavailable, Scope.Scope> =
+	Effect.fn("LocalEngine.serve")(function* (options: Local.ServeOptions) {
+		return yield* Platform.provide(Local.serve(bunEnvironment, options));
+	});
 
 /** The C library by platform: the one every process is linked to. */
 const C_LIBRARY: Readonly<Record<string, string>> = { darwin: "libSystem.B.dylib", linux: "libc.so.6" };
@@ -34,10 +35,11 @@ const bunEnvironment: Local.Environment = {
 				library?.symbols.setenv?.(cString(name), cString(value), 1);
 				library?.close();
 				// Bun's own view too, for what reads the variable in JavaScript.
+				// @effect-diagnostics-next-line processEnvInEffect:off A write, not a read: what reads the variable in JavaScript reads it there, and `Config` cannot set it.
 				process.env[name] = value;
 			},
 			catch: (cause) =>
-				new EngineUnavailable({
+				EngineUnavailable.make({
 					code: "environment",
 					message: `The process environment could not be set on ${process.platform}: ${String(cause)}`,
 					retryable: false,

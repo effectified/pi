@@ -32,7 +32,7 @@ const greeter = defineFacet((host) => {
 
 const plugins = [{ name: "@example/greeter", facet: greeter }];
 
-class Unavailable extends Schema.TaggedError<Unavailable>()("Unavailable", {}) {}
+class Unavailable extends Schema.TaggedError<Unavailable, { readonly brand: unique symbol }>()("Unavailable", {}) {}
 
 describe("Host.make", () => {
 	it("gives references released with their scope, and closes the host with its own", async () => {

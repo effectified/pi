@@ -119,4 +119,19 @@ describe("retryAssistantCall", () => {
 		);
 		expect(calls).toEqual([1, 2]);
 	});
+
+	it("pipes: the policy first, the call to retry last", async () => {
+		const result = await runTest(
+			Effect.gen(function* () {
+				const queue = [OVERLOADED, ANSWER];
+				const fiber = yield* Effect.forkChild(
+					Effect.sync(() => queue.shift() ?? ANSWER).pipe(retryAssistantCall(POLICY)),
+					{ startImmediately: true },
+				);
+				yield* TestClock.adjust(1000);
+				return yield* Fiber.join(fiber);
+			}),
+		);
+		expect(result).toEqual(ANSWER);
+	});
 });

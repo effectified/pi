@@ -48,10 +48,10 @@ One call creates the conversation with its grant, its cap and its routing limits
 ```ts
 const outcome = Threads.Threads.use((threads) =>
 	threads.work({
-		thread: "thread-42", // the product's key, and the idempotency key
+		thread: ThreadKey.make("thread-42"), // the product's key, and the idempotency key
 		task: "What is record 42 called?",
-		model: { provider: "router", modelId: "author" },
-		grant: { tools: ["lookup"], classification: "internal" },
+		model: fromPiModelRef({ provider: "router", modelId: "author" }),
+		grant: { tools: [ToolName.make("lookup")], classification: "internal" },
 		cap: 1_000_000n, // micro units of the lease this thread may settle
 		routing: { regions: ["eu"], requires: ["zero-data-retention"] }, // optional
 		review: true, // optional; false ends an answered thread `Answered`, unreviewed

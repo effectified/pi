@@ -1,5 +1,5 @@
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { Extension, Gate, Harness, Hook, Registry, Tool } from "@effectified/pi-durable";
+import { Extension, Gate, Harness, Hook, Registry, Tool, ToolName } from "@effectified/pi-durable";
 import { answer, type FauxResponseStep, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Fiber, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
@@ -8,6 +8,7 @@ import {
 	BLOCKED,
 	brief,
 	guardedHarness,
+	names,
 	offering,
 	recorded,
 	recording,
@@ -22,7 +23,7 @@ const ownerless = { kind: "ownerless" } as const;
 /** A harness with the three recording tools under `policy`, and what they ran. */
 function scene(
 	responses: ReadonlyArray<FauxResponseStep>,
-	options: { readonly policy?: Policy.Policy; readonly created?: boolean } = {},
+	options: { readonly policy?: Policy.Encoded; readonly created?: boolean } = {},
 ) {
 	const { ran, Search, Read, Write } = tools();
 	const layer = guardedHarness({
@@ -43,7 +44,7 @@ describe("the allow-list", () => {
 				const { model } = yield* TestHarness.agent;
 				const conversation = yield* Conversations.create({
 					ownership: ownerless,
-					grant: { tools: ["read", "search"] },
+					grant: { tools: names("read", "search") },
 					model,
 				});
 				yield* conversation.prompt("Go.");
@@ -64,7 +65,7 @@ describe("the allow-list", () => {
 					const { model } = yield* TestHarness.agent;
 					const conversation = yield* Conversations.create({
 						ownership: ownerless,
-						grant: { tools: ["read", "search"] },
+						grant: { tools: names("read", "search") },
 						model,
 					});
 					const settled = yield* conversation.prompt("Write a.");
@@ -101,7 +102,7 @@ describe("the allow-list", () => {
 					const { model } = yield* TestHarness.agent;
 					const conversation = yield* Conversations.create({
 						ownership: ownerless,
-						grant: { tools: ["read", "search"] },
+						grant: { tools: names("read", "search") },
 						model,
 					});
 					// Pi's own choices, changed without the guard: every tool of the registry is offered again.
@@ -130,7 +131,7 @@ describe("the allow-list", () => {
 			success: Schema.String,
 			handler: ({ text }, api) =>
 				Effect.gen(function* () {
-					const result = yield* api.executeTool("write", { text });
+					const result = yield* api.executeTool(ToolName.make("write"), { text });
 					nested.push({
 						isError: result.isError,
 						codes: (result.diagnostics ?? []).map((diagnostic) => diagnostic.code),
@@ -157,7 +158,7 @@ describe("the allow-list", () => {
 					const { model } = yield* TestHarness.agent;
 					const conversation = yield* Conversations.create({
 						ownership: ownerless,
-						grant: { tools: ["outer"] },
+						grant: { tools: names("outer") },
 						model,
 					});
 					yield* conversation.prompt("Go.");
@@ -235,7 +236,7 @@ describe("the allow-list", () => {
 				toolCall("search", { text: "b" }, { id: "call-2" }),
 				offering(offered, "Read only."),
 			],
-			{ policy: { ...Policy.empty, ungranted: { tools: ["read"] } } },
+			{ policy: { ...Policy.empty, ungranted: { tools: names("read") } } },
 		);
 		const results = await Effect.runPromise(
 			Effect.gen(function* () {
@@ -280,7 +281,7 @@ describe("the allow-list", () => {
 					const { model } = yield* TestHarness.agent;
 					const conversation = yield* Conversations.create({
 						ownership: ownerless,
-						grant: { tools: ["delete_all"] },
+						grant: { tools: names("delete_all") },
 						model,
 					});
 					yield* conversation.prompt("Delete everything.");
@@ -310,7 +311,7 @@ describe("the allow-list", () => {
 					const { model } = yield* TestHarness.agent;
 					const conversation = yield* Conversations.create({
 						ownership: ownerless,
-						grant: { tools: ["search"] },
+						grant: { tools: names("search") },
 						model,
 					});
 					// A value the schema rejects, written past it through Pi's draft.
@@ -345,7 +346,7 @@ describe("argument rules", () => {
 		const NoSecrets = Rule.make("no-secrets", Search, ({ text }) =>
 			Effect.succeed(text.includes("launch-codes") ? Rule.block("names a secret") : Rule.allow),
 		);
-		const Broken = Rule.make("broken", Read, () => Effect.fail(new Error("the lookup is down")));
+		const Broken = Rule.make("broken", Read, () => Effect.fail("the lookup is down"));
 		const layer = guardedHarness({
 			policy: Policy.empty,
 			rules: [Trimmed, NoSecrets, Broken],
@@ -365,7 +366,7 @@ describe("argument rules", () => {
 					const { model } = yield* TestHarness.agent;
 					const conversation = yield* Conversations.create({
 						ownership: ownerless,
-						grant: { tools: ["search", "read"] },
+						grant: { tools: names("search", "read") },
 						model,
 					});
 					yield* conversation.prompt("Go.");
@@ -392,7 +393,7 @@ describe("argument rules", () => {
 });
 
 describe("the classification ceiling of a tool", () => {
-	const policy: Policy.Policy = {
+	const policy: Policy.Encoded = {
 		...Policy.empty,
 		classifications: ["public", "internal", "confidential"],
 		toolCeilings: { search: "public" },
@@ -414,7 +415,7 @@ describe("the classification ceiling of a tool", () => {
 						const refused = yield* watching;
 						const conversation = yield* Conversations.create({
 							ownership: ownerless,
-							grant: { tools: ["search", "read"], classification },
+							grant: { tools: names("search", "read"), classification },
 						});
 						yield* conversation.configure(yield* TestHarness.agent);
 						yield* conversation.prompt("Search a, read b.");
@@ -452,7 +453,7 @@ describe("refusals", () => {
 					const { model } = yield* TestHarness.agent;
 					const conversation = yield* Conversations.create({
 						ownership: ownerless,
-						grant: { tools: ["search"] },
+						grant: { tools: names("search") },
 						model,
 					});
 					yield* conversation.configure({ tools: null });
@@ -473,7 +474,7 @@ describe("refusals", () => {
 });
 
 describe("the record of a refusal", () => {
-	const policy: Policy.Policy = {
+	const policy: Policy.Encoded = {
 		...Policy.empty,
 		classifications: ["public", "internal"],
 		toolCeilings: { search: "public" },
@@ -485,7 +486,7 @@ describe("the record of a refusal", () => {
 		const NoSecrets = Rule.make("no-secrets", Read, ({ text }) =>
 			Effect.succeed(text.includes("launch-codes") ? Rule.block("names the launch-codes") : Rule.allow),
 		);
-		const Broken = Rule.make("broken", Write, () => Effect.fail(new Error("the lookup is down")));
+		const Broken = Rule.make("broken", Write, () => Effect.fail("the lookup is down"));
 		// What the model is sent as the result of each call: the text of its tool result messages.
 		const read: string[] = [];
 		const layer = guardedHarness({
@@ -513,7 +514,7 @@ describe("the record of a refusal", () => {
 					const refused = yield* watching;
 					const conversation = yield* Conversations.create({
 						ownership: ownerless,
-						grant: { tools: ["search", "read", "write"], classification: "internal" },
+						grant: { tools: names("search", "read", "write"), classification: "internal" },
 					});
 					// Every tool is offered behind the guard's back, so each call reaches the guard's hook.
 					yield* conversation.configure({ ...(yield* TestHarness.agent), tools: null });
@@ -583,7 +584,7 @@ describe("the record of a refusal", () => {
 					const { model } = yield* TestHarness.agent;
 					const conversation = yield* Conversations.create({
 						ownership: ownerless,
-						grant: { tools: ["search", "read"] },
+						grant: { tools: names("search", "read") },
 						model,
 					});
 					yield* conversation.prompt("Go.");

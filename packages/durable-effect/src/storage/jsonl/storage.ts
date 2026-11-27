@@ -15,21 +15,30 @@ import type { DurableError } from "../../errors.ts";
 import { custom, type HarnessStorage } from "../../storage.ts";
 
 /** A JSONL storage directory is damaged in a way recovery cannot repair: opening it fails with this. */
-export class JsonlCorrupted extends Schema.TaggedError<JsonlCorrupted>()("JsonlCorrupted", {
-	message: Schema.String,
-	cause: Schema.optionalKey(Schema.Defect()),
-}) {}
+export class JsonlCorrupted extends Schema.TaggedError<JsonlCorrupted, { readonly brand: unique symbol }>()(
+	"JsonlCorrupted",
+	{
+		message: Schema.String,
+		cause: Schema.optionalKey(Schema.Defect()),
+	},
+) {}
 
 /** A commit reached a JSONL storage opened `readOnly`; nothing was written. */
-export class JsonlReadOnly extends Schema.TaggedError<JsonlReadOnly>()("JsonlReadOnly", {
-	message: Schema.String,
-}) {}
+export class JsonlReadOnly extends Schema.TaggedError<JsonlReadOnly, { readonly brand: unique symbol }>()(
+	"JsonlReadOnly",
+	{
+		message: Schema.String,
+	},
+) {}
 
 /** A JSONL storage failed to write and refuses everything until it is reopened. */
-export class JsonlPoisoned extends Schema.TaggedError<JsonlPoisoned>()("JsonlPoisoned", {
-	message: Schema.String,
-	cause: Schema.Defect(),
-}) {}
+export class JsonlPoisoned extends Schema.TaggedError<JsonlPoisoned, { readonly brand: unique symbol }>()(
+	"JsonlPoisoned",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
 
 /** What opening a JSONL storage fails with besides Pi's failures. */
 export type JsonlError = JsonlCorrupted | JsonlReadOnly | JsonlPoisoned;
@@ -55,18 +64,18 @@ export function opened(
 	return custom(Effect.mapError(call(open), tagged));
 }
 
-/** Pi's JSONL errors, which `call` leaves untagged, with their tags. */
+/** Pi's JSONL errors, which `call` leaves untagged, with their tags: what Pi rejected with is unknown, so the classes are tested here. */
 function tagged(error: DurableError): JsonlError | DurableError {
 	if (error._tag !== "UnexpectedError") return error;
 	const cause = error.cause;
 	if (cause instanceof JsonlCorruptionError) {
-		return new JsonlCorrupted({
+		return JsonlCorrupted.make({
 			message: cause.message,
 			...(cause.cause === undefined ? {} : { cause: cause.cause }),
 		});
 	}
-	if (cause instanceof JsonlStorageReadOnlyError) return new JsonlReadOnly({ message: cause.message });
+	if (cause instanceof JsonlStorageReadOnlyError) return JsonlReadOnly.make({ message: cause.message });
 	if (cause instanceof JsonlStoragePoisonedError)
-		return new JsonlPoisoned({ message: cause.message, cause: cause.cause });
+		return JsonlPoisoned.make({ message: cause.message, cause: cause.cause });
 	return error;
 }

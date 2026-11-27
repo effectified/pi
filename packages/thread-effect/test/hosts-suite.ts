@@ -7,8 +7,10 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Client } from "@effectified/pi-durable-rivet";
 import type * as LocalEngine from "@effectified/pi-durable-rivet/node";
+import * as Swarm from "@effectified/pi-swarm";
 import { Context, Effect, Exit, Layer, Option, Schedule, Scope } from "effect";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { RequestKey, ThreadKey } from "../src/index.ts";
 import { Remote, SwarmId } from "../src/rivet.ts";
 import { type Of, type Outside, outside } from "./hosts-outside.ts";
 import { HOST_POOL, threadOn } from "./hosts-thread.ts";
@@ -45,7 +47,7 @@ interface HostProcess {
 }
 
 function suite(engines: typeof LocalEngine): void {
-	const scope = Effect.runSync(Scope.make());
+	const scope = Scope.makeUnsafe();
 	let endpoint = "";
 	let world: Outside;
 	let remote: Remote.Service;
@@ -110,7 +112,7 @@ function suite(engines: typeof LocalEngine): void {
 		world.until(`${thread} is reviewed`, () => told(thread).some((event) => event.says === "Reviewed"), millis);
 
 	const start = (thread: string, task: string) =>
-		run(remote.threads.start(work(thread, task, ["note_once", "note_again"]), `job-${thread}`));
+		run(remote.threads.start(work(thread, task, ["note_once", "note_again"]), RequestKey.make(`job-${thread}`)));
 
 	const authorAsks = (prompt: string) =>
 		world.of("model").filter((ask) => ask.lab === "author-lab" && ask.prompt === prompt);
@@ -249,7 +251,9 @@ function suite(engines: typeof LocalEngine): void {
 		await signal(first, "SIGKILL");
 		// With no host at all a call finds nobody to answer, and says so: worth sending again.
 		const hurried = await run(Layer.build(Remote.layer(Thread, { timeout: "2 seconds" })).pipe(Effect.scoped));
-		const unanswered = await run(Effect.flip(Context.get(hurried, Remote.Remote).threads.probe("safe")));
+		const unanswered = await run(
+			Effect.flip(Context.get(hurried, Remote.Remote).threads.probe(ThreadKey.make("safe"))),
+		);
 		expect(unanswered).toMatchObject({ _tag: "HostUnavailable", operation: "probe" });
 		// Longer than the recovery wake is ahead (15 seconds): it comes due with nobody to run it.
 		await new Promise((resolve) => setTimeout(resolve, 18_000));
@@ -290,7 +294,7 @@ function suite(engines: typeof LocalEngine): void {
 		await Promise.all(threads.map((thread) => start(thread, `use note_once for ${thread}`)));
 		await Promise.all(threads.map((thread) => ended(thread)));
 		// Every call goes through one client, and each answers from the actor's own storage.
-		const probes = await Promise.all(threads.map((thread) => run(remote.threads.outcome(thread))));
+		const probes = await Promise.all(threads.map((thread) => run(remote.threads.outcome(ThreadKey.make(thread)))));
 		expect(probes.map((outcome) => outcome._tag)).toEqual(threads.map(() => "Some"));
 		const actors = await Promise.all(threads.map(actorOf));
 		// An actor an earlier test left with a wake scheduled may wake here too: only this test's are counted.
@@ -326,7 +330,7 @@ function suite(engines: typeof LocalEngine): void {
 			await signal(leaving, how);
 			for (const held of holds) held.release();
 			// A call reaches an actor whose host left, in the host that stayed.
-			const probe = await run(remote.threads.probe(threads[0] ?? ""));
+			const probe = await run(remote.threads.probe(ThreadKey.make(threads[0] ?? "")));
 			expect(probe).toEqual({ alive: true });
 			await Promise.all(threads.map((thread) => ended(thread)));
 			expect(overlaps()).toEqual([]);
@@ -389,12 +393,12 @@ function suite(engines: typeof LocalEngine): void {
 		const asking = (topic: string) => (ask: Ask) =>
 			ask.kind === "model" && ask.prompt.startsWith(`Does the record you read cover ${topic}?`);
 		const holds = topics.map((topic) => world.holdNext(asking(topic)));
-		const id = SwarmId.of("swarm", "covers");
+		const id = SwarmId.of(ThreadKey.make("swarm"), "covers");
 		await run(
 			remote.swarms.run(Covers, {
 				id,
-				thread: "swarm",
-				jobs: topics.map((topic) => ({ key: topic.toLowerCase(), input: { topic } })),
+				thread: ThreadKey.make("swarm"),
+				jobs: topics.map((topic) => ({ key: Swarm.JobKey.make(topic.toLowerCase()), input: { topic } })),
 				cap: topics.length,
 				onFailure: "collect",
 				fork: FORK,

@@ -1,7 +1,7 @@
 // The wake keeper without an engine: a harness on memory storage that leaves its wake-ups to the host, and a fake of
 // the actor's schedule and keep-awake. The park below is 200 milliseconds of real time.
 
-import { Extension, Gate, Harness, Hook, Tool } from "@effectified/pi-durable";
+import { Extension, Gate, Harness, Hook, Tool, UnexpectedError } from "@effectified/pi-durable";
 import { answer, type FauxResponseStep, held, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Clock, Effect, Layer, Option, Schedule, Schema } from "effect";
 import { describe, expect, it } from "vitest";
@@ -31,7 +31,7 @@ function fakeAlarm(left: ReadonlyArray<WakeKeeper.Armed> = []) {
 	const alarm: WakeKeeper.Alarm = {
 		schedule: (at) =>
 			Effect.suspend(() => {
-				if (state.refusing) return Effect.fail("refused");
+				if (state.refusing) return Effect.fail(UnexpectedError.make({ cause: "refused" }));
 				const id = `wake-${state.written++}`;
 				scheduled.set(id, at);
 				return Effect.succeed(id);

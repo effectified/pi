@@ -1,13 +1,16 @@
 // The decision about one tool call: the denied names, the conversation's grant, the tool's ceiling, then the rules.
 
 import type { JsonObject } from "@effectified/pi-durable";
-import { Cause, Effect, Option } from "effect";
+import { Array as Arr, Cause, Effect, Match, Option } from "effect";
 import * as Classification from "./classification.ts";
 import * as Policy from "./policy.ts";
-import type { Reason } from "./refusal.ts";
+import type { Reason, Refusal } from "./refusal.ts";
 import type * as Rule from "./rule.ts";
 
-/** What a guard decides about one call. */
+/**
+ * What a guard decides about one call. Interfaces, not a Schema: a pass holds Pi's own mutable JSON object, which Pi's
+ * gate takes as it is. Choose with `Match.valueTags`.
+ */
 export type Verdict = Pass | Refuse;
 
 /** The call runs, with `arguments` when a rule rewrote them. */
@@ -16,16 +19,13 @@ export interface Pass {
 	readonly arguments: Option.Option<JsonObject>;
 }
 
-/** The call does not run, and why. */
-export interface Refuse {
+/** The call does not run, and why: the refusal's `rule`, and for an argument rule its `name` and `reason`. */
+export interface Refuse extends Pick<Refusal, "rule" | "name" | "reason"> {
 	readonly _tag: "Refuse";
-	readonly rule: Reason;
-	readonly name?: string;
-	readonly reason?: string;
 }
 
 /** A refusal for `rule`. */
-export function refuse(rule: Reason, detail?: { readonly name?: string; readonly reason?: string }): Verdict {
+export function refuse(rule: Reason, detail?: Pick<Refuse, "name" | "reason">): Refuse {
 	return { _tag: "Refuse", rule, ...detail };
 }
 
@@ -34,62 +34,52 @@ export function refuse(rule: Reason, detail?: { readonly name?: string; readonly
  * the grant, a ceiling below the conversation's classification, then the rules of the tool in order, each seeing the
  * arguments the one before left. It never fails: a rule that fails refuses the call.
  */
-export function decide<R>(
+export const decide: <R, E>(
 	policy: Policy.Policy,
-	rules: ReadonlyArray<Rule.Rule<R>>,
+	rules: ReadonlyArray<Rule.Rule<R, E>>,
 	args: Rule.Arguments,
 	call: Rule.Call,
-): Effect.Effect<Verdict, never, R> {
-	if (Option.isSome(Policy.denying(policy, call.name))) return Effect.succeed(refuse("denied"));
-	if (!call.grant.tools.includes(call.name)) return Effect.succeed(refuse("allow-list"));
-	if (!Classification.toolCleared(policy, call.name, call.grant.classification)) {
-		return Effect.succeed(refuse("ceiling"));
+) => Effect.Effect<Verdict, never, R> = Effect.fn("Guard.decide")(function* <R, E>(
+	policy: Policy.Policy,
+	rules: ReadonlyArray<Rule.Rule<R, E>>,
+	args: Rule.Arguments,
+	call: Rule.Call,
+) {
+	if (Option.isSome(Policy.denying(policy, call.name))) return refuse("denied");
+	if (!Arr.contains(call.grant.tools, call.name)) return refuse("allow-list");
+	if (!Classification.toolCleared(policy, call.name, call.grant.classification)) return refuse("ceiling");
+	let rewritten = Option.none<JsonObject>();
+	for (const rule of Arr.filter(rules, (each) => each.tool === call.name)) {
+		const outcome = yield* asked(
+			rule,
+			Option.getOrElse(rewritten, () => args),
+			call,
+		);
+		if (outcome._tag === "Refuse") return outcome;
+		if (outcome._tag === "Rewrite") rewritten = Option.some(outcome.arguments);
 	}
-	return asking(
-		rules.filter((rule) => rule.tool === call.name),
-		args,
-		call,
-		Option.none(),
-	);
-}
-
-/** Asks `rules` in order with `args`; `rewritten` holds the arguments once a rule replaced them. */
-function asking<R>(
-	rules: ReadonlyArray<Rule.Rule<R>>,
-	args: Rule.Arguments,
-	call: Rule.Call,
-	rewritten: Option.Option<JsonObject>,
-): Effect.Effect<Verdict, never, R> {
-	const [rule, ...rest] = rules;
-	if (rule === undefined) return Effect.succeed({ _tag: "Pass", arguments: rewritten });
-	return Effect.flatMap(asked(rule, args, call), (outcome) => {
-		switch (outcome._tag) {
-			case "Allow":
-				return asking(rest, args, call, rewritten);
-			case "Rewrite":
-				return asking(rest, outcome.arguments, call, Option.some(outcome.arguments));
-			case "Refuse":
-				return Effect.succeed(outcome);
-		}
-	});
-}
+	const pass: Verdict = { _tag: "Pass", arguments: rewritten };
+	return pass;
+});
 
 /** One rule's answer, with its block and its failure as refusals. An interruption stays one. */
-function asked<R>(
-	rule: Rule.Rule<R>,
+function asked<R, E>(
+	rule: Rule.Rule<R, E>,
 	args: Rule.Arguments,
 	call: Rule.Call,
 ): Effect.Effect<Rule.Allow | Rule.Rewrite<JsonObject> | Refuse, never, R> {
 	return Effect.suspend(() => rule.run(args, call)).pipe(
-		Effect.map((outcome) =>
-			outcome._tag === "Block"
-				? ({ _tag: "Refuse", rule: "argument", name: rule.name, reason: outcome.reason } as const)
-				: outcome,
+		Effect.map(
+			Match.valueTags({
+				Allow: (allow): Rule.Allow | Rule.Rewrite<JsonObject> | Refuse => allow,
+				Rewrite: (rewrite) => rewrite,
+				Block: ({ reason }) => refuse("argument", { name: rule.name, reason }),
+			}),
 		),
 		Effect.catchCause((cause) =>
 			Cause.hasInterruptsOnly(cause)
 				? Effect.interrupt
-				: Effect.succeed({ _tag: "Refuse", rule: "argument-failed", name: rule.name } as const),
+				: Effect.succeed(refuse("argument-failed", { name: rule.name })),
 		),
 	);
 }

@@ -32,7 +32,7 @@ scripted model of the testing kit, and are the test [`test/readme.test.ts`](test
 
 ```ts
 import { Effect, Layer, Schema, Stream } from "effect";
-import { Extension, Harness, Storage, Tool } from "@effectified/pi-durable";
+import { Extension, Harness, Storage, Tool, ToolName } from "@effectified/pi-durable";
 import { ScriptedModels, TestHarness } from "@effectified/pi-durable/testing";
 import { Conversations, Guard, Matcher, Policy, Rule } from "@effectified/pi-guard";
 
@@ -50,7 +50,7 @@ const Read = Tool.make("read", {
 });
 const App = Extension.make({ name: "app", tools: [Search, Read] });
 
-const policy: Policy.Policy = {
+const policy: Policy.Encoded = {
 	...Policy.empty,
 	// No tool may be registered under these verbs, in snake or camel case.
 	denied: [Matcher.firstWord(["approve", "sign", "export", "send", "delete"])],
@@ -82,7 +82,7 @@ const program = Effect.gen(function* () {
 	// Exactly these tools, this classification and this model, stored in the creating commit.
 	const conversation = yield* Conversations.create({
 		ownership: { kind: "ownerless" },
-		grant: { tools: ["search"], classification: "public" },
+		grant: { tools: [ToolName.make("search")], classification: "public" },
 		model,
 	});
 	yield* conversation.prompt("Find record 42 and read it.");
@@ -126,7 +126,7 @@ const ChildrenLive = Layer.effect(
 		return {
 			// In the child's creating commit: at most these tools, and never more than the child was set to.
 			created: (tx, child) =>
-				Conversations.grantIn(tx, child, { tools: ["read", "search"] }, { mode: "narrow" }).pipe(
+				Conversations.grantIn(tx, child, { tools: [ToolName.make("read"), ToolName.make("search")] }, { mode: "narrow" }).pipe(
 					Effect.provideService(Guard.Guard, guard),
 				),
 		};
@@ -153,8 +153,11 @@ guarantee 1).
 
 ## The policy
 
-A policy is plain data, described by the schema `Policy.Policy`, so it can come from a file. Spread `Policy.empty`
-and set what you use.
+A policy is plain data, described by the schema `Policy.Policy`, so it can come from a file. Write it as
+`Policy.Encoded`, its tool names and model ids plain strings: `Guard.fromPolicy` and `Guard.layer` decode it, and the
+guard holds it with the names branded (`ToolName` of `@effectified/pi-durable`, `ProviderId` and `ModelId` of
+`@effectified/pi-ai`). Spread `Policy.empty` and set what you use. Classifications are your own labels, plain
+strings.
 
 | Field | Meaning | Default in `Policy.empty` |
 |---|---|---|
@@ -171,7 +174,7 @@ A matcher names tools in one of four ways:
 
 | Matcher | Names |
 |---|---|
-| `Matcher.exact("drop_table")` | The tool with exactly this name |
+| `Matcher.exact(ToolName.make("drop_table"))` | The tool with exactly this name |
 | `Matcher.prefix("admin__")` | Every tool whose name starts with these characters, as they are |
 | `Matcher.firstWord(["approve", "sign"])` | Every tool whose first word is one of these, in any case |
 | `Matcher.anyWord(["delete"])` | Every tool with one of these words anywhere in its name |
@@ -197,14 +200,22 @@ says so: what each function checks, and when, is this.
 | | Checks | When |
 |---|---|---|
 | `Guard.registry` | No tool has a denied name, no extension has the guard's name | When the Layer is built |
-| `Conversations.grantIn` | The guard built a registry: else `Unguarded` (`no-registry`) | In the commit, before a write |
-| `Conversations.grant` | The guard's own extension is asked first: else `Unguarded` (`not-selected`, `not-first`) | Before its commit |
+| `Conversations.grantIn` | The guard built a registry: else `Unguarded` (`NoRegistry`) | In the commit, before a write |
+| `Conversations.grant` | The guard's own extension is asked first: else `Unguarded` (`NotSelected`, `NotFirst`) | Before its commit |
 | `Conversations.create` | As `grantIn`, so nothing is created; then as `grant` | In the commit, and after it |
 | The guard's `beforeTool` hook | The denied names, the grant, the ceiling, the rules | Before every call |
 | The backstop of every tool | The guard's own extension is the first the conversation selects | When the tool would run |
 
 "The guard's own extension" is the object in a registry this guard built, not the name: a harness on a registry
-built with `Registry.layer`, also one with an extension called `guard`, is `not-selected`.
+built with `Registry.layer`, also one with an extension called `guard`, is `NotSelected`.
+
+`Unguarded`'s `reason` is a tagged union, `UnguardedReason`, so a caller picks one case with `Effect.catchReason`:
+
+```ts
+const lenient = Conversations.grant(conversation, grant).pipe(
+	Effect.catchReason("Unguarded", "NotFirst", () => Effect.logWarning("the guard is not asked first")),
+);
+```
 
 Limits. `grantIn` cannot see which harness its commit belongs to: where one guard built a registry and a second
 harness runs on an ordinary one, a `grantIn` in the second writes a grant nothing enforces (`create` and `grant`
@@ -258,17 +269,17 @@ trusted: whatever holds the `Guard` and a commit can grant. The offer is narrowe
 
 ```ts
 // Change the grant of an existing conversation, in one commit.
-yield* Conversations.grant(conversation, { tools: ["search", "read"], classification: "public" });
+yield* Conversations.grant(conversation, { tools: [ToolName.make("search"), ToolName.make("read")], classification: "public" });
 // Or inside a commit of your own, for example the one that forks.
 yield* Harness.commit((tx) =>
 	Effect.gen(function* () {
 		const fork = yield* tx.forkConversation(conversation.id, at, { ownership: { kind: "ownerless" } });
-		yield* Conversations.grantIn(tx, fork.id, { tools: ["read"], classification: "public" });
+		yield* Conversations.grantIn(tx, fork.id, { tools: [ToolName.make("read")], classification: "public" });
 	}),
 );
 const now = yield* Conversations.granted(conversation.id); // the grant that holds
 // Take tools away and never add one: `write` is not in the grant the conversation has, so it is left out.
-yield* Conversations.grant(conversation, { tools: ["read", "write"], classification: "public" }, { mode: "narrow" });
+yield* Conversations.grant(conversation, { tools: [ToolName.make("read"), ToolName.make("write")], classification: "public" }, { mode: "narrow" });
 const narrowed = yield* Conversations.granted(conversation.id); // { tools: ["read"], classification: "public" }
 ```
 
@@ -300,7 +311,7 @@ have. An owner's classification raised later does not reach a child granted befo
 
 ```ts
 // Fails with ModelNotCleared { provider: "faux", modelId: "faux-1", classification: "confidential", ceiling: "internal" }
-yield* Classification.checkModel(policy, { provider: "faux", modelId: "faux-1" }, "confidential");
+yield* Classification.checkModel(policy, fromPiModelRef({ provider: "faux", modelId: "faux-1" }), "confidential");
 ```
 
 Other parts of a product read what a conversation holds with `Conversations.granted(conversationId)`: the grant
@@ -385,7 +396,7 @@ content out of the `reason` of a rule: it is published as you wrote it.
 those of approvals and budgets: nobody is asked to approve a call the agent may not make. A conversation that
 selects extensions itself (`configure({ extensions })`) must list `Guard.EXTENSION` first. The wrong order is
 detected twice: `Conversations.create`, `Conversations.grant` and `Conversations.guarded` fail with `Unguarded`
-(`not-selected` or `not-first`), and the backstop refuses the call.
+(`NotSelected` or `NotFirst`), and the backstop refuses the call.
 
 ## What a fork and a child conversation inherit
 

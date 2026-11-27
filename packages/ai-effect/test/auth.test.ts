@@ -20,6 +20,7 @@ import {
 	Models,
 	type Provider,
 	ProviderAuthContext,
+	ProviderId,
 	type RedactedOAuthCredential,
 	refreshModels,
 } from "../src/index.ts";
@@ -27,7 +28,11 @@ import { radiusProvider } from "../src/providers/radius.ts";
 import { fauxProvider, runLive } from "../src/testing/index.ts";
 import { gateway } from "./gateway.ts";
 
-class Cancelled extends Schema.TaggedError<Cancelled>()("Cancelled", {}) {}
+class Cancelled extends Schema.TaggedError<Cancelled, { readonly brand: unique symbol }>()("Cancelled", {}) {}
+
+const RADIUS = ProviderId.make("radius");
+const KEYED = ProviderId.make("keyed");
+const FAUX = ProviderId.make("faux");
 
 /** A provider with pi-ai's standard API key auth on `TEST_KEY`, and a login that prompts for the key. */
 const keyed: Provider = createProvider({
@@ -62,12 +67,12 @@ describe("login", () => {
 	it("runs a provider's OAuth device login and stores the credential, its tokens redacted", async () => {
 		const result = await runLive(
 			Effect.gen(function* () {
-				const server = yield* gateway();
+				const server = yield* gateway;
 				const { interaction, events } = scripted(["device-code"]);
 				return yield* Effect.gen(function* () {
-					const credential = yield* login("radius", "oauth", interaction);
-					const stored = yield* (yield* Credentials).read("radius");
-					const auth = yield* getAuth("radius");
+					const credential = yield* login(RADIUS, "oauth", interaction);
+					const stored = yield* (yield* Credentials).read(RADIUS);
+					const auth = yield* getAuth(RADIUS);
 					return {
 						credential,
 						stored,
@@ -94,10 +99,10 @@ describe("login", () => {
 	it("fails with AuthError, reason login, when the provider's flow fails, and stores nothing", async () => {
 		const result = await runLive(
 			Effect.gen(function* () {
-				const server = yield* gateway();
+				const server = yield* gateway;
 				server.deviceError = "access_denied";
 				return yield* Effect.gen(function* () {
-					const failure = yield* Effect.flip(login("radius", "oauth", scripted(["device-code"]).interaction));
+					const failure = yield* Effect.flip(login(RADIUS, "oauth", scripted(["device-code"]).interaction));
 					return { failure, stored: yield* (yield* Credentials).list };
 				}).pipe(Effect.provide(layer([radiusProvider({ gateway: server.origin })])));
 			}),
@@ -110,7 +115,7 @@ describe("login", () => {
 	it("fails with the interaction's own failure when a prompt fails", async () => {
 		const failure = await runLive(
 			Effect.flip(
-				login("keyed", "api_key", { prompt: () => Effect.fail(new Cancelled()), notify: () => Effect.void }),
+				login(KEYED, "api_key", { prompt: () => Effect.fail(new Cancelled()), notify: () => Effect.void }),
 			).pipe(Effect.provide(layer([keyed]))),
 		);
 		expect(failure).toBeInstanceOf(Cancelled);
@@ -122,7 +127,7 @@ describe("login", () => {
 				const asked = yield* Deferred.make<void>();
 				const stopped = yield* Deferred.make<void>();
 				const fiber = yield* Effect.forkChild(
-					login("keyed", "api_key", {
+					login(KEYED, "api_key", {
 						prompt: () =>
 							Effect.andThen(Deferred.succeed(asked, undefined), Effect.never).pipe(
 								Effect.onInterrupt(() => Deferred.succeed(stopped, undefined)),
@@ -143,7 +148,9 @@ describe("login", () => {
 
 	it("fails with AuthError, reason provider, for an unknown provider", async () => {
 		const failure = await runLive(
-			Effect.flip(login("missing", "oauth", scripted([]).interaction)).pipe(Effect.provide(layer([]))),
+			Effect.flip(login(ProviderId.make("missing"), "oauth", scripted([]).interaction)).pipe(
+				Effect.provide(layer([])),
+			),
 		);
 		expect(failure).toMatchObject({ _tag: "AuthError", reason: "provider" });
 	});
@@ -153,11 +160,11 @@ describe("getAuth", () => {
 	it("prefers the stored key, then reads the environment through Config, and logout removes the stored key", async () => {
 		const result = await runLive(
 			Effect.gen(function* () {
-				const before = yield* getAuth("keyed");
-				yield* login("keyed", "api_key", scripted(["stored-key"]).interaction);
-				const stored = yield* getAuth("keyed");
-				yield* logout("keyed");
-				const after = yield* getAuth("keyed");
+				const before = yield* getAuth(KEYED);
+				yield* login(KEYED, "api_key", scripted(["stored-key"]).interaction);
+				const stored = yield* getAuth(KEYED);
+				yield* logout(KEYED);
+				const after = yield* getAuth(KEYED);
 				return { before, stored, after };
 			}).pipe(Effect.provide(layer([keyed], { TEST_KEY: "env-key" }))),
 		);
@@ -172,13 +179,13 @@ describe("getAuth", () => {
 	});
 
 	it("is none for an unconfigured provider, where the environment has only a blank value", async () => {
-		const auth = await runLive(getAuth("keyed").pipe(Effect.provide(layer([keyed], { TEST_KEY: "  " }))));
+		const auth = await runLive(getAuth(KEYED).pipe(Effect.provide(layer([keyed], { TEST_KEY: "  " }))));
 		expect(auth).toEqual(Option.none());
 	});
 
 	it("takes a key of its own, redacted", async () => {
 		const auth = await runLive(
-			getAuth("keyed", { apiKey: Redacted.make("override") }).pipe(Effect.provide(layer([keyed]))),
+			getAuth(KEYED, { apiKey: Redacted.make("override") }).pipe(Effect.provide(layer([keyed]))),
 		);
 		expect(Option.map(auth, (resolved) => resolved.auth.apiKey && Redacted.value(resolved.auth.apiKey))).toEqual(
 			Option.some("override"),
@@ -188,10 +195,10 @@ describe("getAuth", () => {
 	it("refreshes an expired OAuth token inside the store and keeps the new one", async () => {
 		const result = await runLive(
 			Effect.gen(function* () {
-				const server = yield* gateway();
+				const server = yield* gateway;
 				return yield* Effect.gen(function* () {
 					const credentials = yield* Credentials;
-					yield* credentials.modify("radius", () =>
+					yield* credentials.modify(RADIUS, () =>
 						Effect.succeed(
 							Option.some({
 								type: "oauth" as const,
@@ -201,8 +208,8 @@ describe("getAuth", () => {
 							}),
 						),
 					);
-					const auth = yield* getAuth("radius");
-					const stored = yield* credentials.read("radius");
+					const auth = yield* getAuth(RADIUS);
+					const stored = yield* credentials.read(RADIUS);
 					return { auth, stored, refreshed: server.tokenRequests.map((form) => form.get("refresh_token")) };
 				}).pipe(Effect.provide(layer([radiusProvider({ gateway: server.origin })])));
 			}),
@@ -218,10 +225,10 @@ describe("getAuth", () => {
 	it("fails with AuthError, reason oauth, when the refresh fails, and keeps the stored credential", async () => {
 		const result = await runLive(
 			Effect.gen(function* () {
-				const server = yield* gateway();
+				const server = yield* gateway;
 				return yield* Effect.gen(function* () {
 					const credentials = yield* Credentials;
-					yield* credentials.modify("radius", () =>
+					yield* credentials.modify(RADIUS, () =>
 						Effect.succeed(
 							Option.some({
 								type: "oauth" as const,
@@ -231,8 +238,8 @@ describe("getAuth", () => {
 							}),
 						),
 					);
-					const failure = yield* Effect.flip(getAuth("radius"));
-					return { failure, stored: yield* credentials.read("radius") };
+					const failure = yield* Effect.flip(getAuth(RADIUS));
+					return { failure, stored: yield* credentials.read(RADIUS) };
 				}).pipe(Effect.provide(layer([radiusProvider({ gateway: server.origin })])));
 			}),
 		);
@@ -247,11 +254,11 @@ describe("checkAuth and getAvailable", () => {
 		const result = await runLive(
 			Effect.gen(function* () {
 				return {
-					keyed: yield* checkAuth("keyed"),
-					faux: yield* checkAuth("faux"),
+					keyed: yield* checkAuth(KEYED),
+					faux: yield* checkAuth(FAUX),
 					available: (yield* getAvailable()).map((model) => model.id),
-					ofType: (yield* getAvailableOfType("chat", "faux")).map((model) => model.id),
-					all: (yield* getAllAvailable("keyed")).length,
+					ofType: (yield* getAvailableOfType("chat", FAUX)).map((model) => model.id),
+					all: (yield* getAllAvailable(KEYED)).length,
 				};
 			}).pipe(Effect.provide(layer([keyed, faux.provider]))),
 		);
@@ -269,11 +276,11 @@ describe("refreshModels", () => {
 	it("fetches the catalog of a configured provider with its credential", async () => {
 		const result = await runLive(
 			Effect.gen(function* () {
-				const server = yield* gateway();
+				const server = yield* gateway;
 				return yield* Effect.gen(function* () {
-					yield* login("radius", "oauth", scripted(["device-code"]).interaction);
+					yield* login(RADIUS, "oauth", scripted(["device-code"]).interaction);
 					const refreshed = yield* refreshModels({ allowNetwork: true });
-					const models = yield* Models.use((models) => Effect.succeed(models.getModels("radius")));
+					const models = yield* Models.use((models) => Effect.succeed(models.getModels(RADIUS)));
 					return { refreshed, models: models.map((model) => model.id), seen: server.configAuthorizations };
 				}).pipe(Effect.provide(layer([radiusProvider({ gateway: server.origin })])));
 			}),

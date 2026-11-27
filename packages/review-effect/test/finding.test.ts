@@ -12,6 +12,10 @@ describe("blocks", () => {
 			[true, true, true],
 		]);
 	});
+
+	it("pipes: data-last with the lowest blocking severity", () => {
+		expect(Severity.literals.map(blocks("warn"))).toEqual([false, true, true]);
+	});
 });
 
 describe("Finding", () => {

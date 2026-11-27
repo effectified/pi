@@ -28,19 +28,20 @@ const program = Effect.gen(function* () {
 	// Prime: one conversation reads the expensive context, once.
 	const root = yield* TestHarness.root;
 	yield* root.prompt("Read this document: ...", { requestId: "prime" });
-	// Fork per job under the cap, fan the typed results in, clean up.
+	// Fork per job under the cap, fan the typed results in, clean up. Ids and keys are branded: one never passes for another.
+	const id = Swarm.SwarmId.make("covers-1"); // the idempotency key: starting it twice is one swarm
 	yield* Swarm.start(Covers, {
-		id: "covers-1", // the idempotency key: starting it twice is one swarm
+		id,
 		source: root.id,
 		jobs: [
-			{ key: "rust", input: { topic: "Rust" } },
-			{ key: "go", input: { topic: "Go" } },
-			{ key: "zig", input: { topic: "Zig" } },
+			{ key: Swarm.JobKey.make("rust"), input: { topic: "Rust" } },
+			{ key: Swarm.JobKey.make("go"), input: { topic: "Go" } },
+			{ key: Swarm.JobKey.make("zig"), input: { topic: "Zig" } },
 		],
 		cap: 2,
 		onFailure: "collect",
 	});
-	return yield* Swarm.result(Covers, "covers-1");
+	return yield* Swarm.result(Covers, id);
 });
 
 // The in-storage driver needs the open harness, and the registry needs the driver: `layer` first, `attach` last.
@@ -83,9 +84,9 @@ const primed = Effect.gen(function* () {
 });
 
 const jobs = [
-	{ key: "rust", input: { topic: "Rust" } },
-	{ key: "go", input: { topic: "Go" } },
-	{ key: "zig", input: { topic: "Zig" } },
+	{ key: Swarm.JobKey.make("rust"), input: { topic: "Rust" } },
+	{ key: Swarm.JobKey.make("go"), input: { topic: "Go" } },
+	{ key: Swarm.JobKey.make("zig"), input: { topic: "Zig" } },
 ];
 
 describe("README", () => {
@@ -115,8 +116,14 @@ describe("README", () => {
 				yield* ScriptedModels.use((models) => models.setResponses(Array.from({ length: 10 }, () => scripted)));
 				const root = yield* Harness.rootWith({ agent: yield* TestHarness.agent });
 				yield* root.prompt("Read this document: ...", { requestId: "prime" });
-				yield* Swarm.start(Covers, { id: "parts", source: root.id, jobs, cap: 3, onFailure: "collect" });
-				return yield* Swarm.result(Covers, "parts");
+				yield* Swarm.start(Covers, {
+					id: Swarm.SwarmId.make("parts"),
+					source: root.id,
+					jobs,
+					cap: 3,
+					onFailure: "collect",
+				});
+				return yield* Swarm.result(Covers, Swarm.SwarmId.make("parts"));
 			}).pipe(Effect.provide(live)),
 		);
 		expect(outcome.jobs.map((job) => job._tag)).toEqual(["Success", "Success", "Success"]);
@@ -130,15 +137,15 @@ describe("README", () => {
 				const cheap: ModelRef = { provider: models.models[1].provider, modelId: models.models[1].id };
 				// README:
 				yield* Swarm.start(Covers, {
-					id: "covers-cheap",
+					id: Swarm.SwarmId.make("covers-cheap"),
 					source: root.id,
-					jobs: [{ key: "rust", input: { topic: "Rust" } }],
+					jobs: [{ key: Swarm.JobKey.make("rust"), input: { topic: "Rust" } }],
 					cap: 1,
 					onFailure: "fail",
 					// Every fork answers with the other model and is offered no tool. The source keeps what it has.
 					agent: { model: cheap, modelTools: [] },
 				});
-				const outcome = yield* Swarm.result(Covers, "covers-cheap");
+				const outcome = yield* Swarm.result(Covers, Swarm.SwarmId.make("covers-cheap"));
 				const stored = yield* Harness.commit((tx) => tx.scanConversations({}, 10));
 				const fork = Option.getOrThrow(yield* Harness.conversation(stored.items[1].id));
 				return { outcome, cheap, fork: (yield* fork.agent).model, source: (yield* root.agent).model };
@@ -167,18 +174,24 @@ describe("README", () => {
 		const seen = await Effect.runPromise(
 			Effect.gen(function* () {
 				const root = yield* primed;
-				yield* Swarm.start(Covers, { id: "covers-1", source: root.id, jobs, cap: 2, onFailure: "collect" });
-				yield* until(Effect.map(tally("covers-1"), (now) => now.running === 2));
+				yield* Swarm.start(Covers, {
+					id: Swarm.SwarmId.make("covers-1"),
+					source: root.id,
+					jobs,
+					cap: 2,
+					onFailure: "collect",
+				});
+				yield* until(Effect.map(tally(Swarm.SwarmId.make("covers-1")), (now) => now.running === 2));
 				// README:
 				// A reconciliation job after a crash: is the coordinator there, and what did it plan?
-				const probe = yield* Swarm.status("covers-1");
+				const probe = yield* Swarm.status(Swarm.SwarmId.make("covers-1"));
 				const alive = probe.running;
 				const jobKeys = probe.jobs.map((job) => job.key);
 				const open = probe.jobs.filter((job) => job.status !== "succeeded" && job.status !== "failed");
 				// README:
 				// Cancel: nothing new starts, live forks are cancelled, unpinned forks are destroyed, collected results are kept.
-				const cancelling = yield* Swarm.cancel("covers-1"); // "cancelling"
-				const outcome = yield* Swarm.result(Covers, "covers-1");
+				const cancelling = yield* Swarm.cancel(Swarm.SwarmId.make("covers-1")); // "cancelling"
+				const outcome = yield* Swarm.result(Covers, Swarm.SwarmId.make("covers-1"));
 				return { alive, jobKeys, open: open.map((job) => job.status), phase: probe.phase, cancelling, outcome };
 			}).pipe(Effect.provide(on(holding))),
 		);
@@ -201,19 +214,19 @@ describe("README", () => {
 			Effect.gen(function* () {
 				const root = yield* primed;
 				yield* Swarm.start(Covers, {
-					id: "covers-pinned",
+					id: Swarm.SwarmId.make("covers-pinned"),
 					source: root.id,
 					jobs,
 					cap: 3,
 					onFailure: "collect",
-					pins: ["rust"],
+					pins: [Swarm.JobKey.make("rust")],
 				});
-				const outcome = yield* Swarm.result(Covers, "covers-pinned");
+				const outcome = yield* Swarm.result(Covers, Swarm.SwarmId.make("covers-pinned"));
 				// README:
 				// A pinned fork is kept, as a conversation the product goes on with, until a janitor releases it.
-				const kept = yield* Swarm.ForkDriver.use((driver) => driver.list("covers-pinned"));
-				const released = yield* Swarm.destroyFork("covers-pinned", "rust"); // { bytesWritten: Option<number> }
-				const after = yield* Swarm.ForkDriver.use((driver) => driver.list("covers-pinned"));
+				const kept = yield* Swarm.ForkDriver.use((driver) => driver.list(Swarm.SwarmId.make("covers-pinned")));
+				const released = yield* Swarm.destroyFork(Swarm.SwarmId.make("covers-pinned"), Swarm.JobKey.make("rust")); // { bytesWritten: Option<number> }
+				const after = yield* Swarm.ForkDriver.use((driver) => driver.list(Swarm.SwarmId.make("covers-pinned")));
 				return { outcome, kept, released, after };
 			}).pipe(Effect.provide(live)),
 		);
@@ -232,11 +245,19 @@ describe("README", () => {
 		await Effect.runPromise(
 			Effect.gen(function* () {
 				const root = yield* primed;
-				yield* Swarm.start(Covers, { id: "covers-1", source: root.id, jobs, cap: 2, onFailure: "collect" });
+				yield* Swarm.start(Covers, {
+					id: Swarm.SwarmId.make("covers-1"),
+					source: root.id,
+					jobs,
+					cap: 2,
+					onFailure: "collect",
+				});
 				const log = (tag: string, key: string) => Effect.sync(() => logged.push(`${tag} ${key}`));
 				// README: (with `Effect.log` for `log`)
 				// Progress: one element when a job's fork was asked for, one when it settled or failed.
-				yield* Stream.runForEach(Swarm.events("covers-1"), (event) => log(event._tag, event.key));
+				yield* Stream.runForEach(Swarm.events(Swarm.SwarmId.make("covers-1")), (event) =>
+					log(event._tag, event.key),
+				);
 			}).pipe(Effect.provide(live)),
 		);
 		expect([...logged].sort()).toEqual(
@@ -252,13 +273,13 @@ describe("README", () => {
 			Effect.gen(function* () {
 				const root = yield* primed;
 				const started = yield* Swarm.start(Covers, {
-					id: "covers-1",
+					id: Swarm.SwarmId.make("covers-1"),
 					source: root.id,
 					jobs,
 					cap: 2,
 					onFailure: "collect",
 				});
-				const direct = yield* Swarm.result(Covers, "covers-1");
+				const direct = yield* Swarm.result(Covers, Swarm.SwarmId.make("covers-1"));
 				// README:
 				const settled = yield* Harness.waitForTaskOf(Covers.task, started.taskId);
 				if (settled.state.outcome.status === "completed") {
@@ -294,11 +315,11 @@ describe("README", () => {
 			Effect.gen(function* () {
 				const root = yield* primed;
 				const plan = { source: root.id, jobs: [jobs[0]], cap: 1, onFailure: "collect" as const };
-				yield* Swarm.start(Covers, { ...plan, id: "lenient" });
-				const lenient = yield* Swarm.result(Covers, "lenient");
+				yield* Swarm.start(Covers, { ...plan, id: Swarm.SwarmId.make("lenient") });
+				const lenient = yield* Swarm.result(Covers, Swarm.SwarmId.make("lenient"));
 				const afterLenient = asked;
-				yield* Swarm.start(Strict, { ...plan, id: "strict" });
-				return { lenient, afterLenient, strict: yield* Swarm.result(Strict, "strict") };
+				yield* Swarm.start(Strict, { ...plan, id: Swarm.SwarmId.make("strict") });
+				return { lenient, afterLenient, strict: yield* Swarm.result(Strict, Swarm.SwarmId.make("strict")) };
 			}).pipe(
 				Effect.provide(
 					Swarm.ConversationForks.attach.pipe(
@@ -326,16 +347,22 @@ describe("README", () => {
 		const seen = await Effect.runPromise(
 			Effect.gen(function* () {
 				const root = yield* primed;
-				yield* Swarm.start(Covers, { id: "covers-1", source: root.id, jobs, cap: 2, onFailure: "collect" });
+				yield* Swarm.start(Covers, {
+					id: Swarm.SwarmId.make("covers-1"),
+					source: root.id,
+					jobs,
+					cap: 2,
+					onFailure: "collect",
+				});
 				// The copy is made while the swarm's jobs run.
-				yield* until(Effect.map(tally("covers-1"), (now) => now.running === 2));
+				yield* until(Effect.map(tally(Swarm.SwarmId.make("covers-1")), (now) => now.running === 2));
 				// README:
 				// In the host of the copy, on a harness opened with `resume: false`, before anything else:
 				yield* Swarm.onStorageFork;
 				yield* Harness.resume;
-				return yield* Effect.flip(Swarm.result(Covers, "covers-1"));
+				return yield* Effect.flip(Swarm.result(Covers, Swarm.SwarmId.make("covers-1")));
 			}).pipe(Effect.provide(on(holding))),
 		);
-		expect(seen).toEqual(new Swarm.SwarmFaulted({ swarmId: "covers-1", reason: "copied" }));
+		expect(seen).toEqual(new Swarm.SwarmFaulted({ swarmId: Swarm.SwarmId.make("covers-1"), reason: "copied" }));
 	});
 });

@@ -1,9 +1,14 @@
 import { nodePlatform } from "@earendil-works/pi-env";
 import { runLive } from "@effectified/pi-ai/testing";
-import { Effect, Exit, Fiber, Scope, Stream } from "effect";
+import { Effect, Exit, Fiber, Schema, Scope, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Connection from "../src/node/connection.ts";
 import { daemon, NO_DAEMON, tempDir } from "./fixtures.ts";
+
+/** A failure of the command's Effect, as an application would give it. */
+class NoRoute extends Schema.TaggedError<NoRoute, { readonly brand: unique symbol }>()("NoRoute", {
+	message: Schema.String,
+}) {}
 
 describe.skipIf(daemon === undefined)(
 	`Connection, against the daemon of this checkout (${daemon ?? NO_DAEMON})`,
@@ -21,7 +26,7 @@ describe.skipIf(daemon === undefined)(
 			expect(seen.session).toBe(1);
 		});
 
-		it("computes the command with an Effect at each start", async () => {
+		it("computes the command with an Effect at each start, with the services of the fiber that made it", async () => {
 			let computed = 0;
 			const protocol = await runLive(
 				Effect.gen(function* () {
@@ -39,8 +44,9 @@ describe.skipIf(daemon === undefined)(
 
 		it("fails a start whose command Effect failed with RemoteFailed `spawn_error`, lost", async () => {
 			const exit = await runLive(
-				Effect.flatMap(Connection.make({ command: Effect.fail(new Error("no route")) }), (connection) =>
-					Effect.exit(connection.info),
+				Effect.flatMap(
+					Connection.make({ command: Effect.fail(NoRoute.make({ message: "no route" })) }),
+					(connection) => Effect.exit(connection.info),
 				),
 			);
 			expect(Exit.isFailure(exit) && exit.cause.reasons[0]).toMatchObject({

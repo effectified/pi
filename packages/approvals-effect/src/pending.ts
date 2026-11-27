@@ -1,7 +1,7 @@
 // The requests that await a decision, read from the harness's durable state.
 
 import { type DurableError, Harness, Signal } from "@effectified/pi-durable";
-import { Effect, Option } from "effect";
+import { Array as Arr, Effect, Option } from "effect";
 import * as Asks from "./asks.ts";
 import type { MalformedState } from "./errors.ts";
 import type { Request } from "./request.ts";
@@ -18,19 +18,27 @@ export const pending: Effect.Effect<
 	DurableError | MalformedState,
 	Harness.Harness
 > = Effect.gen(function* () {
-	const requests: Request[] = [];
-	for (const { record } of (yield* Harness.inspect).tasks) {
-		if (record.abortRequested) continue;
-		const last = (yield* Asks.ofRecord(record.memos)).at(-1);
-		if (last === undefined) continue;
-		// A decision, or the expiry of the request, stored under its key: either way none can reach it any more. One this
-		// version cannot read (another version of the signal) is stored all the same: `stateIn` fails only for a memo
-		// that is there.
-		const settled = yield* Effect.match(Signal.stateIn(record, Decided, last.id), {
-			onFailure: () => true,
-			onSuccess: Option.isSome,
-		});
-		if (!settled) requests.push(last);
-	}
-	return requests;
+	const { tasks } = yield* Harness.inspect;
+	// One at a time: each step decodes memos already in memory, which concurrency would only interleave.
+	const open = yield* Effect.forEach(tasks, ({ record }) => openRequest(record), { concurrency: 1 });
+	return Arr.getSomes(open);
+}).pipe(Effect.withSpan("Approvals.pending"));
+
+/** A live task record, as `Harness.inspect` lists it. */
+type Live = Effect.Success<typeof Harness.inspect>["tasks"][number]["record"];
+
+/** The last request of a task, unless its call is aborted, or the request is decided or expired. */
+const openRequest = Effect.fnUntraced(function* (record: Live) {
+	if (record.abortRequested) return Option.none<Request>();
+	const asks = yield* Asks.ofRecord(record.memos);
+	const last = Arr.last(asks);
+	if (Option.isNone(last)) return last;
+	// A decision, or the expiry of the request, stored under its key: either way none can reach it any more. One this
+	// version cannot read (another version of the signal) is stored all the same: `stateIn` fails only for a memo
+	// that is there.
+	const settled = yield* Effect.match(Signal.stateIn(record, Decided, last.value.id), {
+		onFailure: () => true,
+		onSuccess: Option.isSome,
+	});
+	return settled ? Option.none<Request>() : last;
 });

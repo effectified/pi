@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@effectified/pi-agent";
 import type { Message } from "@effectified/pi-ai";
 import { fauxAssistantMessage, fauxToolCall, runTest, ScriptedModels } from "@effectified/pi-ai/testing";
-import { Effect, Fiber, Latch, Schema, Stream } from "effect";
+import { Effect, Exit, Fiber, Latch, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { AgentLoop, Tool } from "../src/index.ts";
 import { held, model, scripted } from "./scripted.ts";
@@ -60,6 +60,28 @@ describe("AgentLoop.stream", () => {
 		expect(asked.first._tag).toBe("Some");
 		// Only the held request was made: the run did not go on to another one.
 		expect(asked.calls).toBeLessThanOrEqual(1);
+	});
+
+	it("settles when a consumer that lags behind a full buffer is interrupted", async () => {
+		const exit = await runTest(
+			Effect.gen(function* () {
+				// A long answer: far more message_update events than the buffer holds.
+				yield* ScriptedModels.use((models) => models.setResponses([fauxAssistantMessage("word ".repeat(400))]));
+				const config = { model: yield* model, convertToLlm };
+				const reading = yield* Latch.make();
+				// The consumer takes one event and never another, so the run fills the buffer and waits.
+				const lagging = AgentLoop.stream([user("talk")], { messages: [] }, config).pipe(
+					Stream.runForEach(() => Effect.andThen(Latch.open(reading), Effect.never)),
+				);
+				const fiber = yield* Effect.forkChild(lagging, { startImmediately: true });
+				yield* reading.await;
+				// Pi's loop runs on microtasks: by now it has filled the buffer and waits for the consumer.
+				yield* Effect.repeat(Effect.yieldNow, { times: 50 });
+				yield* Fiber.interrupt(fiber);
+				return yield* Fiber.await(fiber);
+			}).pipe(Effect.provide(scripted)),
+		);
+		expect(Exit.hasInterrupts(exit)).toBe(true);
 	});
 
 	it("aborts the model request when the consumer is interrupted", async () => {
@@ -139,6 +161,37 @@ describe("AgentLoop.run", () => {
 			}).pipe(Effect.provide(scripted)),
 		);
 		expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+	});
+
+	it("asks a hook under the run's span, which lives as long as the run", async () => {
+		const parents: Array<string> = [];
+		await runTest(
+			Effect.gen(function* () {
+				yield* ScriptedModels.use((models) => models.setResponses([fauxAssistantMessage("hello")]));
+				const traced = (messages: AgentMessage[]) =>
+					Effect.andThen(
+						// No current span counts as no parent: a hook may not fail.
+						Effect.flatMap(Effect.option(Effect.currentSpan), (span) =>
+							Effect.sync(() =>
+								parents.push(
+									Option.match(
+										Option.flatMap(span, (current) => current.parent),
+										{
+											onNone: () => "none",
+											onSome: (parent) => parent._tag,
+										},
+									),
+								),
+							),
+						),
+						convertToLlm(messages),
+					);
+				return yield* AgentLoop.run([user("hi")], { messages: [] }, { model: yield* model, convertToLlm: traced });
+			}).pipe(Effect.provide(scripted)),
+		);
+		// The hook's span has a parent: the run's, still open. A root span here would lose the run's trace.
+		expect(parents.length).toBeGreaterThan(0);
+		expect(parents.every((parent) => parent !== "none")).toBe(true);
 	});
 });
 

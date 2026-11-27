@@ -1,6 +1,7 @@
 // The bridge from Effect to Pi: an Effect run as the promise pi-coding-agent awaits from a handler, a tool or a
 // command of an extension.
 
+import { withoutParentSpan } from "@effectified/pi-ai";
 import { Cause, type Context, Effect, Exit, Formatter, Predicate } from "effect";
 
 /** Runs an Effect with the services it was given and settles as Pi expects of the callback it called. */
@@ -12,7 +13,8 @@ export type Run<R> = <A, E>(effect: Effect.Effect<A, E, R>, signal?: AbortSignal
  * turns it into an error result when a tool threw it.
  */
 export function runner<R>(context: Context.Context<R>): Run<R> {
-	const runExit = Effect.runPromiseExitWith(context);
+	// Pi keeps the runner and calls it later: its Effects' spans start their own trace.
+	const runExit = Effect.runPromiseExitWith(withoutParentSpan(context));
 	return (effect, signal) =>
 		runExit(effect, { signal }).then((exit) =>
 			Exit.isSuccess(exit) ? exit.value : Promise.reject(rejection(Cause.squash(exit.cause))),

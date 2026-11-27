@@ -1,7 +1,7 @@
 // Holds back the exit of the process that rivetkit makes for a local engine start that failed: the start has failed
 // as an Effect already, and the process is its caller's to end.
 
-import { Effect } from "effect";
+import { Array as Arr, Effect, Option } from "effect";
 
 /** One local engine start, from before it begins until it is ready or its failure has been dealt with. */
 export interface Hold {
@@ -58,8 +58,8 @@ export const keep: Effect.Effect<void> = Effect.sync(() => {
 export const DOOM_MILLIS = 120_000;
 
 /** How many failed starts still wait for rivetkit's exit. */
-export const waiting: Effect.Effect<number> = Effect.sync(
-	() => [...starts].filter((start) => start.state === "doomed").length,
+export const waiting: Effect.Effect<number> = Effect.sync(() =>
+	Arr.countBy(Arr.fromIterable(starts), (start) => start.state === "doomed"),
 );
 
 /** Whether a stack trace has a frame of rivetkit's own code: its built files, or its sources. */
@@ -103,15 +103,19 @@ function end(start: Start): void {
  */
 const guarded = ((code?: number | string | null): void => {
 	const rivetkits = fromRivetkit(new Error().stack ?? "");
-	const start = rivetkits ? oldest() : undefined;
-	if (start?.state === "doomed") end(start);
-	else if (start !== undefined) start.exited = true;
-	else if (!(rivetkits && kept)) (original ?? process.exit)(code);
+	const start = rivetkits ? oldest() : Option.none<Start>();
+	if (Option.isNone(start)) {
+		if (!(rivetkits && kept)) (original ?? process.exit)(code);
+	} else if (start.value.state === "doomed") end(start.value);
+	else start.value.exited = true;
 	// A cast: `process.exit` never returns by its type. rivetkit's caller does nothing after it but end its handler.
 }) as typeof process.exit;
 
 /** The start rivetkit's exit is for: the one that failed first, else the one that is starting. */
-function oldest(): Start | undefined {
-	const waiting = [...starts].filter((start) => !start.exited);
-	return waiting.find((start) => start.state === "doomed") ?? waiting[0];
+function oldest(): Option.Option<Start> {
+	const waiting = Arr.filter(Arr.fromIterable(starts), (start) => !start.exited);
+	return Option.orElse(
+		Arr.findFirst(waiting, (start) => start.state === "doomed"),
+		() => Arr.head(waiting),
+	);
 }

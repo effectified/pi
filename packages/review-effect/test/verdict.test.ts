@@ -58,6 +58,37 @@ describe("Verdict", () => {
 		expect(Schema.decodeUnknownSync(Verdict)(STORED)).toEqual(STORED);
 	});
 
+	it("refuses its own counts when they are not whole or below their floor", () => {
+		const decode = Schema.decodeUnknownSync(Verdict);
+		expect(() => decode({ ...STORED, pass: 0 })).toThrow(/pass/);
+		expect(() => decode({ ...STORED, corrections: 1.5 })).toThrow(/corrections/);
+	});
+
+	it("reads a verdict stored before 0.3.0 with a provider's NaN, which its JSON holds as the string NaN, as 0", () => {
+		const stored = {
+			...STORED,
+			call: { ...STORED.call, usage: { ...STORED.call.usage, input: "NaN", cost: "NaN" } },
+		};
+		const verdict = Schema.decodeUnknownSync(Schema.toCodecJson(Verdict))(stored);
+		expect([verdict.call?.usage?.input, verdict.call?.usage?.cost]).toEqual([0, 0]);
+	});
+
+	it("keeps the numbers pi-ai reported as they were stored: a fractional count, a fractional time", () => {
+		const reported = {
+			...STORED,
+			time: STORED.time + 0.5,
+			call: { ...STORED.call, usage: { ...STORED.call.usage, input: 1.5 } },
+		};
+		expect(Schema.decodeUnknownSync(Verdict)(reported)).toEqual(reported);
+	});
+
+	it("brands the models it names where it decodes them", () => {
+		const verdict = Schema.decodeUnknownSync(Verdict)(STORED);
+		// A brand is a type: at run time the ids are the strings stored.
+		const ids: ReadonlyArray<string> = [verdict.author.provider, verdict.author.modelId, verdict.call?.model ?? ""];
+		expect(ids).toEqual(["author-lab", "writer", "judge"]);
+	});
+
 	it("needs no request: a review that asked nobody has none", () => {
 		const { call: _call, ...unasked } = STORED;
 		expect(Schema.decodeUnknownSync(Verdict)(unasked)).toEqual(unasked);

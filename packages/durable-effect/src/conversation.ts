@@ -22,7 +22,7 @@ import type {
 	UserInput,
 } from "@earendil-works/pi-durable";
 import type { StrictOmit } from "@effectified/pi-ai";
-import { Effect, Option, Predicate, type Stream } from "effect";
+import { Array as Arr, Effect, Option, Predicate, type Stream } from "effect";
 import * as Agent from "./agent.ts";
 import { call } from "./call.ts";
 import * as Entries from "./entries.ts";
@@ -141,16 +141,15 @@ export type Owner = NonNullable<ConversationRecord["owner"]>;
 
 /** The Effect form of a Pi Durable conversation handle. */
 export function fromPi(conversation: PiConversation): Conversation {
-	const submit = (draft: SubmissionDraft) =>
-		Effect.map(
-			call((context) => conversation.submit(draft, context)),
-			Submission.fromPi,
-		);
+	const submit = Effect.fn("Conversation.submit")(function* (draft: SubmissionDraft) {
+		const submitted = yield* call((context) => conversation.submit(draft, context));
+		return Submission.fromPi(submitted);
+	});
 	const record = Effect.filterOrFail(
 		call((context) => conversation.commit((tx) => tx.conversation(conversation.id), context)),
 		Predicate.isNotUndefined,
 		// Pi gives a handle only for a stored conversation and never deletes one: this is Pi's own inconsistency.
-		() => new UnexpectedError({ cause: new Error(`Conversation ${conversation.id} has no record`) }),
+		() => UnexpectedError.make({ cause: new Error(`Conversation ${conversation.id} has no record`) }),
 	);
 	return {
 		id: conversation.id,
@@ -158,28 +157,45 @@ export function fromPi(conversation: PiConversation): Conversation {
 		parent: Effect.map(record, (found) => Option.fromUndefinedOr(found.parent)),
 		owner: Effect.map(record, (found) => Option.fromUndefinedOr(found.owner)),
 		submit,
-		prompt: (input, options) =>
-			Effect.flatMap(submit({ ...options, type: "input", content: input }), (submission) => submission.wait),
-		commit: (change, options) =>
-			Tx.commit((body, context, given) => conversation.commit(body, context, given), change, options),
-		admit: (tx, draft) => Tx.admit(conversation, tx, draft),
-		fork: ({ at, ownership, agent, init }) =>
-			Effect.map(
-				creating(init, (given, context) =>
-					conversation.fork(at, { ...Agent.creation({ ownership, agent }), ...given }, context),
-				),
-				fromPi,
-			),
+		prompt: Effect.fn("Conversation.prompt")(function* (input: UserInput, options?: PromptOptions) {
+			const submission = yield* submit({ ...options, type: "input", content: input });
+			return yield* submission.wait;
+		}),
+		commit: Effect.fn("Conversation.commit")(function* <A, E, R>(
+			change: (tx: Tx.Tx) => Effect.Effect<A, E, R>,
+			options?: CommitOptions,
+		) {
+			return yield* Tx.commit((body, context, given) => conversation.commit(body, context, given), change, options);
+		}),
+		admit: Effect.fn("Conversation.admit")(function* (tx: Tx.Tx, draft: SubmissionDraft) {
+			return yield* Tx.admit(conversation, tx, draft);
+		}),
+		fork: Effect.fn("Conversation.fork")(function* <E, R>({ at, ownership, agent, init }: ForkOptions<E, R>) {
+			const forked = yield* creating(init, (given, context) =>
+				conversation.fork(at, { ...Agent.creation({ ownership, agent }), ...given }, context),
+			);
+			return fromPi(forked);
+		}),
 		agent: call((context) => conversation.agent(context)),
-		configure: (change) => call((context) => conversation.configure(Agent.toPi(change), context)),
-		compact: (instructions) => call((context) => conversation.compact(instructions, context)),
-		reset: (handoff) => call((context) => conversation.reset(handoff, context)),
-		abort: (options) => call((context) => conversation.abort(context, options)),
+		configure: Effect.fn("Conversation.configure")(function* (change: Agent.Change) {
+			return yield* call((context) => conversation.configure(Agent.toPi(change), context));
+		}),
+		compact: Effect.fn("Conversation.compact")(function* (instructions?: string) {
+			return yield* call((context) => conversation.compact(instructions, context));
+		}),
+		reset: Effect.fn("Conversation.reset")(function* (handoff?: string) {
+			return yield* call((context) => conversation.reset(handoff, context));
+		}),
+		abort: Effect.fn("Conversation.abort")(function* (options?: ConversationAbortOptions) {
+			return yield* call((context) => conversation.abort(context, options));
+		}),
 		waitForIdle: call((context) => conversation.waitForIdle(context)),
-		context: (options) => call((context) => conversation.context(context, options)),
+		context: Effect.fn("Conversation.context")(function* (options?: { readonly at?: EntryId }) {
+			return yield* call((context) => conversation.context(context, options));
+		}),
 		head: Effect.map(
 			call((context) => conversation.entries({}, 1, undefined, context)),
-			(page) => Option.fromNullishOr(page.items[0]?.id),
+			(page) => Option.map(Arr.head(page.items), (entry) => entry.id),
 		),
 		entries: (query) => Entries.stream((...page) => conversation.entries(...page), query),
 		changes: (window) => Watch.stream((context) => conversation.watch(context, window)),

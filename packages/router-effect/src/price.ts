@@ -1,29 +1,29 @@
 // The cost of one response at a route's price, in integer micro units, with no float arithmetic: pi-ai's rule.
 
-import type { Usage } from "@effectified/pi-ai";
-import { TOKEN_KINDS, type TokenKind } from "@effectified/pi-ai";
-import { Effect, Schema } from "effect";
-import type { Price, Route } from "./route-table.ts";
+import { TOKEN_KINDS, type TokenKind, type Usage } from "@effectified/pi-ai";
+import { Array as Arr, Effect, Option, Order, Schema } from "effect";
+import type { Price, PriceTier, Route } from "./route-table.ts";
 
 /**
- * The token counts of one response by kind, as pi-ai counts them. `cacheWrite1h` is the part of `cacheWrite` written
- * with one hour of retention, when the provider reported it.
+ * The token counts of one response by kind, as pi-ai counts them and as the provider reported them: a fraction or a
+ * negative count stays as it came. `cacheWrite1h` is the part of `cacheWrite` written with one hour of retention, when
+ * the provider reported it.
  */
 export const TokenUsage = Schema.Struct({
-	input: Schema.Number,
-	output: Schema.Number,
-	cacheRead: Schema.Number,
-	cacheWrite: Schema.Number,
-	cacheWrite1h: Schema.optionalKey(Schema.Number),
+	input: Schema.Finite,
+	output: Schema.Finite,
+	cacheRead: Schema.Finite,
+	cacheWrite: Schema.Finite,
+	cacheWrite1h: Schema.optionalKey(Schema.Finite),
 });
 
 /** The token counts of one response by kind. */
 export type TokenUsage = typeof TokenUsage.Type;
 
-/** An amount of money: `micros` millionths of one unit of `currency`. */
+/** An amount of money: `micros` millionths of one unit of `currency`, zero or more. */
 export const Cost = Schema.Struct({
 	currency: Schema.String,
-	micros: Schema.BigInt,
+	micros: Schema.BigInt.check(Schema.isGreaterThanOrEqualToBigInt(0n)),
 });
 
 /** An amount of money in integer micro units. */
@@ -33,10 +33,14 @@ export type Cost = typeof Cost.Type;
 const COUNTED = [...TOKEN_KINDS, "cacheWrite1h"] as const;
 
 /** A token count that cannot be priced: it is not a whole number of tokens, zero or more. */
-export class InvalidUsage extends Schema.TaggedError<InvalidUsage>()("InvalidUsage", {
-	kind: Schema.Literals(COUNTED),
-	count: Schema.Number,
-}) {
+export class InvalidUsage extends Schema.TaggedError<InvalidUsage, { readonly brand: unique symbol }>()(
+	"InvalidUsage",
+	{
+		kind: Schema.Literals(COUNTED),
+		// @effect-diagnostics-next-line schemaNumber:off the rejected count as it was given, NaN and Infinity included
+		count: Schema.Number,
+	},
+) {
 	override get message(): string {
 		return `The ${this.kind} token count ${this.count} is not a whole number of tokens`;
 	}
@@ -50,19 +54,21 @@ type Counted = Pick<Usage, (typeof COUNTED)[number]>;
  * tier below the request's input, each count times its rate per million tokens, and the cache writes kept for one
  * hour at twice the input rate. Summed exactly, then rounded up to the next micro unit once, so a response is never
  * charged less than it cost and never rounded twice. Fails with `InvalidUsage` when a count is not a whole number of
- * tokens: the strict form, for a product's own figures. A route event is priced by `priced`, which never fails.
+ * tokens: the strict form, for a product's own figures. A route event is priced by `priced`, which never fails. A
+ * price that is not a decoded `Price` (a fraction) is a defect of the Effect.
  */
-export function cost(route: Pick<Route, "price">, usage: Counted): Effect.Effect<Cost, InvalidUsage> {
-	// Suspended so that a price that is not a decoded `Price` (a fraction) is a defect of the Effect, not a throw here.
-	return Effect.suspend(() => {
-		for (const kind of COUNTED) {
-			const count = usage[kind];
-			if (count === undefined) continue;
-			if (!Number.isSafeInteger(count) || count < 0) return Effect.fail(new InvalidUsage({ kind, count }));
-		}
-		return Effect.succeed(priced(route.price, usage));
+export const cost: (route: Pick<Route, "price">, usage: Counted) => Effect.Effect<Cost, InvalidUsage> = Effect.fn(
+	"Price.cost",
+)(function* (route, usage) {
+	const invalid = Arr.findFirst(COUNTED, (kind) => {
+		const count = usage[kind];
+		return count === undefined || (Number.isSafeInteger(count) && count >= 0)
+			? Option.none()
+			: Option.some(InvalidUsage.make({ kind, count }));
 	});
-}
+	if (Option.isSome(invalid)) return yield* invalid.value;
+	return priced(route.price, usage);
+});
 
 const PER_MILLION = 1_000_000n;
 
@@ -82,10 +88,13 @@ export function priced(price: Price, usage: Counted): Cost {
 	} satisfies Record<TokenKind, bigint>;
 	const rates = ratesAt(price, counts.input + counts.cacheRead + counts.cacheWrite);
 	// pi-ai charges a cache write kept for one hour at twice the input rate, and the rest at the cache-write rate.
-	const longWrites = min(whole(usage.cacheWrite1h ?? 0), counts.cacheWrite);
-	let scaled = longWrites * 2n * BigInt(rates.input);
-	counts.cacheWrite -= longWrites;
-	for (const kind of TOKEN_KINDS) scaled += counts[kind] * BigInt(rates[kind]);
+	const longWrites = Order.min(Order.BigInt)(whole(usage.cacheWrite1h ?? 0), counts.cacheWrite);
+	const charged = { ...counts, cacheWrite: counts.cacheWrite - longWrites };
+	const scaled = Arr.reduce(
+		TOKEN_KINDS,
+		longWrites * 2n * BigInt(rates.input),
+		(sum, kind) => sum + charged[kind] * BigInt(rates[kind]),
+	);
 	return { currency: price.currency, micros: (scaled + PER_MILLION - 1n) / PER_MILLION };
 }
 
@@ -94,9 +103,8 @@ function whole(count: number): bigint {
 	return Number.isFinite(count) && count > 0 ? BigInt(Math.ceil(count)) : 0n;
 }
 
-function min(one: bigint, other: bigint): bigint {
-	return one < other ? one : other;
-}
+/** Tiers by their threshold. `Array.max` keeps the first of two equal ones, as pi-ai does. */
+const byThreshold: Order.Order<PriceTier> = Order.mapInput(Order.Number, (tier: PriceTier) => tier.inputTokensAbove);
 
 /**
  * The rates of `price` for a request of `input` tokens (`input`, `cacheRead` and `cacheWrite` together): those of the
@@ -104,21 +112,27 @@ function min(one: bigint, other: bigint): bigint {
  * first.
  */
 function ratesAt(price: Price, input: bigint): Pick<Price, TokenKind> {
-	let rates: Pick<Price, TokenKind> = price;
-	let above = -1n;
-	for (const tier of price.tiers ?? []) {
-		const threshold = BigInt(tier.inputTokensAbove);
-		if (input > threshold && threshold > above) {
-			rates = tier;
-			above = threshold;
-		}
-	}
-	return rates;
+	const applying = Arr.filter(price.tiers ?? [], (tier) => input > BigInt(tier.inputTokensAbove));
+	return Arr.isArrayNonEmpty(applying) ? Arr.max(applying, byThreshold) : price;
 }
 
-/** The token counts of a pi-ai usage, as a route event records them; zeros when the provider reported none. */
+/**
+ * The token counts of a pi-ai usage, as a route event records them; zeros when the provider reported none. A count
+ * that is not a finite number (wire input; JSON cannot carry one) is recorded as zero, which is what its cost counts it
+ * as; every other count as it came.
+ */
 export function tokensOf(usage: Usage | undefined): TokenUsage {
 	if (usage === undefined) return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 	const { input, output, cacheRead, cacheWrite, cacheWrite1h } = usage;
-	return { input, output, cacheRead, cacheWrite, ...(cacheWrite1h === undefined ? {} : { cacheWrite1h }) };
+	return {
+		input: finite(input),
+		output: finite(output),
+		cacheRead: finite(cacheRead),
+		cacheWrite: finite(cacheWrite),
+		...(cacheWrite1h === undefined ? {} : { cacheWrite1h: finite(cacheWrite1h) }),
+	};
+}
+
+function finite(count: number): number {
+	return Number.isFinite(count) ? count : 0;
 }

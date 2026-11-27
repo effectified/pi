@@ -14,6 +14,7 @@ export {
 	toCodemodeIdentifier,
 } from "@earendil-works/pi-codemode/portable";
 export {
+	AdmissionDenied,
 	type CodemodeFailure,
 	CodemodeSourceError,
 	DeliveryRejected,
@@ -24,6 +25,6 @@ export {
 } from "./errors.ts";
 export * as InlineSandbox from "./inline-sandbox.ts";
 export * as RemoteSandbox from "./remote-sandbox.ts";
-export type * as Run from "./run.ts";
+export * as Run from "./run.ts";
 export * as Sandbox from "./sandbox.ts";
 export * as ScriptTool from "./script-tool.ts";

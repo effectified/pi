@@ -3,16 +3,17 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { Conversation, Entry, Task } from "@effectified/pi-durable";
-import { ActorInfo, type Identity } from "@effectified/pi-durable-rivet";
+import { ActorId, ActorInfo, type Identity } from "@effectified/pi-durable-rivet";
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Package from "../src/index.ts";
 import * as Assignment from "../src/rivet/assignment.ts";
 import * as Rivet from "../src/rivet.ts";
 import { noSetup } from "./support.ts";
+import { JobKey, SwarmId } from "../src/ids.ts";
 
 const identity = (forkInput: Option.Option<Schema.Json>): Identity => ({
-	actorId: "a1",
+	actorId: ActorId.make("a1"),
 	name: "agent",
 	key: ["primed"],
 	namespace: "default",
@@ -25,6 +26,7 @@ describe("the Rivet subpath", () => {
 		expect(Object.keys(Rivet).sort()).toEqual([
 			"Assignment",
 			"JobRefused",
+			"Options",
 			"actions",
 			"forkHygiene",
 			"forkKey",
@@ -59,7 +61,7 @@ describe("the Rivet subpath", () => {
 	});
 
 	it("derives a fork's key from its source's key, the swarm id and the job key", () => {
-		expect(Rivet.forkKey(["tenant", "primed"], "covers-1", "rust")).toEqual([
+		expect(Rivet.forkKey(["tenant", "primed"], SwarmId.make("covers-1"), JobKey.make("rust"))).toEqual([
 			"tenant",
 			"primed",
 			"swarm",
@@ -70,8 +72,8 @@ describe("the Rivet subpath", () => {
 
 	it("gives a fork its job as the fork input, and reads it back as nothing else", async () => {
 		const input = Assignment.of({
-			swarmId: "covers-1",
-			jobKey: "rust",
+			swarmId: SwarmId.make("covers-1"),
+			jobKey: JobKey.make("rust"),
 			coordinatorTaskId: Task.Id.make(7),
 			sourceConversationId: Conversation.Id.make(1),
 			at: Entry.Id.make(12),

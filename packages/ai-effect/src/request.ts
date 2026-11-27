@@ -1,4 +1,5 @@
-// Chat requests in Effect terms: a response as a Stream of pi-ai's events, or as an Effect of its final message.
+// Chat requests in Effect terms: a response as a Stream of pi-ai's events, or as an Effect of its final message, and
+// the Sink that folds the one into the other.
 
 import type {
 	Api,
@@ -12,7 +13,7 @@ import type {
 	Context as PiContext,
 	StreamOptions,
 } from "@earendil-works/pi-ai";
-import { Effect, Option, Stream } from "effect";
+import { Effect, Option, Sink, Stream } from "effect";
 import { ModelRequestError } from "./errors.ts";
 import { Models } from "./models.ts";
 
@@ -44,13 +45,13 @@ export function stream<TApi extends Api>(
 }
 
 /** The final message of one response of `model`, with the error and interruption rules of `stream`. */
-export function complete<TApi extends Api>(
+export const complete = Effect.fn("Request.complete")(function* <TApi extends Api>(
 	model: Model<TApi>,
 	context: PiContext,
 	options?: RequestOptions<ModelsApiStreamOptions<TApi>>,
-): Effect.Effect<AssistantMessage, ModelRequestError, Models> {
-	return finalMessage(stream(model, context, options));
-}
+): Effect.fn.Return<AssistantMessage, ModelRequestError, Models> {
+	return yield* Stream.run(stream(model, context, options), finalMessage);
+});
 
 /** `stream` with pi-ai's provider-neutral options (`reasoning`, `toolChoice`) instead of one API's own. */
 export function streamSimple(
@@ -62,13 +63,26 @@ export function streamSimple(
 }
 
 /** `complete` with pi-ai's provider-neutral options (`reasoning`, `toolChoice`) instead of one API's own. */
-export function completeSimple(
+export const completeSimple = Effect.fn("Request.completeSimple")(function* (
 	model: Model<Api>,
 	context: PiContext,
 	options?: RequestOptions<ModelsSimpleStreamOptions>,
-): Effect.Effect<AssistantMessage, ModelRequestError, Models> {
-	return finalMessage(streamSimple(model, context, options));
-}
+): Effect.fn.Return<AssistantMessage, ModelRequestError, Models> {
+	return yield* Stream.run(streamSimple(model, context, options), finalMessage);
+});
+
+/**
+ * The message of the `done` event that ends a response's events: what `complete` runs `stream` into. Run it on a
+ * stream a consumer also reads (`Stream.tap` the deltas to a UI) to get the final message as well. pi-ai ends every
+ * response in `done` or `error`, and `error` fails the stream first, so events that end otherwise are a defect.
+ */
+export const finalMessage: Sink.Sink<AssistantMessage, ResponseEvent> = Sink.last<ResponseEvent>().pipe(
+	Sink.mapEffect((last) =>
+		Option.isSome(last) && last.value.type === "done"
+			? Effect.succeed(last.value.message)
+			: Effect.die(new Error("pi-ai ended a response without a done or error event")),
+	),
+);
 
 /** The events of the pi-ai response `start` begins. Closing the Stream's scope, for any reason, aborts `signal`. */
 function responseEvents(
@@ -77,29 +91,21 @@ function responseEvents(
 	return Stream.unwrap(
 		Effect.gen(function* () {
 			const models = yield* Models;
-			const controller = yield* Effect.acquireRelease(
-				Effect.sync(() => new AbortController()),
-				(controller) => Effect.sync(() => controller.abort()),
-			);
+			// Aborted when the Stream's scope closes.
+			const signal = yield* Effect.abortSignal;
 			// pi-ai's event streams never reject: every failure is an `error` event. A rejection is a defect.
-			return Stream.fromAsyncIterable(start(models, controller.signal), (cause) => cause).pipe(
+			return Stream.fromAsyncIterable(start(models, signal), (cause) => cause).pipe(
 				Stream.orDie,
-				Stream.mapEffect((event) =>
-					event.type === "error"
-						? Effect.fail(new ModelRequestError({ reason: event.reason, response: event.error }))
-						: Effect.succeed(event),
-				),
+				Stream.mapEffect(failOnError),
 			);
 		}),
 	);
 }
 
-/** The message of the `done` event that ends `events`. */
-function finalMessage<E, R>(events: Stream.Stream<ResponseEvent, E, R>): Effect.Effect<AssistantMessage, E, R> {
-	return Effect.flatMap(Stream.runLast(events), (last) =>
-		Option.isSome(last) && last.value.type === "done"
-			? Effect.succeed(last.value.message)
-			: // pi-ai's protocol ends every response in `done` or `error`; anything else is a broken provider.
-				Effect.die(new Error("pi-ai ended a response without a done or error event")),
-	);
-}
+/** One event of a response, or the failure its `error` event stands for. Per event, so untraced. */
+const failOnError = Effect.fnUntraced(function* (
+	event: AssistantMessageEvent,
+): Effect.fn.Return<ResponseEvent, ModelRequestError> {
+	if (event.type === "error") return yield* ModelRequestError.make({ reason: event.reason, response: event.error });
+	return event;
+});

@@ -7,7 +7,14 @@ import { FetchHttpClient, HttpClient, type HttpClientRequest, HttpClientResponse
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import * as Exa from "../src/exa.ts";
-import { Evidence, type SearchOptions, SearchProvider, SearchRateLimited, SearchTools } from "../src/index.ts";
+import {
+	Evidence,
+	ProviderName,
+	type SearchOptions,
+	SearchProvider,
+	SearchRateLimited,
+	SearchTools,
+} from "../src/index.ts";
 import * as Acme from "./example-provider.ts";
 
 const SEARCH_BODY = JSON.stringify({
@@ -74,9 +81,9 @@ describe("The provider port", () => {
 		const once = Effect.suspend(() => {
 			calls += 1;
 			return calls === 1
-				? Effect.fail(new SearchRateLimited({ provider: "exa", retryAfterMillis: 7000 }))
+				? Effect.fail(new SearchRateLimited({ provider: ProviderName.make("exa"), retryAfterMillis: 7000 }))
 				: Effect.succeed({
-						provider: "exa",
+						provider: ProviderName.make("exa"),
 						request: { method: "POST", url: "https://api.exa.ai/search", body: {} },
 						retrievedAt: DateTime.makeUnsafe(0),
 						raw: "{}",
@@ -223,9 +230,9 @@ describe("Limits", () => {
 		const provider = Layer.succeed(SearchProvider, {
 			search: (_query, options) => {
 				asked.push(options);
-				return Effect.fail(new SearchRateLimited({ provider: "none" }));
+				return Effect.fail(new SearchRateLimited({ provider: ProviderName.make("none") }));
 			},
-			fetch: () => Effect.fail(new SearchRateLimited({ provider: "none" })),
+			fetch: () => Effect.fail(new SearchRateLimited({ provider: ProviderName.make("none") })),
 		});
 		await Effect.runPromise(
 			Effect.gen(function* () {
@@ -270,7 +277,7 @@ describe("Writing another provider", () => {
 			requests.push(request);
 			return Effect.succeed(HttpClientResponse.fromWeb(request, new Response(body, { status })));
 		});
-		const layer = Acme.layer().pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client)));
+		const layer = Acme.layer.pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client)));
 		const ran = Effect.runPromise(
 			Effect.andThen(TestClock.setTime(86_400_000), effect).pipe(
 				Effect.provide(layer),
@@ -289,7 +296,7 @@ describe("Writing another provider", () => {
 		);
 		const retrieval = await ran;
 		expect(retrieval).toStrictEqual({
-			provider: "acme",
+			provider: ProviderName.make("acme"),
 			request: { method: "GET", url: "https://api.acme.test/v1/search?q=alpha%20%26%20beta&n=2", body: null },
 			retrievedAt: DateTime.makeUnsafe(86_400_000),
 			raw: ITEMS,

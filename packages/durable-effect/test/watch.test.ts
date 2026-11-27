@@ -378,6 +378,25 @@ describe("commits", () => {
 		});
 	});
 
+	it("is attached when `attachCommits` succeeds: what Pi publishes before the stream runs is in it, until the scope closes", async () => {
+		const source = fakeCommits();
+		const elements = await runTest(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const stream = yield* Watch.attachCommits(source.attach);
+					// Nothing runs the stream yet: the observer is attached all the same.
+					source.publish(1);
+					source.publish(2);
+					return yield* Stream.runCollect(Stream.take(stream, 2));
+				}),
+			),
+		);
+		expect({ seqs: elements.map((element) => element.seq), detached: source.detached() }).toEqual({
+			seqs: [1, 2],
+			detached: 1,
+		});
+	});
+
 	it("fails when Pi refuses the attachment, as a closed harness does", async () => {
 		const failure = await Effect.runPromise(
 			Effect.flip(

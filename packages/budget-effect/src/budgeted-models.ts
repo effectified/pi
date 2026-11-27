@@ -12,14 +12,19 @@ import {
 	type ErrorReason,
 	emptyUsage,
 	type Model,
+	ModelId,
 	Models,
 	type MutableModels,
 	type Context as PiContext,
+	ProviderId,
 	requestKey,
 	type StreamOptions,
 	type Usage,
+	SessionId,
+	withoutParentSpan,
 } from "@effectified/pi-ai";
-import { Cause, Clock, Context, Effect, Exit, FiberSet, Layer, Option, Stream } from "effect";
+import { Cause, Clock, Context, Effect, Exit, Fiber, FiberSet, Layer, Match, Option, Predicate, Stream } from "effect";
+import { identity } from "effect/Function";
 import { type Budget, gather, payerOf, refuse, reserve, settle } from "./budget.ts";
 import { BudgetEvents } from "./budget-events.ts";
 import type { Estimator } from "./estimator.ts";
@@ -66,11 +71,16 @@ export const layerWithShares: Layer.Layer<
  * Builds the budgeted `Models` over the `Models` of the context, and the `Spend` of the same budget. Requests run in
  * fibers of the caller's scope.
  */
-const make = Effect.fnUntraced(function* (shares: SharesService | undefined) {
+const make = Effect.fn("BudgetedModels.make")(function* (shares: SharesService | undefined) {
 	const inner = yield* Models;
 	const budget = yield* gather(shares);
 	const clock = yield* Clock.Clock;
-	const runFork = yield* FiberSet.makeRuntime<never, unknown, Refusal>();
+	// A request's fiber never fails: a refusal becomes the caller's error result inside it (`charged`).
+	const runFork = yield* FiberSet.makeRuntime<never, unknown, never>();
+	// pi-ai's one-shot requests answer with a promise; it only awaits a fiber of the set, so it never rejects.
+	// pi-ai keeps the budgeted `Models` and calls it later: a request's spans start their own trace.
+	const services = yield* Effect.map(Effect.context<never>(), withoutParentSpan);
+	const runPromise = Effect.runPromiseWith(services);
 
 	/**
 	 * One budgeted chat response as the pi-ai stream a caller of `Models` expects. `context` is what a chat request
@@ -85,42 +95,26 @@ const make = Effect.fnUntraced(function* (shares: SharesService | undefined) {
 	): AssistantMessageEventStream => {
 		const out = createAssistantMessageEventStream();
 		let partial: AssistantMessage | undefined;
-		const send = Effect.flatMap(
-			Stream.runLast(
-				Stream.tap(responseEvents(start), (event) =>
-					Effect.sync(() => {
-						if (event.type === "done" || event.type === "error") return;
-						partial = event.partial;
-						out.push(event);
-					}),
-				),
-			),
-			(last): Effect.Effect<Sent<TerminalEvent>> => {
-				const terminal = Option.getOrUndefined(last);
-				if (terminal?.type === "done") {
-					return Effect.succeed({ value: terminal, answer: terminal.message, outcome: "returned" });
-				}
-				if (terminal?.type === "error") {
-					return Effect.succeed({ value: terminal, answer: terminal.error, outcome: outcomeOf(terminal.reason) });
-				}
-				// pi-ai's protocol ends every response in `done` or `error`; anything else is a broken provider.
-				return Effect.die(new Error("pi-ai ended a response without a done or error event"));
-			},
+		const events = Stream.tap(responseEvents(start), (event) =>
+			// Per event of the response: a plain check, no span.
+			Effect.sync(() => {
+				if (event.type === "done" || event.type === "error") return;
+				partial = event.partial;
+				out.push(event);
+			}),
 		);
-		const request = { kind, model, session: options?.sessionId, context };
-		const ended = (reason: ErrorReason, errorMessage: string): TerminalEvent => ({
+		const send = Effect.flatMap(Stream.runLast(events), sentOf);
+		const ended: Ended<TerminalEvent> = (reason, errorMessage) => ({
 			type: "error",
 			reason,
 			error: { ...(partial ?? blank(model, clock.currentTimeMillisUnsafe())), stopReason: reason, errorMessage },
 		});
+		// pi-ai's session id is a plain string: branded where it enters the budget.
+		const session = options?.sessionId === undefined ? undefined : SessionId.make(options.sessionId);
+		const asked: Asked = { kind, model, session, context, signal: options?.signal };
 		runFork(
-			unlessAborted(
-				options?.signal,
-				budgeted(budget, request, send, () => partial),
-			),
-			{
-				signal: options?.signal,
-			},
+			charged(budget, asked, send, () => partial, ended),
+			{ signal: options?.signal },
 		).addObserver((exit) => {
 			out.push(Exit.isSuccess(exit) ? exit.value : failed(exit.cause, ended));
 			out.end();
@@ -134,26 +128,21 @@ const make = Effect.fnUntraced(function* (shares: SharesService | undefined) {
 		model: AnyModel,
 		signal: AbortSignal | undefined,
 		call: (signal: AbortSignal) => Promise<R>,
-		ended: (reason: ErrorReason, errorMessage: string) => R,
+		ended: Ended<R>,
 	): Promise<R> => {
-		const send = Effect.map(
-			Effect.promise(call),
-			(result): Sent<R> => ({
-				value: result,
-				answer: result,
-				outcome: result.stopReason === "stop" ? "returned" : outcomeOf(result.stopReason),
-			}),
+		const send = Effect.map(Effect.promise(call), (result): Sent<R> => ({
+			value: result,
+			answer: result,
+			outcome: result.stopReason === "stop" ? "returned" : outcomeOf(result.stopReason),
+		}));
+		const asked: Asked = { kind, model, session: undefined, context: undefined, signal };
+		const fiber = runFork(
+			charged(budget, asked, send, () => undefined, ended),
+			{ signal },
 		);
-		return new Promise((resolve) => {
-			const request = { kind, model, session: undefined, context: undefined };
-			runFork(
-				unlessAborted(
-					signal,
-					budgeted(budget, request, send, () => undefined),
-				),
-				{ signal },
-			).addObserver((exit) => resolve(Exit.isSuccess(exit) ? exit.value : failed(exit.cause, ended)));
-		});
+		return runPromise(
+			Effect.map(Fiber.await(fiber), (exit) => (Exit.isSuccess(exit) ? exit.value : failed(exit.cause, ended))),
+		);
 	};
 
 	const stream: MutableModels["stream"] = (model, context, options) =>
@@ -234,7 +223,8 @@ const make = Effect.fnUntraced(function* (shares: SharesService | undefined) {
 		cancelDeferred: inner.cancelDeferred.bind(inner),
 	};
 	const models = Models.of({ ...forwardedMembers, ...budgetedMembers });
-	return Context.make(Models, models).pipe(Context.add(Spend, yield* makeSpend(budget)));
+	const spend = yield* makeSpend(budget);
+	return Context.make(Models, models).pipe(Context.add(Spend, spend));
 });
 
 /**
@@ -310,6 +300,18 @@ interface Sent<A> {
 	readonly outcome: Outcome;
 }
 
+/** What a caller gets for a request that did not get the provider's own last word: an error result of its kind. */
+type Ended<A> = (reason: ErrorReason, errorMessage: string) => A;
+
+/** What one request asks, as `Models` was called. */
+interface Asked {
+	readonly kind: BudgetRequest["kind"];
+	readonly model: AnyModel;
+	readonly session: SessionId | undefined;
+	readonly context: PiContext | undefined;
+	readonly signal: AbortSignal | undefined;
+}
+
 /**
  * The events of the pi-ai response `start` begins, `done` or `error` last. Closing the Stream's scope, for any
  * reason, aborts `signal`. pi-ai's event streams never reject: every failure is an `error` event, so a rejection is
@@ -319,15 +321,33 @@ function responseEvents(
 	start: (signal: AbortSignal) => AssistantMessageEventStream,
 ): Stream.Stream<AssistantMessageEvent> {
 	return Stream.unwrap(
-		Effect.map(
-			Effect.acquireRelease(
-				Effect.sync(() => new AbortController()),
-				(controller) => Effect.sync(() => controller.abort()),
-			),
-			(controller) => Stream.orDie(Stream.fromAsyncIterable(start(controller.signal), (cause) => cause)),
-		),
+		Effect.map(Effect.abortSignal, (signal) => Stream.orDie(Stream.fromAsyncIterable(start(signal), identity))),
 	);
 }
+
+/** The request a response's last event says was answered: returned with `done`, failed or aborted with `error`. */
+function sentOf(last: Option.Option<AssistantMessageEvent>): Effect.Effect<Sent<TerminalEvent>> {
+	return Option.match(last, {
+		onNone: () => unterminated,
+		onSome: (event) =>
+			Match.value(event).pipe(
+				Match.when({ type: "done" }, (done) =>
+					Effect.succeed<Sent<TerminalEvent>>({ value: done, answer: done.message, outcome: "returned" }),
+				),
+				Match.when({ type: "error" }, (error) =>
+					Effect.succeed<Sent<TerminalEvent>>({
+						value: error,
+						answer: error.error,
+						outcome: outcomeOf(error.reason),
+					}),
+				),
+				Match.orElse(() => unterminated),
+			),
+	});
+}
+
+/** pi-ai's protocol ends every response in `done` or `error`; anything else is a broken provider. */
+const unterminated = Effect.die(new Error("pi-ai ended a response without a done or error event"));
 
 /** `failed` for an error of the provider, `aborted` when it gave the request up. */
 function outcomeOf(reason: ErrorReason): Outcome {
@@ -352,11 +372,19 @@ function blank(model: Model<Api>, timestamp: number): AssistantMessage {
 }
 
 /**
- * `effect`, or an interruption when `signal` is aborted already: a fiber runs up to its first wait before it sees its
- * signal, and a request that arrives aborted must not reserve.
+ * `budgeted`, with a refusal as what its caller gets: an error result with the refusal's text, which Pi does not
+ * retry. It fails only by an interruption or a defect.
  */
-function unlessAborted<A, E>(signal: AbortSignal | undefined, effect: Effect.Effect<A, E>): Effect.Effect<A, E> {
-	return signal?.aborted === true ? Effect.interrupt : effect;
+function charged<A>(
+	budget: Budget,
+	asked: Asked,
+	send: Effect.Effect<Sent<A>>,
+	soFar: () => Answer | undefined,
+	ended: Ended<A>,
+): Effect.Effect<A> {
+	return Effect.catch(budgeted(budget, asked, send, soFar), (refusal) =>
+		Effect.map(refusalText(refusal), (text) => ended("error", text)),
+	);
 }
 
 /**
@@ -365,17 +393,14 @@ function unlessAborted<A, E>(signal: AbortSignal | undefined, effect: Effect.Eff
  * inside `send`: an interruption there settles the request as aborted with `soFar`, what had arrived of the response
  * until then, and a defect of `send` settles it as failed.
  */
-const budgeted = Effect.fnUntraced(function* <A>(
+const budgeted = Effect.fn("BudgetedModels.budgeted")(function* <A>(
 	budget: Budget,
-	asked: {
-		readonly kind: BudgetRequest["kind"];
-		readonly model: AnyModel;
-		readonly session: string | undefined;
-		readonly context: PiContext | undefined;
-	},
+	asked: Asked,
 	send: Effect.Effect<Sent<A>>,
 	soFar: () => Answer | undefined,
 ): Effect.fn.Return<A, Refusal> {
+	// A fiber runs up to its first wait before it sees its signal, and a request that arrives aborted must not reserve.
+	if (asked.signal?.aborted === true) return yield* Effect.interrupt;
 	const { prices } = budget;
 	const payer = yield* payerOf(budget, asked.session);
 	const { share } = payer;
@@ -385,8 +410,9 @@ const budgeted = Effect.fnUntraced(function* <A>(
 			: yield* requestKey(asked.session, asked.context);
 	const request: BudgetRequest = {
 		kind: asked.kind,
-		provider: asked.model.provider,
-		model: asked.model.id,
+		// pi-ai's ids are plain strings: branded where they enter the budget.
+		provider: ProviderId.make(asked.model.provider),
+		model: ModelId.make(asked.model.id),
 		...(asked.session === undefined ? {} : { session: asked.session }),
 		...(share === undefined ? {} : { conversation: share.conversation }),
 		...(key === undefined ? {} : { requestKey: key }),
@@ -396,7 +422,7 @@ const budgeted = Effect.fnUntraced(function* <A>(
 	);
 	if (share?.cap !== undefined && counted(share) >= share.cap) {
 		const { conversation, cap } = share;
-		return yield* refuse(budget, request, new ShareExhausted({ conversation, cap, settled: counted(share) }));
+		return yield* refuse(budget, request, ShareExhausted.make({ conversation, cap, settled: counted(share) }));
 	}
 	const estimate = yield* budget.estimator.estimate(request);
 	return yield* Effect.uninterruptibleMask((restore) =>
@@ -405,14 +431,14 @@ const budgeted = Effect.fnUntraced(function* <A>(
 			const exit = yield* Effect.exit(restore(send));
 			const answer = Exit.isSuccess(exit) ? exit.value.answer : soFar();
 			const usage = tokensOf(answer?.usage);
-			const outcome = Exit.isSuccess(exit)
-				? exit.value.outcome
-				: Cause.hasInterruptsOnly(exit.cause)
-					? "aborted"
-					: "failed";
-			const settlement = { usage, cost: cost(yield* priceOfAnswer(prices, answer, price), usage), outcome };
-			yield* settle(budget, reserved, payer, settlement);
-			return (yield* exit).value;
+			const outcome = Exit.match(exit, {
+				onSuccess: (sent) => sent.outcome,
+				onFailure: (cause): Outcome => (Cause.hasInterruptsOnly(cause) ? "aborted" : "failed"),
+			});
+			const settledAt = yield* priceOfAnswer(prices, answer, price);
+			yield* settle(budget, reserved, payer, { usage, cost: cost(settledAt, usage), outcome });
+			const sent = yield* exit;
+			return sent.value;
 		}),
 	);
 });
@@ -421,24 +447,22 @@ const budgeted = Effect.fnUntraced(function* <A>(
  * The price a response is settled at: of the model it names when the table lists it, else of the model asked.
  * `answer` is the response, or what had arrived of one that was cut off; undefined when nothing had.
  */
-function priceOfAnswer(
+const priceOfAnswer = Effect.fn("BudgetedModels.priceOfAnswer")(function* (
 	prices: PricesService,
 	answer: Answer | undefined,
 	asked: ModelPrice,
-): Effect.Effect<ModelPrice> {
-	return answer === undefined
-		? Effect.succeed(asked)
-		: Effect.orElseSucceed(prices.priceOf(answer.provider, answer.model), () => asked);
-}
+) {
+	if (answer === undefined) return asked;
+	const named = prices.priceOf(ProviderId.make(answer.provider), ModelId.make(answer.model));
+	return yield* Effect.orElseSucceed(named, () => asked);
+});
 
 /**
- * How a request that did not get the provider's own last word ends for its caller: a refusal with its text, which
- * Pi does not retry; an interruption as aborted; a defect with its message.
+ * How a request that did not get the provider's own last word ends for its caller when its fiber did not answer:
+ * an interruption as aborted, a defect with its message. A refusal never gets here (`charged`).
  */
-function failed<A>(cause: Cause.Cause<Refusal>, ended: (reason: ErrorReason, errorMessage: string) => A): A {
+function failed<A>(cause: Cause.Cause<never>, ended: Ended<A>): A {
 	if (Cause.hasInterruptsOnly(cause)) return ended("aborted", "Request was aborted");
-	const refusal = Cause.findErrorOption(cause);
-	if (Option.isSome(refusal)) return ended("error", refusalText(refusal.value));
 	const defect = Cause.squash(cause);
-	return ended("error", defect instanceof Error ? defect.message : String(defect));
+	return ended("error", Predicate.isError(defect) ? defect.message : String(defect));
 }

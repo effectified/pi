@@ -1,12 +1,12 @@
 // The reviewer's request as a model call record: a wrapper of the product's record sink that adds, after every
 // verdict's entry record that holds a request, a `ModelCall` record of that request.
 
-import { RecordSink, type Records } from "@effectified/pi-recorder";
+import { RecordSink, Records } from "@effectified/pi-recorder";
 import * as Review from "@effectified/pi-review";
-import { Effect, Layer, Option, Schema } from "effect";
+import { Array as Arr, Effect, Layer, Option, Record, Result, Schema } from "effect";
 
-/** What this module reads of a verdict: the reviewer's request, and when the verdict was decided. */
-const Reviewed = Schema.Struct({ call: Review.Call, time: Schema.Number });
+/** What this module reads of a verdict: the reviewer's request, and when the verdict was decided (epoch millis). */
+const Reviewed = Schema.Struct({ call: Review.Call, time: Review.Verdict.fields.time });
 
 // Stored input: an entry's data in the shape its writer gave it, which for another version may be another.
 const decode = Schema.decodeUnknownOption(Reviewed);
@@ -34,7 +34,7 @@ export function modelCall(record: Records.Record): Option.Option<Records.ModelCa
 		const { usage } = call;
 		return {
 			_tag: "ModelCall",
-			id: `${record.conversation}:${record.entry}:0:model`,
+			id: Records.Id.make(`${record.conversation}:${record.entry}:0:model`),
 			conversation: record.conversation,
 			entry: record.entry,
 			time: call.timestamp ?? time,
@@ -82,10 +82,12 @@ const FROM_PARTS = {
 	cacheWrite: true,
 	fromProvider: true,
 	total: false,
-} as const satisfies Record<keyof Records.ModelCall["cost"], boolean>;
+} as const satisfies { readonly [Field in keyof Records.ModelCall["cost"]]: boolean };
 
 /** The cost fields only the parts give, as `derived.unknown` names them. */
-const COST_PARTS = Object.entries(FROM_PARTS).flatMap(([field, fromParts]) => (fromParts ? [`cost.${field}`] : []));
+const COST_PARTS = Arr.filterMap(Record.toEntries(FROM_PARTS), ([field, fromParts]) =>
+	fromParts ? Result.succeed(`cost.${field}`) : Result.failVoid,
+);
 
 /**
  * The fields of the model call record `call` does not hold, by name: none for a call the review stored whole. A
@@ -109,9 +111,11 @@ function unknownOf(call: Review.Call): ReadonlyArray<string> {
 export const layer: Layer.Layer<RecordSink, never, RecordSink> = Layer.effect(
 	RecordSink,
 	RecordSink.use((sink) =>
-		Effect.succeed({
-			deliver: (records: ReadonlyArray<Records.Record>) =>
-				sink.deliver(records.flatMap((record) => [record, ...Option.toArray(modelCall(record))])),
-		}),
+		Effect.succeed(
+			RecordSink.of({
+				deliver: (records: ReadonlyArray<Records.Record>) =>
+					sink.deliver(Arr.flatMap(records, (record) => Arr.prepend(Option.toArray(modelCall(record)), record))),
+			}),
+		),
 	),
 );

@@ -6,21 +6,22 @@ import {
 	BuiltinDoc,
 	type Conversation,
 	type DurableError,
-	type Entry,
+	Entry,
 	type EntryId,
+	type EntryRecord,
 	Harness,
 	type SchemaDecodeError,
 	Signal,
 	Task,
 	type TaskId,
 } from "@effectified/pi-durable";
-import { Effect, Option, Schema, Stream } from "effect";
+import { Array as Arr, Effect, Option, Schema, Stream } from "effect";
 import * as Deferral from "./deferral.ts";
 import { NAME } from "./extension.ts";
 import * as Hold from "./hold.ts";
 import * as ModelReview from "./model-review.ts";
 import * as Run from "./run.ts";
-import { Unreviewed, Verdict, VerdictEntry } from "./verdict.ts";
+import { Ordinal, Outcome, Unreviewed, Verdict, VerdictEntry } from "./verdict.ts";
 
 /**
  * Why a conversation's newest answer is not reviewed: a reason of its verdict (`Unreviewed`), or
@@ -48,7 +49,7 @@ export const Reason = Schema.Literals([
 export type Reason = typeof Reason.Type;
 
 /**
- * The review state of a conversation:
+ * The review state of a conversation. `State.match` picks a handler per tag and `State.guards` tests for one:
  *
  * - `InReview`: the conversation works on an answer that has no final verdict: its author writes, a review runs, a
  *   corrective run goes on (`verdict` is then the one the correction answers), or a deferred review was asked again
@@ -65,31 +66,35 @@ export type Reason = typeof Reason.Type;
  *   Nothing is missing: no review was asked for.
  * - `NotReviewed`: the run ended, or never started, and the newest answer does not stand as reviewed.
  */
-export const State = Schema.Union([
-	Schema.TaggedStruct("InReview", { verdict: Schema.optionalKey(Verdict) }),
-	Schema.TaggedStruct("Reviewed", { verdict: Verdict }),
-	Schema.TaggedStruct("Accepted", { verdict: Verdict, release: Hold.Release }),
-	Schema.TaggedStruct("Held", { verdict: Verdict, task: Task.Id }),
-	Schema.TaggedStruct("Released", { verdict: Verdict, task: Task.Id, decision: Hold.Decision }),
-	Schema.TaggedStruct("Deferred", {
+export const State = Schema.TaggedUnion({
+	InReview: { verdict: Schema.optionalKey(Verdict) },
+	Reviewed: { verdict: Verdict },
+	Accepted: { verdict: Verdict, release: Hold.Release },
+	Held: { verdict: Verdict, task: Task.Id },
+	Released: { verdict: Verdict, task: Task.Id, decision: Hold.Decision },
+	Deferred: {
 		verdict: Verdict,
 		task: Task.Id,
 		/** The number of the request that failed, from 1: `retry` asks for the next one. */
-		attempt: Schema.Number,
+		attempt: Ordinal,
 		reason: Schema.String,
-	}),
-	Schema.TaggedStruct("NotRequired", {}),
-	Schema.TaggedStruct("NotReviewed", { reason: Reason, verdict: Schema.optionalKey(Verdict) }),
-]);
+	},
+	NotRequired: {},
+	NotReviewed: { reason: Reason, verdict: Schema.optionalKey(Verdict) },
+});
 
 /** The review state of a conversation. */
 export type State = typeof State.Type;
 
 /**
  * A wait of a review: the state a verdict that held its answer (`Held`) or deferred its review (`Deferred`) put the
- * conversation in when it was stored, in the commit that put its review task to sleep.
+ * conversation in when it was stored, in the commit that put its review task to sleep. `Wait.match` picks a handler
+ * per tag.
  */
-export type Wait = Extract<State, { readonly _tag: "Held" | "Deferred" }>;
+export const Wait = Schema.Union([State.cases.Held, State.cases.Deferred]).pipe(Schema.toTaggedUnion("_tag"));
+
+/** A wait of a review. */
+export type Wait = typeof Wait.Type;
 
 /** What reading the review state fails with: a failed Pi call, or a stored entry of this package that does not decode. */
 export type Failure = DurableError | SchemaDecodeError;
@@ -104,65 +109,105 @@ const RECENT = 16;
  * the review task of an answer that is held or deferred, or the conversation's agent for an answer without a
  * verdict.
  */
-export function state(conversation: Conversation.Conversation): Effect.Effect<State, Failure, Harness.Harness> {
-	return Effect.gen(function* () {
-		const run = Run.view(yield* Harness.snapshot(BuiltinDoc.live, conversation.id));
+export const state: (conversation: Conversation.Conversation) => Effect.Effect<State, Failure, Harness.Harness> =
+	Effect.fn("Review.state")(function* (conversation: Conversation.Conversation) {
+		const live = yield* Harness.snapshot(BuiltinDoc.live, conversation.id);
+		const run = Run.view(live);
 		// Newest first, down to the newest assistant entry: the answer, and what this package stored after it. That is
 		// a handful of entries, so the pages are small.
 		const recent = yield* Stream.runCollect(
 			Stream.takeUntil(conversation.entries({ pageSize: RECENT }), (entry) => AssistantEntry.is(entry)),
 		);
-		const answer = recent.findLast((entry) => AssistantEntry.is(entry));
-		const unanswered = (reason: Reason, verdict?: Verdict): State =>
-			run.working
-				? { _tag: "InReview", ...(verdict === undefined ? {} : { verdict }) }
-				: { _tag: "NotReviewed", reason, ...(verdict === undefined ? {} : { verdict }) };
-		const verdict =
-			answer === undefined
-				? undefined
-				: about(yield* Effect.forEach(recent, (entry) => VerdictEntry.read(entry)), answer.id);
-		if (verdict === undefined) {
-			// No hook of this package is asked in a conversation that does not select the extension.
-			const agent = yield* conversation.agent;
-			if (!agent.extensions.some((extension) => extension.name === NAME)) return { _tag: "NotRequired" };
-			return unanswered(answer === undefined ? "no_answer" : "no_verdict");
-		}
-		// A live run that decides about another answer, or about none yet, works on a newer one than the verdict's.
-		const superseded = run.working && Option.getOrUndefined(run.yielded) !== verdict.answer;
-		const settled = (decided: State): State => (superseded ? { _tag: "InReview" } : decided);
-		switch (verdict.outcome._tag) {
-			case "Passed":
-				return settled({ _tag: "Reviewed", verdict });
-			case "NotReviewed":
-				return settled({ _tag: "NotReviewed", reason: verdict.outcome.reason, verdict });
-			case "Corrected":
-				return unanswered("correction_dropped", verdict);
-			case "Held": {
-				const release = about(
-					yield* Effect.forEach(recent, (entry) => Hold.ReleaseEntry.read(entry)),
-					verdict.answer,
-				);
-				if (release?.decision._tag === "Accept") return settled({ _tag: "Accepted", verdict, release });
-				if (release?.decision._tag === "Correct") return unanswered("correction_dropped", verdict);
-				const task = verdict.outcome.task;
-				const waiting = yield* live(task);
-				if (Option.isNone(waiting)) return settled({ _tag: "NotReviewed", reason: "hold_ended", verdict });
-				const decision = yield* delivered(waiting.value, Hold.Released, Hold.KEY);
-				return Option.isSome(decision)
-					? { _tag: "Released", verdict, task, decision: decision.value }
-					: { _tag: "Held", verdict, task };
-			}
-			case "Deferred": {
-				const { task, attempt } = verdict.outcome;
-				const waiting = yield* live(task);
-				if (Option.isNone(waiting)) return settled({ _tag: "NotReviewed", reason: "request_failed", verdict });
-				// Asked again: the task reviews, or is about to, and its next verdict is not stored yet.
-				const retried = yield* delivered(waiting.value, Deferral.Retried, Deferral.key(attempt));
-				if (Option.isSome(retried)) return { _tag: "InReview", verdict };
-				return deferral(verdict, verdict.outcome);
-			}
-		}
+		const answer = Arr.findLast(recent, (entry) => AssistantEntry.is(entry));
+		if (Option.isNone(answer)) return yield* unjudged(conversation, run, "no_answer");
+		const verdict = yield* newestAbout(recent, VerdictEntry, answer.value.id);
+		if (Option.isNone(verdict)) return yield* unjudged(conversation, run, "no_verdict");
+		return yield* judged(run, recent, verdict.value);
 	});
+
+/**
+ * The state of a newest answer without a verdict, `reason` saying which: `NotRequired` in a conversation that does
+ * not select the extension, whose hooks Pi never asks; otherwise in review while the run works, and not reviewed once
+ * it ended.
+ */
+const unjudged = Effect.fn("Review.unjudged")(function* (
+	conversation: Conversation.Conversation,
+	run: Run.View,
+	reason: Reason,
+) {
+	const agent = yield* conversation.agent;
+	if (!Arr.some(agent.extensions, (extension) => extension.name === NAME)) return State.cases.NotRequired.make({});
+	return unsettled(run, reason, Option.none());
+});
+
+/**
+ * The state `verdict`, the newest answer's, gives with what followed it: a person's decision for a held answer, the
+ * waiting task for a held or deferred one, and Pi's live run, which may already work on a newer answer.
+ */
+function judged(
+	run: Run.View,
+	recent: ReadonlyArray<EntryRecord>,
+	verdict: Verdict,
+): Effect.Effect<State, Failure, Harness.Harness> {
+	// A live run that decides about another answer, or about none yet, works on a newer one than the verdict's.
+	const superseded = run.working && !Option.contains(run.yielded, verdict.answer);
+	const settled = (decided: State): State => (superseded ? State.cases.InReview.make({}) : decided);
+	return Outcome.match(verdict.outcome, {
+		Passed: () => Effect.succeed(settled(State.cases.Reviewed.make({ verdict }))),
+		NotReviewed: ({ reason }) => Effect.succeed(settled(State.cases.NotReviewed.make({ reason, verdict }))),
+		Corrected: () => Effect.succeed(unsettled(run, "correction_dropped", Option.some(verdict))),
+		Held: ({ task }) => held(run, recent, verdict, task, settled),
+		Deferred: (deferred) => postponed(verdict, deferred, settled),
+	});
+}
+
+/**
+ * The state of a held answer: accepted or corrected by a decision recorded since, released by one delivered and not
+ * yet taken, held while nobody decided, and not reviewed once the hold ended without a decision.
+ */
+const held = Effect.fn("Review.held")(function* (
+	run: Run.View,
+	recent: ReadonlyArray<EntryRecord>,
+	verdict: Verdict,
+	task: TaskId,
+	settled: (decided: State) => State,
+) {
+	const release = yield* newestAbout(recent, Hold.ReleaseEntry, verdict.answer);
+	if (Option.isSome(release)) {
+		return Hold.Decision.match(release.value.decision, {
+			Accept: () => settled(State.cases.Accepted.make({ verdict, release: release.value })),
+			Correct: () => unsettled(run, "correction_dropped", Option.some(verdict)),
+		});
+	}
+	const waiting = yield* live(task);
+	if (Option.isNone(waiting)) return settled(State.cases.NotReviewed.make({ reason: "hold_ended", verdict }));
+	const decision = yield* delivered(waiting.value, Hold.Released, Hold.KEY);
+	return Option.match(decision, {
+		onNone: () => State.cases.Held.make({ verdict, task }),
+		onSome: (value) => State.cases.Released.make({ verdict, task, decision: value }),
+	});
+});
+
+/**
+ * The state of a deferred review: deferred while its task waits, in review once it was asked again, and not reviewed
+ * once the task ended without reviewing again.
+ */
+const postponed = Effect.fn("Review.postponed")(function* (
+	verdict: Verdict,
+	outcome: typeof Outcome.cases.Deferred.Type,
+	settled: (decided: State) => State,
+) {
+	const waiting = yield* live(outcome.task);
+	if (Option.isNone(waiting)) return settled(State.cases.NotReviewed.make({ reason: "request_failed", verdict }));
+	// Asked again: the task reviews, or is about to, and its next verdict is not stored yet.
+	const retried = yield* delivered(waiting.value, Deferral.Retried, Deferral.key(outcome.attempt));
+	return Option.isSome(retried) ? State.cases.InReview.make({ verdict }) : deferral(verdict, outcome);
+});
+
+/** The state of an answer that does not stand: in review while the run works, not reviewed for `reason` once it ended. */
+function unsettled(run: Run.View, reason: Reason, verdict: Option.Option<Verdict>): State {
+	const about = Option.match(verdict, { onNone: () => ({}), onSome: (value) => ({ verdict: value }) });
+	return run.working ? State.cases.InReview.make(about) : State.cases.NotReviewed.make({ reason, ...about });
 }
 
 /**
@@ -172,33 +217,32 @@ export function state(conversation: Conversation.Conversation): Effect.Effect<St
  * same value while the wait lasts.
  */
 export function waitOf(verdict: Verdict): Option.Option<Wait> {
-	switch (verdict.outcome._tag) {
-		case "Held":
-			return Option.some({ _tag: "Held", verdict, task: verdict.outcome.task });
-		case "Deferred":
-			return Option.some(deferral(verdict, verdict.outcome));
-		case "Passed":
-		case "Corrected":
-		case "NotReviewed":
-			return Option.none();
-	}
+	return Outcome.match(verdict.outcome, {
+		Held: ({ task }) => Option.some<Wait>(State.cases.Held.make({ verdict, task })),
+		Deferred: (outcome) => Option.some<Wait>(deferral(verdict, outcome)),
+		Passed: () => Option.none(),
+		Corrected: () => Option.none(),
+		NotReviewed: () => Option.none(),
+	});
 }
 
 /** The deferral of `verdict`, whose outcome is `outcome`: its task, its attempt, and the provider's error text. */
-function deferral(
-	verdict: Verdict,
-	outcome: Extract<Verdict["outcome"], { readonly _tag: "Deferred" }>,
-): Extract<State, { readonly _tag: "Deferred" }> {
-	const failed = verdict.failures.find((failure) => failure.check === ModelReview.NAME)?.error ?? "";
-	const { task, attempt } = outcome;
-	return { _tag: "Deferred", verdict, task, attempt, reason: verdict.call?.error ?? failed };
+function deferral(verdict: Verdict, outcome: typeof Outcome.cases.Deferred.Type): typeof State.cases.Deferred.Type {
+	const failed = Arr.findFirst(verdict.failures, (failure) => failure.check === ModelReview.NAME);
+	const reason =
+		verdict.call?.error ??
+		Option.getOrElse(
+			Option.map(failed, (failure) => failure.error),
+			() => "",
+		);
+	return State.cases.Deferred.make({ verdict, task: outcome.task, attempt: outcome.attempt, reason });
 }
 
-/** Where `verdicts` starts reading. */
-export interface VerdictsQuery {
-	/** The first entry read: a verdict before it is not given. Default: the conversation's first entry. */
-	readonly from?: EntryId;
-}
+/** Where `verdicts` starts reading: `from`, the first entry read; a verdict before it is not given. */
+export const VerdictsQuery = Schema.Struct({ from: Schema.optionalKey(Entry.Id) });
+
+/** Where `verdicts` starts reading. Default: the conversation's first entry. */
+export type VerdictsQuery = typeof VerdictsQuery.Type;
 
 /**
  * Every verdict stored in `conversation`, oldest first, each as its entry: `data` is the verdict, `id` the entry.
@@ -236,10 +280,23 @@ function delivered<S extends Schema.Constraint>(record: Signal.Stored, signal: S
 	);
 }
 
-/** Of the entries of one kind `found` among the recent ones, newest first, the data of the newest about `answer`. */
-function about<A extends { readonly answer: EntryId }>(
-	found: ReadonlyArray<Option.Option<{ readonly data: A }>>,
+/**
+ * Of the recent entries, newest first, the data of the newest entry of `entry`'s kind about `answer`: what the review
+ * stored about the newest answer. A stored entry of that kind that does not decode fails with `SchemaDecodeError`.
+ */
+function newestAbout<A extends { readonly answer: EntryId }>(
+	recent: ReadonlyArray<EntryRecord>,
+	entry: {
+		readonly read: (record: EntryRecord) => Effect.Effect<Option.Option<{ readonly data: A }>, SchemaDecodeError>;
+	},
 	answer: EntryId,
-): A | undefined {
-	return found.flatMap(Option.toArray).find((entry) => entry.data.answer === answer)?.data;
+): Effect.Effect<Option.Option<A>, SchemaDecodeError> {
+	return Effect.map(
+		Effect.forEach(recent, (record) => entry.read(record), { concurrency: 1 }),
+		(found) =>
+			Option.map(
+				Arr.findFirst(Arr.getSomes(found), (typed) => typed.data.answer === answer),
+				(typed) => typed.data,
+			),
+	);
 }

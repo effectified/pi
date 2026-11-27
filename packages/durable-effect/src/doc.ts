@@ -21,7 +21,7 @@ import type { Context as ChordContext } from "@effectified/pi-chord/context";
 import type { Draft } from "@effectified/pi-chord/delta";
 import type { JsonValue } from "@effectified/pi-chord/json";
 import { decodeUnknown, encode, type Issue, SchemaDecodeError } from "@effectified/pi-schema";
-import { Effect, type Option, Predicate, type Schema, Stream } from "effect";
+import { Effect, Formatter, type Option, Predicate, Record, Schema, Stream } from "effect";
 import { call, step } from "./call.ts";
 import type { DurableError } from "./errors.ts";
 import * as Watch from "./watch.ts";
@@ -74,14 +74,21 @@ interface Made<S extends ValueSchema, Scope, Kept> {
 }
 
 /** A singleton document made by `make`. */
-export interface Doc<S extends ValueSchema, Scope extends DocumentSemantics["scope"], Kept>
-	extends Made<S, Scope, Kept> {
+export interface Doc<S extends ValueSchema, Scope extends DocumentSemantics["scope"], Kept> extends Made<
+	S,
+	Scope,
+	Kept
+> {
 	readonly family: false;
 }
 
 /** A document family made by `family`. */
-export interface Family<S extends ValueSchema, Scope extends DocumentSemantics["scope"], Kept, Seed extends JsonValue>
-	extends Made<S, Scope, Kept> {
+export interface Family<
+	S extends ValueSchema,
+	Scope extends DocumentSemantics["scope"],
+	Kept,
+	Seed extends JsonValue,
+> extends Made<S, Scope, Kept> {
 	readonly family: true;
 	/** The definition's `initial`: the value of a member created from `seed`. */
 	readonly initial: (seed: Seed) => S["Type"];
@@ -201,9 +208,20 @@ export function reader(pi: DocumentReader, parent?: ChordContext): Reader {
 		Effect.flatMap(call(read, parent), (stored) =>
 			stored === undefined ? Effect.succeedNone : Effect.asSome(coded(doc).decode(stored)),
 		);
+	// Spans of their own rather than `Effect.fn`, whose generic inference cannot carry the address, a type of `D`.
 	return {
-		snapshot: (doc, ...address) => decoded(doc, (context) => reads.snapshot(doc.token, ...address, context)),
-		snapshotAsOf: (doc, ...address) => decoded(doc, (context) => reads.snapshotAsOf(doc.token, ...address, context)),
+		snapshot: (doc, ...address) =>
+			Effect.withSpan(
+				decoded(doc, (context) => reads.snapshot(doc.token, ...address, context)),
+				"Doc.snapshot",
+				{ attributes: { doc: doc.kind } },
+			),
+		snapshotAsOf: (doc, ...address) =>
+			Effect.withSpan(
+				decoded(doc, (context) => reads.snapshotAsOf(doc.token, ...address, context)),
+				"Doc.snapshotAsOf",
+				{ attributes: { doc: doc.kind } },
+			),
 	};
 }
 
@@ -240,13 +258,20 @@ export function open<D extends Any>(
 		step(() => (tx as unknown as Writes).doc(doc.token, ...opening)),
 		(draft): Open<Value<D>> => {
 			// A copy: values read through the draft are revoked with it, and a decoded value may keep what it read. The
-			// draft is a Proxy, which `structuredClone` refuses on Node and Bun (`DataCloneError`); it holds only JSON.
-			const get = Effect.suspend(() => fromStored(JSON.parse(JSON.stringify(draft))));
+			// draft is a Proxy, which `structuredClone` refuses on Node and Bun (`DataCloneError`); it holds only JSON, so
+			// its JSON text, read back, is a copy. Text just written from JSON always reads back: a failure is a defect.
+			const get = Effect.flatMap(
+				Effect.suspend(() => Effect.orDie(readJson(Formatter.formatJson(draft)))),
+				fromStored,
+			);
 			const set = (value: Value<D>) => Effect.map(toStored(value), (next) => replace(draft, next));
 			return { get, set, update: (change) => Effect.flatMap(get, (value) => set(change(value))), draft };
 		},
 	);
 }
+
+/** JSON text read back as JSON. */
+const readJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json));
 
 /** Retires the document at this address in Pi's transaction, if it exists (Pi's `tx.retireDoc()`). */
 export function retire<D extends Any>(tx: PiTx, doc: D, ...address: Address<D>): Effect.Effect<void, DurableError> {
@@ -335,8 +360,8 @@ function compile<S extends ValueSchema>(kind: string, schema: S): Codec<S> {
 	const toObject = (value: S["Type"]) =>
 		Effect.filterOrFail(
 			toJson(value),
-			(json): json is JsonObject => Predicate.isObject(json) && !Array.isArray(json),
-			() => new SchemaDecodeError({ issues: [notAnObject] }),
+			(json): json is JsonObject => Predicate.isObject(json),
+			() => SchemaDecodeError.make({ issues: [notAnObject] }),
 		);
 	// Pi's `initial` and `migrate` return at once, so a failure can only leave as the error Pi rejects the commit with.
 	return { encode: toObject, encodeSync: (value) => Effect.runSync(toObject(value)), decode: decodeUnknown(schema) };
@@ -368,6 +393,7 @@ function common<S extends ValueSchema>(
 
 /** Makes the draft hold `next`. Pi records no change for a field assigned an equal value. */
 function replace(draft: Draft<JsonObject>, next: JsonObject): void {
-	for (const key of Object.keys(draft)) if (!Object.hasOwn(next, key)) delete draft[key];
+	// The draft records each assignment and deletion as it is made: a walk with effects, by design.
+	for (const key of Record.keys(draft)) if (!Record.has(next, key)) delete draft[key];
 	Object.assign(draft, next);
 }

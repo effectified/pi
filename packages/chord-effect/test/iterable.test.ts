@@ -1,9 +1,9 @@
-import { Effect, Exit, Option, Schema, Stream } from "effect";
+import { Effect, Exit, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { fromIterable, toIterable } from "../src/iterable.ts";
 import { run } from "./run.ts";
 
-class Broken extends Schema.TaggedError<Broken>()("Broken", {}) {}
+class Broken extends Schema.TaggedError<Broken, { readonly brand: unique symbol }>()("Broken", {}) {}
 
 describe("fromIterable", () => {
 	it("streams what the iterable yields, and aborts its context when the stream ends early", async () => {
@@ -58,17 +58,22 @@ describe("fromIterable", () => {
 
 describe("toIterable", () => {
 	it("hands a Stream to Chord as an iterable, and keeps its failure apart", async () => {
-		const [values, failure] = await run(
+		const [values, chord, failure] = await run(
 			Effect.gen(function* () {
 				const ok = yield* toIterable(Stream.make(1, 2));
 				const values = yield* Effect.promise(() => collect(ok.iterable));
-				const broken = yield* toIterable(Stream.fail(new Broken()));
+				// The Stream did not fail: a rejection of Chord's is what `otherwise` makes of it.
+				const chord = yield* Effect.flip(ok.rejected(Effect.fail)("refused"));
+				const broken = yield* toIterable(Stream.fail(Broken.make()));
 				yield* Effect.promise(() => collect(broken.iterable).catch(() => []));
-				return [values, broken.failure()] as const;
+				// The Stream failed: Chord rejected with its failure, which wins.
+				const failure = yield* Effect.flip(broken.rejected(Effect.die)("rejected"));
+				return [values, chord, failure] as const;
 			}),
 		);
 		expect(values).toEqual([1, 2]);
-		expect(failure).toEqual(Option.some(new Broken()));
+		expect(chord).toBe("refused");
+		expect(failure).toEqual(Broken.make());
 	});
 });
 

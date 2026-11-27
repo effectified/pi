@@ -10,7 +10,7 @@ import {
 import type { StrictOmit } from "@effectified/pi-ai";
 import type { JsonValue } from "@effectified/pi-chord/json";
 import { decodeUnknown, encode, type SchemaDecodeError } from "@effectified/pi-schema";
-import { Effect, Option, type Schema } from "effect";
+import { Effect, Option, type Schema, Sink } from "effect";
 import * as Ids from "./id.ts";
 
 /** An entry kind made by `make`: entries of kind `kind` whose `data` has `schema`'s type. */
@@ -77,6 +77,25 @@ export function make<S extends Schema.Constraint>(kind: string, schema: S): Entr
 				? Effect.map(fromJson(record.data), (data) => Option.some({ ...record, data }))
 				: Effect.succeedNone,
 	};
+}
+
+/**
+ * The entries of `entry`'s kind among the records a stream gives, such as a conversation's `entries` or a hook's, in
+ * the stream's order and their data decoded; records of another kind are skipped. A failure to decode one fails the
+ * run with `SchemaDecodeError`: `Stream.run(conversation.entries({ order: "ascending" }), Entry.collect(Note))`.
+ */
+export function collect<S extends Schema.Constraint>(
+	entry: Entry<S>,
+): Sink.Sink<ReadonlyArray<Typed<S["Type"]>>, EntryRecord, never, SchemaDecodeError, S["DecodingServices"]> {
+	return Sink.reduceEffect(
+		// A fresh array per run, which only this fold holds: appending in place keeps a long history linear.
+		(): Array<Typed<S["Type"]>> => [],
+		(kept, record) =>
+			Effect.map(entry.read(record), (found) => {
+				if (Option.isSome(found)) kept.push(found.value);
+				return kept;
+			}),
+	);
 }
 
 /** `found` as an entry of `entry`'s kind: none when nothing was found, or it has another kind. */

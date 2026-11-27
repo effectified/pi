@@ -31,7 +31,7 @@ plugins come with the package; a product imports the ones whose ports it impleme
 
 | Entry | For | Holds |
 |---|---|---|
-| `@effectified/pi-thread` | One process | `Composition`, the services `Threads` and `Swarms`, `Outcome`, `OutcomeEvent`, the port `OutcomeSink`, and the parts a host builds one by one |
+| `@effectified/pi-thread` | One process | `Composition`, the services `Threads` and `Swarms`, `Outcome`, `OutcomeEvent`, the port `OutcomeSink`, the ids `ThreadKey`, `RequestKey` and `EventId`, and the parts a host builds one by one |
 | `@effectified/pi-thread/rivet` | Rivet actors | `ThreadActor` (the actor a host registers), `Remote` (the client service a product binds its ports to), `SwarmId`, `ForkAgent` |
 
 **What a product supplies.** As data, a `Composition.Config`: its tools, the guard's policy, the approval policy,
@@ -56,15 +56,16 @@ This README also holds what a product that replaces a hand-written agent loop ne
 
 ```ts
 import { Effect, Layer } from "effect";
+import { fromPiModelRef } from "@effectified/pi-ai";
 import { Prices } from "@effectified/pi-budget";
-import { Storage } from "@effectified/pi-durable";
+import { Storage, ToolName } from "@effectified/pi-durable";
 import { priceRows } from "@effectified/pi-router";
-import { Composition, Threads } from "@effectified/pi-thread";
+import { Composition, ThreadKey, Threads } from "@effectified/pi-thread";
 
 const live = Composition.open({
 	extensions: [App, SearchTools.extension()], // the product's tools
 	guard: { policy, rules },
-	approvals: { tools: ["transfer"], expiresAfter: "1 day" },
+	approvals: { tools: [ToolName.make("transfer")], expiresAfter: "1 day" },
 	models: { providers, routes },
 	review: { policy: reviewPolicy, checks: [Cited] },
 	subagents: { subagents: [Researcher], maxDepth: 1, maxLive: 2, caps: { researcher: 50_000n } },
@@ -80,10 +81,10 @@ const live = Composition.open({
 
 const outcome = Threads.Threads.use((threads) =>
 	threads.work({
-		thread: "thread-42", // the product's key, and the idempotency key
+		thread: ThreadKey.make("thread-42"), // the product's key, and the idempotency key
 		task: "What is record 42 called?",
-		model: { provider: "router", modelId: "author" },
-		grant: { tools: ["lookup"], classification: "internal" },
+		model: fromPiModelRef({ provider: "router", modelId: "author" }),
+		grant: { tools: [ToolName.make("lookup")], classification: "internal" },
 		cap: 1_000_000n, // micro units of the lease this thread may settle
 		routing: { regions: ["eu"], requires: ["zero-data-retention"] }, // optional
 		review: true, // optional; false ends an answered thread `Answered`, unreviewed
@@ -213,6 +214,12 @@ thread for an event an earlier process did not deliver).
 
 `Threads` and `Swarms` are `Context.Service`s. Every operation is an Effect without requirements.
 
+A thread's key and the request key of a submission are branded strings, `ThreadKey` and `RequestKey`, so that the
+two never change places (`takeOn(thread, key)`): a product brands its own (`ThreadKey.make(key)`), and what crosses
+a host boundary or is stored is branded as it is decoded. A swarm's id and a job's key are the swarm plugin's
+`SwarmId` and `JobKey`, the tools of a fork's allowance are `ToolName`s, and an outcome event's id is an `EventId`.
+The route table is taken as a product writes it (the router's `typeof RouteTable.Encoded`) or decoded.
+
 | Operation | |
 |---|---|
 | `Threads.admit(input, key?)` | Admits a thread's task under a request key and returns `{ created, key }`. Idempotent by `thread`: a later call applies only `cap`. Fails with `ReviewerSharesFamily` before anything is created, and with `SchemaDecodeError`, creating nothing, for a `maxTurns` below 1, which Pi's `configure` refuses |
@@ -233,7 +240,8 @@ thread for an event an earlier process did not deliver).
 `admit`, `takeOn`, `decide` and `stored` return once their work is durably admitted or read: they are what a host
 that cannot hold a call open calls, such as a Rivet action. The others wait.
 
-`Outcome` is a `Schema` union, so it crosses a host boundary as JSON (`Schema.toCodecJson`):
+`Outcome` is a `Schema` tagged union, so it crosses a host boundary as JSON (`Schema.toCodecJson`), and a product
+chooses with `Outcome.match` (`Outcome.guards` tests for one):
 
 | `_tag` | Read from |
 |---|---|
@@ -263,11 +271,12 @@ import { type OutcomeEvent, OutcomeSink, OutcomeSinkError } from "@effectified/p
 const Outcomes = Layer.succeed(OutcomeSink, {
 	// One event. Success means it is stored; the same event may come again, so key it by `event.id`.
 	deliver: (event: OutcomeEvent) =>
-		store.put(event.id, event).pipe(Effect.mapError((cause) => new OutcomeSinkError({ cause }))),
+		store.put(event.id, event).pipe(Effect.mapError((cause) => OutcomeSinkError.make({ cause }))),
 });
 ```
 
-`OutcomeEvent` is a `Schema` union, so it crosses a boundary as JSON (`Schema.toCodecJson`):
+`OutcomeEvent` is a `Schema` tagged union, so it crosses a boundary as JSON (`Schema.toCodecJson`); choose with
+`OutcomeEvent.match`:
 
 | `_tag` | When | Fields | `id` |
 |---|---|---|---|
@@ -367,6 +376,7 @@ forks through [`@effectified/pi-swarm/rivet`](../swarm-effect).
 ```ts
 import { Effect, Layer, Schedule } from "effect";
 import { ActorInfo, Client, Host } from "@effectified/pi-durable-rivet";
+import { RequestKey } from "@effectified/pi-thread";
 import { Remote, ThreadActor } from "@effectified/pi-thread/rivet";
 
 // The product's ports as one Layer, built in each actor at each wake. It may read the actor it is built in.
@@ -384,7 +394,7 @@ const host = Host.serve({ actors: [Thread], endpoint });
 // A caller, such as the binding of the product's ports:
 const program = Effect.gen(function* () {
 	const remote = yield* Remote.Remote;
-	yield* remote.threads.start(work, jobKey); // returns once the task is durably admitted
+	yield* remote.threads.start(work, RequestKey.make(jobKey)); // returns once the task is durably admitted
 	// The thread's actor tells the product's `OutcomeSink` when it ends. A caller that wants to wait asks:
 	return yield* remote.threads.ended(work.thread, Schedule.spaced("2 seconds"));
 }).pipe(Effect.provide(Remote.layer(Thread)), Effect.provide(Client.layer({ endpoint })));
@@ -913,7 +923,7 @@ node ../../node_modules/vitest/dist/cli.js --run
 bun test --conditions=source
 ```
 
-- **In one process** (107 tests): the thread, the guard, the budget and the router, approvals, the review, subagents,
+- **In one process** (117 tests): the thread, the guard, the budget and the router, approvals, the review, subagents,
   swarms on the in-storage driver, the outcome sink (which events, their ids and their order, the record sink before
   it, a sink that fails, a schedule that ends, the sink that keeps nothing), the reviewer's model call, the events
   and the agent change as data, kill and resume on a SQLite file with both drivers, the swarm ids, the

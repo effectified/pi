@@ -25,7 +25,9 @@ function againstServer(replies: readonly [Reply, ...Reply[]]) {
 
 class Expected extends Context.Service<Expected, { readonly city: string }>()("test/Expected") {}
 
-class WrongAnswer extends Schema.TaggedError<WrongAnswer>()("WrongAnswer", { answer: Schema.String }) {}
+class WrongAnswer extends Schema.TaggedError<WrongAnswer, { readonly brand: unique symbol }>()("WrongAnswer", {
+	answer: Schema.String,
+}) {}
 
 describe("make", () => {
 	it(

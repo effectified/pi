@@ -45,31 +45,25 @@ export type Counts = typeof Counts.Type;
  *   `review` is the deferred verdict. Either way `Threads.resume` goes on once a lease covers the thread again.
  * - `Errored`: the run ended without an answer for any other reason; `reason` is Pi's word for it.
  * - `Cancelled`: the thread was cancelled before it ended.
+ *
+ * Choose with `Outcome.match`; `Outcome.guards` tests for one.
  */
-export const Outcome = Schema.Union([
-	Schema.TaggedStruct("Reviewed", { counts: Counts, verdict: Review.Verdict, accepted: Schema.Boolean }),
-	Schema.TaggedStruct("Answered", { counts: Counts }),
-	Schema.TaggedStruct("NotReviewed", {
-		counts: Counts,
-		reason: Review.Reason,
-		verdict: Schema.optionalKey(Review.Verdict),
-	}),
-	Schema.TaggedStruct("Held", { counts: Counts, verdict: Review.Verdict }),
-	Schema.TaggedStruct("ReviewDeferred", {
+export const Outcome = Schema.TaggedUnion({
+	Reviewed: { counts: Counts, verdict: Review.Verdict, accepted: Schema.Boolean },
+	Answered: { counts: Counts },
+	NotReviewed: { counts: Counts, reason: Review.Reason, verdict: Schema.optionalKey(Review.Verdict) },
+	Held: { counts: Counts, verdict: Review.Verdict },
+	ReviewDeferred: {
 		counts: Counts,
 		verdict: Review.Verdict,
 		/** The number of the reviewer's request that failed, from 1. */
 		attempt: Schema.Int,
 		reason: Schema.String,
-	}),
-	Schema.TaggedStruct("BudgetStopped", {
-		counts: Counts,
-		refusal: Refusal,
-		review: Schema.optionalKey(Review.Verdict),
-	}),
-	Schema.TaggedStruct("Errored", { counts: Counts, reason: Schema.String, detail: Schema.NullOr(Schema.String) }),
-	Schema.TaggedStruct("Cancelled", { counts: Counts }),
-]);
+	},
+	BudgetStopped: { counts: Counts, refusal: Refusal, review: Schema.optionalKey(Review.Verdict) },
+	Errored: { counts: Counts, reason: Schema.String, detail: Schema.NullOr(Schema.String) },
+	Cancelled: { counts: Counts },
+});
 
 /** How a thread's work ended. */
 export type Outcome = typeof Outcome.Type;

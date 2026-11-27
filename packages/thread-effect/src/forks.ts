@@ -18,9 +18,12 @@ export class Accounts extends Context.Service<
 		 * What the fork of `job` of the swarm `swarmId` settled so far, in micro units. None for a job whose fork
 		 * accepted no request yet, and for a fork whose storage cannot be read now.
 		 */
-		readonly spent: (swarmId: string, job: Swarm.JobReport) => Effect.Effect<Option.Option<bigint>, Doc.Failure>;
+		readonly spent: (
+			swarmId: Swarm.SwarmId,
+			job: Swarm.JobReport,
+		) => Effect.Effect<Option.Option<bigint>, Doc.Failure>;
 	}
->()("@effectified/pi-thread/Forks/Accounts") {}
+>()("@effectified/pi-thread/forks/Accounts") {}
 
 /**
  * One way to hold a swarm's forks. `R` is what its driver needs of the host.
@@ -45,16 +48,17 @@ export const conversations: Forks<never> = {
 		Layer.effect(
 			Accounts,
 			Shares.use((shares) =>
-				Effect.succeed({
-					spent: (_swarmId: string, job: Swarm.JobReport) => {
-						const here = Option.filter(job.ran, (place) => place.actorId === null);
-						if (Option.isNone(here)) return Effect.succeedNone;
-						return Effect.map(
-							shares.get(here.value.conversationId),
-							Option.map((share) => share.settled),
-						);
-					},
-				}),
+				Effect.succeed(
+					Accounts.of({
+						spent: Effect.fn("Forks.spent")(function* (_swarmId: Swarm.SwarmId, job: Swarm.JobReport) {
+							// A fork in another storage: the in-storage driver makes none.
+							const here = Option.filter(job.ran, (place) => place.actorId === null);
+							if (Option.isNone(here)) return Option.none();
+							const share = yield* shares.get(here.value.conversationId);
+							return Option.map(share, (found) => found.settled);
+						}),
+					}),
+				),
 			),
 		),
 	),

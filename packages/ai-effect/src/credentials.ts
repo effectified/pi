@@ -6,11 +6,13 @@ import {
 	type Credential,
 	type CredentialInfo,
 	type CredentialStore,
+	formatThrownValue,
 	InMemoryCredentialStore,
 	type OAuthCredential,
 } from "@earendil-works/pi-ai";
-import { Context, Effect, Layer, Option, Redacted } from "effect";
+import { Context, Effect, Layer, Option, Redacted, Schema } from "effect";
 import { CredentialStoreError } from "./errors.ts";
+import { ProviderId } from "./ids.ts";
 import { carriedFailure, currentRunner, type RunInPi } from "./run-in-pi.ts";
 
 /** pi-ai's stored API key credential, its key `Redacted`. */
@@ -34,10 +36,10 @@ export interface RedactedOAuthCredential {
 /** pi-ai's `Credential` with its secrets `Redacted`: what the `Credentials` service reads and writes. */
 export type RedactedCredential = RedactedApiKeyCredential | RedactedOAuthCredential;
 
-/** pi-ai's `CredentialStore` in Effect terms. */
+/** pi-ai's `CredentialStore` in Effect terms, keyed by provider id. */
 export interface CredentialsService {
 	/** The stored credential of a provider, possibly expired. For status; a request's auth comes from `getAuth`. */
-	readonly read: (providerId: string) => Effect.Effect<Option.Option<RedactedCredential>, CredentialStoreError>;
+	readonly read: (providerId: ProviderId) => Effect.Effect<Option.Option<RedactedCredential>, CredentialStoreError>;
 	/** Which providers have a credential, and of which type, without any secret. */
 	readonly list: Effect.Effect<ReadonlyArray<CredentialInfo>, CredentialStoreError>;
 	/**
@@ -45,18 +47,18 @@ export interface CredentialsService {
 	 * at a time per provider. Succeeds with the credential stored afterwards.
 	 */
 	readonly modify: <E, R>(
-		providerId: string,
+		providerId: ProviderId,
 		f: (current: Option.Option<RedactedCredential>) => Effect.Effect<Option.Option<RedactedCredential>, E, R>,
 	) => Effect.Effect<Option.Option<RedactedCredential>, E | CredentialStoreError, R>;
 	/** Removes the credential of a provider (logout). */
-	readonly delete: (providerId: string) => Effect.Effect<void, CredentialStoreError>;
+	readonly delete: (providerId: ProviderId) => Effect.Effect<void, CredentialStoreError>;
 }
 
 /**
  * Where the credentials of `Models` live, keyed by provider id. `Models.layerWithAuth` hands it to pi-ai, which
  * refreshes OAuth tokens inside `modify`, so two requests never refresh one token twice.
  */
-export class Credentials extends Context.Service<Credentials, CredentialsService>()("@effectified/pi-ai/Credentials") {
+export class Credentials extends Context.Service<Credentials, CredentialsService>()("@effectified/pi-ai/credentials") {
 	/** pi-ai's `InMemoryCredentialStore`: credentials that end with the program, for one process and for tests. */
 	static readonly layerMemory: Layer.Layer<Credentials> = Layer.sync(Credentials, () =>
 		fromPiStore(new InMemoryCredentialStore()),
@@ -90,82 +92,95 @@ export function revealCredential(credential: RedactedCredential): Credential {
 
 function fromPiStore(store: CredentialStore): CredentialsService {
 	return {
-		read: (providerId) =>
-			Effect.map(
-				Effect.tryPromise({
-					try: (signal) => store.read(providerId, { signal }),
-					catch: (error) => storeError(providerId, error),
-				}),
-				(credential) => Option.map(Option.fromUndefinedOr(credential), redactCredential),
-			),
+		read: Effect.fn("Credentials.read")(function* (providerId: ProviderId) {
+			const credential = yield* Effect.tryPromise({
+				try: (signal) => store.read(providerId, { signal }),
+				catch: (error) => storeError(providerId, error),
+			});
+			return Option.map(Option.fromUndefinedOr(credential), redactCredential);
+		}),
 		list: Effect.tryPromise({
 			try: (signal) => store.list({ signal }),
 			catch: (error) => storeError(undefined, error),
 		}),
-		modify: <E, R>(
-			providerId: string,
+		modify: Effect.fn("Credentials.modify")(function* <E, R>(
+			providerId: ProviderId,
 			f: (current: Option.Option<RedactedCredential>) => Effect.Effect<Option.Option<RedactedCredential>, E, R>,
-		) =>
-			Effect.flatMap(currentRunner<R>(), (run) =>
-				Effect.map(
-					Effect.tryPromise({
-						try: (signal) =>
-							store.modify(
-								providerId,
-								async (current) =>
-									Option.getOrUndefined(
-										Option.map(
-											await run(f(Option.map(Option.fromUndefinedOr(current), redactCredential)), signal),
-											revealCredential,
-										),
-									),
-								{ signal },
-							),
-						// A failure of `f` comes back as the rejection it was carried in; `E` is its type.
-						catch: (error) =>
-							Option.getOrElse(carriedFailure(error) as Option.Option<E>, () => storeError(providerId, error)),
-					}),
-					(stored) => Option.map(Option.fromUndefinedOr(stored), redactCredential),
-				),
-			),
-		delete: (providerId) =>
-			Effect.tryPromise({
+		): Effect.fn.Return<Option.Option<RedactedCredential>, E | CredentialStoreError, R> {
+			const run = yield* currentRunner<R>();
+			const stored = yield* Effect.tryPromise({
+				try: (signal) =>
+					store.modify(
+						providerId,
+						(current) => run(Effect.map(f(redactedOption(current)), revealedOrUndefined), signal),
+						{ signal },
+					),
+				// A failure of `f` comes back as the rejection it was carried in; `E` is its type.
+				catch: (error) =>
+					Option.getOrElse(carriedFailure(error) as Option.Option<E>, () => storeError(providerId, error)),
+			});
+			return redactedOption(stored);
+		}),
+		delete: Effect.fn("Credentials.delete")(function* (providerId: ProviderId) {
+			yield* Effect.tryPromise({
 				try: (signal) => store.delete(providerId, { signal }),
 				catch: (error) => storeError(providerId, error),
-			}),
+			});
+		}),
 	};
 }
 
-/** `credentials` as pi-ai's `CredentialStore`, its Effects run with `run`. */
+/**
+ * `credentials` as pi-ai's `CredentialStore`, its Effects run with `run`. pi-ai's provider ids are branded here,
+ * where they enter.
+ */
 export function toPiStore<R>(credentials: CredentialsService, run: RunInPi<R>): CredentialStore {
 	return {
-		read: async (providerId, options) =>
-			Option.getOrUndefined(Option.map(await run(credentials.read(providerId), options?.signal), revealCredential)),
+		read: (providerId, options) =>
+			run(Effect.map(credentials.read(ProviderId.make(providerId)), revealedOrUndefined), options?.signal),
 		list: (options) => run(credentials.list, options?.signal),
-		modify: async (providerId, fn, options) => {
-			const write = credentials.modify(providerId, (current) =>
+		modify: (providerId, fn, options) => {
+			const write = credentials.modify(ProviderId.make(providerId), (current) =>
 				Effect.map(
 					Effect.tryPromise({
 						try: () => fn(Option.getOrUndefined(Option.map(current, revealCredential))),
-						// pi-ai's own failure inside `fn` (a refresh that failed) goes back to pi-ai as it was thrown.
-						catch: (error): unknown => error,
+						catch: (rejection) => PiRejection.make({ rejection }),
 					}),
-					(next) => Option.map(Option.fromUndefinedOr(next), redactCredential),
+					redactedOption,
 				),
 			);
-			try {
-				return Option.getOrUndefined(Option.map(await run(write, options?.signal), revealCredential));
-			} catch (error) {
-				throw Option.getOrElse(carriedFailure(error), () => error);
-			}
+			return run(Effect.map(write, revealedOrUndefined), options?.signal).catch((error: unknown) =>
+				Promise.reject(rejectionForPi(error)),
+			);
 		},
-		delete: (providerId, options) => run(credentials.delete(providerId), options?.signal),
+		delete: (providerId, options) => run(credentials.delete(ProviderId.make(providerId)), options?.signal),
 	};
 }
 
-function storeError(providerId: string | undefined, error: unknown): CredentialStoreError {
-	return new CredentialStoreError({
-		providerId,
-		message: error instanceof Error ? error.message : String(error),
-	});
+/**
+ * pi-ai's own failure inside a `modify` it called (a refresh that failed), carried through the store's `modify` so
+ * it goes back to pi-ai as it was thrown.
+ */
+class PiRejection extends Schema.TaggedError<PiRejection, { readonly brand: unique symbol }>()("PiRejection", {
+	rejection: Schema.Defect(),
+}) {}
+
+const isPiRejection = Schema.is(PiRejection);
+
+/** What pi-ai's `modify` rejects with: pi-ai's own failure as it was thrown, the store's failure, or a defect. */
+function rejectionForPi(error: unknown): unknown {
+	const carried = Option.getOrElse(carriedFailure(error), () => error);
+	return isPiRejection(carried) ? carried.rejection : carried;
+}
+
+function redactedOption(credential: Credential | undefined): Option.Option<RedactedCredential> {
+	return Option.map(Option.fromUndefinedOr(credential), redactCredential);
+}
+
+function revealedOrUndefined(credential: Option.Option<RedactedCredential>): Credential | undefined {
+	return Option.getOrUndefined(Option.map(credential, revealCredential));
+}
+
+function storeError(providerId: ProviderId | undefined, cause: unknown): CredentialStoreError {
+	return CredentialStoreError.make({ providerId, message: formatThrownValue(cause), cause });
 }

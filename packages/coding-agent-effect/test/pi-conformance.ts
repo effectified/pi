@@ -38,6 +38,7 @@ import type {
 	ModelRegistryHandle,
 	ModelRuntimeHandle,
 	PackageManagerHandle,
+	Replacement,
 	RpcClientHandle,
 	Tool,
 	ToolContextHandle,
@@ -301,4 +302,9 @@ export type HandlerAnswers = Assert<
 		Effect.Success<ReturnType<NonNullable<Handlers["tool_call"]>>>,
 		Awaited<ReturnType<PiHandlerOf<"tool_call">>>
 	>
+>;
+
+/** `Replacement` is what Pi's command context resolves a session change with. */
+export type ReplacementConforms = Assert<
+	Conform<Replacement, Awaited<ReturnType<ExtensionCommandContext["newSession"]>>>
 >;

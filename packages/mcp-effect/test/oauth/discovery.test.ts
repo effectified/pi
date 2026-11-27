@@ -15,7 +15,7 @@ describe("discovery", () => {
 	it("finds the resource metadata, the authorization server and its metadata", async () => {
 		const seen = await runLive(
 			Effect.gen(function* () {
-				const server = yield* authorizationServer();
+				const server = yield* authorizationServer;
 				return {
 					origin: server.origin,
 					resource: yield* discoverProtectedResourceMetadata(server.serverUrl),
@@ -33,7 +33,7 @@ describe("discovery", () => {
 	it("fails with a tagged error when nothing answers", async () => {
 		const error = await runLive(
 			Effect.gen(function* () {
-				const server = yield* Effect.scoped(authorizationServer());
+				const server = yield* Effect.scoped(authorizationServer);
 				return yield* Effect.flip(discoverProtectedResourceMetadata(server.serverUrl));
 			}),
 		);

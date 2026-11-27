@@ -3,7 +3,7 @@
 
 import { Agent, Registry } from "@effectified/pi-durable";
 import * as Swarm from "@effectified/pi-swarm";
-import { Effect, Schema } from "effect";
+import { Array as Arr, Effect, HashSet, Record, Schema } from "effect";
 
 /**
  * What a caller may change of the agent of a swarm's forks through the client: all of `Agent.Change`. The model, the
@@ -34,13 +34,14 @@ export type Wire = Agent.ByName;
  * `InvalidPlan` for a change that is no data of that shape, such as a number of turns below 1 or a negative token
  * count, before anything is sent. A field the type does not have, which only a cast lets through, does not cross.
  */
-export function toWire(swarmId: string, agent: ForkAgent): Effect.Effect<Wire, Swarm.InvalidPlan> {
-	return Effect.mapError(
-		decode(Agent.byName(agent)),
-		(error) =>
-			new Swarm.InvalidPlan({ swarmId, reason: `The agent change of the forks cannot cross: ${error.message}` }),
+export const toWire = Effect.fn("ForkAgent.toWire")(function* (
+	swarmId: Swarm.SwarmId,
+	agent: ForkAgent,
+): Effect.fn.Return<Wire, Swarm.InvalidPlan> {
+	return yield* Effect.mapError(decode(Agent.byName(agent)), (error) =>
+		Swarm.InvalidPlan.make({ swarmId, reason: `The agent change of the forks cannot cross: ${error.message}` }),
 	);
-}
+});
 
 const decode = Schema.decodeUnknownEffect(Wire);
 
@@ -49,31 +50,33 @@ const decode = Schema.decodeUnknownEffect(Wire);
  * fails with an `InvalidPlan` that lists the names nothing is installed under. Wire input: in the caller's program a
  * name may stand for something this actor does not have.
  */
-export function requireInstalled(
-	swarmId: string,
+export const requireInstalled = Effect.fn("ForkAgent.requireInstalled")(function* (
+	swarmId: Swarm.SwarmId,
 	agent: Wire,
-): Effect.Effect<void, Swarm.InvalidPlan, Registry.Registry> {
-	return Registry.Registry.use((registry) => {
-		const installed = registry.snapshot();
-		const tools = new Set(installed.tools().map(({ tool }) => tool.name));
-		const missing = [
-			...namesIn(agent.extensions)
-				.filter((name) => installed.extension(name) === undefined)
-				.map((name) => `extension ${name}`),
-			...[...namesIn(agent.tools), ...namesIn(agent.modelTools)]
-				.filter((name) => !tools.has(name))
-				.map((name) => `tool ${name}`),
-		];
-		return missing.length === 0
-			? Effect.void
-			: Effect.fail(
-					new Swarm.InvalidPlan({
-						swarmId,
-						reason: `Nothing is installed under: ${[...new Set(missing)].join(", ")}`,
-					}),
-				);
-	});
-}
+): Effect.fn.Return<void, Swarm.InvalidPlan, Registry.Registry> {
+	const registry = yield* Registry.Registry;
+	const installed = registry.snapshot();
+	const tools = HashSet.fromIterable(Arr.map(installed.tools(), ({ tool }) => tool.name));
+	const missing = Arr.dedupe([
+		...Arr.map(
+			Arr.filter(namesIn(agent.extensions), (name) => installed.extension(name) === undefined),
+			(name) => `extension ${name}`,
+		),
+		...Arr.map(
+			Arr.filter(
+				Arr.appendAll(namesIn(agent.tools), namesIn(agent.modelTools)),
+				(name) => !HashSet.has(tools, name),
+			),
+			(name) => `tool ${name}`,
+		),
+	]);
+	if (Arr.isReadonlyArrayNonEmpty(missing)) {
+		return yield* Swarm.InvalidPlan.make({
+			swarmId,
+			reason: `Nothing is installed under: ${Arr.join(missing, ", ")}`,
+		});
+	}
+});
 
 /** A selection of tools or extensions as it crosses: a list, an edit of lists, or `null`; absent for none. */
 type Selection = Wire["extensions"] | Wire["tools"] | Wire["modelTools"];
@@ -84,10 +87,12 @@ type Selection = Wire["extensions"] | Wire["tools"] | Wire["modelTools"];
  */
 function namesIn(choice: Selection): ReadonlyArray<string> {
 	if (choice === null || choice === undefined) return [];
-	return isList(choice) ? choice : Object.values(choice).flatMap((names) => names ?? []);
+	if (isList(choice)) return choice;
+	const edit: Record.ReadonlyRecord<string, ReadonlyArray<string> | undefined> = choice;
+	return Arr.flatMap(Record.values(edit), (names) => names ?? []);
 }
 
 // The two forms of a selection are Pi's own, an array or an object, and carry no tag.
 function isList(choice: NonNullable<Selection>): choice is ReadonlyArray<string> {
-	return Array.isArray(choice);
+	return Arr.isArray(choice);
 }

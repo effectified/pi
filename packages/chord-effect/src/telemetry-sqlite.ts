@@ -8,6 +8,7 @@ import {
 } from "@earendil-works/chord/telemetry-sqlite";
 import type { MetricQuery, StoredMetric, StoredTrace, TelemetryStore, TraceQuery } from "@effectified/pi-telemetry";
 import { Effect, type Scope } from "effect";
+import { dual } from "effect/Function";
 import type { SqliteError } from "./errors.ts";
 import { settled } from "./settled.ts";
 import type { SqliteDatabase } from "./sqlite.ts";
@@ -46,15 +47,18 @@ export function findTraces(
 	return settled(() => store.findTraces(query));
 }
 
-/** The trace `traceId` of `store`, if it holds one (Pi's `TelemetryStore.getTrace`). */
-export function getTrace(store: TelemetryStore, traceId: string): Effect.Effect<StoredTrace | undefined, SqliteError> {
-	return settled(() => store.getTrace(traceId));
-}
+/** The trace `traceId` of `store`, if it holds one (Pi's `TelemetryStore.getTrace`). Data-first or data-last. */
+export const getTrace: {
+	(traceId: string): (store: TelemetryStore) => Effect.Effect<StoredTrace | undefined, SqliteError>;
+	(store: TelemetryStore, traceId: string): Effect.Effect<StoredTrace | undefined, SqliteError>;
+} = dual(2, (store: TelemetryStore, traceId: string): Effect.Effect<StoredTrace | undefined, SqliteError> =>
+	settled(() => store.getTrace(traceId)),
+);
 
-/** The metric intervals of `store` that `query` selects (Pi's `TelemetryStore.findMetrics`). */
-export function findMetrics(
-	store: TelemetryStore,
-	query: MetricQuery,
-): Effect.Effect<readonly StoredMetric[], SqliteError> {
-	return settled(() => store.findMetrics(query));
-}
+/** The metric intervals of `store` that `query` selects (Pi's `TelemetryStore.findMetrics`). Data-first or data-last. */
+export const findMetrics: {
+	(query: MetricQuery): (store: TelemetryStore) => Effect.Effect<readonly StoredMetric[], SqliteError>;
+	(store: TelemetryStore, query: MetricQuery): Effect.Effect<readonly StoredMetric[], SqliteError>;
+} = dual(2, (store: TelemetryStore, query: MetricQuery): Effect.Effect<readonly StoredMetric[], SqliteError> =>
+	settled(() => store.findMetrics(query)),
+);

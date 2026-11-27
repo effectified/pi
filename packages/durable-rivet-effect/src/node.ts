@@ -14,24 +14,24 @@ export { running, stop } from "./node/platform.ts";
  * where an assignment to `process.env` does not reach rivetkit's native core, and the engine would keep its data in
  * the directory every project shares.
  */
-export function serve(options: Local.ServeOptions): Effect.Effect<Local.LocalEngine, EngineUnavailable, Scope.Scope> {
-	// Feature detection: only Bun has this global.
-	if ("Bun" in globalThis) {
-		return Effect.fail(
-			new EngineUnavailable({
+export const serve: (options: Local.ServeOptions) => Effect.Effect<Local.LocalEngine, EngineUnavailable, Scope.Scope> =
+	Effect.fn("LocalEngine.serve")(function* (options: Local.ServeOptions) {
+		// Feature detection: only Bun has this global.
+		if ("Bun" in globalThis) {
+			return yield* EngineUnavailable.make({
 				code: "environment",
 				message: "On Bun, start the local engine with @effectified/pi-durable-rivet/bun",
 				retryable: false,
-			}),
-		);
-	}
-	return Effect.provide(Local.serve(nodeEnvironment, options), Platform.layer);
-}
+			});
+		}
+		return yield* Platform.provide(Local.serve(nodeEnvironment, options));
+	});
 
 // On Node.js `process.env` is the process's environment itself.
 const nodeEnvironment: Local.Environment = {
 	set: (name, value) =>
 		Effect.sync(() => {
+			// @effect-diagnostics-next-line processEnvInEffect:off A write, not a read: rivetkit's native core reads its storage path from the process environment, which `Config` cannot set.
 			process.env[name] = value;
 		}),
 };

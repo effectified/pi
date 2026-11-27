@@ -1,11 +1,25 @@
 // The outcome sink of a thread in one process: which events it is told, their ids and their order, the record sink
-// before it, a sink that fails, and a product that asks instead.
+// before it, a sink that fails, a product that asks instead, and the start of the delivery.
 
+import { runTest } from "@effectified/pi-ai/testing";
+import type { Shares } from "@effectified/pi-budget";
 import { Harness, Storage } from "@effectified/pi-durable";
-import { answer, held, toolCall } from "@effectified/pi-durable/testing";
-import { Effect, Fiber, Layer, Option, Schedule, Schema } from "effect";
+import { answer, held, TestHarness, toolCall } from "@effectified/pi-durable/testing";
+import type { Recorder } from "@effectified/pi-recorder";
+import { Context, Effect, Fiber, Layer, Option, References, Schedule, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { Composition, OutcomeCursor, OutcomeEvent, OutcomeSink, Threads } from "../src/index.ts";
+import {
+	Composition,
+	type Forks,
+	OutcomeCourier,
+	OutcomeCursor,
+	OutcomeEvent,
+	OutcomeSink,
+	Outcomes,
+	RequestKey,
+	ThreadKey,
+	Threads,
+} from "../src/index.ts";
 import { committed, config, outside, ports, providers, reached, run, said, told, work } from "./world.ts";
 
 const BLOCKING = answer('{"findings":[{"severity":"block","text":"Six times seven is 42.","location":"It is 41."}]}');
@@ -28,7 +42,7 @@ describe("what the outcome sink is told of a thread", () => {
 				const threads = yield* Threads.Threads;
 				const outcome = yield* threads.work(work("t1", "What is record 42 called?"));
 				const events = yield* told(state, reached("Reviewed"));
-				const conversation = yield* threads.conversation("t1");
+				const conversation = yield* threads.conversation(ThreadKey.make("t1"));
 				return { outcome, events, head: yield* conversation.head };
 			}),
 		);
@@ -71,7 +85,7 @@ describe("what the outcome sink is told of a thread", () => {
 		);
 		// When `Reviewed` came, the record sink had every record the thread ever got: the transcript, the verdict and
 		// the reviewer's model call. Nothing came after it.
-		const all = committed(state).map((record) => record.id);
+		const all: ReadonlyArray<string> = committed(state).map((record) => record.id);
 		expect(all).toHaveLength(8);
 		expect(state.told.recorded[1]?.filter((id) => all.includes(id))).toEqual(all);
 		// `Started` came no later than the first record of the answer: it waits for no run.
@@ -94,8 +108,8 @@ describe("what the outcome sink is told of a thread", () => {
 				const threads = yield* Threads.Threads;
 				yield* threads.work(work("t1", "What is six times seven?"));
 				const correct = { _tag: "Correct", by: "user:ada", correction: "Multiply again." } as const;
-				yield* threads.release("t1", correct);
-				yield* threads.release("t1", correct);
+				yield* threads.release(ThreadKey.make("t1"), correct);
+				yield* threads.release(ThreadKey.make("t1"), correct);
 				const before = state.told.events.length;
 				state.told.failing = 0;
 				return { before, events: yield* told(state, reached("Reviewed")) };
@@ -142,9 +156,9 @@ describe("what the outcome sink is told of a thread", () => {
 				const threads = yield* Threads.Threads;
 				yield* threads.work(work("t1", "What is six times seven?"));
 				// Asked again while the lease is still fenced: refused again. Then under a new lease: reviewed.
-				yield* threads.resume("t1");
+				yield* threads.resume(ThreadKey.make("t1"));
 				state.lease.fenced = undefined;
-				yield* threads.resume("t1");
+				yield* threads.resume(ThreadKey.make("t1"));
 				state.told.failing = 0;
 				return yield* told(state, reached("Reviewed"));
 			}),
@@ -182,7 +196,7 @@ describe("what the outcome sink is told of a thread", () => {
 				const threads = yield* Threads.Threads;
 				yield* threads.work(work("t1", "What is record 42 called?"));
 				state.lease.fenced = undefined;
-				yield* threads.resume("t1");
+				yield* threads.resume(ThreadKey.make("t1"));
 				state.told.failing = 0;
 				return yield* told(state, reached("Reviewed"));
 			}),
@@ -217,7 +231,7 @@ describe("what the outcome sink is told of a thread", () => {
 				yield* threads.work(work("t1", "What is record 42 called?"));
 				yield* told(state, reached("BudgetStopped"));
 				state.lease.fenced = undefined;
-				yield* threads.takeOn("t1", "job-2");
+				yield* threads.takeOn(ThreadKey.make("t1"), RequestKey.make("job-2"));
 				return yield* told(state, reached("Reviewed"));
 			}),
 		);
@@ -245,7 +259,7 @@ describe("what the outcome sink is told of a thread", () => {
 				const threads = yield* Threads.Threads;
 				const working = yield* Effect.forkScoped(threads.work(work("t1", "Say hi.")));
 				yield* turn.requested;
-				yield* threads.cancel("t1");
+				yield* threads.cancel(ThreadKey.make("t1"));
 				yield* Fiber.join(working);
 				yield* told(state, reached("Cancelled"));
 				yield* threads.work({ ...work("t2", "Say hi."), review: false });
@@ -302,6 +316,26 @@ describe("an outcome sink that fails", () => {
 		}
 	});
 
+	it("is asked again after a delay of a fraction of a millisecond, by the same courier after the thread's work", async () => {
+		const state = outside();
+		const labs = providers({ author: [answer("It is 42.")], reviewer: [CLEAN] });
+		state.told.failing = Number.POSITIVE_INFINITY;
+		const events = await run(
+			state,
+			labs,
+			Effect.gen(function* () {
+				const threads = yield* Threads.Threads;
+				yield* threads.work(work("t1", "What is six times seven?"));
+				// Nothing moves the thread any more: only the courier's own next attempt, at a time with a fraction of a
+				// millisecond, can deliver now.
+				state.told.failing = 1;
+				return yield* told(state, reached("Reviewed"));
+			}),
+			{ outcomes: { retry: Schedule.spaced("1500 micros") } },
+		);
+		expect(events.map(said)).toEqual(["Started", "Reviewed"]);
+	});
+
 	it("is left alone once the product's schedule ends, until the thread moves again", async () => {
 		const state = outside();
 		const labs = providers({ author: [answer("It is 41."), answer("It is 42.")], reviewer: [BLOCKING, CLEAN] });
@@ -351,3 +385,40 @@ describe("a product that asks instead", () => {
 		expect(state.told.calls).toBe(0);
 	});
 });
+
+describe("the start of the delivery", () => {
+	it("reads the couriers the storage holds only once its observer of commits is attached, however often it yields", async () => {
+		const calls: Array<string> = [];
+		// Pi's harness with the two calls of the start recorded: the observer's attachment, and a scan's commit.
+		const watched = Layer.effect(
+			Harness.Harness,
+			Effect.map(Harness.Harness, (pi) => recording(pi, calls)),
+		);
+		// Kept by the delivery for its couriers, and this storage holds none: nothing calls them.
+		const unused = Layer.succeedContext(
+			Context.empty() as Context.Context<Shares | Forks.Accounts | Recorder.Recorder | OutcomeSink>,
+		);
+		const delivery = Outcomes.layer().pipe(
+			Layer.provide(Layer.mergeAll(watched, OutcomeCourier.holder, unused)),
+			Layer.provide(TestHarness.layer()),
+		);
+		// A fiber that yields after every operation: a fork it starts returns before that fork did anything.
+		await runTest(Effect.provideService(Layer.build(delivery), References.MaxOpsBeforeYield, 1));
+		expect(calls.slice(0, 2)).toEqual(["observeCommits", "commit"]);
+	});
+});
+
+/** `pi`, with each call of `observeCommits` and `commit` noted in `calls` before it is made. */
+function recording(pi: Harness.Open, calls: Array<string>): Harness.Open {
+	return new Proxy(pi, {
+		get: (target, key) => {
+			const value: unknown = Reflect.get(target, key);
+			// Pi's object, read by name: a method is called on Pi's own object, with the two the test watches noted.
+			if (typeof value !== "function") return value;
+			return (...args: Array<unknown>) => {
+				if (key === "observeCommits" || key === "commit") calls.push(key);
+				return Reflect.apply(value, target, args);
+			};
+		},
+	});
+}

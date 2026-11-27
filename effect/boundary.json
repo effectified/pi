@@ -19,6 +19,11 @@
 				"\"@effectified/pi-*\": [\"./packages/*-effect/src/index.ts\"],"
 			],
 			"reason": "Upstream's `tsc --noEmit` (npm run check) type checks every packages/*/src from source through `paths`. Without these entries an import of one pi-effect package from another resolves to `dist/*.d.ts`, which exists only after a build. Two wildcard lines cover every package named @effectified/pi-<name>, in packages/<name>-effect, and its `testing` subpath. They are the first entries of `paths`, so they are pure additions and upstream appending entries does not conflict. The `testing` line comes first: both patterns share the prefix `@effectified/pi-`, TypeScript takes the first pattern of equal prefix length, and `@effectified/pi-*` would otherwise match `@effectified/pi-x/testing` and miss. Every other subpath one pi-effect package imports from another has its own exact line, for the same reason: `paths` allows one wildcard, so no pattern can cover `<package>/<subpath>`."
+		},
+		{
+			"file": "biome.json",
+			"added": ["\"!packages/*-effect/**\","],
+			"reason": "The owner chose VoidZero's oxc tools for the pi-effect packages (2026-11-27): oxfmt formats them and oxlint lints them, with the idiom rules of effect/AGENTS.md, through `node effect/scripts/style.ts` (effect/oxfmt.json, effect/oxlint.json). oxfmt's style is Prettier's, which Biome follows but for one rule (a last-argument arrow with a return type stays on the call's line), so upstream's `npm run check`, which runs Biome with --write over packages/*/src, would rewrite every such site back. The line leaves the pi-effect packages to oxc. It is one line inside `files.includes`, after upstream's own exclusion of node_modules, so it is a pure addition."
 		}
 	]
 }

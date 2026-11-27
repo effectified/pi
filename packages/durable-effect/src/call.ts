@@ -32,7 +32,7 @@ export function call<A>(
 			// settle, and it would put the fiber's span over the invocation's that `ParentContext` holds.
 			settled((signal) => run(withAbortSignal(signal, context))),
 			// Chord rejects a cancelled call with its signal's reason, whatever that is: a deadline's `TimeoutError` too.
-			(error) => (isReasonOf(context.abortSignal, error) ? new Cancelled({ cause: error.cause }) : error),
+			(error) => (isReasonOf(context.abortSignal, error) ? Cancelled.make({ cause: error.cause }) : error),
 		);
 	return parent === undefined ? Effect.flatMap(Effect.service(ParentContext), under) : under(parent);
 }
@@ -50,10 +50,20 @@ export function step<A>(run: () => Promise<A>): Effect.Effect<A, DurableError> {
 	return settled(run);
 }
 
+/**
+ * `run`'s promise as an Effect: its value, or its rejection (or a synchronous throw of `run`) as a `DurableError`.
+ * Interrupting the fiber aborts `signal`, then waits until the promise settled.
+ */
 function settled<A>(run: (signal: AbortSignal) => Promise<A>): Effect.Effect<A, DurableError> {
 	return Effect.callback<A, DurableError>((resume, signal) => {
-		// A promise executor turns a synchronous throw of `run` into a rejection too.
-		const done = new Promise<A>((resolve) => resolve(run(signal))).then(
+		let pending: Promise<A>;
+		try {
+			pending = run(signal);
+		} catch (thrown) {
+			resume(Effect.fail(fromRejection(thrown)));
+			return;
+		}
+		const done = pending.then(
 			(value) => resume(Effect.succeed(value)),
 			(cause: unknown) => resume(Effect.fail(fromRejection(cause))),
 		);

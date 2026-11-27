@@ -1,12 +1,12 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { RecordSink, RecordSinkError, type Records } from "../src/index.ts";
+import { RecordSink, RecordSinkError, Records } from "../src/index.ts";
 
 describe("RecordSink", () => {
 	it("is a service a product provides with a Layer", async () => {
 		const taken: Array<ReadonlyArray<Records.Record>> = [];
 		const product = Layer.succeed(RecordSink, { deliver: (records) => Effect.sync(() => void taken.push(records)) });
-		const record: Records.Record = {
+		const record = Schema.decodeSync(Records.Record)({
 			_tag: "ModelCallRequested",
 			id: "1:7:requested",
 			conversation: 1,
@@ -14,7 +14,7 @@ describe("RecordSink", () => {
 			task: 9,
 			time: 1,
 			advisory: true,
-		};
+		});
 		await Effect.runPromise(RecordSink.use((sink) => sink.deliver([record])).pipe(Effect.provide(product)));
 		expect(taken).toEqual([[record]]);
 	});

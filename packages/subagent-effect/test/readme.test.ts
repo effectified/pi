@@ -8,6 +8,7 @@ import {
 	Harness,
 	type SchemaDecodeError,
 	Tool,
+	ToolName,
 	type Tx,
 } from "@effectified/pi-durable";
 import { answer, type FauxResponseStep, TestHarness, toolCall } from "@effectified/pi-durable/testing";
@@ -185,7 +186,7 @@ const Conversations = {
 		Effect.gen(function* () {
 			(yield* GuardService).granted.push(conversationId);
 			yield* (yield* tx.doc(GrantDocument, conversationId)).set({ tools: grant.tools });
-			yield* tx.configure(conversationId, { tools: grant.tools });
+			yield* tx.configure(conversationId, { tools: grant.tools.map((name) => ToolName.make(name)) });
 		}),
 };
 interface Share {
@@ -204,7 +205,7 @@ const allowances: Record<string, { readonly tools: ReadonlyArray<string>; readon
 };
 
 const refused = (child: ChildSetup.Child) => (cause: unknown) =>
-	new ChildSetupFailed({ reason: `The subagent ${child.subagent} has no allowance.`, cause });
+	ChildSetupFailed.make({ reason: `The subagent ${child.subagent} has no allowance.`, cause });
 
 const Setup = Layer.effect(
 	ChildSetup.ChildSetup,

@@ -3,7 +3,7 @@
 
 import type { EntryRecord, TaskGraph, TaskId } from "@earendil-works/pi-durable";
 import { conditions } from "@effectified/pi-ai/testing";
-import { type DurableError, Harness, type Hook, Tool } from "@effectified/pi-durable";
+import { type DurableError, Harness, type Hook, Tool, ToolName } from "@effectified/pi-durable";
 import { answer, type FauxResponseStep, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 import { extension, Inbox, type Policy, type Request } from "../src/index.ts";
@@ -16,10 +16,10 @@ type RootError = Effect.Error<typeof TestHarness.root>;
 type RootServices = Effect.Services<typeof TestHarness.root>;
 type Submitted = Effect.Success<ReturnType<Root["submit"]>>;
 
-/** What a scene is built from. `R` is what the policy's rule needs. */
+/** What a scene is built from. `R` is what the policy's rule needs; the rule may fail with anything. */
 export interface SceneOptions<R> {
 	/** Default: every call of `write` needs approval, for an hour. */
-	readonly policy?: Policy<R>;
+	readonly policy?: Policy<R, unknown>;
 	/** Hooks of an extension installed before the approvals extension. */
 	readonly before?: ReadonlyArray<Hook.Hook<never>>;
 	/** Default: one call of `write` with the text `hi`, under the call id `call-1`, then the answer `Done.`. */
@@ -47,7 +47,7 @@ export interface Scene<R> {
 }
 
 /** Every call of `write` needs approval, and a request stays open for an hour. */
-export const WRITES: Policy = { tools: ["write"], expiresAfter: "1 hour" };
+export const WRITES: Policy = { tools: [ToolName.make("write")], expiresAfter: "1 hour" };
 
 /** An hour, the lifetime of a request under `WRITES`, in milliseconds. */
 export const HOUR = 60 * 60 * 1000;
@@ -93,7 +93,7 @@ export function scene<R = never>(options: SceneOptions<R> = {}): Scene<R> {
 		extensions: [
 			{ name: "before", hooks: options.before ?? [] },
 			{ name: "app", tools: [Write, Read, List] },
-			extension<R>(options.policy ?? WRITES),
+			extension<R, unknown>(options.policy ?? WRITES),
 		],
 		responses: options.responses ?? ONE_WRITE,
 		storage: options.storage,

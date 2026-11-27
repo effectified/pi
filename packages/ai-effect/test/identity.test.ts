@@ -20,8 +20,10 @@ describe("withClientIdentity", () => {
 				yield* complete(scripted.model, { messages: [] }).pipe(
 					withClientIdentity({ attribution: PI_ATTRIBUTION, userAgent: "short" }),
 				);
-				yield* complete(scripted.model, { messages: [] }, { identity: { userAgent: { custom: "own" } } }).pipe(
-					withClientIdentity({ attribution: PI_ATTRIBUTION, userAgent: "short" }),
+				// Data-first, the same.
+				yield* withClientIdentity(
+					complete(scripted.model, { messages: [] }, { identity: { userAgent: { custom: "own" } } }),
+					{ attribution: PI_ATTRIBUTION, userAgent: "short" },
 				);
 				yield* complete(scripted.model, { messages: [] });
 				return seen;

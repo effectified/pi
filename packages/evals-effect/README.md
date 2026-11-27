@@ -64,18 +64,12 @@ documentation comparison's container: it fails with `InvalidSetting` anywhere el
 
 The comparison builds an image with Pi's documentation and one without, lists the cases of the eval files in both,
 plans `(case, variant, run)` tasks, and runs each in a new container. `Docker.observe` streams the observation of each
-task as its container ends; what to keep of them, and where, is yours.
+task as its container ends; `Report.summarize` is a Sink of them that gives Pi's report. What to keep of them, and
+where, is yours.
 
 ```ts
-import { readFile } from "node:fs/promises";
 import { Console, Effect, Stream } from "effect";
-import {
-	createDockerContext,
-	Docker,
-	formatEvalComparisonReport,
-	Plan,
-	summarizeEvalObservations,
-} from "@effectified/pi-evals";
+import { createDockerContext, Docker, formatEvalComparisonReport, Plan, Report } from "@effectified/pi-evals";
 
 const compare = (files: ReadonlyArray<string>, provider: string, model: string, artifacts: string) =>
 	Effect.gen(function* () {
@@ -84,19 +78,23 @@ const compare = (files: ReadonlyArray<string>, provider: string, model: string, 
 		const context = createDockerContext(images, artifacts, authPath, provider, model, 1);
 		// Pi's runner also checks that both variants list the same cases; one is read here.
 		const listed = yield* Docker.discoverCases(context, "without_docs", files, []);
-		const discovered: unknown = JSON.parse(yield* Effect.promise(() => readFile(listed, "utf8")));
-		const tasks = yield* Plan.createTaskPlan(yield* Plan.parseDiscoveredCases(discovered), `${provider}/${model}`, 1);
-		const observations = yield* Docker.observe(context, tasks).pipe(
+		const tasks = yield* Plan.createTaskPlan(yield* Plan.readDiscoveredCases(listed), `${provider}/${model}`, 1);
+		const report = yield* Docker.observe(context, tasks).pipe(
 			Stream.tap((observation) =>
 				Console.log(`${observation.caseId} | ${observation.variant} | ${observation.outcome}`),
 			),
-			Stream.runCollect,
+			Stream.run(Report.summarize("protocol", tasks)),
 		);
-		return formatEvalComparisonReport(summarizeEvalObservations("protocol", tasks, observations));
+		return formatEvalComparisonReport(report);
 	});
 ```
 
-Pi runs `docker` synchronously: interrupting the fiber takes effect when the running container has ended.
+`Plan.readDiscoveredCases` reads the discovery file with Effect's `FileSystem` and decodes it with Schema: provide
+one, such as `NodeFileSystem.layer` of `@effect/platform-node`. Pi runs `docker` synchronously: interrupting the fiber
+takes effect when the running container has ended.
+
+`Report.EvalObservation` is Pi's observation as a Schema, to keep observations in a file and read them back:
+`Schema.fromJsonString(Report.EvalObservation)` encodes one as a line of JSON and decodes it.
 
 ## Plans and reports
 

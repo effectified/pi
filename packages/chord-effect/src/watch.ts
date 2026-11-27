@@ -11,8 +11,7 @@ import type {
 	WatchEnd,
 	WatchHandle,
 } from "@earendil-works/chord/watch";
-import { Cause, Effect, Queue, Schema, Stream } from "effect";
-import { absurd } from "effect/Function";
+import { Cause, Effect, Match, Queue, Schema, Stream } from "effect";
 import { chordCall } from "./call.ts";
 import type { ChordCallError } from "./errors.ts";
 
@@ -20,7 +19,7 @@ import type { ChordCallError } from "./errors.ts";
 export type * from "@earendil-works/chord/watch";
 
 /** A watch ended for good with a failure: its listener failed, or its source failed and cannot recover. */
-export class WatchFailed extends Schema.TaggedError<WatchFailed>()("WatchFailed", {
+export class WatchFailed extends Schema.TaggedError<WatchFailed, { readonly brand: unique symbol }>()("WatchFailed", {
 	cause: Schema.Defect(),
 }) {}
 
@@ -66,7 +65,11 @@ type Handle<T, C> = Pick<WatchHandle<T> | NativeWatchHandle<T>, "value" | "stop"
 	readonly start: (listener: (call: C) => Promise<void>) => void;
 };
 
-/** The Stream of a watch: its first element from the handle's value, each value call's from `element`. */
+/**
+ * The Stream of a watch: its first element from the handle's value, each value call's from `element`. The listener
+ * Chord calls returns once the consumer took the element before (the stream's buffer holds one), so Chord folds what
+ * changes until then; the watch is stopped when the stream's scope closes.
+ */
 function follow<T, C extends WatchCall<T> | NativeWatchCall<T>, A>(
 	acquire: (context: Context) => Promise<Handle<T, C>>,
 	first: (value: T) => A,
@@ -79,46 +82,45 @@ function follow<T, C extends WatchCall<T> | NativeWatchCall<T>, A>(
 					Effect.promise(() => acquired.stop()),
 				);
 				yield* Queue.offer(queue, first(watch.value));
-				// The listener returns once the consumer took the element before: Chord folds what changes until then. An
-				// offer cut off because the stream's scope closed is dropped.
-				watch.start(async (call) => {
-					switch (call.kind) {
-						case "value":
-							await Effect.runPromiseExit(
-								Queue.offer(queue, element(call as Extract<C, { readonly kind: "value" }>)),
-							);
-							return;
-						case "failed":
-							Queue.failCauseUnsafe(queue, failure(call.error));
-							return;
-						default:
-							absurd(call);
-					}
-				});
-				void watch.closed.then((end) => finish(queue, end));
+				const services = yield* Effect.context<never>();
+				const run = Effect.runPromiseWith(services);
+				// Built once per watch; a call only runs it. An offer cut off because the stream's scope closed is dropped.
+				const onCall = Match.type<WatchCall<T> | NativeWatchCall<T>>().pipe(
+					Match.discriminatorsExhaustive("kind")({
+						// The matched union holds both kinds' value calls; Chord gives this watch's only, `C`'s.
+						value: (call) =>
+							Effect.asVoid(
+								Effect.exit(Queue.offer(queue, element(call as Extract<C, { readonly kind: "value" }>))),
+							),
+						failed: (call) => Effect.asVoid(Queue.failCause(queue, failure(call.error))),
+					}),
+				);
+				watch.start((call) => run(onCall(call)));
+				yield* Effect.forkScoped(
+					Effect.flatMap(
+						Effect.promise(() => watch.closed),
+						(end) => Effect.asVoid(finish(queue, end)),
+					),
+				);
 			}),
 		{ bufferSize: 1, strategy: "suspend" },
 	);
 }
 
 /** Ends `queue` as the watch ended: a failure fails it, any other end ends it. */
-function finish<A>(queue: Queue.Queue<A, WatchError | Cause.Done>, end: WatchEnd): void {
-	switch (end.kind) {
-		case "listener_error":
-		case "failed":
-			Queue.failCauseUnsafe(queue, failure(end.error));
-			return;
-		case "stopped":
-		case "aborted":
-		case "ended":
-			Queue.endUnsafe(queue);
-			return;
-		default:
-			absurd(end);
-	}
+function finish<A>(queue: Queue.Queue<A, WatchError | Cause.Done>, end: WatchEnd): Effect.Effect<boolean> {
+	return Match.value(end).pipe(
+		Match.discriminatorsExhaustive("kind")({
+			listener_error: ({ error }) => Queue.failCause(queue, failure(error)),
+			failed: ({ error }) => Queue.failCause(queue, failure(error)),
+			stopped: () => Queue.end(queue),
+			aborted: () => Queue.end(queue),
+			ended: () => Queue.end(queue),
+		}),
+	);
 }
 
 /** The cause a watch failure fails its Stream with. */
 function failure(error: unknown): Cause.Cause<WatchFailed> {
-	return Cause.fail(new WatchFailed({ cause: error }));
+	return Cause.fail(WatchFailed.make({ cause: error }));
 }

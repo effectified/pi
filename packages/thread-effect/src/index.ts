@@ -8,6 +8,7 @@ export { ReviewerSharesFamily, ThreadNotFound } from "./errors.ts";
 export * as Fallbacks from "./fallbacks.ts";
 export * as ForkSetup from "./fork-setup.ts";
 export * as Forks from "./forks.ts";
+export { EventId, RequestKey, ThreadKey } from "./ids.ts";
 export * as Opened from "./opened.ts";
 export { Counts, Outcome } from "./outcome.ts";
 export * as OutcomeCourier from "./outcome-courier.ts";

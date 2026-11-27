@@ -1,45 +1,49 @@
 // The record of a budget: one event per reservation, settlement and refusal, published to a hub a product reads.
 
 import { Context, Effect, Layer, PubSub, Schema, type Scope, Stream } from "effect";
+import { Reservation } from "./ids.ts";
 import { BudgetRequest, Outcome } from "./lease.ts";
-import { TokenUsage } from "./price-table.ts";
+import { Micros, TokenUsage } from "./price-table.ts";
 import { Refusal } from "./refusal.ts";
+
+/** Clock time in epoch milliseconds, from the `Clock` service. */
+const Millis = Schema.Int;
 
 /**
  * What the budget did with one provider request. Amounts are micro units of `currency`. No event carries content.
+ * `BudgetEvent.match` picks a handler per tag and `BudgetEvent.guards` tests for one.
  *
  * - `Reserved`: the lease set `estimate` aside; the request goes to the provider next.
  * - `Settled`: the request ended and the lease was told what it cost. One for every `Reserved`.
  * - `Refused`: the request was not sent, and nothing was reserved for it.
  */
-export const BudgetEvent = Schema.Union([
-	Schema.TaggedStruct("Reserved", {
+export const BudgetEvent = Schema.TaggedUnion({
+	Reserved: {
 		request: BudgetRequest,
 		/** The token the lease gave. */
-		reservation: Schema.String,
-		estimate: Schema.BigInt,
+		reservation: Reservation,
+		estimate: Micros,
 		currency: Schema.String,
-		/** Clock time in milliseconds. */
-		at: Schema.Number,
-	}),
-	Schema.TaggedStruct("Settled", {
+		at: Millis,
+	},
+	Settled: {
 		request: BudgetRequest,
-		reservation: Schema.String,
-		estimate: Schema.BigInt,
+		reservation: Reservation,
+		estimate: Micros,
 		/** What the provider reported, also for a failed or aborted request; zeros when it reported nothing. */
 		usage: TokenUsage,
 		/** `usage` at the price table. */
-		cost: Schema.BigInt,
+		cost: Micros,
 		outcome: Outcome,
 		currency: Schema.String,
-		at: Schema.Number,
-	}),
-	Schema.TaggedStruct("Refused", {
+		at: Millis,
+	},
+	Refused: {
 		request: BudgetRequest,
 		refusal: Refusal,
-		at: Schema.Number,
-	}),
-]);
+		at: Millis,
+	},
+});
 
 /** What the budget did with one provider request. */
 export type BudgetEvent = typeof BudgetEvent.Type;
@@ -56,18 +60,20 @@ export interface BudgetEventsService {
 
 /** The hub of a budget's events. A subscriber that stops reading keeps its unread events in memory. */
 export class BudgetEvents extends Context.Service<BudgetEvents, BudgetEventsService>()(
-	"@effectified/pi-budget/BudgetEvents",
+	"@effectified/pi-budget/budget-events/BudgetEvents",
 ) {
 	/** A fresh hub with no subscriber; closing the Layer's scope ends every subscriber's Stream. */
 	static readonly layer: Layer.Layer<BudgetEvents> = Layer.effect(
 		BudgetEvents,
 		Effect.gen(function* () {
 			const hub = yield* Effect.acquireRelease(PubSub.unbounded<BudgetEvent>(), PubSub.shutdown);
-			return {
-				publish: (event) => Effect.asVoid(PubSub.publish(hub, event)),
+			return BudgetEvents.of({
+				publish: Effect.fn("BudgetEvents.publish")(function* (event) {
+					yield* PubSub.publish(hub, event);
+				}),
 				stream: Stream.fromPubSub(hub),
 				subscribe: Effect.map(PubSub.subscribe(hub), Stream.fromSubscription),
-			};
+			});
 		}),
 	);
 }

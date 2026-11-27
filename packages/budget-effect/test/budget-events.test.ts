@@ -1,15 +1,23 @@
 import { Effect, Fiber, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { BudgetEvent, BudgetEvents, LeaseFenced } from "../src/index.ts";
+import { BudgetEvent, BudgetEvents, BudgetRequest, LeaseFenced, Reservation } from "../src/index.ts";
 
-const REQUEST = { kind: "chat", provider: "acme", model: "large", session: "s-1", conversation: 3 } as const;
+const REQUEST = Schema.decodeSync(BudgetRequest)({
+	kind: "chat",
+	provider: "acme",
+	model: "large",
+	session: "s-1",
+	conversation: 3,
+});
+
+const R1 = Reservation.make("r1");
 
 const EVENTS: ReadonlyArray<BudgetEvent> = [
-	{ _tag: "Reserved", request: REQUEST, reservation: "r1", estimate: 50_000n, currency: "USD", at: 1 },
+	{ _tag: "Reserved", request: REQUEST, reservation: R1, estimate: 50_000n, currency: "USD", at: 1 },
 	{
 		_tag: "Settled",
 		request: REQUEST,
-		reservation: "r1",
+		reservation: R1,
 		estimate: 50_000n,
 		usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0 },
 		cost: 60n,

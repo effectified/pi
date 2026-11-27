@@ -1,12 +1,19 @@
 // Raw terminal input split into whole sequences by pi-tui's `StdinBuffer`, as a Stream.
 
-import { StdinBuffer, type StdinBufferEventMap, type StdinBufferOptions } from "@earendil-works/pi-tui";
-import { Effect, Queue, Stream } from "effect";
+import { StdinBuffer, type StdinBufferOptions } from "@earendil-works/pi-tui";
+import { Array as Arr, Effect, Queue, Schema, Stream } from "effect";
 
-/** One whole input sequence: a key, a mouse report or a terminal reply (`data`), or one bracketed paste (`paste`). */
-export type InputSequence =
-	| { readonly kind: "data"; readonly sequence: StdinBufferEventMap["data"][0] }
-	| { readonly kind: "paste"; readonly content: StdinBufferEventMap["paste"][0] };
+/**
+ * One whole input sequence: a key, a mouse report or a terminal reply (`data`), or one bracketed paste (`paste`).
+ * `InputSequence.match` takes one handler per `kind`.
+ */
+export const InputSequence = Schema.Union([
+	Schema.Struct({ kind: Schema.Literal("data"), sequence: Schema.String }),
+	Schema.Struct({ kind: Schema.Literal("paste"), content: Schema.String }),
+]).pipe(Schema.toTaggedUnion("kind"));
+
+/** One whole input sequence. */
+export type InputSequence = typeof InputSequence.Type;
 
 /**
  * `chunks` as they come from a terminal, which may cut an escape sequence in two or put several in one, as whole
@@ -35,7 +42,10 @@ export function splitInput<E, R>(
 					}),
 			);
 			yield* Stream.runForEach(chunks, (chunk) => Effect.sync(() => buffer.process(chunk)));
-			for (const sequence of buffer.flush()) Queue.offerUnsafe(queue, { kind: "data", sequence });
+			yield* Queue.offerAll(
+				queue,
+				Arr.map(buffer.flush(), (sequence): InputSequence => ({ kind: "data", sequence })),
+			);
 			yield* Queue.end(queue);
 		}),
 	);

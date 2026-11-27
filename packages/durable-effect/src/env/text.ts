@@ -61,7 +61,7 @@ export function scanLines<E, R>(
 	return Effect.flatMap(
 		Effect.try({
 			try: () => new LineScanner(range.startLine, range.endLine),
-			catch: (cause) => new UnexpectedError({ cause }),
+			catch: (cause) => UnexpectedError.make({ cause }),
 		}),
 		(scanner) =>
 			Effect.map(

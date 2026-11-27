@@ -48,9 +48,11 @@ either way.
    same capability in Effect terms (Effect, Stream, Layer, Scope, Schema, typed errors, interruption).
 3. **Plugins are where our behaviour goes.** They are Pi extensions and host adapters written on the
    facades, each small and separately installable.
-4. **Mergeable by construction.** Our packages follow upstream's rules (Biome formatting, erasable
-   TypeScript, exact pins, Vitest, MIT, no emojis, their `AGENTS.md`), so moving one upstream is a
-   directory move, not a rewrite.
+4. **Mergeable by construction.** Our packages follow upstream's rules (erasable TypeScript, exact pins,
+   Vitest, MIT, no emojis, their `AGENTS.md`), so moving one upstream is a directory move, not a rewrite.
+   Formatting and lint are the exception since 2026-11-27: the owner chose VoidZero's oxc tools (oxfmt, oxlint)
+   for the packages, and upstreaming is not a goal now (2026-11-26); oxfmt's style is Prettier's, which
+   upstream's Biome follows but for one rule.
 5. **Fast lane on top, not instead.** We also run the tests under Bun and typecheck with tsrs, because Bun
    is our runtime and loop speed is our priority. Upstream's `npm run check` and `./test.sh` stay green.
 6. **No product rules.** Nothing here knows about patents, tenants or PatentOS contexts. Products plug in
@@ -260,7 +262,8 @@ const live = Harness.layer({ settings: {} }).pipe(
   through public modules.
 - **Upstream dependency:** each facade depends on exactly one upstream version; a table in `effect/COMPAT.md`
   says which of ours works with which of theirs.
-- **Style:** upstream's Biome config and erasable TypeScript; Effect idioms; errors as `Schema.TaggedError`;
+- **Style:** oxfmt and oxlint (`effect/oxfmt.json`, `effect/oxlint.json`) and erasable TypeScript; Effect idioms
+  (`effect/AGENTS.md`, "Effect-native design"); errors as `Schema.TaggedError`;
   no `throw` in library code; no cast except at a decode boundary.
 - **Determinism:** time and ids only through services; every package testable with scripted models.
 - **Performance:** the facade adds under 5% to a scripted 100-turn run; fork of an idle conversation under
@@ -295,7 +298,7 @@ workspace; the code does not change.
 | Concern | Upstream way (kept green) | Our fast lane (added) |
 |---|---|---|
 | Install | npm workspaces, exact pins | the same lockfile |
-| Format and lint | Biome, upstream config | the same |
+| Format and lint | Biome, upstream config, on upstream's files | oxfmt and oxlint on ours (`effect/scripts/style.ts`) |
 | Typecheck | `tsc` through `npm run check` | `tsrs` per package |
 | Tests | Vitest on Node through `./test.sh` | the same test files under `bun test` |
 | Build | `tsc -p tsconfig.build.json` per package | `effect/scripts/build.ts`, in dependency order |

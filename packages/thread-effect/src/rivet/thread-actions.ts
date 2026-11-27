@@ -6,36 +6,28 @@ import type { Harness } from "@effectified/pi-durable";
 import { Action } from "@effectified/pi-durable-rivet";
 import * as Review from "@effectified/pi-review";
 import { Effect, Schema } from "effect";
+import { RequestKey, ThreadKey } from "../ids.ts";
 import { Outcome } from "../outcome.ts";
 import * as Threads from "../threads.ts";
 import { crossing, Failure, StartFailure } from "./wire.ts";
 
 /** One thread, by the product's key: what every action but `start` takes at least. */
-const Thread = Schema.Struct({ thread: Schema.String });
+const Thread = Schema.Struct({ thread: ThreadKey });
 
 /** What `start` takes: the thread's work, and the request key it is admitted under. */
-const Start = Schema.Struct({ work: Threads.Work, key: Schema.String });
-
-/** What `start` answers: `Threads.Admitted`. */
-const Started = Schema.Struct({ created: Schema.Boolean, key: Schema.String });
+const Start = Schema.Struct({ work: Threads.Work, key: RequestKey });
 
 /** What `resume` takes: the thread, and the request key a continuation of its run is admitted under. */
-const Resume = Schema.Struct({ thread: Schema.String, key: Schema.String });
-
-/** What `resume` answers: `Threads.TakenOn`. */
-const Resumed = Schema.Literals(["continued", "retried", "unchanged"]);
+const Resume = Schema.Struct({ thread: ThreadKey, key: RequestKey });
 
 /** What `release` takes: a person's decision about a held answer. */
-const Release = Schema.Struct({ thread: Schema.String, decision: Review.Decision });
+const Release = Schema.Struct({ thread: ThreadKey, decision: Review.Decision });
 
 /** What `decide` takes: where a pending approval request is, and a person's decision about it. */
 const Decide = Schema.Struct({
-	request: Schema.Struct({ task: Approvals.Request.fields.task, id: Schema.String }),
+	request: Schema.Struct({ task: Approvals.Request.fields.task, id: Approvals.Request.fields.id }),
 	decision: Approvals.Decision,
 });
-
-/** What `decide` answers: `Approvals.Delivery`. */
-const Delivered = Schema.Literals(["delivered", "already_decided", "superseded", "gone", "unknown"]);
 
 /**
  * The thread actions of a thread actor, by name. Each returns once what it was asked is durably admitted or read,
@@ -57,7 +49,7 @@ const Delivered = Schema.Literals(["delivered", "already_decided", "superseded",
 export const actions = {
 	start: Action.make({
 		input: Start,
-		output: Started,
+		output: Threads.Admitted,
 		error: StartFailure,
 		handler: ({ work, key }) =>
 			crossing(
@@ -67,7 +59,7 @@ export const actions = {
 	}),
 	resume: Action.make({
 		input: Resume,
-		output: Resumed,
+		output: Threads.TakenOn,
 		error: Failure,
 		handler: ({ thread, key }) =>
 			crossing(
@@ -90,7 +82,7 @@ export const actions = {
 	}),
 	release: Action.make({
 		input: Release,
-		output: Schema.Literals(["released", "already_released"]),
+		output: Review.Delivery,
 		error: Failure,
 		handler: ({ thread, decision }) =>
 			crossing(
@@ -100,7 +92,7 @@ export const actions = {
 	}),
 	probe: Action.make({
 		input: Thread,
-		output: Schema.Struct({ alive: Schema.Boolean }),
+		output: Threads.Probe,
 		error: Failure,
 		handler: ({ thread }) =>
 			crossing(
@@ -122,12 +114,12 @@ export const actions = {
 		input: Schema.Null,
 		output: Schema.Array(Approvals.Request),
 		error: Failure,
-		handler: (): Effect.Effect<ReadonlyArray<Approvals.Request>, typeof Failure.Type, Harness.Harness> =>
+		handler: (): Effect.Effect<ReadonlyArray<Approvals.Request>, Failure, Harness.Harness> =>
 			crossing("pending", Approvals.pending),
 	}),
 	decide: Action.make({
 		input: Decide,
-		output: Delivered,
+		output: Approvals.Delivery,
 		error: Failure,
 		handler: ({ request, decision }) => crossing("decide", Approvals.decide(request, decision)),
 	}),

@@ -3,7 +3,9 @@
 
 import type { TaskId } from "@effectified/pi-durable";
 import { Doc, Harness } from "@effectified/pi-durable";
-import { Effect, Option, Schema, Stream } from "effect";
+import { Array as Arr, Effect, Option, Schema, Stream } from "effect";
+import type { ThreadNotFound } from "./errors.ts";
+import type { ThreadKey } from "./ids.ts";
 import * as Courier from "./outcome-courier.ts";
 import * as Cursor from "./outcome-cursor.ts";
 import type { Mark } from "./outcome-event.ts";
@@ -28,15 +30,21 @@ import * as Thread from "./thread.ts";
 export const onStorageFork: Effect.Effect<void, Doc.Failure, Harness.Harness> = Effect.gen(function* () {
 	// Where every copied thread stands, read before the commit: a commit reads only through its transaction.
 	const couriers = yield* Stream.runCollect(Harness.scanTasks({ kind: Courier.task.name }));
-	const threads = new Set(couriers.flatMap((courier) => Option.toArray(decodeInput(courier.input))).map(threadOf));
-	const reached = yield* Effect.forEach([...threads], (thread) =>
-		Effect.map(standingOf(thread), (mark) => ({ thread, mark })),
+	const inputs = Arr.getSomes(Arr.map(couriers, (courier) => decodeInput(courier.input)));
+	const threads = Arr.dedupe(Arr.map(inputs, (input) => input.thread));
+	const reached = yield* Effect.forEach(
+		threads,
+		(thread) => Effect.map(standingOf(thread), (mark) => ({ thread, mark })),
+		{ concurrency: CONCURRENT_THREADS },
 	);
-	yield* Harness.commit((tx) =>
-		Effect.gen(function* () {
+	yield* Harness.commit(
+		Effect.fnUntraced(function* (tx) {
 			// Pi's rule for a commit: every table read comes before the first write.
 			const newest = yield* tx.scanTasks({ order: "descending" }, 1);
-			yield* Effect.flatMap(tx.doc(Copy), (mark) => mark.set({ through: newest.items[0]?.id ?? 0 }));
+			const copy = yield* tx.doc(Copy);
+			yield* copy.set({
+				through: Option.match(Arr.head(newest.items), { onNone: () => 0, onSome: (task) => task.id }),
+			});
 			for (const { thread, mark } of reached) {
 				const cursor = yield* tx.doc(Cursor.Document, thread, null);
 				const held = yield* cursor.get;
@@ -47,12 +55,11 @@ export const onStorageFork: Effect.Effect<void, Doc.Failure, Harness.Harness> = 
 	);
 });
 
+/** Threads whose standing is read at once. */
+const CONCURRENT_THREADS = 8;
+
 // Stored input: a courier's own, as Pi kept it.
 const decodeInput = Schema.decodeUnknownOption(Courier.Input);
-
-function threadOf(input: typeof Courier.Input.Type): string {
-	return input.thread;
-}
 
 /**
  * The mark of the newest event of the thread as it stands, resting on the newest entry: after it nothing is due until
@@ -60,20 +67,22 @@ function threadOf(input: typeof Courier.Input.Type): string {
  * it rests there too. None for a thread without a submission, and for a key whose thread document the copy does not
  * hold.
  */
-function standingOf(thread: string): Effect.Effect<Option.Option<Mark>, Doc.Failure, Harness.Harness> {
-	return Effect.gen(function* () {
+const standingOf = Effect.fn("StorageFork.standingOf")(
+	function* (thread: ThreadKey): Effect.fn.Return<Option.Option<Mark>, Doc.Failure | ThreadNotFound, Harness.Harness> {
 		const conversation = yield* Thread.conversation(thread);
 		const sight = yield* Standing.sight(thread, conversation);
-		if (Option.isNone(sight)) return Option.none<Mark>();
+		if (Option.isNone(sight)) return Option.none();
 		const submission = sight.value.record.id;
-		const entry = Option.getOrElse(yield* conversation.head, () => 0);
+		const head = yield* conversation.head;
+		const entry = Option.getOrElse(head, () => 0);
 		const state = Option.match(sight.value.ending, {
 			onNone: () => "Started" as const,
 			onSome: (ending) => ending._tag,
 		});
-		return Option.some<Mark>({ submission, entry, state });
-	}).pipe(Effect.catchTag("ThreadNotFound", () => Effect.succeedNone));
-}
+		return Option.some({ submission, entry, state });
+	},
+	Effect.catchTag("ThreadNotFound", () => Effect.succeedNone),
+);
 
 /**
  * Written on a storage that was copied from another one, kind `thread.copy`: the tasks with an id up to `through`
@@ -84,7 +93,7 @@ const Copy = Doc.make({
 	kind: "thread.copy",
 	version: 1,
 	scope: "session",
-	schema: Schema.Struct({ through: Schema.Number }),
+	schema: Schema.Struct({ through: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) }),
 	initial: () => ({ through: 0 }),
 	// One number, written once per copy.
 	checkpointWhen: () => true,
@@ -96,5 +105,5 @@ const Copy = Doc.make({
  */
 export const inherited: Effect.Effect<(task: TaskId) => boolean, Doc.Failure, Harness.Harness> = Effect.map(
 	Harness.snapshot(Copy),
-	(mark) => (task) => Option.isSome(mark) && task <= mark.value.through,
+	(mark) => (task) => Option.exists(mark, ({ through }) => task <= through),
 );

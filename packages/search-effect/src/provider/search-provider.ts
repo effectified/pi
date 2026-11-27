@@ -15,5 +15,5 @@ export interface SearchProviderService {
 
 /** The search provider of this program. A provider file gives it as a Layer (`@effectified/pi-search/exa`). */
 export class SearchProvider extends Context.Service<SearchProvider, SearchProviderService>()(
-	"@effectified/pi-search/SearchProvider",
+	"@effectified/pi-search/provider/search-provider/SearchProvider",
 ) {}

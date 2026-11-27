@@ -10,17 +10,18 @@ import {
 	ForkTooDeep,
 	NotIdle,
 } from "../src/errors.ts";
+import { ActorId } from "../src/ids.ts";
 
 describe("the host's errors", () => {
 	it("are tagged, and say what failed", () => {
 		const errors = [
-			new NotIdle({ actorId: "a1", tasks: 2, submissions: 1 }),
-			new ActorGone({ actor: "agent", actorId: "a1" }),
-			new EngineUnavailable({ code: "actor.fork_unavailable", message: "Forks are paused.", retryable: true }),
-			new ActionFailed({ action: "ask", error: { secret: "content" } }),
-			new ActorDefect({ action: "ask", message: "the handler broke" }),
-			new ForkKeyHeld({ actor: "agent", key: ["job", "7"], heldBy: "a2" }),
-			new ForkTooDeep({ actor: "agent", actorId: "a1", reason: "16 forks deep." }),
+			NotIdle.make({ actorId: ActorId.make("a1"), tasks: 2, submissions: 1 }),
+			ActorGone.make({ actor: "agent", actorId: ActorId.make("a1") }),
+			EngineUnavailable.make({ code: "actor.fork_unavailable", message: "Forks are paused.", retryable: true }),
+			ActionFailed.make({ action: "ask", error: { secret: "content" } }),
+			ActorDefect.make({ action: "ask", message: "the handler broke" }),
+			ForkKeyHeld.make({ actor: "agent", key: ["job", "7"], heldBy: ActorId.make("a2") }),
+			ForkTooDeep.make({ actor: "agent", actorId: ActorId.make("a1"), reason: "16 forks deep." }),
 		];
 		expect(errors.map((error) => [error._tag, error.message])).toEqual([
 			["NotIdle", "Actor a1 is not idle: 2 live tasks, 1 unsettled submissions"],

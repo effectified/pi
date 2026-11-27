@@ -8,4 +8,4 @@ import { Context } from "effect";
  * so it can be handed to what takes one (an `Editor`, a `Loader`); the functions of `Tui` are the Effect way to
  * drive it.
  */
-export class Tui extends Context.Service<Tui, TUI>()("@effectified/pi-tui/Tui") {}
+export class Tui extends Context.Service<Tui, TUI>()("@effectified/pi-tui/tui-service/Tui") {}

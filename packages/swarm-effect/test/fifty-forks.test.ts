@@ -5,7 +5,7 @@ import { Harness } from "@effectified/pi-durable";
 import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import * as Swarm from "../src/index.ts";
-import { asked, harness, jobsOf, Measure, measured, model, primed, words } from "./support.ts";
+import { asked, harness, jobsOf, keys, Measure, measured, model, primed, words } from "./support.ts";
 
 const TURNS = 30;
 const JOBS = 50;
@@ -16,21 +16,21 @@ describe("a swarm of 50 forks of a primed conversation of 30 turns, cap 8", () =
 	it("gives every fork the 30 turns, never exceeds the cap, fans 50 typed results in in job order, and cleans up", async () => {
 		const counts = asked();
 		const list = words(JOBS);
-		const pins = ["job-w0", `job-${list[49]}`];
+		const pins = keys("job-w0", `job-${list[49]}`);
 		const begun = performance.now();
 		const seen = await Effect.runPromise(
 			Effect.gen(function* () {
 				const root = yield* primed(TURNS);
 				const primedAt = performance.now();
 				yield* Swarm.start(Measure, {
-					id: "fifty",
+					id: Swarm.SwarmId.make("fifty"),
 					source: root.id,
 					jobs: jobsOf(list),
 					cap: CAP,
 					onFailure: "fail",
 					pins,
 				});
-				const result = yield* Swarm.result(Measure, "fifty");
+				const result = yield* Swarm.result(Measure, Swarm.SwarmId.make("fifty"));
 				const swarmMillis = performance.now() - primedAt;
 				const driver = yield* Swarm.ForkDriver;
 				const stored = yield* Harness.commit((tx) => tx.scanConversations({}, 1000));
@@ -38,7 +38,7 @@ describe("a swarm of 50 forks of a primed conversation of 30 turns, cap 8", () =
 				return {
 					result,
 					swarmMillis,
-					kept: yield* driver.list("fifty"),
+					kept: yield* driver.list(Swarm.SwarmId.make("fifty")),
 					stored: stored.items,
 					root: root.id,
 					turns,

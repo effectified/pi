@@ -15,19 +15,20 @@ export interface Conditions {
 
 /** New conditions, with none waiting. */
 export function conditions(): Conditions {
+	// A set, not a `Ref`: a fake calls `changed` synchronously, outside any Effect.
 	const waiting = new Set<{ readonly holds: () => boolean; readonly latch: Latch.Latch }>();
 	return {
-		when: (holds) =>
-			Effect.suspend(() => {
-				if (holds()) return Effect.void;
-				const wait = { holds, latch: Latch.makeUnsafe() };
-				waiting.add(wait);
-				// Gone once it was met or given up, so a fake asked many times keeps only the waits that still wait.
-				return Effect.ensuring(
-					wait.latch.await,
-					Effect.sync(() => waiting.delete(wait)),
-				);
-			}),
+		when: Effect.fn("Conditions.when")(function* (holds: () => boolean) {
+			if (holds()) return;
+			// Made and registered in the same step as the check, so a `changed` in between cannot be missed.
+			const wait = { holds, latch: Latch.makeUnsafe() };
+			waiting.add(wait);
+			// Gone once it was met or given up, so a fake asked many times keeps only the waits that still wait.
+			yield* Effect.ensuring(
+				wait.latch.await,
+				Effect.sync(() => waiting.delete(wait)),
+			);
+		}),
 		changed: () => {
 			for (const wait of waiting) if (wait.holds()) wait.latch.openUnsafe();
 		},

@@ -19,7 +19,7 @@ import type {
 } from "@earendil-works/pi-durable";
 import type { JsonValue } from "@effectified/pi-chord/json";
 import type { SchemaConversionError, SchemaDecodeError } from "@effectified/pi-schema";
-import { Effect, Option, type Schema, type Stream } from "effect";
+import { Effect, Option, Ref, type Schema, type Stream } from "effect";
 import { call } from "./call.ts";
 import * as Doc from "./doc.ts";
 import * as Entries from "./entries.ts";
@@ -185,7 +185,7 @@ export function running<I, S, A>(
 	record: Record,
 	codec: Codec<I, S, A>,
 ): Effect.Effect<Running<I, S>, SchemaDecodeError> {
-	return Effect.all([codec.input(record.input), codec.checkpoint(record.state.checkpoint)]).pipe(
+	return Effect.all([codec.input(record.input), codec.checkpoint(record.state.checkpoint)], { concurrency: 1 }).pipe(
 		Effect.map(([input, state]) => ({
 			id: record.id,
 			conversationId: record.conversationId,
@@ -199,98 +199,109 @@ export function running<I, S, A>(
 
 /** The Effect form of the runtime Pi gives a task's handler. Its Pi calls run under the handler's `ParentContext`. */
 export function fromPi<I, S, A>(runtime: Runtime, codec: Codec<I, S, A>): Api<I, S, A> {
-	const entry = (id: EntryId) =>
-		Effect.map(
-			call((context) => runtime.entry(id, context)),
-			Option.fromUndefinedOr,
-		);
-	const outcomes = <R>(ids: ReadonlyArray<TaskId<R>>) => call((context) => runtime.outcomes(ids, context));
+	const entry = Effect.fn("TaskApi.entry")(function* (id: EntryId) {
+		const found = yield* call((context) => runtime.entry(id, context));
+		return Option.fromUndefinedOr(found);
+	});
+	const outcomes = Effect.fn("TaskApi.outcomes")(function* <R>(ids: ReadonlyArray<TaskId<R>>) {
+		return yield* call((context) => runtime.outcomes(ids, context));
+	});
 	return {
 		...Doc.reader(runtime),
 		taskId: runtime.taskId,
 		conversationId: runtime.conversationId,
 		now: Effect.sync(() => runtime.now()),
 		agent: call((context) => runtime.agent(context)),
-		commit: (change, options) =>
-			Effect.as(
-				Tx.during((inside, context) =>
-					runtime.commit(
-						(tx, current) =>
-							inside(tx, (transaction) =>
-								running(current, codec).pipe(
-									Effect.flatMap((task) => change(transaction, task)),
-									Effect.flatMap((step) => Step.toPi(step, codec)),
-								),
+		commit: Effect.fn("TaskApi.commit")(function* <E, R>(
+			change: (tx: Tx.Tx, current: Running<I, S>) => Effect.Effect<Step.Step<S, A> | Step.Unchanged, E, R>,
+			options?: CommitOptions,
+		) {
+			yield* Tx.during<void, E | Failure, R>((inside, context) =>
+				runtime.commit(
+					(tx, current) =>
+						inside(tx, (transaction) =>
+							running(current, codec).pipe(
+								Effect.flatMap((task) => change(transaction, task)),
+								Effect.flatMap((step) => Step.toPi(step, codec)),
 							),
-						context,
-						options,
-					),
+						),
+					context,
+					options,
 				),
-				Step.committed,
-			),
-		commitReturning: <B, E, R>(
+			);
+			return Step.committed;
+		}),
+		commitReturning: Effect.fn("TaskApi.commitReturning")(function* <B, E, R>(
 			change: (tx: Tx.Tx, current: Running<I, S>) => Effect.Effect<Returning<S, A, B>, E, R>,
 			options?: CommitOptions,
-		) =>
-			Tx.during<B, E | Failure, R>((inside, context) => {
-				// Pi's commit resolves with nothing: the body's value leaves through here.
-				let returned: B | undefined;
-				return (
-					runtime
-						.commit(
-							(tx, current) =>
-								inside(tx, (transaction) =>
-									running(current, codec).pipe(
-										Effect.flatMap((task) => change(transaction, task)),
-										Effect.flatMap(({ step, value }) =>
-											Effect.map(Step.toPi(step, codec), (next) => {
-												returned = value;
-												return next;
-											}),
-										),
-									),
-								),
-							context,
-							options,
-						)
-						// Pi stores the commit only after the body succeeded, which set the value.
-						.then(() => returned as B)
-				);
-			}),
+		) {
+			// Pi's commit resolves with nothing: the body's value leaves through here.
+			const returned = yield* Ref.make(Option.none<B>());
+			yield* Tx.during<void, E | Failure, R>((inside, context) =>
+				runtime.commit(
+					(tx, current) =>
+						inside(tx, (transaction) =>
+							running(current, codec).pipe(
+								Effect.flatMap((task) => change(transaction, task)),
+								Effect.tap(({ value }) => Ref.set(returned, Option.some(value))),
+								Effect.flatMap(({ step }) => Step.toPi(step, codec)),
+							),
+						),
+					context,
+					options,
+				),
+			);
+			const value = yield* Ref.get(returned);
+			// Pi stores the commit only after the body succeeded, which set the value.
+			if (Option.isNone(value))
+				return yield* Effect.die(new Error("Pi stored a task commit whose body gave no value"));
+			return value.value;
+		}),
 		memo: Memo.fromPi(runtime),
 		readSignal: (signal, key) => Signal.read(runtime, signal, key),
-		getTask: (id) =>
-			Effect.map(
-				call((context) => runtime.getTask(id, context)),
-				Option.fromUndefinedOr,
-			),
-		waitForTask: (id) => call((context) => runtime.waitForTask(id, context)),
-		abortOwned: (id) => call((context) => runtime.abortOwned(id, context)),
+		getTask: Effect.fn("TaskApi.getTask")(function* <R>(id: TaskId<R>) {
+			const found = yield* call((context) => runtime.getTask(id, context));
+			return Option.fromUndefinedOr(found);
+		}),
+		waitForTask: Effect.fn("TaskApi.waitForTask")(function* <R>(id: TaskId<R>) {
+			return yield* call((context) => runtime.waitForTask(id, context));
+		}),
+		abortOwned: Effect.fn("TaskApi.abortOwned")(function* (id: TaskId) {
+			return yield* call((context) => runtime.abortOwned(id, context));
+		}),
 		ownedTasks: call((context) => runtime.ownedTasks(context)),
 		outcomes,
-		outcomesOf: (task, ids) => Effect.flatMap(outcomes(ids), Effect.forEach(task.outcome)),
-		conversation: (id) =>
-			Effect.map(
-				call((context) => runtime.conversation(id, context)),
-				(found) => Option.map(Option.fromUndefinedOr(found), ToolApi.handle),
-			),
+		outcomesOf: Effect.fn("TaskApi.outcomesOf")(function* <B>(task: Task.Kind<never, B>, ids: ReadonlyArray<TaskId>) {
+			const stored = yield* outcomes(ids);
+			return yield* Effect.forEach(stored, task.outcome, { concurrency: 1 });
+		}),
+		conversation: Effect.fn("TaskApi.conversation")(function* (id: ConversationId) {
+			const found = yield* call((context) => runtime.conversation(id, context));
+			return Option.map(Option.fromUndefinedOr(found), ToolApi.handle);
+		}),
 		entry,
 		entryOf: (kind, id) => Entry.typed(kind, entry(id)),
 		entries: (query) => Entries.stream((...page) => runtime.entries(...page), query),
-		context: (conversationId, options) => call((context) => runtime.context(conversationId, context, options)),
+		context: Effect.fn("TaskApi.context")(function* (
+			conversationId: ConversationId,
+			options?: { readonly at?: EntryId },
+		) {
+			return yield* call((context) => runtime.context(conversationId, context, options));
+		}),
 		report: (error, from) => Effect.sync(() => runtime.report(error, from)),
-		eachHook: <H extends TaskHooks.Handlers, K extends keyof H & string, E, R>(
-			_hooks: TaskHooks.TaskHooks<H>,
-			name: K,
-			ask: (handler: H[K]) => Effect.Effect<void, E, R>,
-		) =>
-			Effect.flatMap(Effect.context<R>(), (context) => {
-				const invoke = invoker(context);
-				// Pi types a task's own hooks by its definition, which this package leaves open (`object`): `hooks`, made
-				// for this task's kind, types the answers the registry holds for it.
-				const runner = runtime.hooks as unknown as HookRunner<H>;
-				return call((invocation) => runner.each(name, (handler) => invoke(ask(handler), invocation)));
-			}),
+		eachHook: Effect.fn("TaskApi.eachHook")(function* <
+			H extends TaskHooks.Handlers,
+			K extends keyof H & string,
+			E,
+			R,
+		>(_hooks: TaskHooks.TaskHooks<H>, name: K, ask: (handler: H[K]) => Effect.Effect<void, E, R>) {
+			const services = yield* Effect.context<R>();
+			const invoke = invoker(services);
+			// Pi types a task's own hooks by its definition, which this package leaves open (`object`): `hooks`, made
+			// for this task's kind, types the answers the registry holds for it.
+			const runner = runtime.hooks as unknown as HookRunner<H>;
+			return yield* call((invocation) => runner.each(name, (handler) => invoke(ask(handler), invocation)));
+		}),
 		timer: (millis) =>
 			Effect.callback<void>((resume) => {
 				const disarm = runtime.setTimer(() => resume(Effect.void), millis);

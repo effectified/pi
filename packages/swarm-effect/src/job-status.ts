@@ -2,8 +2,9 @@
 
 import type { ConversationId, EntryRecord } from "@effectified/pi-durable";
 import { type Doc, Harness } from "@effectified/pi-durable";
-import { Effect, Option } from "effect";
-import type { JobStatus } from "./driver.ts";
+import { Array as Arr, Effect, Match, Option } from "effect";
+import { JobStatus } from "./driver.ts";
+import type { RequestId } from "./ids.ts";
 
 /**
  * Where the request `requestId` stands in the conversation: its submission's record, and the answer's text once it
@@ -11,35 +12,46 @@ import type { JobStatus } from "./driver.ts";
  */
 export function jobStatus(
 	conversationId: ConversationId,
-	requestId: string,
+	requestId: RequestId,
 ): Effect.Effect<JobStatus, Doc.Failure, Harness.Harness> {
 	// A commit that only reads: a submission by its request id is a table read, which Pi gives a transaction only.
 	return Harness.commit((tx) =>
-		Effect.gen(function* () {
-			const submission = yield* tx.submissionByRequest(conversationId, requestId);
-			if (Option.isNone(submission)) return { _tag: "Unknown" };
-			const record = submission.value;
-			switch (record.status) {
-				case "queued":
-				case "placed":
-					return { _tag: "Running" };
-				case "unanswered":
-					return { _tag: "Unanswered", reason: record.reason };
-				case "done": {
-					const answer = Option.fromUndefinedOr(record.answer);
-					if (Option.isNone(answer)) return { _tag: "Unanswered", reason: "The submission was not an input" };
-					const entry = yield* tx.entry(answer.value);
-					return { _tag: "Answered", text: Option.match(entry, { onNone: () => "", onSome: textOf }) };
-				}
-			}
-		}),
+		Effect.flatMap(
+			tx.submissionByRequest(conversationId, requestId),
+			Option.match({
+				onNone: () => Effect.succeed(UNKNOWN),
+				onSome: (record) =>
+					Match.value(record).pipe(
+						Match.discriminatorsExhaustive("status")({
+							queued: () => Effect.succeed(RUNNING),
+							placed: () => Effect.succeed(RUNNING),
+							unanswered: ({ reason }) => Effect.succeed(JobStatus.cases.Unanswered.make({ reason })),
+							done: ({ answer }) =>
+								answer === undefined
+									? Effect.succeed(NOT_AN_INPUT)
+									: Effect.map(tx.entry(answer), (entry) =>
+											JobStatus.cases.Answered.make({
+												text: Option.match(entry, { onNone: () => "", onSome: textOf }),
+											}),
+										),
+						}),
+					),
+			}),
+		),
 	);
 }
 
+const UNKNOWN: JobStatus = JobStatus.cases.Unknown.make({});
+
+const RUNNING: JobStatus = JobStatus.cases.Running.make({});
+
+const NOT_AN_INPUT: JobStatus = JobStatus.cases.Unanswered.make({ reason: "The submission was not an input" });
+
 /** The text a model wrote in an answer entry: its text parts, in order. */
 function textOf(entry: EntryRecord): string {
-	return (entry.model ?? [])
-		.flatMap((message) => (message.role === "assistant" ? message.content : []))
-		.flatMap((part) => (part.type === "text" ? [part.text] : []))
-		.join("");
+	const parts = Arr.flatMap(entry.model ?? [], (message) => (message.role === "assistant" ? message.content : []));
+	return Arr.join(
+		Arr.flatMap(parts, (part) => (part.type === "text" ? [part.text] : [])),
+		"",
+	);
 }

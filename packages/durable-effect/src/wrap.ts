@@ -2,7 +2,7 @@
 
 import type { Wrap as PiWrap } from "@earendil-works/pi-durable";
 import { Effect } from "effect";
-import { type Invoke, invoker } from "./invocation.ts";
+import { built, type Invoke, invoker } from "./invocation.ts";
 
 /**
  * A wrapper made by `Tool.wrap` or `Section.wrap`: what an extension holds in `wraps` and a registry installs. It
@@ -23,5 +23,5 @@ export type Services<W> = W extends { readonly registration: Effect.Effect<infer
 
 /** A wrapper whose Pi form `build` makes, with an `Invoke` on the context the registration is run in. */
 export function registered<R>(build: (invoke: Invoke<R>) => PiWrap): Wrap<R> {
-	return { registration: Effect.map(Effect.context<R>(), (context) => build(invoker(context))) };
+	return { registration: Effect.map(Effect.context<R>(), (context) => build(invoker(built(context)))) };
 }

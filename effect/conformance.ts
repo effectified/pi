@@ -20,9 +20,8 @@ export type Mutable<T, Depth extends readonly unknown[] = []> = Depth["length"] 
 			: { -readonly [K in keyof T]: Mutable<T[K], [...Depth, unknown]> };
 
 /** Two-way equality, readonly ignored: `true`, or an object that names the difference (the compiler prints it). */
-export type Conform<Ours, Pi> = Equals<Mutable<Ours>, Mutable<Pi>> extends true
-	? true
-	: Difference<Mutable<Ours>, Mutable<Pi>>;
+export type Conform<Ours, Pi> =
+	Equals<Mutable<Ours>, Mutable<Pi>> extends true ? true : Difference<Mutable<Ours>, Mutable<Pi>>;
 
 type UnionToIntersection<U> = (U extends unknown ? (member: U) => void : never) extends (all: infer I) => void
 	? I

@@ -1,7 +1,7 @@
 // Chord's `SqliteDatabase` over an Effect `SqlClient`, so Pi's SQLite storage runs on any Effect SQLite driver.
 
 import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "@effectified/pi-chord/sqlite";
-import { Cause, type Context, Effect, Exit } from "effect";
+import { Array as Arr, Cause, type Context, Effect, Exit, Option } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";
 
@@ -15,8 +15,10 @@ import type { SqlError } from "effect/sql/SqlError";
  */
 export const make: Effect.Effect<SqliteDatabase, never, SqlClient> = Effect.gen(function* () {
 	// Pi's names are the stored names: a client configured to rename columns must not rename these.
-	const sql = (yield* SqlClient).withoutTransforms();
-	const run = runner(yield* Effect.context<never>());
+	const client = yield* SqlClient;
+	const sql = client.withoutTransforms();
+	const services = yield* Effect.context<never>();
+	const run = runner(services);
 	const transaction = <T>(callback: (transaction: SqliteExecutor) => Promise<T>): Promise<T> =>
 		run(
 			sql.withTransaction(
@@ -52,24 +54,32 @@ function runner(context: Context.Context<never>): Run {
 function rejection(cause: Cause.Cause<SqlError>): unknown {
 	if (cause.reasons.length === 1) return Cause.squash(cause);
 	return new AggregateError(
-		cause.reasons.map((reason) => Cause.squash(Cause.fromReasons([reason]))),
+		Arr.map(cause.reasons, (reason) => Cause.squash(Cause.fromReasons([reason]))),
 		"SQLite transaction failed and rollback failed",
 	);
 }
 
+/**
+ * Chord's statements on `sql`, each one Effect run as a promise. The rows are Pi's own to decode: Chord's contract is
+ * typed by the caller (`get<T>`, `all<T>`), and Pi parses the JSON records it stores itself.
+ */
 function executor(sql: SqlClient, run: Run): SqliteExecutor {
-	const all = <T extends object>(text: string, params: SqliteValue[]): Promise<ReadonlyArray<T>> =>
-		run(sql.unsafe<T>(text, params));
 	return {
 		exec: (text) => run(Effect.asVoid(sql.unsafe(text).unprepared)),
 		run: (text, ...params) => run(Effect.asVoid(sql.unsafe(text, params))),
-		runCounted: async (text, ...params) => {
-			await all(text, params);
-			const counted = await all<{ readonly changes: number }>("SELECT changes() AS changes", []);
-			return Number(counted[0]?.changes);
-		},
-		get: async <T extends object>(text: string, ...params: SqliteValue[]) => (await all<T>(text, params))[0],
+		runCounted: (text, ...params) =>
+			run(
+				Effect.andThen(
+					sql.unsafe(text, params),
+					Effect.map(sql.unsafe<{ readonly changes: number }>("SELECT changes() AS changes"), (counted) =>
+						Number(Option.getOrUndefined(Arr.head(counted))?.changes),
+					),
+				),
+			),
+		get: <T extends object>(text: string, ...params: SqliteValue[]) =>
+			run(Effect.map(sql.unsafe<T>(text, params), (rows) => Option.getOrUndefined(Arr.head(rows)))),
 		// A decode boundary: Effect types the rows read-only, and this array is the driver's own, handed to one caller.
-		all: <T extends object>(text: string, ...params: SqliteValue[]) => all<T>(text, params) as Promise<T[]>,
+		all: <T extends object>(text: string, ...params: SqliteValue[]) =>
+			run(sql.unsafe<T>(text, params)) as Promise<T[]>,
 	};
 }

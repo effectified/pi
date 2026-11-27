@@ -35,7 +35,7 @@ const conversations = Effect.map(
 );
 
 const plan = (id: string, source: Swarm.Plan<unknown>["source"], words: ReadonlyArray<string>) => ({
-	id,
+	id: Swarm.SwarmId.make(id),
 	source,
 	jobs: jobsOf(words),
 	cap: 2,
@@ -59,8 +59,8 @@ describe("ForkSetup", () => {
 				const root = yield* primed(1);
 				const before = yield* conversations;
 				yield* Swarm.start(Measure, plan("set-up", root.id, ["a", "bb", "ccc"]));
-				const outcome = yield* Swarm.result(Measure, "set-up");
-				const status = yield* Swarm.status("set-up");
+				const outcome = yield* Swarm.result(Measure, Swarm.SwarmId.make("set-up"));
+				const status = yield* Swarm.status(Swarm.SwarmId.make("set-up"));
 				const made = (yield* conversations).filter((id) => !before.includes(id));
 				const granted = yield* Effect.forEach(made, (id) => Harness.snapshot(Granted, String(id)));
 				return { root: root.id, outcome, status, made, granted };
@@ -102,7 +102,7 @@ describe("ForkSetup", () => {
 				const root = yield* primed(1);
 				const before = yield* conversations;
 				yield* Swarm.start(Measure, plan("refused", root.id, ["a", "bb", "ccc"]));
-				const outcome = yield* Swarm.result(Measure, "refused");
+				const outcome = yield* Swarm.result(Measure, Swarm.SwarmId.make("refused"));
 				return { outcome, made: (yield* conversations).length - before.length };
 			}),
 			counts,
@@ -133,8 +133,11 @@ describe("ForkSetup", () => {
 			Effect.gen(function* () {
 				const root = yield* primed(1);
 				yield* Swarm.start(Measure, plan("unstarted", root.id, ["a", "bb"]));
-				const outcome = yield* Swarm.result(Measure, "unstarted");
-				return { outcome, left: yield* Swarm.ForkDriver.use((driver) => driver.list("unstarted")) };
+				const outcome = yield* Swarm.result(Measure, Swarm.SwarmId.make("unstarted"));
+				return {
+					outcome,
+					left: yield* Swarm.ForkDriver.use((driver) => driver.list(Swarm.SwarmId.make("unstarted"))),
+				};
 			}),
 			counts,
 		);
@@ -159,7 +162,7 @@ describe("ForkSetup", () => {
 				const root = yield* Harness.root;
 				yield* root.commit((tx) => tx.appendEntry(root.id, { kind: "test.primed" }));
 				yield* Swarm.start(Measure, plan("remote", root.id, ["a", "bb"]));
-				return yield* Swarm.result(Measure, "remote");
+				return yield* Swarm.result(Measure, Swarm.SwarmId.make("remote"));
 			}).pipe(
 				Effect.provide(
 					TestHarness.layer({ extensions: [Swarm.extension([Measure])] }).pipe(

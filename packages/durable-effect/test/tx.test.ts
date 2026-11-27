@@ -3,7 +3,7 @@ import { runTest } from "@effectified/pi-ai/testing";
 import type { SchemaDecodeError } from "@effectified/pi-schema";
 import { Cause, Context, Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { Doc, type DurableError, Extension, Harness, Registry, Signal, Task, Tx } from "../src/index.ts";
+import { Doc, type DurableError, Extension, Harness, Registry, Signal, Task, ToolName, Tx } from "../src/index.ts";
 import { runBoth } from "./parity.ts";
 import { AGENT, answer, harnessLayer } from "./scripted.ts";
 
@@ -28,7 +28,9 @@ const PiTodos = defineDoc<{ items: string[] }>({
 	checkpointWhen: () => false,
 });
 
-class Rejected extends Schema.TaggedError<Rejected>()("Rejected", { why: Schema.String }) {}
+class Rejected extends Schema.TaggedError<Rejected, { readonly brand: unique symbol }>()("Rejected", {
+	why: Schema.String,
+}) {}
 
 class Limits extends Context.Service<Limits, { readonly max: number }>()("test/Limits") {}
 
@@ -235,7 +237,11 @@ describe("conversations in a commit", () => {
 						const owned = (yield* tx.scanConversations({}, 10)).items.map((conversation) => conversation.id);
 						const created = yield* tx.createConversation({ ownership: { kind: "ownerless" } });
 						const fork = yield* tx.forkConversation(root.id, head, { ownership: { kind: "ownerless" } });
-						yield* tx.configure(created.id, { ...AGENT, instructions: "Be brief.", tools: ["lookup"] });
+						yield* tx.configure(created.id, {
+							...AGENT,
+							instructions: "Be brief.",
+							tools: [ToolName.make("lookup")],
+						});
 						return { owned, created: created.id, fork: fork.parent };
 					}),
 				);

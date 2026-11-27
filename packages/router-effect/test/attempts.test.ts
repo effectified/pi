@@ -9,6 +9,7 @@ import {
 	isRetryableAssistantError,
 	type ProviderResponse,
 } from "@earendil-works/pi-ai";
+import { ProviderId } from "@effectified/pi-ai";
 import { runTest } from "@effectified/pi-ai/testing";
 import { Deferred, Effect, Exit, Fiber, Latch } from "effect";
 import { TestClock } from "effect/testing";
@@ -17,15 +18,32 @@ import { type AttemptServices, type RoutedRequest, serve } from "../src/attempts
 import {
 	AttemptSettlement,
 	type AttemptSettlementService,
+	ConcurrencyKey,
 	Limiter,
 	type LimiterOptions,
 	type Route,
 	type RouteEvent,
+	RouterRequestId,
 } from "../src/index.ts";
-import { context, failing, hanging, label, PRICE, recording, route, scripted, summary } from "./scripted.ts";
+import {
+	context,
+	FAST,
+	failing,
+	hanging,
+	label,
+	PRICE,
+	Refused,
+	recording,
+	route,
+	scripted,
+	summary,
+} from "./scripted.ts";
 
 /** The services of a router over `handles`, with a recording event hub. Every key has four slots unless given. */
-const setup = Effect.fnUntraced(function* (handles: FauxProviderHandle[], options: LimiterOptions = { limits: {} }) {
+const setup = Effect.fnUntraced(function* (
+	handles: FauxProviderHandle[],
+	options: typeof LimiterOptions.Encoded = { limits: {} },
+) {
 	const models = createModels();
 	for (const handle of handles) models.setProvider(handle.provider);
 	const { seen, events, when } = recording();
@@ -34,7 +52,7 @@ const setup = Effect.fnUntraced(function* (handles: FauxProviderHandle[], option
 		...options.limits,
 	};
 	const limiter = yield* Limiter.make({ ...options, limits });
-	const services: AttemptServices = { router: "router", models, limiter, events };
+	const services: AttemptServices = { router: ProviderId.make("router"), models, limiter, events };
 	return { services, seen, when, models };
 });
 
@@ -46,9 +64,9 @@ function request(
 ): RoutedRequest {
 	return {
 		request: 1,
-		id: "router-a-1",
+		id: RouterRequestId.make("router-a-1"),
 		key: undefined,
-		alias: "fast",
+		alias: FAST,
 		routes,
 		context,
 		options,
@@ -349,6 +367,8 @@ describe("serve", () => {
 		expect(served.stopReason).toBe("stop");
 		// 1.5 input tokens are charged as 2, at 3.0 micro units each; the other counts are not positive numbers.
 		expect(seen.map((event) => [event.outcome, event.cost])).toEqual([["served", { currency: "USD", micros: 6n }]]);
+		// The event records the counts as reported, but a count that is not a finite number, which it records as zero.
+		expect(seen[0]?.usage).toEqual({ input: 1.5, output: 0, cacheRead: -4, cacheWrite: 0 });
 	});
 
 	it("skips a route whose provider is gone or has no credentials, and records it as unavailable", async () => {
@@ -541,7 +561,7 @@ describe("serve", () => {
 		const result = await runTest(
 			Effect.gen(function* () {
 				const { services, seen } = yield* setup([a]);
-				yield* services.limiter.backOff("a");
+				yield* services.limiter.backOff(ConcurrencyKey.make("a"));
 				// Started at once, it is waiting for its key when the fork returns.
 				const fiber = yield* Effect.forkChild(serve(services, request([route("a")])), { startImmediately: true });
 				yield* TestClock.adjust("400 millis");
@@ -562,7 +582,7 @@ function settling(refuses: (event: RouteEvent) => string | undefined = () => und
 			Effect.suspend(() => {
 				handed.push(event);
 				const reason = refuses(event);
-				return reason === undefined ? Effect.void : Effect.fail(new Error(reason));
+				return reason === undefined ? Effect.void : Effect.fail(new Refused({ message: reason }));
 			}),
 	};
 	return { handed, port };

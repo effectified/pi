@@ -3,7 +3,7 @@
 import type { JsonObject, ToolHooks } from "@earendil-works/pi-durable";
 import type { StrictOmit } from "@effectified/pi-ai";
 import type { SchemaConversionError } from "@effectified/pi-schema";
-import { Effect } from "effect";
+import { Effect, Match } from "effect";
 import * as Signal from "./signal.ts";
 
 /** A hook's decision about one call. */
@@ -60,19 +60,16 @@ export function park(options: StrictOmit<Park, "_tag">): Gate {
 
 /** The decision Pi's `beforeTool` hook returns for `gate`. Fails when a signal's definition does. */
 export function toPi(gate: Gate): Effect.Effect<Decision, SchemaConversionError> {
-	switch (gate._tag) {
-		case "Allow":
-			return Effect.succeed(undefined);
-		case "Block":
-			return Effect.succeed({ block: gate.reason });
-		case "Rewrite":
-			return Effect.succeed({ arguments: gate.arguments });
-		case "Park":
-			return Effect.map(Effect.forEach(gate.signals ?? [], Signal.toPiKey), (signals) => ({
+	return Match.valueTags(gate, {
+		Allow: (): Effect.Effect<Decision> => Effect.undefined,
+		Block: ({ reason }): Effect.Effect<Decision> => Effect.succeed({ block: reason }),
+		Rewrite: (rewrite): Effect.Effect<Decision> => Effect.succeed({ arguments: rewrite.arguments }),
+		Park: (park): Effect.Effect<Decision, SchemaConversionError> =>
+			Effect.map(Effect.forEach(park.signals ?? [], Signal.toPiKey, { concurrency: 1 }), (signals) => ({
 				sleep: {
-					...(gate.signals === undefined ? {} : { signals }),
-					...(gate.until === undefined ? {} : { until: gate.until }),
+					...(park.signals === undefined ? {} : { signals }),
+					...(park.until === undefined ? {} : { until: park.until }),
 				},
-			}));
-	}
+			})),
+	});
 }

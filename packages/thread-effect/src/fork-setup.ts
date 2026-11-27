@@ -2,10 +2,10 @@
 // indexed for the router and left out of the review, all in the commit that creates it.
 
 import { Shares } from "@effectified/pi-budget";
-import { Doc, type Tx } from "@effectified/pi-durable";
+import { Doc, ToolName, type Tx } from "@effectified/pi-durable";
 import { Conversations, Grant, Guard } from "@effectified/pi-guard";
 import * as Review from "@effectified/pi-review";
-import { ForkSetup, ForkSetupFailed } from "@effectified/pi-swarm";
+import { ForkSetup, ForkSetupFailed, type SwarmId } from "@effectified/pi-swarm";
 import { Effect, Layer, Schema } from "effect";
 
 /**
@@ -13,7 +13,7 @@ import { Effect, Layer, Schema } from "effect";
  * thread does not have), and `cap`, the micro units it may settle of the harness's lease.
  */
 export const Allowance = Schema.Struct({
-	tools: Schema.Array(Schema.String),
+	tools: Schema.Array(ToolName),
 	cap: Schema.BigInt,
 });
 
@@ -41,12 +41,15 @@ const Document = Doc.family({
  * Gives the forks of the swarm `swarmId` their allowance, inside the caller's commit, unless the swarm has one: the
  * first one stands, as a swarm's first plan does.
  */
-export function allowIn(tx: Tx.Tx, swarmId: string, allowance: Allowance): Effect.Effect<void, Doc.Failure> {
-	return Effect.gen(function* () {
-		const document = yield* tx.doc(Document, swarmId, null);
-		if ((yield* document.get).allowance === null) yield* document.set({ allowance });
-	});
-}
+export const allowIn = Effect.fn("ForkSetup.allowIn")(function* (
+	tx: Tx.Tx,
+	swarmId: SwarmId,
+	allowance: Allowance,
+): Effect.fn.Return<void, Doc.Failure> {
+	const document = yield* tx.doc(Document, swarmId, null);
+	const held = yield* document.get;
+	if (held.allowance === null) yield* document.set({ allowance });
+});
 
 /**
  * The `ForkSetup` of the composition. Everything is in `created`, the commit that creates the fork's conversation,
@@ -67,27 +70,27 @@ export const layer: Layer.Layer<ForkSetup.ForkSetup, never, Guard.Guard | Shares
 	Effect.gen(function* () {
 		const guard = yield* Guard.Guard;
 		const shares = yield* Shares;
-		const refused = (fork: ForkSetup.Forked, why: string) => (cause: unknown) =>
-			new ForkSetupFailed({ reason: `The fork of job ${fork.jobKey} of swarm ${fork.swarmId} ${why}.`, cause });
-		return {
-			created: (tx, fork) =>
-				Effect.gen(function* () {
-					const { allowance } = yield* (yield* tx.doc(Document, fork.swarmId, null)).get;
-					if (allowance === null) return yield* refused(fork, "has no allowance")(undefined);
-					const inherited = yield* (yield* tx.doc(Grant.Document, fork.conversationId)).get;
-					const classification = inherited.grant?.classification;
-					const grant = { tools: allowance.tools, ...(classification === undefined ? {} : { classification }) };
-					yield* Conversations.grantIn(tx, fork.conversationId, grant, { mode: "narrow" }).pipe(
-						Effect.provideService(Guard.Guard, guard),
-					);
-					yield* shares.setCapIn(tx, fork.conversationId, allowance.cap);
-					yield* tx.configure(fork.conversationId, { extensions: { remove: [Review.NAME] } });
-				}).pipe(
-					Effect.mapError((error) =>
-						error._tag === "ForkSetupFailed" ? error : refused(fork, "could not be set up")(error),
-					),
+		const refused = (fork: ForkSetup.Forked, why: string, cause: unknown) =>
+			ForkSetupFailed.make({ reason: `The fork of job ${fork.jobKey} of swarm ${fork.swarmId} ${why}.`, cause });
+		const created = Effect.fn("ForkSetup.created")(
+			function* (tx: Tx.Tx, fork: ForkSetup.Forked) {
+				const swarm = yield* tx.doc(Document, fork.swarmId, null);
+				const { allowance } = yield* swarm.get;
+				if (allowance === null) return yield* refused(fork, "has no allowance", undefined);
+				const granted = yield* tx.doc(Grant.Document, fork.conversationId);
+				const classification = (yield* granted.get).grant?.classification;
+				const grant = { tools: allowance.tools, ...(classification === undefined ? {} : { classification }) };
+				yield* Conversations.grantIn(tx, fork.conversationId, grant, { mode: "narrow" }).pipe(
+					Effect.provideService(Guard.Guard, guard),
+				);
+				yield* shares.setCapIn(tx, fork.conversationId, allowance.cap);
+				yield* tx.configure(fork.conversationId, { extensions: { remove: [Review.NAME] } });
+			},
+			(effect, _tx, fork) =>
+				Effect.mapError(effect, (error) =>
+					error._tag === "ForkSetupFailed" ? error : refused(fork, "could not be set up", error),
 				),
-			beforeStart: () => Effect.void,
-		};
+		);
+		return ForkSetup.ForkSetup.of({ created, beforeStart: () => Effect.void });
 	}),
 );

@@ -1,15 +1,16 @@
 // The work of a swarm: what a product declares for its jobs (input, result, prompt), and what a coordinator runs.
 
 import type { Task } from "@effectified/pi-durable";
-import { Effect, Option, Schema } from "effect";
+import { Effect, Formatter, Option, Record, Schema } from "effect";
 import { correction, instruction, jsonOf } from "./answer.ts";
 import { InvalidValue } from "./errors.ts";
+import { JobKey, SwarmId } from "./ids.ts";
 
 /** The job a prompt is built for. */
-export interface JobRef {
-	readonly swarmId: string;
-	readonly key: string;
-}
+export const JobRef = Schema.Struct({ swarmId: SwarmId, key: JobKey });
+
+/** The job a prompt is built for. */
+export type JobRef = typeof JobRef.Type;
 
 /**
  * What a product declares for the jobs of its swarms. It is code, so it is installed in the registry and found by
@@ -63,25 +64,25 @@ export function compile<I extends Task.ValueSchema, A extends Task.ValueSchema>(
 	const encodeResult = Schema.encodeEffect(result, ALL_ISSUES);
 	const decodeResult = Schema.decodeUnknownEffect(result, ALL_ISSUES);
 	const invalid = (what: "input" | "result") => (error: Schema.SchemaError) =>
-		new InvalidValue({ what, issues: error.message });
+		InvalidValue.make({ what, issues: error.message });
 	const decoded = (json: unknown) => Effect.mapError(decodeResult(json), invalid("result"));
 	const answer = instruction(jsonSchemaOf(definition.result));
 	return {
 		name: definition.name,
 		corrections: definition.corrections ?? DEFAULT_CORRECTIONS,
-		encodeInput: (value) => Effect.map(Effect.mapError(encodeInput(value), invalid("input")), json),
+		encodeInput: (value) => Effect.mapBoth(encodeInput(value), { onFailure: invalid("input"), onSuccess: json }),
 		promptOf: (stored, job) =>
-			Effect.map(
-				Effect.mapError(decodeInput(stored), invalid("input")),
-				(value) => `${definition.prompt(value, job)}\n\n${answer}`,
-			),
+			Effect.mapBoth(decodeInput(stored), {
+				onFailure: invalid("input"),
+				onSuccess: (value) => `${definition.prompt(value, job)}\n\n${answer}`,
+			}),
 		read: (text) =>
 			Option.match(jsonOf(text), {
-				onNone: () => Effect.fail(new InvalidValue({ what: "result", issues: "The answer holds no JSON value" })),
+				onNone: () => Effect.fail(InvalidValue.make({ what: "result", issues: "The answer holds no JSON value" })),
 				// Stored as the schema encodes it, so what `decodeResult` reads later is what was checked here.
 				onSome: (found) =>
 					Effect.flatMap(decoded(found), (value) =>
-						Effect.map(Effect.mapError(encodeResult(value), invalid("result")), json),
+						Effect.mapBoth(encodeResult(value), { onFailure: invalid("result"), onSuccess: json }),
 					),
 			}),
 		correctionOf: (refused) => correction(refused.issues),
@@ -100,7 +101,7 @@ function json(encoded: unknown): Schema.Json {
 /** The JSON Schema of a result, as text for a prompt; none for a schema Effect cannot describe. */
 function jsonSchemaOf(schema: Schema.Constraint): Option.Option<string> {
 	return Option.map(describe(schema), ({ schema: root, definitions }) =>
-		JSON.stringify(Object.keys(definitions).length === 0 ? root : { ...root, $defs: definitions }),
+		Formatter.formatJson(Record.isEmptyRecord(definitions) ? root : { ...root, $defs: definitions }),
 	);
 }
 

@@ -16,7 +16,7 @@ import {
 	type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import type { EntryRecord } from "@earendil-works/pi-durable";
-import { Models } from "@effectified/pi-ai";
+import { fromPiModelRef, Models } from "@effectified/pi-ai";
 import { type DurableError, type Extension, Harness, type Hook } from "@effectified/pi-durable";
 import { answer, TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Layer, Option, Stream } from "effect";
@@ -42,10 +42,10 @@ type RootServices = Effect.Services<typeof TestHarness.root>;
 type Submitted = Effect.Success<ReturnType<Root["submit"]>>;
 
 /** The author's model: the one the root conversation answers with. */
-export const AUTHOR = { provider: "author-lab", modelId: "writer" };
+export const AUTHOR = fromPiModelRef({ provider: "author-lab", modelId: "writer" });
 
 /** The reviewer's model, of a second scripted provider. */
-export const REVIEWER = { provider: "reviewer-lab", modelId: "judge" };
+export const REVIEWER = fromPiModelRef({ provider: "reviewer-lab", modelId: "judge" });
 
 /** The two models with their families, as the verdicts of `POLICY` name them. */
 export const PARTIES = {
@@ -150,13 +150,10 @@ export function scene<R = never>(options: SceneOptions<R> = {}): Scene<R> {
 		models: [{ id: REVIEWER.modelId }],
 	});
 	reviewer.setResponses(
-		(options.reviewer ?? []).map(
-			(step): FauxResponseStep =>
-				(context, given, state, model) => {
-					reviewerRequests.push({ messages: [...context.messages], sessionId: given?.sessionId });
-					return typeof step === "function" ? step(context, given, state, model) : dated(step);
-				},
-		),
+		(options.reviewer ?? []).map((step): FauxResponseStep => (context, given, state, model) => {
+			reviewerRequests.push({ messages: [...context.messages], sessionId: given?.sessionId });
+			return typeof step === "function" ? step(context, given, state, model) : dated(step);
+		}),
 	);
 	const harness = TestHarness.layer({
 		extensions: [
@@ -168,13 +165,10 @@ export function scene<R = never>(options: SceneOptions<R> = {}): Scene<R> {
 			}),
 			...(options.after ?? []),
 		],
-		responses: (options.author ?? []).map(
-			(step): FauxResponseStep =>
-				(context, given, state, model) => {
-					authorRequests.push([...context.messages]);
-					return typeof step === "function" ? step(context, given, state, model) : step;
-				},
-		),
+		responses: (options.author ?? []).map((step): FauxResponseStep => (context, given, state, model) => {
+			authorRequests.push([...context.messages]);
+			return typeof step === "function" ? step(context, given, state, model) : step;
+		}),
 		provider: { api: "scripted", provider: AUTHOR.provider, models: [{ id: AUTHOR.modelId }] },
 		storage: options.storage,
 		harness: { resume: false },

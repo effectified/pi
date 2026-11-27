@@ -2,7 +2,7 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { runTest } from "@effectified/pi-ai/testing";
 import { Context, Effect, Latch, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { Tool } from "../src/index.ts";
+import { Tool, ToolFailed } from "../src/index.ts";
 
 class Records extends Context.Service<Records, { readonly title: (id: string) => Effect.Effect<string> }>()(
 	"test/Records",
@@ -53,6 +53,26 @@ describe("Tool.make", () => {
 			parameters: { type: "object", required: ["query"], additionalProperties: false },
 		});
 		expect(tool.outputSchema).toBeUndefined();
+	});
+
+	it("builds the JSON Schemas once: every build of the tool shares them, as pi-ai's validator cache wants", async () => {
+		const [first, second] = await runTest(
+			Effect.all([Lookup.agentTool, Lookup.agentTool], { concurrency: 1 }).pipe(Effect.provide(records)),
+		);
+		expect(first.parameters).toBe(second.parameters);
+		expect(Lookup.name).toBe("lookup");
+	});
+
+	it("gives the handler the call's id", async () => {
+		const Id = Tool.make("id", {
+			label: "Id",
+			description: "Id.",
+			parameters: Schema.Struct({}),
+			success: Schema.String,
+			handler: (_params, api) => Effect.succeed(api.toolCallId),
+		});
+		const result = await runTest(execute(Id, {}));
+		expect(result.content).toEqual([{ type: "text", text: "call-1" }]);
 	});
 
 	it("decodes the arguments, runs the handler with its services and gives the model the result as JSON", async () => {
@@ -119,13 +139,15 @@ describe("Tool.make", () => {
 	});
 
 	it("rejects with the message of a handler's failure, which Pi turns into its error result", async () => {
-		class NotFound extends Schema.TaggedError<NotFound>()("NotFound", { id: Schema.String }) {}
+		class NotFound extends Schema.TaggedError<NotFound, { readonly brand: unique symbol }>()("NotFound", {
+			id: Schema.String,
+		}) {}
 		const Fails = Tool.make("fails", {
 			label: "Fails",
 			description: "Fails.",
 			parameters: Schema.Struct({ id: Schema.String }),
 			success: Schema.String,
-			handler: ({ id }) => Effect.fail(new NotFound({ id })),
+			handler: ({ id }) => Effect.fail(NotFound.make({ id })),
 		});
 		const rejection = await runTest(
 			Effect.flatMap(Fails.agentTool, (tool) =>
@@ -137,8 +159,9 @@ describe("Tool.make", () => {
 				),
 			),
 		);
-		expect(rejection).toBeInstanceOf(Error);
-		expect((rejection as Error).message).toContain("NotFound");
+		expect(rejection).toBeInstanceOf(ToolFailed);
+		expect(rejection).toMatchObject({ _tag: "ToolFailed", tool: "fails", cause: { _tag: "NotFound", id: "7" } });
+		expect((rejection as ToolFailed).message).toContain("NotFound");
 	});
 
 	it("rejects arguments its schema refuses after Pi accepted them", async () => {

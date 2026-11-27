@@ -65,8 +65,8 @@ const scene = Effect.gen(function* () {
 	);
 	yield* Harness.resume;
 	const request = (jobKey: string, at: EntryId = second): Swarm.ForkRequest => ({
-		swarmId: "s",
-		jobKey,
+		swarmId: Swarm.SwarmId.make("s"),
+		jobKey: Swarm.JobKey.make(jobKey),
 		coordinatorTaskId: owner,
 		sourceConversationId: root.id,
 		at,
@@ -154,8 +154,8 @@ describe("fork", () => {
 		expect(error).toEqual(
 			new Swarm.ForkGone({
 				what: "source",
-				swarmId: "s",
-				jobKey: "job-a",
+				swarmId: Swarm.SwarmId.make("s"),
+				jobKey: Swarm.JobKey.make("job-a"),
 				reason: "The conversation does not exist",
 			}),
 		);
@@ -168,11 +168,18 @@ describe("run and job", () => {
 			Effect.gen(function* () {
 				const { driver, request, owner } = yield* scene;
 				const fork = yield* driver.fork(request("job-a"));
-				const unknown = yield* driver.job(fork, "r1");
-				const job = { fork, requestId: "r1", prompt: "Say hello.", notify: { taskId: owner, key: "k1" } };
+				const unknown = yield* driver.job(fork, Swarm.RequestId.make("r1"));
+				const job = {
+					fork,
+					requestId: Swarm.RequestId.make("r1"),
+					prompt: "Say hello.",
+					notify: { taskId: owner, key: "k1" },
+				};
 				const notice = yield* driver.run(job);
 				const again = yield* driver.run(job);
-				yield* until(Effect.map(driver.job(fork, "r1"), (status) => status._tag === "Answered"));
+				yield* until(
+					Effect.map(driver.job(fork, Swarm.RequestId.make("r1")), (status) => status._tag === "Answered"),
+				);
 				const asked = yield* ScriptedModels.use((models) => models.callCount);
 				// Pi delivered its signal to the notified task, under the key, in the commit that settled the job.
 				const memos = Option.getOrThrow(yield* Harness.getTask(owner)).memos ?? {};
@@ -181,7 +188,7 @@ describe("run and job", () => {
 					unknown,
 					notice,
 					again,
-					answered: yield* driver.job(fork, "r1"),
+					answered: yield* driver.job(fork, Swarm.RequestId.make("r1")),
 					asked,
 					memos: Object.keys(memos),
 				};
@@ -206,11 +213,16 @@ describe("run and job", () => {
 			Effect.gen(function* () {
 				const { driver, request, owner } = yield* scene;
 				const fork = yield* driver.fork(request("job-a"));
-				yield* driver.run({ fork, requestId: "r1", prompt: "Hold on.", notify: { taskId: owner, key: "k1" } });
+				yield* driver.run({
+					fork,
+					requestId: Swarm.RequestId.make("r1"),
+					prompt: "Hold on.",
+					notify: { taskId: owner, key: "k1" },
+				});
 				yield* held.await;
-				const running = yield* driver.job(fork, "r1");
+				const running = yield* driver.job(fork, Swarm.RequestId.make("r1"));
 				yield* driver.cancel(fork);
-				const cancelled = yield* driver.job(fork, "r1");
+				const cancelled = yield* driver.job(fork, Swarm.RequestId.make("r1"));
 				// A fork that is idle is cancelled already.
 				yield* driver.cancel(fork);
 				return { running, cancelled };
@@ -230,9 +242,14 @@ describe("destroy and list", () => {
 				const { driver, request, owner } = yield* scene;
 				const a = yield* driver.fork(request("job-a"));
 				const b = yield* driver.fork(request("job-b"));
-				yield* driver.run({ fork: a, requestId: "r1", prompt: "Hold on.", notify: { taskId: owner, key: "k1" } });
+				yield* driver.run({
+					fork: a,
+					requestId: Swarm.RequestId.make("r1"),
+					prompt: "Hold on.",
+					notify: { taskId: owner, key: "k1" },
+				});
 				yield* held.await;
-				const listed = yield* driver.list("s");
+				const listed = yield* driver.list(Swarm.SwarmId.make("s"));
 				const destroyed = yield* driver.destroy(a);
 				const again = yield* driver.destroy(a);
 				const conversation = Option.getOrThrow(yield* Harness.conversation(Number(a.forkId) as never));
@@ -246,13 +263,18 @@ describe("destroy and list", () => {
 					inherited: (yield* Stream.runCollect(conversation.entries())).filter(
 						(entry) => entry.conversationId !== conversation.id,
 					).length,
-					after: yield* driver.list("s"),
+					after: yield* driver.list(Swarm.SwarmId.make("s")),
 					fork: yield* Effect.flip(driver.fork(request("job-a"))),
 					run: yield* Effect.flip(
-						driver.run({ fork: a, requestId: "r2", prompt: "More.", notify: { taskId: owner, key: "k2" } }),
+						driver.run({
+							fork: a,
+							requestId: Swarm.RequestId.make("r2"),
+							prompt: "More.",
+							notify: { taskId: owner, key: "k2" },
+						}),
 					),
-					job: yield* Effect.flip(driver.job(a, "r1")),
-					other: yield* driver.list("other"),
+					job: yield* Effect.flip(driver.job(a, Swarm.RequestId.make("r1"))),
+					other: yield* driver.list(Swarm.SwarmId.make("other")),
 					stored: (yield* conversations).length,
 					b,
 				};
@@ -267,7 +289,12 @@ describe("destroy and list", () => {
 		expect(seen.destroyed).toEqual({ bytesWritten: Option.some(seen.own) });
 		expect(seen.again).toEqual(seen.destroyed);
 		expect(seen.after).toEqual([seen.b]);
-		const gone = new Swarm.ForkGone({ what: "fork", swarmId: "s", jobKey: "job-a", reason: "It was destroyed" });
+		const gone = new Swarm.ForkGone({
+			what: "fork",
+			swarmId: Swarm.SwarmId.make("s"),
+			jobKey: Swarm.JobKey.make("job-a"),
+			reason: "It was destroyed",
+		});
 		expect(seen.fork).toEqual(gone);
 		expect(seen.run).toEqual(gone);
 		expect(seen.job).toEqual(gone);
@@ -280,7 +307,11 @@ describe("destroy and list", () => {
 		const destroyed = await run(
 			Effect.gen(function* () {
 				const { driver } = yield* scene;
-				return yield* driver.destroy({ swarmId: "s", jobKey: "never", forkId: "0" });
+				return yield* driver.destroy({
+					swarmId: Swarm.SwarmId.make("s"),
+					jobKey: Swarm.JobKey.make("never"),
+					forkId: Swarm.ForkId.make("0"),
+				});
 			}),
 		);
 		expect(destroyed).toEqual({ bytesWritten: Option.none() });
@@ -293,15 +324,20 @@ describe("attach", () => {
 		const waited = await runTest(
 			Effect.gen(function* () {
 				const driver = yield* Swarm.ForkDriver;
-				const listing = yield* Effect.forkChild(Effect.timeoutOption(driver.list("s"), "1 hour"), {
-					startImmediately: true,
-				});
+				const listing = yield* Effect.forkChild(
+					Effect.timeoutOption(driver.list(Swarm.SwarmId.make("s")), "1 hour"),
+					{
+						startImmediately: true,
+					},
+				);
 				yield* TestClock.adjust("1 hour");
 				return yield* Fiber.join(listing);
 			}).pipe(Effect.provide(unattached)),
 		);
 		expect(waited).toEqual(Option.none());
-		const listed = await run(Swarm.ForkDriver.use((driver) => Effect.timeoutOption(driver.list("s"), 1000)));
+		const listed = await run(
+			Swarm.ForkDriver.use((driver) => Effect.timeoutOption(driver.list(Swarm.SwarmId.make("s")), 1000)),
+		);
 		expect(listed).toEqual(Option.some([]));
 	});
 });

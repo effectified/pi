@@ -5,28 +5,65 @@
 		// Upstream sources reached through `paths` use DOM globals (MessageChannel ports). The root program gets them
 		// from files with `/// <reference lib="dom" />` that this smaller program does not include.
 		"lib": ["ES2024", "DOM"],
-		// The Effect language service's rules, read by `node effect/scripts/effect-diagnostics.ts` (@effect/tsgo).
-		// `tsc` ignores plugins, so the fast type check above is unchanged. `include` globs are relative to this
-		// directory; a later override adds to the earlier ones rule by rule.
+		// The Effect language service's rules, read by `node effect/scripts/types.ts` (the Effect-patched tsrs of
+		// @effect/tsgo). Upstream's `tsc` ignores plugins. `include` globs are relative to this directory; a later
+		// override adds to the earlier ones rule by rule.
 		"plugins": [
 			{
 				"name": "@effect/language-service",
+				// Everywhere (sources, tests, scripts): the Effect team's presets "correctness" and "antipattern" as errors.
+				// The packages' sources add the rest of the "strict" and "effect-native" presets (the first override).
 				"diagnosticSeverity": {
-					// effect/AGENTS.md: an Effect is returned, yielded or run, never dropped.
+					// Correctness.
+					"anyUnknownInErrorContext": "error",
+					"classSelfMismatch": "error",
+					"duplicatePackage": "error",
+					"effectFnImplicitAny": "error",
+					"errorPayloadShadowsName": "error",
+					// The owner takes Effect's experimental and alpha APIs (2026-11-26): no decision per use.
+					"experimentalApiUsage": "off",
 					"floatingEffect": "error",
-					// effect/AGENTS.md: time and ids come from services (`Clock`, `Random`), so `TestClock` drives a test.
-					"globalDate": "error",
-					"globalDateInEffect": "error",
-					"globalTimers": "error",
-					"globalTimersInEffect": "error",
-					"globalRandom": "error",
-					"globalRandomInEffect": "error",
-					"cryptoRandomUUID": "error",
-					"cryptoRandomUUIDInEffect": "error",
-					// effect/AGENTS.md: no `node:` import in a package core (platform files: the first override).
-					"nodeBuiltinImport": "error",
+					"floatingEffectInVitest": "error",
+					"genericEffectServices": "error",
+					"missingEffectContext": "error",
+					"missingEffectError": "error",
+					"missingLayerContext": "error",
+					"missingReturnYieldStar": "error",
+					"missingStarInYieldEffectGen": "error",
+					"nonObjectEffectServiceType": "error",
+					"obsoleteMatchImport": "error",
+					"obsoleteSchemaImport": "error",
+					"outdatedApi": "error",
+					"overriddenSchemaConstructor": "error",
+					"promiseInEffectSuccess": "error",
+					"schemaClassMissingBrand": "error",
+					"schemaClassObjectLiteral": "error",
+					"schemaLiteralNonFinite": "error",
+					"schemaOpaqueInstanceMember": "error",
+					"unsafeEffectTypeAssertion": "error",
 					// An unstable Effect module is a decision: each one the packages use is listed below.
-					"unstableApiUsage": "error"
+					"unstableApiUsage": "error",
+					// Anti-patterns.
+					"catchUnfailableEffect": "error",
+					"effectFnIife": "error",
+					"effectGenUsesAdapter": "error",
+					"effectInFailure": "error",
+					"effectInVoidSuccess": "error",
+					"effectTryWithoutCatch": "error",
+					"globalErrorInEffectCatch": "error",
+					"globalErrorInEffectFailure": "error",
+					"layerMergeAllWithDependencies": "error",
+					"lazyEffect": "error",
+					"lazyPromiseInEffectSync": "error",
+					"leakingRequirements": "error",
+					"multipleEffectProvide": "error",
+					"preferUnsafeConstructor": "error",
+					"returnEffectInGen": "error",
+					"runEffectInsideEffect": "error",
+					"schemaSyncInEffect": "error",
+					"scopeInLayerEffect": "error",
+					"tryCatchInEffectGen": "error",
+					"unknownInEffectCatch": "error"
 				},
 				// The unstable modules the packages' sources use (2026-11-26). Tests add theirs in the test override.
 				"allowedUnstableApis": [
@@ -63,6 +100,122 @@
 				],
 				"overrides": [
 					{
+						// The packages' sources: the rest of the Effect team's "strict" and "effect-native" presets, and the
+						// style rules effect/AGENTS.md ("Effect idioms") adopts. Off, with the reason: `missingPipeableSignature`
+						// flags every constructor and builder (a dual signature is the rule for an operation on its module's
+						// own type, written by hand); `missedPipeableOpportunity` is a call of readability per site.
+						"include": ["../packages/*-effect/src/**/*.ts"],
+						"options": {
+							"diagnosticSeverity": {
+								// A library leaves providing its layers to the application.
+								"strictEffectProvide": "error",
+								// Effect-native: Effect's services and modules over the platform's globals and promises.
+								"abortControllerInEffect": "error",
+								"asyncFunction": "error",
+								"cryptoRandomUUID": "error",
+								"cryptoRandomUUIDInEffect": "error",
+								"extendsNativeError": "error",
+								"globalConsole": "error",
+								"globalConsoleInEffect": "error",
+								"globalDate": "error",
+								"globalDateInEffect": "error",
+								"globalFetch": "error",
+								"globalFetchInEffect": "error",
+								"globalJson": "error",
+								"globalJsonInEffect": "error",
+								"globalRandom": "error",
+								"globalRandomInEffect": "error",
+								"globalTimers": "error",
+								"globalTimersInEffect": "error",
+								"instanceOfSchema": "error",
+								"newPromise": "error",
+								"nodeBuiltinImport": "error",
+								"preferEffectArray": "error",
+								"preferEffectRecord": "error",
+								"preferEffectString": "error",
+								"processEnv": "error",
+								"processEnvInEffect": "error",
+								"promiseAllInEffect": "error",
+								"promiseRaceInEffect": "error",
+								"schemaSync": "error",
+								// Style: the "strict" preset's, then the ones effect/AGENTS.md adds.
+								"acquireReleaseDisposable": "error",
+								"allOfMapToForEach": "error",
+								"catchAllTagDispatchToCatchTag": "error",
+								"catchAllToMapError": "error",
+								"catchChainToFirstSuccessOf": "error",
+								"catchConditionalRefailToCatchIf": "error",
+								"catchDieToOrDie": "error",
+								"catchIfTagToCatchTag": "error",
+								"catchRefailToTapError": "error",
+								"catchTagToCatchReason": "error",
+								"catchToIgnore": "error",
+								"catchToOrElseSucceed": "error",
+								"effectFnOpportunity": "error",
+								"effectMapFlatten": "error",
+								"effectMapVoid": "error",
+								"effectSleepZeroToYieldNow": "error",
+								"effectSucceedWithUndefined": "error",
+								"effectSucceedWithVoid": "error",
+								"failCauseToConstructor": "error",
+								"flatMapConditionalToFilterOrFail": "error",
+								"flatMapIdentityToFlatten": "error",
+								"flatMapIgnoredParamToAndThen": "error",
+								"flatMapMapToZipWith": "error",
+								"flatMapProvideServiceToProvideServiceEffect": "error",
+								"flatMapToMap": "error",
+								"flatMapToTap": "error",
+								"manualMetricTapToTrack": "error",
+								"mapConstToAs": "error",
+								"mapSomeCatchNoSuchElement": "error",
+								"mapSomeToAsSome": "error",
+								"matchBooleanToIsSuccess": "error",
+								"matchEffectToMapBoth": "error",
+								"matchEffectToMatch": "error",
+								"matchToResultOrOption": "error",
+								"multipleCatchTag": "error",
+								"onExitFailureToOnError": "error",
+								"optionMatchToFromOption": "error",
+								"preferSucceedSomeOrNone": "error",
+								"preferTypedSchemaDecoder": "error",
+								"provideLayerSucceedToProvideService": "error",
+								"raceFirstWithSleepToTimeout": "error",
+								"redundantMapError": "error",
+								"redundantOrDie": "error",
+								"redundantSchemaTagIdentifier": "error",
+								"resultMatchToFromResult": "error",
+								"runOfExitToRunExit": "error",
+								"schemaNumber": "error",
+								"schemaStructWithTag": "error",
+								"suspendFailToFailSync": "error",
+								"syncToSucceed": "error",
+								"timeoutCatchTagToTimeoutOrElse": "error",
+								"unnecessaryEffectGen": "error",
+								"unnecessaryFailYieldableError": "error",
+								"unnecessaryPipe": "error",
+								"unnecessaryPipeChain": "error",
+								"unnecessaryTypeofType": "error",
+								"deterministicKeys": "error",
+								"effectDoNotation": "error",
+								"forLoopPushToForEach": "error",
+								"mapMapErrorToMapBoth": "error",
+								"missingConcurrencyOption": "error",
+								"missingEffectServiceDependency": "error",
+								"nestedEffectGenYield": "error",
+								"newSchemaClass": "error",
+								"preferSchemaTaggedError": "error",
+								"preferSchemaTypeProperty": "error",
+								"provideMergeAllToArray": "error",
+								"schemaUnionOfLiterals": "error",
+								"serviceNotAsClass": "error",
+								"strictBooleanExpressions": "error",
+								"typeUnionToSchemaUnion": "error",
+								"unnecessaryArrowBlock": "error",
+								"yieldInCallArgument": "error"
+							}
+						}
+					},
+					{
 						// Platform code: a file named node.ts or bun.ts, or under a node/ or bun/ directory (check-deps.ts).
 						"include": [
 							"../packages/*-effect/src/**/node.ts",
@@ -73,21 +226,34 @@
 						"options": { "diagnosticSeverity": { "nodeBuiltinImport": "off" } }
 					},
 					{
-						// Tests may import Node and build fixtures with real dates; the rule for their clock is `runTest`'s.
-						// The four type-test rules repeat TypeScript errors that `@ts-expect-error` type tests assert, and
-						// that the fast type check still reports elsewhere; a test helper may `yield* Effect.never`.
+						// docs-effect is the docs site's Node build tool (private, exports nothing, imports no Effect), as
+						// ./scripts is: the effect-native rules name Effect modules for code that is not Effect code.
+						"include": ["../packages/docs-effect/src/**/*.ts"],
+						"options": {
+							"diagnosticSeverity": {
+								"asyncFunction": "off",
+								"globalConsole": "off",
+								"globalJson": "off",
+								"newPromise": "off",
+								"preferEffectArray": "off",
+								"preferEffectRecord": "off",
+								"preferEffectString": "off",
+								"processEnv": "off"
+							}
+						}
+					},
+					{
+						// Tests do not take the sources' effect-native and style rules: they import Node, build fixtures with
+						// real dates, and run on Vitest 4, where a test is an async function (`@effect/vitest` needs Vitest 5).
+						// A test is an application's entry point, so it may provide layers one after another and keep an
+						// `unknown` failure of the code it observes. The four type-test rules repeat TypeScript errors that
+						// `@ts-expect-error` type tests assert, and that the type check still reports elsewhere; a test
+						// helper may `yield* Effect.never`.
 						"include": ["../packages/*-effect/test/**/*.ts"],
 						"options": {
 							"diagnosticSeverity": {
-								"nodeBuiltinImport": "off",
-								"globalDate": "off",
-								"globalDateInEffect": "off",
-								"globalTimers": "off",
-								"globalTimersInEffect": "off",
-								"globalRandom": "off",
-								"globalRandomInEffect": "off",
-								"cryptoRandomUUID": "off",
-								"cryptoRandomUUIDInEffect": "off",
+								"anyUnknownInErrorContext": "off",
+								"multipleEffectProvide": "off",
 								"missingEffectContext": "off",
 								"missingEffectError": "off",
 								"missingLayerContext": "off",
@@ -145,17 +311,10 @@
 						"options": { "diagnosticSeverity": { "globalTimers": "off", "globalTimersInEffect": "off" } }
 					},
 					{
-						// The scripts and spikes of this directory are Node tools, not package code.
+						// The scripts and spikes of this directory are Node tools, not package code: the base rules only matter
+						// where they use Effect.
 						"include": ["./scripts/**/*.ts", "./spikes/**/*.ts"],
-						"options": {
-							"diagnosticSeverity": {
-								"nodeBuiltinImport": "off",
-								"globalDate": "off",
-								"globalDateInEffect": "off",
-								"globalTimers": "off",
-								"globalTimersInEffect": "off"
-							}
-						}
+						"options": { "diagnosticSeverity": { "anyUnknownInErrorContext": "off" } }
 					}
 				]
 			}
@@ -168,6 +327,7 @@
 		"../packages/*-effect/test/**/*",
 		"./scripts/**/*",
 		"./spikes/**/*",
+		"./idioms/**/*",
 		"../packages/coding-agent/src/utils/highlight-js.d.ts",
 		"../packages/coding-agent/src/bun/quickjs-wasm.d.ts",
 		"../packages/codemode/src/cloudflare-modules.d.ts"

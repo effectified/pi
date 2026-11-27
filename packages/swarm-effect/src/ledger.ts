@@ -1,8 +1,9 @@
 // What a swarm keeps in the harness storage beside its coordinator task: its task by swarm id, and its jobs' statuses.
 
 import { Doc, type DurableError, type SchemaDecodeError, Task, type Tx } from "@effectified/pi-durable";
-import { Effect, Schema } from "effect";
-import { Place } from "./driver.ts";
+import { Array as Arr, Effect, Record, Schema } from "effect";
+import { Bytes, Place } from "./driver.ts";
+import { JobKey, type SwarmId } from "./ids.ts";
 import { type Job, Reason, ranOf, Status } from "./job.ts";
 
 /** A complete copy of a document is stored after this many changes, which bounds what a reopen replays. */
@@ -21,7 +22,7 @@ export const Swarms = Doc.family({
 		name: Schema.String,
 		taskId: Schema.NullOr(Task.Id),
 		/** Per job key whose fork `destroyFork` destroyed: the bytes it wrote, when the driver knew them. */
-		released: Schema.Record(Schema.String, Schema.NullOr(Schema.Number)),
+		released: Schema.Record(JobKey, Schema.NullOr(Bytes)),
 	}),
 	initial: () => ({ name: "", taskId: null, released: {} }),
 	checkpointWhen: () => false,
@@ -37,6 +38,12 @@ export const Progress = Schema.Struct({
 /** What is known of one job from outside the coordinator. */
 export type Progress = typeof Progress.Type;
 
+/** Every job's progress under its key. */
+export const Statuses = Schema.Record(JobKey, Progress);
+
+/** Every job's progress under its key. */
+export type Statuses = typeof Statuses.Type;
+
 /**
  * One document per swarm id: every job's status under its key, written by the coordinator in the commit that stores
  * the state it comes from. It is what `status` reads and the job events watch.
@@ -45,7 +52,7 @@ export const Jobs = Doc.family({
 	kind: "swarm.jobs",
 	version: 1,
 	scope: "session",
-	schema: Schema.Record(Schema.String, Progress),
+	schema: Statuses,
 	initial: () => ({}),
 	checkpointWhen: (_stored, _ops, info) => info.deltasSinceBase >= CHECKPOINT_EVERY,
 });
@@ -58,8 +65,8 @@ export const Copy = Doc.make({
 	kind: "swarm.copy",
 	version: 1,
 	scope: "session",
-	schema: Schema.Struct({ through: Schema.Number }),
-	initial: () => ({ through: 0 }),
+	schema: Schema.Struct({ through: Task.Id }),
+	initial: () => ({ through: Task.Id.make(0) }),
 	checkpointWhen: () => false,
 });
 
@@ -74,16 +81,16 @@ export function progressOf(job: Job): Progress {
  */
 export function report(
 	tx: Tx.Tx,
-	swarmId: string,
-	keys: ReadonlyArray<string>,
+	swarmId: SwarmId,
+	keys: ReadonlyArray<JobKey>,
 	before: ReadonlyArray<Job>,
 	after: ReadonlyArray<Job>,
 ): Effect.Effect<void, DurableError | SchemaDecodeError> {
-	const changed = after.flatMap((job, index): Array<readonly [string, Progress]> => {
-		return before[index].status === job.status ? [] : [[keys[index], progressOf(job)]];
-	});
-	if (changed.length === 0) return Effect.void;
+	const changed = Arr.flatMap(Arr.zip(keys, Arr.zip(before, after)), ([key, [was, now]]) =>
+		was.status === now.status ? [] : [[key, progressOf(now)] as const],
+	);
+	if (Arr.isArrayEmpty(changed)) return Effect.void;
 	return Effect.flatMap(tx.doc(Jobs, swarmId, null), (jobs) =>
-		jobs.update((current) => ({ ...current, ...Object.fromEntries(changed) })),
+		jobs.update((current) => ({ ...current, ...Record.fromEntries(changed) })),
 	);
 }

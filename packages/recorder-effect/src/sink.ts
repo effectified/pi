@@ -4,9 +4,10 @@ import { Context, type Effect, Schema } from "effect";
 import type * as Records from "./record.ts";
 
 /** A sink could not take a batch; `cause` is whatever the product's store failed with. The batch is delivered again. */
-export class RecordSinkError extends Schema.TaggedError<RecordSinkError>()("RecordSinkError", {
-	cause: Schema.Defect(),
-}) {
+export class RecordSinkError extends Schema.TaggedError<RecordSinkError, { readonly brand: unique symbol }>()(
+	"RecordSinkError",
+	{ cause: Schema.Defect() },
+) {
 	override get message(): string {
 		return "The record sink failed";
 	}
@@ -25,5 +26,5 @@ export interface RecordSinkService {
 
 /** The record sink of this program: provided by the product, required by the pump and by the advisory hook. */
 export class RecordSink extends Context.Service<RecordSink, RecordSinkService>()(
-	"@effectified/pi-recorder/RecordSink",
+	"@effectified/pi-recorder/sink/RecordSink",
 ) {}

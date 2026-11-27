@@ -6,21 +6,26 @@ import {
 	appendAssistantMessageDiagnostic,
 	emptyUsage,
 	type Model,
+	type ModelId,
 	type ModelRequestError,
 	Models,
 	type ModelsSimpleStreamOptions,
 	type MutableModels,
 	type Context as PiContext,
+	type ProviderId,
 	type ProviderResponse,
+	type RequestKey,
 	type RequestOptions,
 	type ResponseEvent,
 	streamSimple,
 	type Usage,
+	SessionId,
 } from "@effectified/pi-ai";
-import { Clock, Effect, Result, Stream } from "effect";
+import { Array as Arr, Clock, Effect, Match, Predicate, Result, Stream } from "effect";
 import { AttemptSettlement, settledBy } from "./attempt-settlement.ts";
 import { classify } from "./classify.ts";
 import { type AttemptUnsettled, type RouteFailure, RoutesExhausted } from "./errors.ts";
+import type { RouterRequestId } from "./ids.ts";
 import type { LimiterService } from "./limiter.ts";
 import { priced, tokensOf } from "./price.ts";
 import type { RouteEvent, RouteEventsService } from "./route-events.ts";
@@ -29,7 +34,7 @@ import type { Route } from "./route-table.ts";
 /** What the attempts of a router work with. */
 export interface AttemptServices {
 	/** The id of the router's provider, for its events. */
-	readonly router: string;
+	readonly router: ProviderId;
 	/** Where the routes' providers and their credentials are. */
 	readonly models: MutableModels;
 	readonly limiter: LimiterService;
@@ -41,18 +46,21 @@ export interface RoutedRequest {
 	/** The number of this request in its router's events. */
 	readonly request: number;
 	/** The id of this request in its router's events: of this request and of no other, ever. */
-	readonly id: string;
+	readonly id: RouterRequestId;
 	/** The key of what it asks (`requestKey`); none without a provider session. */
-	readonly key: string | undefined;
-	readonly alias: string;
+	readonly key: RequestKey | undefined;
+	readonly alias: ModelId;
 	/** The routes that may serve the request, in the order they are tried. */
-	readonly routes: readonly [Route, ...Route[]];
+	readonly routes: Arr.NonEmptyReadonlyArray<Route>;
 	readonly context: PiContext;
 	/** What goes on to the provider of each route: pi-ai's provider-neutral options. */
 	readonly options: RequestOptions<ModelsSimpleStreamOptions>;
 	/** Takes each event of the response the caller sees, in pi-ai's order, up to and including `done`. */
 	readonly emit: (event: ResponseEvent) => Effect.Effect<void>;
 }
+
+/** How a request to an alias fails once its routes are resolved. */
+type ServeError = ModelRequestError | RoutesExhausted | AttemptUnsettled;
 
 /**
  * Serves `request` on the first of its routes that answers, and returns the final message.
@@ -71,35 +79,39 @@ export interface RoutedRequest {
  * earlier one. So whatever wraps the router (a budget) is told the last attempt by the response. Every attempt before
  * it is told by its route event, which has `fallback: true`, and by the settlement when it cost something.
  */
-export const serve = Effect.fnUntraced(function* (
+export const serve: (services: AttemptServices, request: RoutedRequest) => Effect.Effect<AssistantMessage, ServeError> =
+	Effect.fn("Attempts.serve")(function* (services, request) {
+		return yield* tryFrom(services, request, 0, [], undefined);
+	});
+
+/**
+ * Tries the route at `index` of the request and, while one hands the request on, the routes after it. `failures` are
+ * the routes that handed it on before; `response` is the last answer one of them gave.
+ */
+function tryFrom(
 	services: AttemptServices,
 	request: RoutedRequest,
-): Effect.fn.Return<AssistantMessage, ModelRequestError | RoutesExhausted | AttemptUnsettled> {
-	const failures: RouteFailure[] = [];
-	let response: AssistantMessage | undefined;
-	for (const [index, route] of request.routes.entries()) {
-		const outcome = yield* attempt(services, request, route, index + 1, failures);
-		switch (outcome._tag) {
-			case "Served":
-				return outcome.message;
-			case "Ended":
-				return yield* Effect.fail(outcome.error);
-			case "Next":
-				failures.push({ provider: route.provider, model: route.model, message: outcome.message });
+	index: number,
+	failures: ReadonlyArray<RouteFailure>,
+	response: AssistantMessage | undefined,
+): Effect.Effect<AssistantMessage, ServeError> {
+	const route = request.routes[index];
+	return Effect.flatMap(attempt(services, request, route, index + 1, failures), (outcome) =>
+		Match.valueTags(outcome, {
+			Served: ({ message }) => Effect.succeed(message),
+			Ended: ({ error }) => Effect.fail(error),
+			Next: (next) => {
+				const tried = Arr.append(failures, { provider: route.provider, model: route.model, message: next.message });
 				// A route that was unavailable used nothing, and the response kept from before it must not repeat the
 				// usage its own route event already told.
-				response = outcome.response ?? (response === undefined ? undefined : { ...response, usage: emptyUsage() });
-		}
-	}
-	return yield* Effect.fail(
-		new RoutesExhausted({
-			alias: request.alias,
-			// There is at least one route, and every route that did not end the request added a failure.
-			failures: failures as [RouteFailure, ...RouteFailure[]],
-			response,
+				const kept = next.response ?? (response === undefined ? undefined : { ...response, usage: emptyUsage() });
+				return index + 1 < request.routes.length
+					? tryFrom(services, request, index + 1, tried, kept)
+					: Effect.fail(RoutesExhausted.make({ alias: request.alias, failures: tried, response: kept }));
+			},
 		}),
 	);
-});
+}
 
 /** How one attempt ended, for the loop over the routes. */
 type AttemptOutcome =
@@ -142,31 +154,32 @@ interface Attempt {
 	readonly progress: Progress;
 }
 
-/** Runs attempt `number` of `request` on `route`. An interruption records the attempt as aborted. */
-function attempt(
+/**
+ * Runs attempt `number` of `request` on `route`, in a span of its own. An interruption records the attempt as
+ * aborted. The steps below (`run`, `send`, `served`, `failed`, `takenOver`, `record`, `eventOf`) are untraced: they
+ * are this span's.
+ */
+const attempt = Effect.fn("Attempts.attempt")(function* (
 	services: AttemptServices,
 	request: RoutedRequest,
 	route: Route,
 	number: number,
 	failed: ReadonlyArray<RouteFailure>,
-): Effect.Effect<AttemptOutcome> {
-	return Effect.flatMap(Clock.currentTimeMillis, (startedAt) => {
-		const progress: Progress = {
-			sentAt: undefined,
-			partial: undefined,
-			answer: undefined,
-			held: undefined,
-			outputStarted: false,
-			recorded: false,
-		};
-		const self: Attempt = { services, request, route, number, failed, startedAt, progress };
-		return Effect.onInterrupt(run(self), () =>
-			progress.recorded
-				? Effect.void
-				: record(self, "aborted", false, "Request was aborted", progress.partial?.usage),
-		);
-	});
-}
+): Effect.fn.Return<AttemptOutcome> {
+	const startedAt = yield* Clock.currentTimeMillis;
+	const progress: Progress = {
+		sentAt: undefined,
+		partial: undefined,
+		answer: undefined,
+		held: undefined,
+		outputStarted: false,
+		recorded: false,
+	};
+	const self: Attempt = { services, request, route, number, failed, startedAt, progress };
+	return yield* Effect.onInterrupt(run(self), () =>
+		progress.recorded ? Effect.void : record(self, "aborted", false, "Request was aborted", progress.partial?.usage),
+	);
+});
 
 /** Checks that the route can be sent a request, then sends it in a slot of the route's concurrency key. */
 const run = Effect.fnUntraced(function* (self: Attempt): Effect.fn.Return<AttemptOutcome> {
@@ -187,10 +200,10 @@ const run = Effect.fnUntraced(function* (self: Attempt): Effect.fn.Return<Attemp
 const send = Effect.fnUntraced(function* (self: Attempt, model: Model<Api>): Effect.fn.Return<AttemptOutcome> {
 	self.progress.sentAt = yield* Clock.currentTimeMillis;
 	return yield* Effect.uninterruptibleMask((restore) =>
-		Effect.flatMap(
-			Effect.result(restore(forward(self.services.models, self.request, model, self.progress))),
-			(result) => (Result.isSuccess(result) ? restore(served(self, result.success)) : failed(self, result.failure)),
-		),
+		Effect.matchEffect(restore(forward(self.services.models, self.request, model, self.progress)), {
+			onSuccess: (done) => restore(served(self, done)),
+			onFailure: (error) => failed(self, error),
+		}),
 	);
 });
 
@@ -198,17 +211,18 @@ const send = Effect.fnUntraced(function* (self: Attempt, model: Model<Api>): Eff
 const served = Effect.fnUntraced(function* (self: Attempt, done: DoneEvent): Effect.fn.Return<AttemptOutcome> {
 	const { services, request, progress } = self;
 	yield* services.limiter.recover(self.route.concurrencyKey);
-	if (self.failed.length > 0) {
+	if (Arr.isReadonlyArrayNonEmpty(self.failed)) {
 		// The message keeps the provider and model of the route that served it. That it was not the first route is a
 		// recovery, which is what pi-ai's diagnostics are for.
+		const timestamp = yield* Clock.currentTimeMillis;
 		appendAssistantMessageDiagnostic(done.message, {
 			type: "route_fallback",
-			timestamp: yield* Clock.currentTimeMillis,
+			timestamp,
 			details: {
 				router: services.router,
 				alias: request.alias,
 				attempt: self.number,
-				failed: self.failed.map(({ provider, model }) => ({ provider, model })),
+				failed: Arr.map(self.failed, ({ provider, model }) => ({ provider, model })),
 			},
 		});
 	}
@@ -220,7 +234,8 @@ const served = Effect.fnUntraced(function* (self: Attempt, done: DoneEvent): Eff
 
 /** The route failed: its key backs off after a rate limit, and the failure decides whether the next route may try. */
 const failed = Effect.fnUntraced(function* (self: Attempt, error: ModelRequestError): Effect.fn.Return<AttemptOutcome> {
-	const kind = classify(error.response, self.progress.answer, yield* Clock.currentTimeMillis);
+	const now = yield* Clock.currentTimeMillis;
+	const kind = classify(error.response, self.progress.answer, now);
 	// The key backs off whether or not another route takes the request over.
 	if (kind._tag === "RateLimited") {
 		yield* self.services.limiter.backOff(self.route.concurrencyKey, kind.retryAfterMillis);
@@ -248,7 +263,8 @@ const takenOver = Effect.fnUntraced(function* (
 	const event = yield* eventOf(self, outcome, true, error.message, error.response.usage);
 	// An attempt that cost nothing has nothing to settle: most refused requests report no usage at all.
 	if (event.cost.micros > 0n) {
-		const settled = yield* Effect.result(settledBy(yield* AttemptSettlement, event, error.response));
+		const port = yield* AttemptSettlement;
+		const settled = yield* Effect.result(settledBy(port, event, error.response));
 		if (Result.isFailure(settled)) {
 			yield* self.services.events.publish({ ...event, fallback: false });
 			return { _tag: "Ended", error: settled.failure };
@@ -262,20 +278,17 @@ const takenOver = Effect.fnUntraced(function* (
  * Publishes the route event of an attempt. Uninterruptible: an attempt is recorded exactly once, also when the caller
  * gives up while it is written.
  */
-function record(
+const record = Effect.fnUntraced(function* (
 	self: Attempt,
 	outcome: RouteEvent["outcome"],
 	fallback: boolean,
 	errorMessage: string | undefined,
 	reported: Usage | undefined,
-): Effect.Effect<void> {
-	return Effect.uninterruptible(
-		Effect.suspend(() => {
-			self.progress.recorded = true;
-			return Effect.flatMap(eventOf(self, outcome, fallback, errorMessage, reported), self.services.events.publish);
-		}),
-	);
-}
+) {
+	self.progress.recorded = true;
+	const event = yield* eventOf(self, outcome, fallback, errorMessage, reported);
+	yield* self.services.events.publish(event);
+}, Effect.uninterruptible);
 
 /**
  * The route event of an attempt that ends now, with `reported` at the route's price. It cannot fail, whatever counts
@@ -295,7 +308,7 @@ const eventOf = Effect.fnUntraced(function* (
 		router: services.router,
 		request: request.request,
 		requestId: request.id,
-		...(request.options.sessionId === undefined ? {} : { sessionId: request.options.sessionId }),
+		...(request.options.sessionId === undefined ? {} : { sessionId: SessionId.make(request.options.sessionId) }),
 		...(request.key === undefined ? {} : { requestKey: request.key }),
 		alias: request.alias,
 		route,
@@ -318,41 +331,38 @@ type Availability =
 
 /**
  * Looks the route's model up in `Models` and asks pi-ai whether its provider has credentials (`checkAuth`). The
- * table was validated when the router was built, but providers and credentials can change while it runs.
+ * table was validated when the router was built, but providers and credentials can change while it runs, so neither
+ * lookup is cached.
  */
-function availability(models: MutableModels, route: Route): Effect.Effect<Availability> {
+const availability = Effect.fnUntraced(function* (models: MutableModels, route: Route): Effect.fn.Return<Availability> {
 	const unavailable = (message: string): Availability => ({ _tag: "Unavailable", message });
-	return Effect.suspend(() => {
-		if (models.getProvider(route.provider) === undefined) {
-			return Effect.succeed(unavailable(`Provider "${route.provider}" is not registered`));
-		}
-		const model = models.getModel(route.provider, route.model);
-		if (model === undefined) {
-			return Effect.succeed(
-				unavailable(`Provider "${route.provider}" does not list the chat model "${route.model}"`),
-			);
-		}
-		return Effect.match(
-			Effect.tryPromise({
-				try: (signal) => models.checkAuth(route.provider, { signal }),
-				// pi-ai rejects with an Error when the credential store or the key's own check fails.
-				catch: (cause) => (cause instanceof Error ? cause.message : String(cause)),
-			}),
-			{
-				onFailure: (reason) =>
-					unavailable(`The credentials of provider "${route.provider}" cannot be read: ${reason}`),
-				onSuccess: (auth): Availability =>
-					auth === undefined
-						? unavailable(`Provider "${route.provider}" is not configured`)
-						: { _tag: "Ready", model },
-			},
-		);
-	});
-}
+	if (models.getProvider(route.provider) === undefined) {
+		return unavailable(`Provider "${route.provider}" is not registered`);
+	}
+	const model = models.getModel(route.provider, route.model);
+	if (model === undefined)
+		return unavailable(`Provider "${route.provider}" does not list the chat model "${route.model}"`);
+	return yield* Effect.match(
+		Effect.tryPromise({
+			try: (signal) => models.checkAuth(route.provider, { signal }),
+			// pi-ai rejects with an Error when the credential store or the key's own check fails.
+			catch: (cause) => (Predicate.isError(cause) ? cause.message : String(cause)),
+		}),
+		{
+			onFailure: (reason) =>
+				unavailable(`The credentials of provider "${route.provider}" cannot be read: ${reason}`),
+			onSuccess: (auth): Availability =>
+				auth === undefined
+					? unavailable(`Provider "${route.provider}" is not configured`)
+					: { _tag: "Ready", model },
+		},
+	);
+});
 
 /**
  * Sends the request to `model` and passes the response on to the caller, except its `done` event, which is
- * returned: the attempt is recorded before the caller sees that it ended.
+ * returned: the attempt is recorded before the caller sees that it ended. The callback runs once per event of the
+ * response, so it is plain code, not a traced function.
  */
 function forward(
 	models: MutableModels,

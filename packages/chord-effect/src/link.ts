@@ -9,6 +9,7 @@ import {
 	webSocketLink,
 } from "@earendil-works/chord";
 import { Effect, Queue, type Scope, Stream } from "effect";
+import { dual } from "effect/Function";
 
 // Chord's link types: the link adapters implement, what an IPC port and a WebSocket must have, codecs and limits.
 export type { Codec, Compression, IpcPort, Link, Message, PartLimits, WebSocketLike } from "@earendil-works/chord";
@@ -58,10 +59,11 @@ export function messages(link: Link): Stream.Stream<Uint8Array> {
 	);
 }
 
-/** Sends `message` on `link`; nothing once it is closed. */
-export function send(link: Link, message: Uint8Array): Effect.Effect<void> {
-	return Effect.sync(() => link.send(message));
-}
+/** Sends `message` on `link`; nothing once it is closed. Data-first or data-last (`pipe(link, Link.send(message))`). */
+export const send: {
+	(message: Uint8Array): (link: Link) => Effect.Effect<void>;
+	(link: Link, message: Uint8Array): Effect.Effect<void>;
+} = dual(2, (link: Link, message: Uint8Array): Effect.Effect<void> => Effect.sync(() => link.send(message)));
 
 /** Closes both ends of `link`; what is not delivered yet is dropped. */
 export function close(link: Link): Effect.Effect<void> {

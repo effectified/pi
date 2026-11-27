@@ -10,8 +10,8 @@ import {
 	type TelemetryPropagation,
 	type TelemetrySpan,
 } from "@earendil-works/pi-telemetry";
-import { Clock, Context, Effect, Exit, Option, References, Tracer } from "effect";
-import { toSpanAttributes } from "./attributes.ts";
+import { Array as Arr, Clock, Context, Effect, Exit, Option, Predicate, References, Result, Tracer } from "effect";
+import { setSpanAttributes, toSpanAttributes } from "./attributes.ts";
 import { makeMetrics } from "./metrics.ts";
 import { fromCarrier, toCarrier } from "./trace-context.ts";
 
@@ -127,9 +127,7 @@ function recordingHandle(adapter: Adapter, span: Tracer.Span, setStatus: (status
 			if (isOpen(span) && links.length > 0) span.addLinks(links);
 		},
 		setAttributes: (attributes) => {
-			if (!isOpen(span)) return;
-			const defined = toSpanAttributes(attributes);
-			for (const name in defined) span.attribute(name, defined[name]);
+			if (isOpen(span)) setSpanAttributes(span, attributes);
 		},
 		setStatus: (status) => {
 			if (isOpen(span)) setStatus(status);
@@ -202,12 +200,12 @@ function isOpen(span: Tracer.Span): boolean {
 
 /** Pi links as Effect links. A target without an Effect span (a root, a no-op or another adapter's) is left out. */
 function toLinks(links: readonly SpanLink[]): Tracer.SpanLink[] {
-	const result: Tracer.SpanLink[] = [];
-	for (const link of links) {
+	return Arr.filterMap(links, (link) => {
 		const span = spans.get(link.context);
-		if (span !== undefined) result.push({ span, attributes: toSpanAttributes(link.attributes) });
-	}
-	return result;
+		return span === undefined
+			? Result.failVoid
+			: Result.succeed({ span, attributes: toSpanAttributes(link.attributes) });
+	});
 }
 
 /**
@@ -216,15 +214,14 @@ function toLinks(links: readonly SpanLink[]): Tracer.SpanLink[] {
  */
 type PiSpanFailure = Extract<SpanStatus, { status: "error" }>["error"];
 
-/** A Pi status as the exit an Effect span ends with, detached from the caller's object. */
+/**
+ * A Pi status as the exit an Effect span ends with, detached from the caller's object. Not `Match`: its result type
+ * unifies an `Exit` to `Effect`, and a span ends with an `Exit`; the status has two cases, narrowed by TypeScript.
+ */
 function toExit(status: SpanStatus): Exit.Exit<void, PiSpanFailure> {
-	switch (status.status) {
-		case "ok":
-			return Exit.void;
-		case "error":
-			// Copied field by field: the caller may pass an `Error`, whose `message` a spread would not copy.
-			return Exit.fail(status.error && { name: status.error.name, message: status.error.message });
-	}
+	if (status.status === "ok") return Exit.void;
+	// Copied field by field: the caller may pass an `Error`, whose `message` a spread would not copy.
+	return Exit.fail(status.error && { name: status.error.name, message: status.error.message });
 }
 
 /**
@@ -233,5 +230,5 @@ function toExit(status: SpanStatus): Exit.Exit<void, PiSpanFailure> {
  * no payload a caller throws is exported.
  */
 function thrownExit(error: unknown): Exit.Exit<void, PiSpanFailure> {
-	return Exit.fail(error instanceof Error ? { name: error.name, message: error.message } : undefined);
+	return Exit.fail(Predicate.isError(error) ? { name: error.name, message: error.message } : undefined);
 }

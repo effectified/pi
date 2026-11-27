@@ -19,7 +19,7 @@ import {
 import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Exit, Fiber, Latch, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { BuiltinDoc, type Doc, Extension, Gate, Harness, Hook, Tool } from "../src/index.ts";
+import { BuiltinDoc, type Doc, Extension, Gate, Harness, Hook, Tool, ToolName } from "../src/index.ts";
 import { answer, type FauxResponseStep, held, TestHarness, toolCall } from "../src/testing/index.ts";
 import { runBoth } from "./parity.ts";
 import { AGENT } from "./scripted.ts";
@@ -112,7 +112,7 @@ describe("the nested-call documents", () => {
 			success: Schema.Null,
 			handler: (_params, api) =>
 				Effect.gen(function* () {
-					yield* api.executeTool("double", { n: 2 }, { key: "twice" });
+					yield* api.executeTool(ToolName.make("double"), { n: 2 }, { key: "twice" });
 					read.push(yield* api.snapshot(BuiltinDoc.nestedCall, api.taskId, "twice"));
 					return null;
 				}),

@@ -5,6 +5,7 @@ import { InvalidValue } from "../src/errors.ts";
 import { failed } from "../src/job.ts";
 import { of, typed } from "../src/outcome.ts";
 import { compile } from "../src/work.ts";
+import { ForkId, JobKey, SwarmId } from "../src/ids.ts";
 
 const work = compile({
 	name: "dates",
@@ -15,21 +16,21 @@ const work = compile({
 
 describe("a swarm's result", () => {
 	const stored = of(
-		"s",
+		SwarmId.make("s"),
 		"completed",
-		["k1", "k2"],
+		[JobKey.make("k1"), JobKey.make("k2")],
 		[
 			{
 				status: "succeeded",
-				fork: "f1",
+				fork: ForkId.make("f1"),
 				value: { at: "2026-01-02T00:00:00.000Z" },
 				ran: { conversationId: Conversation.Id.make(11), actorId: "actor-1" },
 			},
-			failed("f2", "unanswered", "model_error"),
+			failed(ForkId.make("f2"), "unanswered", "model_error"),
 		],
 		[
-			{ jobKey: "k1", forkId: "f1", fate: "destroyed", bytesWritten: 12 },
-			{ jobKey: "k2", forkId: "f2", fate: "left", bytesWritten: null },
+			{ jobKey: JobKey.make("k1"), forkId: ForkId.make("f1"), fate: "destroyed", bytesWritten: 12 },
+			{ jobKey: JobKey.make("k2"), forkId: ForkId.make("f2"), fate: "left", bytesWritten: null },
 		],
 	);
 
@@ -57,10 +58,10 @@ describe("a swarm's result", () => {
 
 	it("fails with InvalidValue when a stored value is not the schema's any more", async () => {
 		const broken = of(
-			"s",
+			SwarmId.make("s"),
 			"completed",
-			["k1"],
-			[{ status: "succeeded", fork: "f1", value: { at: 5 }, ran: null }],
+			[JobKey.make("k1")],
+			[{ status: "succeeded", fork: ForkId.make("f1"), value: { at: 5 }, ran: null }],
 			[],
 		);
 		const error = await Effect.runPromise(Effect.flip(typed(work, broken)));

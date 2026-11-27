@@ -1,7 +1,7 @@
 // The runs of this package that are still at work: what `maxLive` counts and what a copied storage aborts.
 
-import type { ConversationId, DurableError, SettledTask, TaskState, Tx } from "@effectified/pi-durable";
-import { Effect } from "effect";
+import type { ConversationId, SettledTask, TaskState, Tx } from "@effectified/pi-durable";
+import { Array as Arr, Effect, Record } from "effect";
 
 /** The statuses of a task Pi has not settled: every status but that of Pi's `SettledTask`. */
 type Unsettled = Exclude<TaskState<unknown, unknown>["status"], SettledTask<unknown>["state"]["status"]>;
@@ -23,21 +23,20 @@ const AT_WORK = {
 } as const satisfies Record<Unsettled, true>;
 
 /** The statuses `AT_WORK` lists. Pi's scan filters by one status, so a scan asks for each in turn. */
-// The keys of `AT_WORK` are exactly the unsettled statuses, which `Object.keys` types as strings.
-export const LIVE = Object.keys(AT_WORK) as ReadonlyArray<keyof typeof AT_WORK>;
+export const LIVE = Record.keys(AT_WORK);
 
 /**
  * How many tasks of `kind` in `conversationId` are still at work, counted up to `limit` per status: enough to compare
- * with a cap of `limit`. Table reads of the commit, so they come before its first table write.
+ * with a cap of `limit`. Table reads of the commit, one after another, so they come before its first table write.
  */
-export function countLive(
+export const countLive = Effect.fn("Subagents.countLive")(function* (
 	tx: Tx.Tx,
 	conversationId: ConversationId,
 	kind: string,
 	limit: number,
-): Effect.Effect<number, DurableError> {
-	return Effect.map(
-		Effect.forEach(LIVE, (status) => tx.scanTasks({ conversationId, kind, status }, limit)),
-		(pages) => pages.reduce((count, page) => count + page.items.length, 0),
-	);
-}
+) {
+	const pages = yield* Effect.forEach(LIVE, (status) => tx.scanTasks({ conversationId, kind, status }, limit), {
+		concurrency: 1,
+	});
+	return Arr.reduce(pages, 0, (count, page) => count + page.items.length);
+});

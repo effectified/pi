@@ -1,14 +1,16 @@
 // A grant: the tools one conversation may call and its classification, and the document that stores it.
 
-import { Conversation, Doc } from "@effectified/pi-durable";
-import { Schema } from "effect";
+import { Conversation, Doc, ToolName } from "@effectified/pi-durable";
+import { Array as Arr, Schema } from "effect";
+import { dual } from "effect/Function";
 
 /**
  * What one conversation may do: exactly these tools, by name, and the classification of what it holds, one of the
- * policy's labels. A conversation without a classification is treated as above every ceiling.
+ * policy's labels. A conversation without a classification is treated as above every ceiling. Classifications are the
+ * product's own labels, plain strings, as `@effectified/pi-router` keeps them.
  */
 export const Grant = Schema.Struct({
-	tools: Schema.Array(Schema.String),
+	tools: Schema.Array(ToolName),
 	classification: Schema.optionalKey(Schema.String),
 });
 
@@ -23,6 +25,9 @@ export const Stored = Schema.Struct({
 	grant: Schema.NullOr(Grant),
 	owner: Schema.optionalKey(Conversation.Id),
 });
+
+/** What the guard's document holds for one conversation. */
+export type Stored = typeof Stored.Type;
 
 /**
  * The durable state of the guard for one conversation, kind `guard.grant`, in the harness storage. A fork starts with
@@ -44,13 +49,17 @@ export const Document: Doc.Doc<typeof Stored, "conversation", "latest"> = Doc.ma
 
 /** `grant` as it is stored: each tool once, in the order given, and no classification key without a value. */
 export function normalize(grant: Grant): Grant {
-	return {
-		tools: [...new Set(grant.tools)],
+	return Grant.make({
+		tools: Arr.dedupe(grant.tools),
 		...(grant.classification === undefined ? {} : { classification: grant.classification }),
-	};
+	});
 }
 
-/** The grant that holds for a conversation: the stored one, or `ungranted` when it has none or no document. */
-export function effective(stored: typeof Stored.Type | undefined, ungranted: Grant): Grant {
-	return stored?.grant ?? ungranted;
-}
+/**
+ * The grant that holds for a conversation: the stored one, or `ungranted` when it has none or no document.
+ * Data-first, or data-last on the stored value.
+ */
+export const effective: {
+	(ungranted: Grant): (stored: Stored | undefined) => Grant;
+	(stored: Stored | undefined, ungranted: Grant): Grant;
+} = dual(2, (stored: Stored | undefined, ungranted: Grant): Grant => stored?.grant ?? ungranted);

@@ -7,11 +7,14 @@ import { describe } from "./errors.ts";
 import { Finding } from "./finding.ts";
 import * as Kept from "./kept.ts";
 
-/** What one check came to: what it found, or the error it failed with instead of answering. */
-export const Report = Schema.Union([
-	Schema.TaggedStruct("Found", { findings: Schema.Array(Finding) }),
-	Schema.TaggedStruct("Failed", { error: Schema.String }),
-]);
+/**
+ * What one check came to: what it found, or the error it failed with instead of answering. `Report.match` picks a
+ * handler per tag.
+ */
+export const Report = Schema.TaggedUnion({
+	Found: { findings: Schema.Array(Finding) },
+	Failed: { error: Schema.String },
+});
 
 /** What one check came to. */
 export type Report = typeof Report.Type;
@@ -24,29 +27,36 @@ export type Memos = Kept.Memos;
  * so a phase that runs again after a close or a crash asks nothing twice. A failure is kept like a finding list: a
  * check that failed is not asked again for the same verdict. A check a close interrupted left no memo, and runs again.
  */
-export function once<R>(
+export function once<R, E>(
 	memos: Memos,
 	name: string,
-	check: Check<R>,
+	check: Check<R, E>,
 	subject: Subject,
 ): Effect.Effect<Report, DurableError, R> {
 	return Kept.once(memos, name, decode, Effect.flatMap(of(check, subject), storable));
 }
 
 /**
- * Runs `check` and never fails: a failure or a defect of the check is its `Failed` report, so nothing a check does
- * can end the review task without a verdict. An interruption, Pi aborting the task or closing, stays one.
+ * Runs `check` and never fails: a failure or a defect of the check, one its `run` throws included, is its `Failed`
+ * report, so nothing a check does can end the review task without a verdict. An interruption, Pi aborting the task or
+ * closing, stays one.
  */
-export function of<R>(check: Check<R>, subject: Subject): Effect.Effect<Report, never, R> {
-	return Effect.suspend(() => check.run(subject)).pipe(
-		Effect.map((findings): Report => ({ _tag: "Found", findings })),
-		Effect.catchCause((cause) =>
-			Cause.hasInterruptsOnly(cause)
-				? Effect.interrupt
-				: Effect.succeed<Report>({ _tag: "Failed", error: describe(Cause.squash(cause)) }),
-		),
-	);
-}
+export const of: <R, E>(check: Check<R, E>, subject: Subject) => Effect.Effect<Report, never, R> = Effect.fn(
+	"Report.of",
+)(
+	function* <R, E>(check: Check<R, E>, subject: Subject) {
+		const findings = yield* check.run(subject);
+		// Not `Report.cases.Found.make`: the findings are the product's, and `storable` is where they are checked, so
+		// that what it refuses becomes the check's failure.
+		const found: Report = { _tag: "Found", findings };
+		return found;
+	},
+	Effect.catchCause((cause) =>
+		Cause.hasInterruptsOnly(cause)
+			? Effect.interrupt
+			: Effect.succeed(Report.cases.Failed.make({ error: describe(Cause.squash(cause)) })),
+	),
+);
 
 const decode = Schema.decodeUnknownEffect(Report);
 
@@ -59,6 +69,6 @@ const encode = Schema.encodeEffect(Report);
  */
 function storable(report: Report): Effect.Effect<Report> {
 	return Effect.catch(encode(report), (error) =>
-		Effect.succeed<Report>({ _tag: "Failed", error: `The findings cannot be stored: ${error.message}` }),
+		Effect.succeed(Report.cases.Failed.make({ error: `The findings cannot be stored: ${error.message}` })),
 	);
 }

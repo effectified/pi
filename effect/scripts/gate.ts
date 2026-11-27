@@ -1,13 +1,13 @@
 // The gate of the pi-effect packages in one command: what CI's `boundary` and `check` jobs judge, run here, with one
 // line per step and the end of a failed step's output. It changes no file (upstream's `npm run check` rewrites every
-// file Biome would format, other agents' unfinished ones too). The whole output of each step is kept in a directory
+// upstream file Biome would format, other agents' unfinished ones too). The whole output of each step is kept in a directory
 // the first line names. Tests need upstream's `npm run build` to have run once (Pi's `dist`).
 // Usage: node effect/scripts/gate.ts [--changed[=<ref>]] [--skip=<step>[,<step>]] [package directory name ...]
 //   No package named: every package's tests. Packages named: theirs alone.
 //   --changed          tests of the packages with uncommitted changes and of every package that depends on one;
 //                      a change under effect/ or to the lockfile selects all. With =<ref>, also what changed since it.
-//   --skip             leaves steps out by name: biome, pinned-deps, runtime-deps, ts-imports, types, diagnostics,
-//                      sync, boundary, deps, providers, node, bun.
+//   --skip             leaves steps out by name: style, pinned-deps, runtime-deps, ts-imports, types, sync,
+//                      boundary, deps, providers, node, bun.
 // The checks all run, so one run names everything that is wrong. The tests run one package at a time, and not for a
 // package with a type error, nor for one that depends on a package with a type error in its `src`: another agent's
 // half-written file stops the tests it can break and no others. Exit 1 when a step failed.
@@ -43,12 +43,11 @@ type Outcome =
 	| { readonly kind: "not run"; readonly why: string };
 
 const STEP_NAMES = [
-	"biome",
+	"style",
 	"pinned-deps",
 	"runtime-deps",
 	"ts-imports",
 	"types",
-	"diagnostics",
 	"sync",
 	"boundary",
 	"deps",
@@ -90,7 +89,6 @@ const tested = selected();
 console.log(`gate: the whole output of each step is in ${logs}`);
 console.log(`gate: tests of ${tested.what}`);
 
-const directories = packages.map((pkg) => pkg.directory);
 const node = process.execPath;
 const check = (name: string, label: string, ...command: [string, ...string[]]): Step => ({
 	name,
@@ -99,39 +97,35 @@ const check = (name: string, label: string, ...command: [string, ...string[]]): 
 	cwd: ROOT,
 });
 const checks: readonly Step[] = [
-	// `effect/biome.json` brings this directory under upstream's rules, which leave it out.
-	check("biome", "format and lint", "node_modules/.bin/biome", "check", ...directories, "effect"),
+	// oxfmt and oxlint, with the idiom rules of effect/AGENTS.md ("Effect-native design"), on the packages and effect/.
+	check("style", "format and lint", node, "effect/scripts/style.ts"),
 	check("pinned-deps", "pinned versions", "npm", "run", "check:pinned-deps"),
 	check("runtime-deps", "declared runtime dependencies", "npm", "run", "check:runtime-deps"),
 	check("ts-imports", "import style", "npm", "run", "check:ts-imports"),
-	check("types", "types", "node_modules/.bin/tsc", "--noEmit", "-p", "effect/tsconfig.json"),
-	check("diagnostics", "Effect diagnostics", node, "effect/scripts/effect-diagnostics.ts"),
+	// The types and the Effect rules in one pass of the Effect-patched tsrs (Rust).
+	check("types", "types and Effect rules", node, "effect/scripts/types.ts"),
 	check("sync", "Pi pins, release and surface record", node, "effect/scripts/sync.ts", "check"),
 	check("boundary", "fork boundary", node, "effect/scripts/check-boundary.ts"),
 	check("deps", "dependency rules", node, "effect/scripts/check-deps.ts"),
 	check("providers", "pi-ai providers offered", node, "effect/scripts/providers.ts", "check"),
 ];
 const suites: readonly Step[] = [
-	...tested.packages.map(
-		(pkg): Step => ({
-			name: "node",
-			label: `${shortName(pkg)} on Node`,
-			command: [node, join(ROOT, "node_modules/vitest/dist/cli.js"), "--run"],
-			cwd: join(ROOT, pkg.directory),
-			pkg,
-			counts: vitestCounts,
-		}),
-	),
-	...tested.packages.map(
-		(pkg): Step => ({
-			name: "bun",
-			label: `${shortName(pkg)} on Bun`,
-			command: [node, "effect/scripts/test-bun.ts", shortName(pkg)],
-			cwd: ROOT,
-			pkg,
-			counts: bunCounts,
-		}),
-	),
+	...tested.packages.map((pkg): Step => ({
+		name: "node",
+		label: `${shortName(pkg)} on Node`,
+		command: [node, join(ROOT, "node_modules/vitest/dist/cli.js"), "--run"],
+		cwd: join(ROOT, pkg.directory),
+		pkg,
+		counts: vitestCounts,
+	})),
+	...tested.packages.map((pkg): Step => ({
+		name: "bun",
+		label: `${shortName(pkg)} on Bun`,
+		command: [node, "effect/scripts/test-bun.ts", shortName(pkg)],
+		cwd: ROOT,
+		pkg,
+		counts: bunCounts,
+	})),
 ];
 
 const outcomes: Array<readonly [Step, Outcome]> = [];
@@ -205,13 +199,15 @@ function run(step: Step): Outcome {
 /**
  * The packages whose tests cannot be trusted after the types step, by name, and why in words: those with a type
  * error, and those that depend on a package with one in its `src` (an error in a test breaks no other package). All
- * of them when an error is outside the packages or cannot be placed.
+ * of them when an error is outside the packages or cannot be placed. An Effect rule's error breaks no test: the step
+ * prints it without `error TS`.
  */
 function withoutTypes(types: Outcome | undefined): { readonly packages: ReadonlySet<string>; readonly why: string } {
 	if (types?.kind !== "failed") return { packages: new Set(), why: "" };
 	const errors = readFileSync(types.log, "utf8")
 		.split("\n")
 		.filter((line) => /\berror TS\d+/.test(line));
+	if (errors.length === 0) return { packages: new Set(), why: "" };
 	const broken = packages.filter((pkg) => errors.some((line) => line.startsWith(`${pkg.directory}/`)));
 	const placed = errors.every((line) => packages.some((pkg) => line.startsWith(`${pkg.directory}/`)));
 	if (broken.length === 0 || !placed) {
@@ -266,7 +262,7 @@ function changedFiles(ref: string | undefined): string[] {
 /** `touched` and every package that depends on one of them, at run time or in its tests, through any number of others. */
 function withDependents(touched: readonly EffectPackage[]): EffectPackage[] {
 	const chosen = new Set(touched.map((pkg) => pkg.name));
-	for (let grew = true; grew; ) {
+	for (let grew = true; grew;) {
 		grew = false;
 		for (const pkg of packages) {
 			const uses = [pkg.dependencies, pkg.peerDependencies, pkg.devDependencies].flatMap((specs) =>

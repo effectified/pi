@@ -1,3 +1,4 @@
+import { fromPiModelRef } from "@effectified/pi-ai";
 import { describe, expect, it } from "vitest";
 import { pair } from "../src/pairing.ts";
 import { AUTHOR, PARTIES, POLICY, REVIEWER } from "./scene.ts";
@@ -36,7 +37,7 @@ describe("pair", () => {
 	});
 
 	it("pairs the author with another reviewer than the policy's: the model that answered", () => {
-		const JUDGE = { provider: "judge-lab", modelId: "judge-2" };
+		const JUDGE = fromPiModelRef({ provider: "judge-lab", modelId: "judge-2" });
 		const families = [...POLICY.families, { ...JUDGE, family: "beta" }];
 		expect(pair({ ...POLICY, families }, AUTHOR, JUDGE)).toEqual({
 			_tag: "Reviewable",

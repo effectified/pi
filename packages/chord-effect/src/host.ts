@@ -35,11 +35,10 @@ import {
 	type RouteOptions,
 } from "@earendil-works/chord";
 import type { JsonValue } from "@earendil-works/chord/json";
-import { Cause, Effect, Exit, Option, PubSub, type Scope, Stream } from "effect";
+import { type Cause, Effect, Option, PubSub, Ref, type Scope, Stream } from "effect";
 import { attempt, chordCall, chordSync, currentContext, rejection, storeRejection } from "./call.ts";
 import type { ChordCallError } from "./errors.ts";
 import { fromIterable, toIterable } from "./iterable.ts";
-import { ParentContext } from "./parent-context.ts";
 import { runner } from "./runner.ts";
 import type { StoreError } from "./store.ts";
 import { values, type WatchError } from "./watch.ts";
@@ -157,36 +156,34 @@ export interface Host<P extends Principal = Principal, R extends JsonValue = Jso
 /**
  * Chord's `createHost`: a host for the life of the scope, closed when the scope closes (its links, root scopes and
  * objects, the last to go live first). Its store, when given, is the app's: close it after the host (open it in an
- * outer scope).
+ * outer scope). Untraced, as every call of this module: Chord records its own spans under the fiber's span, and what
+ * a host keeps (its error log, its links' work) outlives a span of this Effect.
  */
-export function make<P extends Principal = Principal, R extends JsonValue = JsonValue>(
+export const make: <P extends Principal = Principal, R extends JsonValue = JsonValue>(
 	options: Options<P, R>,
-): Effect.Effect<Host<P, R>, never, Scope.Scope> {
-	return Effect.gen(function* () {
-		const services = yield* Effect.context<never>();
-		const errors = yield* Effect.acquireRelease(PubSub.unbounded<HostError>(), PubSub.shutdown);
-		const host = yield* Effect.acquireRelease(
-			Effect.sync(() =>
-				createHost<P, R>({
-					...options,
-					onError: (error) => {
-						PubSub.publishUnsafe(errors, error);
-						Effect.runForkWith(services)(Effect.logError("Chord host error", error));
-					},
-				}),
-			),
-			// Chord rejects with an `AggregateError` of the closes that threw; a finalizer has nothing left to recover.
-			(opened) =>
-				Effect.ignore(
-					attempt(
-						(context) => opened.close(context),
-						(thrown) => Effect.fail(thrown),
-					),
-				),
-		);
-		return of(host, Stream.fromPubSub(errors));
-	});
-}
+) => Effect.Effect<Host<P, R>, never, Scope.Scope> = Effect.fnUntraced(function* <
+	P extends Principal,
+	R extends JsonValue,
+>(options: Options<P, R>) {
+	const services = yield* Effect.context<never>();
+	// Logging is synchronous: Chord's `onError` logs in place, no fiber outlives the call.
+	const log = Effect.runSyncWith(services);
+	const errors = yield* Effect.acquireRelease(PubSub.unbounded<HostError>(), PubSub.shutdown);
+	const host = yield* Effect.acquireRelease(
+		Effect.sync(() =>
+			createHost<P, R>({
+				...options,
+				onError: (error) => {
+					PubSub.publishUnsafe(errors, error);
+					log(Effect.logError("Chord host error", error));
+				},
+			}),
+		),
+		// Chord rejects with an `AggregateError` of the closes that threw; a finalizer has nothing left to recover.
+		(opened) => Effect.ignoreCause(attempt((context) => opened.close(context), Effect.die)),
+	);
+	return of(host, Stream.fromPubSub(errors));
+});
 
 /**
  * The Effect API of a host Chord made itself (a client's, an app server's), whose background errors are `errors`. The
@@ -215,58 +212,52 @@ export function of<P extends Principal, R extends JsonValue>(
 			Effect.flatMap(currentContext, (context) => chordSync(() => host.accept(link, options, context))),
 		connect: (link, options) =>
 			Effect.flatMap(currentContext, (context) => chordSync(() => host.connect(link, options, context))),
-		route: <N extends string, Q extends Params, E, RR>(
+		route: Effect.fnUntraced(function* <N extends string, Q extends Params, E, RR>(
 			Kind: HostKind<N, Q>,
 			options: Route<P, HostKind<N, Q>, E, RR>,
-		) =>
-			Effect.gen(function* () {
-				const run = runner(yield* Effect.context<RR>());
-				const context = yield* currentContext;
-				return yield* chordSync(() =>
-					host.route(
-						Kind,
-						{ ...options, resolve: (address, routeContext) => run(options.resolve(address), routeContext) },
-						context,
-					),
-				);
-			}),
+		) {
+			const services = yield* Effect.context<RR>();
+			const run = runner(services);
+			const context = yield* currentContext;
+			return yield* chordSync(() =>
+				host.route(
+					Kind,
+					{ ...options, resolve: (address, routeContext) => run(options.resolve(address), routeContext) },
+					context,
+				),
+			);
+		}),
 		revoke: (revocation) =>
 			Effect.flatMap(currentContext, (context) => chordSync(() => host.revoke(revocation, context))),
 		references: (Type) => values(host.references(Type)),
 		activity: values(host.activity),
 		registry: (R, options) => chordCall((context) => host.registry(R, context, options)),
-		root: <A, E, RR>(body: (ctx: Ctx<P>) => Effect.Effect<A, E, RR>, options?: RootOptions<P>) =>
-			Effect.gen(function* () {
-				const runExit = Effect.runPromiseExitWith(yield* Effect.context<RR>());
-				// `body`'s own failure, kept apart from what Chord rejects with (a closed host, an aborted context).
-				let failed: Cause.Cause<E> | undefined;
-				return yield* attempt(
-					(context) =>
-						host.root(
-							async (ctx) => {
-								const exit = await runExit(Effect.provideService(body(ctx), ParentContext, ctx), {
-									signal: ctx.abortSignal,
-								});
-								if (Exit.isSuccess(exit)) return exit.value;
-								failed = exit.cause;
-								// Chord marks the root's span failed for what it throws.
-								throw Cause.squash(exit.cause);
-							},
-							context,
-							options,
-						),
-					(thrown): Effect.Effect<never, E | ChordCallError> =>
-						failed === undefined ? rejection(thrown) : Effect.failCause(failed),
-				);
-			}),
+		root: Effect.fnUntraced(function* <A, E, RR>(
+			body: (ctx: Ctx<P>) => Effect.Effect<A, E, RR>,
+			options?: RootOptions<P>,
+		) {
+			const services = yield* Effect.context<RR>();
+			const run = runner(services);
+			// `body`'s own failure, kept apart from what Chord rejects with (a closed host, an aborted context). Chord
+			// marks the root's span failed for the rejection `run` gives it.
+			const failed = yield* Ref.make(Option.none<Cause.Cause<E>>());
+			const recorded = (ctx: Ctx<P>) => Effect.onError(body(ctx), (cause) => Ref.set(failed, Option.some(cause)));
+			return yield* attempt(
+				(context) => host.root((ctx) => run(recorded(ctx), ctx), context, options),
+				(thrown) =>
+					Effect.flatMap(
+						Ref.get(failed),
+						Option.match({
+							onNone: (): Effect.Effect<never, E | ChordCallError> => rejection(thrown),
+							onSome: Effect.failCause,
+						}),
+					),
+			);
+		}),
 		exportHostData: (address) => fromIterable((context) => host.exportHostData(address, context), storeRejection),
 		importHostData: <E, RR>(parts: Stream.Stream<unknown, E, RR>, options?: HostImportOptions) =>
 			Effect.flatMap(toIterable(parts), (input) =>
-				attempt(
-					(context) => host.importHostData(input.iterable, context, options),
-					(thrown): Effect.Effect<never, StoreError | E> =>
-						Option.match(input.failure(), { onNone: () => storeRejection(thrown), onSome: Effect.fail }),
-				),
+				attempt((context) => host.importHostData(input.iterable, context, options), input.rejected(storeRejection)),
 			),
 		deleteHostData: (address, options) =>
 			attempt((context) => host.deleteHostData(address, context, options), storeRejection),

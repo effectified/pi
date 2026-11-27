@@ -15,7 +15,7 @@ export const Hit = Schema.Struct({
 	publishedDate: Schema.optional(Schema.String),
 	author: Schema.optional(Schema.String),
 	/** The provider's relevance score. Hits are in the provider's order whether it gives one or not. */
-	score: Schema.optional(Schema.Number),
+	score: Schema.optional(Schema.Finite),
 });
 
 /** One page a search found or a fetch read. */

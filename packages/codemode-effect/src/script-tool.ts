@@ -2,7 +2,7 @@
 
 import type { CodemodeJsonSchema, CodemodeTool } from "@earendil-works/pi-codemode";
 import type { AgentTool, AgentToolResult, SchemaConversionError, Tool } from "@effectified/pi-agent";
-import { Effect } from "effect";
+import { Array as Arr, Effect } from "effect";
 
 /**
  * A tool exposed as a top-level function of the script instead of on `tools`, such as a host helper. It is not
@@ -23,26 +23,31 @@ export interface Global<R> {
  * `structured`, else the text the model would read. A failure of the handler and a `Tool.error` reply reject the
  * script's call with that text. The handler runs with the services of the context this Effect runs in, sees the tool
  * call id `"nested"`, and is interrupted when Pi aborts the call. Its `api.update` reaches nobody: a script has no
- * progress channel.
+ * progress channel. Untraced: the tool keeps this Effect's context for every call, which a span of the build would
+ * not outlive; each call has its own span, `Tool.execute`.
  */
-export function fromAgent<R>(tool: Tool.Any<R>): Effect.Effect<CodemodeTool, SchemaConversionError, R> {
-	return Effect.map(tool.agentTool, (agentTool) => ({
-		name: agentTool.name,
-		description: agentTool.description,
-		inputSchema: jsonSchema(agentTool.parameters),
-		outputSchema: agentTool.outputSchema === undefined ? { type: "string" } : jsonSchema(agentTool.outputSchema),
-		execute: (args, { signal }) => agentTool.execute(NESTED_CALL_ID, args, signal).then(scriptValue(agentTool)),
-	}));
-}
+export const fromAgent: <R>(tool: Tool.Any<R>) => Effect.Effect<CodemodeTool, SchemaConversionError, R> =
+	Effect.fnUntraced(function* <R>(tool: Tool.Any<R>): Effect.fn.Return<CodemodeTool, SchemaConversionError, R> {
+		const agentTool = yield* tool.agentTool;
+		return {
+			name: agentTool.name,
+			description: agentTool.description,
+			inputSchema: jsonSchema(agentTool.parameters),
+			outputSchema: agentTool.outputSchema === undefined ? { type: "string" } : jsonSchema(agentTool.outputSchema),
+			execute: (args, { signal }) => agentTool.execute(NESTED_CALL_ID, args, signal).then(scriptValue(agentTool)),
+		};
+	});
 
-/** pi-codemode's global for `global`: its tool as `fromAgent` gives it, with `spread` and `signature`. */
-export function global<R>(global: Global<R>): Effect.Effect<CodemodeTool, SchemaConversionError, R> {
-	return Effect.map(fromAgent(global.tool), (tool) => ({
-		...tool,
-		...(global.spread === undefined ? {} : { spread: global.spread }),
-		...(global.signature === undefined ? {} : { signature: global.signature }),
-	}));
-}
+/** pi-codemode's global for `global`: its tool as `fromAgent` gives it, with `spread` and `signature`. Untraced, as `fromAgent`. */
+export const global: <R>(global: Global<R>) => Effect.Effect<CodemodeTool, SchemaConversionError, R> =
+	Effect.fnUntraced(function* <R>(global: Global<R>): Effect.fn.Return<CodemodeTool, SchemaConversionError, R> {
+		const tool = yield* fromAgent(global.tool);
+		return {
+			...tool,
+			...(global.spread === undefined ? {} : { spread: global.spread }),
+			...(global.signature === undefined ? {} : { signature: global.signature }),
+		};
+	});
 
 /** The tool call id a handler sees for a script's call: there is no model call, as in Pi's documented bridge. */
 const NESTED_CALL_ID = "nested";
@@ -56,7 +61,10 @@ function scriptValue(agentTool: AgentTool): (result: AgentToolResult) => unknown
 		if (agentTool.outputSchema !== undefined && result.structuredContent !== undefined) {
 			return result.structuredContent;
 		}
-		const text = result.content.map((block) => (block.type === "text" ? block.text : "")).join("\n");
+		const text = Arr.join(
+			Arr.map(result.content, (block) => (block.type === "text" ? block.text : "")),
+			"\n",
+		);
 		if (result.isError !== true) return text;
 		return Promise.reject(new Error(text === "" ? `Tool ${agentTool.name} failed` : text));
 	};

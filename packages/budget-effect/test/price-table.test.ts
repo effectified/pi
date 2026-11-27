@@ -1,17 +1,19 @@
 import { calculateCost, fauxProvider, type Usage } from "@earendil-works/pi-ai";
-import { emptyUsage } from "@effectified/pi-ai";
+import { emptyUsage, ModelId, ProviderId } from "@effectified/pi-ai";
 import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	InvalidPriceTable,
-	type ModelPrice,
+	ModelPrice,
 	PriceMissing,
 	Prices,
 	type PricesService,
 	PriceTable,
 	type TokenUsage,
 } from "../src/index.ts";
+
+const ACME = ProviderId.make("acme");
 
 const TABLE = {
 	currency: "USD",
@@ -30,7 +32,7 @@ const TABLE = {
 
 const cost = (model: string, usage: TokenUsage) =>
 	Effect.runPromise(
-		Prices.use((prices) => prices.cost("acme", model, usage)).pipe(Effect.provide(Prices.layer(TABLE))),
+		Prices.use((prices) => prices.cost(ACME, ModelId.make(model), usage)).pipe(Effect.provide(Prices.layer(TABLE))),
 	);
 
 describe("Prices", () => {
@@ -63,7 +65,7 @@ describe("Prices", () => {
 
 	it("fails with PriceMissing for a model the table does not list", async () => {
 		const error = await Effect.runPromise(
-			Prices.use((prices) => Effect.flip(prices.priceOf("acme", "medium"))).pipe(
+			Prices.use((prices) => Effect.flip(prices.priceOf(ACME, ModelId.make("medium")))).pipe(
 				Effect.provide(Prices.layer(TABLE)),
 			),
 		);
@@ -75,7 +77,7 @@ describe("Prices", () => {
 	it("carries the currency and gives a listed price as it is", async () => {
 		const [currency, price] = await Effect.runPromise(
 			Prices.use((prices) =>
-				Effect.map(prices.priceOf("acme", "large"), (found) => [prices.currency, found] as const),
+				Effect.map(prices.priceOf(ACME, ModelId.make("large")), (found) => [prices.currency, found] as const),
 			).pipe(Effect.provide(Prices.layer(TABLE))),
 		);
 		expect(currency).toBe("USD");
@@ -83,7 +85,7 @@ describe("Prices", () => {
 	});
 
 	it("refuses a table that prices a model twice, and one with a price that is not a whole number", async () => {
-		const build = (table: PriceTable) =>
+		const build = (table: typeof PriceTable.Encoded) =>
 			Effect.runPromise(
 				Effect.flip(
 					Effect.provide(
@@ -107,7 +109,7 @@ describe("Prices", () => {
 });
 
 describe("pi-ai's rule", () => {
-	const LARGE: ModelPrice = TABLE.prices[0];
+	const LARGE: ModelPrice = Schema.decodeSync(ModelPrice)(TABLE.prices[0]);
 
 	/** `LARGE`, and from 200,000 input tokens on twice as much. */
 	const TIERED: ModelPrice = {
@@ -155,7 +157,7 @@ describe("pi-ai's rule", () => {
 			Effect.gen(function* () {
 				for (const price of [LARGE, TIERED]) {
 					for (const usage of USAGES) {
-						const micros = Number(yield* priceWith(price, (prices) => prices.cost("acme", "large", usage)));
+						const micros = Number(yield* priceWith(price, (prices) => prices.cost(ACME, LARGE.model, usage)));
 						// pi-ai adds floats; the exact cost is at most one micro unit below ours.
 						expect(micros - piCost(price, usage)).toBeGreaterThanOrEqual(-1e-6);
 						expect(micros - piCost(price, usage)).toBeLessThan(1);
@@ -179,7 +181,7 @@ describe("pi-ai's rule", () => {
 	it("charges all tokens of a request above a tier's threshold at the tier's rates", () =>
 		runTest(
 			Effect.gen(function* () {
-				const charge = (usage: TokenUsage) => priceWith(TIERED, (prices) => prices.cost("acme", "large", usage));
+				const charge = (usage: TokenUsage) => priceWith(TIERED, (prices) => prices.cost(ACME, LARGE.model, usage));
 				expect(yield* charge({ input: 200_000, output: 0, cacheRead: 0, cacheWrite: 0 })).toBe(600_000n);
 				// Cache reads and writes count toward the threshold: 200,000 and 1 input tokens.
 				expect(yield* charge({ input: 200_000, output: 0, cacheRead: 1, cacheWrite: 0 })).toBe(1_200_001n);
@@ -209,14 +211,17 @@ describe("the price rows of a route table", () => {
 		const usage = { input: 1000, output: 100, cacheRead: 0, cacheWrite: 0 };
 		const priced = await Effect.runPromise(
 			Prices.use((prices) =>
-				Effect.all([
-					// A response names the route that served it: each route's model at its own price.
-					prices.cost("first", "m", usage),
-					prices.cost("second", "m", usage),
-					// A request to an alias is checked against the alias's row, which no route's price exceeds.
-					prices.cost("router", "author", usage),
-					prices.cost("router", "fast", usage),
-				]),
+				Effect.all(
+					[
+						// A response names the route that served it: each route's model at its own price.
+						prices.cost(ProviderId.make("first"), ModelId.make("m"), usage),
+						prices.cost(ProviderId.make("second"), ModelId.make("m"), usage),
+						// A request to an alias is checked against the alias's row, which no route's price exceeds.
+						prices.cost(ProviderId.make("router"), ModelId.make("author"), usage),
+						prices.cost(ProviderId.make("router"), ModelId.make("fast"), usage),
+					],
+					{ concurrency: 1 },
+				),
 			).pipe(Effect.provide(Prices.layer(table))),
 		);
 		expect(priced).toEqual([4_500n, 3_000n, 5_000n, 4_500n]);

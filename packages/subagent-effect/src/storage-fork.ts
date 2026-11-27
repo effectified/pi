@@ -1,9 +1,8 @@
 // A copied storage runs no subagent of the storage it was copied from: what a host runs on a copy of a whole harness
 // storage before its first call.
 
-import type { TaskId } from "@effectified/pi-durable";
-import { type Doc, Harness, type Tx } from "@effectified/pi-durable";
-import { Effect, Stream } from "effect";
+import { type Doc, Harness, Task } from "@effectified/pi-durable";
+import { Array as Arr, Effect, Option, Stream } from "effect";
 import * as Copy from "./copy.ts";
 import { LIVE } from "./live.ts";
 import * as Run from "./run.ts";
@@ -30,18 +29,24 @@ import * as Run from "./run.ts";
 export const onStorageFork: Effect.Effect<void, Doc.Failure, Harness.Harness> = Effect.gen(function* () {
 	const inherited = yield* Harness.commit((tx) =>
 		Effect.gen(function* () {
-			// Pi's rule for a commit: every table read comes before the first write.
+			// Pi's rule for a commit: every table read comes before the first write. The runs with each status at work
+			// are as many as there are subagents at work, whatever else the storage holds.
 			const newest = yield* tx.scanTasks({ order: "descending" }, 1);
-			const live = (yield* Effect.forEach(LIVE, (status) => runsIn(tx, status))).flat();
-			yield* Effect.flatMap(tx.doc(Copy.Document), (mark) => mark.set({ through: newest.items[0]?.id ?? 0 }));
+			const live = yield* Stream.runCollect(
+				Stream.fromIterable(LIVE).pipe(
+					Stream.flatMap((status) => tx.tasks({ kind: Run.NAME, status })),
+					Stream.map((task) => task.id),
+				),
+			);
+			const through = Option.getOrElse(
+				Option.map(Arr.head(newest.items), (task) => task.id),
+				() => Task.Id.make(0),
+			);
+			yield* Effect.flatMap(tx.doc(Copy.Document), (mark) => mark.set({ through }));
 			return live;
 		}),
 	);
-	// The abort ends a run that sleeps until its child's submission settles, and with it the child's own work.
-	yield* Effect.forEach(inherited, (taskId) => Harness.abortTask(taskId), { discard: true });
-});
-
-/** The runs with `status`, which are as many as there are subagents at work, whatever else the storage holds. */
-function runsIn(tx: Tx.Tx, status: (typeof LIVE)[number]): Effect.Effect<ReadonlyArray<TaskId>, Doc.Failure> {
-	return Stream.runCollect(Stream.map(tx.tasks({ kind: Run.NAME, status }), (task) => task.id));
-}
+	// The abort ends a run that sleeps until its child's submission settles, and with it the child's own work. One at a
+	// time: each abort is a commit, and Pi stores commits one at a time.
+	yield* Effect.forEach(inherited, (taskId) => Harness.abortTask(taskId), { concurrency: 1, discard: true });
+}).pipe(Effect.withSpan("Subagents.onStorageFork"));

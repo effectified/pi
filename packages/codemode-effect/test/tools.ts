@@ -43,13 +43,18 @@ export const refuse = Tool.make("refuse", {
 	handler: () => Effect.succeed(Tool.error("not allowed")),
 });
 
+/** A failure of a tool's handler. */
+export class DiskGone extends Schema.TaggedError<DiskGone, { readonly brand: unique symbol }>()("DiskGone", {
+	message: Schema.String,
+}) {}
+
 /** A tool whose handler fails. */
 export const broken = Tool.make("broken", {
 	label: "Broken",
 	description: "Always fails.",
 	parameters: Schema.Struct({}),
 	success: Schema.String,
-	handler: () => Effect.fail(new Error("the disk is gone")),
+	handler: () => Effect.fail(DiskGone.make({ message: "the disk is gone" })),
 });
 
 /** A tool that opens `started` and then never answers; `interrupted` opens when Pi aborts its call. */

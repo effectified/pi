@@ -43,7 +43,7 @@ export function registerRivetSuite(runtime: string, engines: typeof LocalEngine)
 type Handle = Client.Handle<typeof Source>;
 
 function suite(engines: typeof LocalEngine): void {
-	const scope = Effect.runSync(Scope.make());
+	const scope = Scope.makeUnsafe();
 	let context: Context.Context<Client.RivetClient>;
 
 	beforeAll(async () => {
@@ -90,7 +90,7 @@ function suite(engines: typeof LocalEngine): void {
 
 	/** The actor that is the fork of a job, if the engine has one. */
 	const forkOf = (source: Handle, swarmId: string, jobKey: string) =>
-		Client.find(source.definition, Rivet.forkKey(source.key, swarmId, jobKey));
+		Client.find(source.definition, Rivet.forkKey(source.key, Swarm.SwarmId.make(swarmId), Swarm.JobKey.make(jobKey)));
 
 	/** How many of these jobs have a fork actor now. */
 	const existing = (source: Handle, swarmId: string, jobKeys: ReadonlyArray<string>) =>
@@ -102,7 +102,7 @@ function suite(engines: typeof LocalEngine): void {
 	/** How often the fork hygiene ran in the fork of each of these jobs: once per fork that was made. */
 	const forkedTimes = (source: Handle, swarmId: string, jobKeys: ReadonlyArray<string>): Array<number> =>
 		jobKeys.map((jobKey) => {
-			const key = JSON.stringify(Rivet.forkKey(source.key, swarmId, jobKey));
+			const key = JSON.stringify(Rivet.forkKey(source.key, Swarm.SwarmId.make(swarmId), Swarm.JobKey.make(jobKey)));
 			return forked.filter((made) => made === key).length;
 		});
 
@@ -202,8 +202,8 @@ function suite(engines: typeof LocalEngine): void {
 		// The fork is an actor fork of the source, made for that job at the source's newest entry.
 		const assignment = (jobKey: string): Rivet.Assignment => ({
 			_tag: "swarm.rivet.job",
-			swarmId: "keyed-1",
-			jobKey,
+			swarmId: Swarm.SwarmId.make("keyed-1"),
+			jobKey: Swarm.JobKey.make(jobKey),
 			sourceConversationId: root.conversationId,
 			at: root.at,
 			agent: null,
@@ -217,7 +217,7 @@ function suite(engines: typeof LocalEngine): void {
 		await run(Client.call(source, "intend", job("b")));
 		const lost = await run(
 			Client.fork(source, {
-				key: Rivet.forkKey(source.key, "keyed-1", "b"),
+				key: Rivet.forkKey(source.key, Swarm.SwarmId.make("keyed-1"), Swarm.JobKey.make("b")),
 				input: assignment("b"),
 			}),
 		);
@@ -289,7 +289,7 @@ function suite(engines: typeof LocalEngine): void {
 		const copied = await run(Effect.flip(Client.call(kept, "result", { id: "capped-1" })));
 		expect(copied).toMatchObject({
 			_tag: "ActionFailed",
-			error: new Swarm.SwarmFaulted({ swarmId: "capped-1", reason: "copied" }),
+			error: new Swarm.SwarmFaulted({ swarmId: Swarm.SwarmId.make("capped-1"), reason: "copied" }),
 		});
 		expect(await run(Client.call(kept, "forks", { id: "capped-1" }))).toEqual([]);
 		expect(await run(existing(kept, "capped-1", keys))).toBe(0);

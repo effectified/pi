@@ -37,7 +37,7 @@ export function registerEngineSuite(runtime: string, engines: typeof LocalEngine
 }
 
 function suite(engines: typeof LocalEngine): void {
-	const scope = Effect.runSync(Scope.make());
+	const scope = Scope.makeUnsafe();
 	let context: Context.Context<Client.RivetClient>;
 
 	beforeAll(async () => {

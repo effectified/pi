@@ -1,9 +1,11 @@
 import { Effect, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-import { approve, Decision, deny } from "../src/index.ts";
+import { approve, Decision, Digest, deny } from "../src/index.ts";
 
-const request = { digest: "d".repeat(64) };
+const request = { digest: Digest.Digest.make("d".repeat(64)) };
+
+const D = request.digest;
 
 describe("approve and deny", () => {
 	it("make a decision for the request's digest, by the principal, at the Clock's time", async () => {
@@ -28,16 +30,22 @@ describe("approve and deny", () => {
 describe("Decision", () => {
 	const decode = Schema.decodeUnknownEffect(Decision);
 
-	it("decodes both decisions from their JSON", async () => {
-		const approved = { _tag: "Approved", digest: "d", by: "ada", at: 1 };
-		const denied = { _tag: "Denied", digest: "d", by: "bob", at: 2, note: "No." };
-		expect(await Effect.runPromise(Effect.all([decode(approved), decode(denied)]))).toEqual([approved, denied]);
+	it("decodes both decisions from their JSON, and matches on them", async () => {
+		const approved = { _tag: "Approved", digest: D, by: "ada", at: 1 };
+		const denied = { _tag: "Denied", digest: D, by: "bob", at: 2, note: "No." };
+		const decoded = await Effect.runPromise(Effect.all([decode(approved), decode(denied)], { concurrency: 1 }));
+		expect(decoded).toEqual([approved, denied]);
+		const notes = decoded.map((decision) =>
+			Decision.match(decision, { Approved: () => "approved", Denied: ({ note }) => `denied: ${note}` }),
+		);
+		expect(notes).toEqual(["approved", "denied: No."]);
 	});
 
-	it("rejects another tag, a missing principal and an approval that is no object", async () => {
+	it("rejects another tag, a missing principal, a digest that is not one and an approval that is no object", async () => {
 		const rejected = [
-			{ _tag: "Maybe", digest: "d", by: "ada", at: 1 },
-			{ _tag: "Approved", digest: "d", at: 1 },
+			{ _tag: "Maybe", digest: D, by: "ada", at: 1 },
+			{ _tag: "Approved", digest: D, at: 1 },
+			{ _tag: "Approved", digest: "d", by: "ada", at: 1 },
 			true,
 		];
 		for (const value of rejected) {

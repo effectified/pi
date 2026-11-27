@@ -5,7 +5,7 @@ import { CodemodeSandbox, type CodemodeSandboxOptions, type CodemodeWasmModule }
 import type { SchemaConversionError } from "@effectified/pi-agent";
 import { Cause, type Context, Effect, Exit, type Scope } from "effect";
 import { acquire } from "./acquire.ts";
-import type { ToolRejected } from "./errors.ts";
+import type { AdmissionDenied, ToolRejected } from "./errors.ts";
 import type * as Sandbox from "./sandbox.ts";
 
 /** What `make` takes: every kind's options, and those of worker threads. */
@@ -14,11 +14,11 @@ export interface Options<R> extends Sandbox.Options<R>, Pick<CodemodeSandboxOpti
 	readonly wasm?: CodemodeWasmModule;
 	/**
 	 * Reserves a worker right before each worker starts, and succeeds with its release, which runs once when that
-	 * worker exits (not when the result settles). Fails to deny admission: the execution then ends with a `sandbox`
-	 * error carrying the failure's message, and no worker starts. Pi calls it synchronously, so it must not suspend;
-	 * one that does denies admission too.
+	 * worker exits (not when the result settles). Fails with `AdmissionDenied` to deny admission: the execution then
+	 * ends with a `sandbox` error carrying its message, and no worker starts. Pi calls it synchronously, so it must not
+	 * suspend; one that does denies admission too.
 	 */
-	readonly acquireWorker?: Effect.Effect<Effect.Effect<void>, unknown, R>;
+	readonly acquireWorker?: Effect.Effect<Effect.Effect<void>, AdmissionDenied, R>;
 	/**
 	 * Runs once for each worker started, with an Effect that waits until that worker exits, which may be after the
 	 * result and the scope's close: keep a worker counted against a limit until then. Pi calls it synchronously.
@@ -28,13 +28,17 @@ export interface Options<R> extends Sandbox.Options<R>, Pick<CodemodeSandboxOpti
 
 /**
  * A sandbox whose executions each run in a worker thread with a fresh QuickJS VM, so a script that computes never
- * blocks this thread. Closed when the scope closes. Needs `node:worker_threads` (Node or Bun).
+ * blocks this thread. Closed when the scope closes. Needs `node:worker_threads` (Node or Bun). Untraced, as the
+ * sandbox keeps this Effect's context for its tools and worker callbacks.
  */
-export function make<R = never>(
-	options: Options<R> = {},
-): Effect.Effect<Sandbox.Sandbox, ToolRejected | SchemaConversionError, R | Scope.Scope> {
-	return Effect.flatMap(Effect.context<R>(), (context) =>
-		acquire(
+export const make: <R = never>(
+	options?: Options<R>,
+) => Effect.Effect<Sandbox.Sandbox, ToolRejected | SchemaConversionError, R | Scope.Scope> = Effect.fnUntraced(
+	function* <R>(
+		options: Options<R> = {},
+	): Effect.fn.Return<Sandbox.Sandbox, ToolRejected | SchemaConversionError, R | Scope.Scope> {
+		const services = yield* Effect.context<R>();
+		return yield* acquire(
 			options,
 			(tools, globals) =>
 				new CodemodeSandbox({
@@ -44,11 +48,11 @@ export function make<R = never>(
 					memoryLimitBytes: options.memoryLimitBytes,
 					wasm: options.wasm,
 					workerUrl: options.workerUrl,
-					...workerCallbacks(options, context),
+					...workerCallbacks(options, services),
 				}),
-		),
-	);
-}
+		);
+	},
+);
 
 /** Pi's synchronous worker callbacks, each running its Effect with `context`. */
 function workerCallbacks<R>(

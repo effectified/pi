@@ -1,19 +1,20 @@
 import { Conversation } from "@effectified/pi-durable";
 import { describe, expect, it } from "vitest";
 import { cancelled, failed, isLive, isSettled, type Job, planned, ranOf } from "../src/job.ts";
+import { ForkId } from "../src/ids.ts";
 
 const starting: Job = { status: "starting", fork: null, attempts: 1, busy: 0, retryAt: 5 };
 const place = { conversationId: Conversation.Id.make(9), actorId: "actor-9" };
 const running: Job = {
 	status: "running",
-	fork: "f1",
+	fork: ForkId.make("f1"),
 	correction: 0,
 	wait: { _tag: "Signal", signal: "s" },
 	attempts: 0,
 	ran: place,
 };
-const succeeded: Job = { status: "succeeded", fork: "f2", value: { n: 1 }, ran: place };
-const gone: Job = failed("f3", "gone", "lost");
+const succeeded: Job = { status: "succeeded", fork: ForkId.make("f2"), value: { n: 1 }, ran: place };
+const gone: Job = failed(ForkId.make("f3"), "gone", "lost");
 
 describe("a job's state", () => {
 	it("is live while its fork may exist and its work has not settled", () => {

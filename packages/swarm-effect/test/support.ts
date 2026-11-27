@@ -17,7 +17,12 @@ export const Measure = Swarm.make({
 
 /** The jobs of a swarm over `words`: the key of a job is `job-<word>`. */
 export function jobsOf(words: ReadonlyArray<string>): Array<Swarm.PlannedJob<{ readonly word: string }>> {
-	return words.map((word) => ({ key: `job-${word}`, input: { word } }));
+	return words.map((word) => ({ key: Swarm.JobKey.make(`job-${word}`), input: { word } }));
+}
+
+/** Job keys, branded as a caller brands its own. */
+export function keys(...names: ReadonlyArray<string>): Array<Swarm.JobKey> {
+	return names.map((name) => Swarm.JobKey.make(name));
 }
 
 /** `count` different words. */
@@ -246,7 +251,7 @@ export interface Tally {
 }
 
 /** How many jobs of a swarm have each status now. */
-export function tally(swarmId: string): Effect.Effect<Tally, unknown, Harness.Harness> {
+export function tally(swarmId: Swarm.SwarmId): Effect.Effect<Tally, unknown, Harness.Harness> {
 	return Effect.map(Swarm.status(swarmId), (status) => {
 		const count = (wanted: string) => status.jobs.filter((job) => job.status === wanted).length;
 		return {

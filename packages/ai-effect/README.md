@@ -31,14 +31,20 @@ handed to anything that takes one, and providers can be added while the program 
 
 ```ts
 import { Effect } from "effect";
-import { getModel, Models } from "@effectified/pi-ai";
+import { fromPiModelRef, getModel, Models } from "@effectified/pi-ai";
 import { anthropicProvider } from "@effectified/pi-ai/providers/anthropic";
 
 const program = Effect.gen(function* () {
 	// Fails with ModelNotFound when no registered provider lists the model.
-	return yield* getModel({ provider: "anthropic", modelId: "claude-opus-4-7" });
+	return yield* getModel(fromPiModelRef({ provider: "anthropic", modelId: "claude-opus-4-7" }));
 }).pipe(Effect.provide(Models.layer([anthropicProvider()])));
 ```
+
+A model is named by a `ModelRef`: a `ProviderId` and a `ModelId`, two branded strings, so one is never passed for
+the other. pi-ai's ids are plain strings; they are branded where they enter: `fromPiModelRef({ provider, modelId })`
+for Pi's plain form (Pi Durable's `ModelRef`, a stored one), `modelRefOf(model)` for a pi-ai model, `ProviderId.make`
+and `ModelId.make` for one id, or decoding with the `ModelRef` schema, whose encoded form is Pi's. `getModel` is not
+cached: pi-ai's lookup is a map read, and providers can be set or removed while the program runs.
 
 ## Requests
 
@@ -47,10 +53,10 @@ provider-neutral ones (`reasoning`, `toolChoice`). None takes a `signal`: the fi
 
 ```ts
 import { Effect, Stream } from "effect";
-import { complete, getModel, stream } from "@effectified/pi-ai";
+import { complete, fromPiModelRef, getModel, stream } from "@effectified/pi-ai";
 
 const program = Effect.gen(function* () {
-	const model = yield* getModel({ provider: "anthropic", modelId: "claude-opus-4-7" });
+	const model = yield* getModel(fromPiModelRef({ provider: "anthropic", modelId: "claude-opus-4-7" }));
 	const context = { messages: [{ role: "user" as const, content: "Hello", timestamp: Date.now() }] };
 
 	// Every pi-ai event up to `done`. Ending the Stream early aborts the request.
@@ -69,10 +75,14 @@ const program = Effect.gen(function* () {
 A request that ends in pi-ai's `error` event fails with `ModelRequestError` (`reason` is `"error"`, or `"aborted"`
 when the provider gave the request up). Interrupting the fiber is interruption, never this error.
 
+`complete` is `stream` run into the Sink `finalMessage`, the message of the `done` event. A consumer that shows the
+deltas and also needs the message runs the same stream into it:
+`stream(model, context).pipe(Stream.tap(show), Stream.run(finalMessage))`.
+
 ### The key of a request
 
 `requestKey(session, context)` is the SHA-256 of the canonical JSON of a provider session and a whole context, as
-64 hexadecimal digits: the same each time one request is sent, in this process or a later one, and another for
+64 hexadecimal digits, a `RequestKey` (a branded string): the same each time one request is sent, in this process or a later one, and another for
 every other request. Pi builds a context from committed entries only, so a request sent again after a crash, and
 Pi's retry after a provider error, have the key of the first send. `@effectified/pi-router` puts it on its route
 events and `@effectified/pi-budget` on its reservations, so a product's lease and its event store name one
@@ -90,7 +100,9 @@ at run time:
 | `TOKEN_KINDS`, `TokenKind` | The kinds of tokens pi-ai prices (`input`, `output`, `cacheRead`, `cacheWrite`: the keys of `ModelCostRates`), for price tables and usage records |
 | `emptyUsage()` | A `Usage` of nothing, a new object each time (pi-ai's `calculateCost` writes into the usage it prices) |
 | `ErrorReason` | The reason of pi-ai's `error` event, `error` or `aborted`: what `ModelRequestError.reason` holds |
-| `ModelRef` | The schema of a model's name (`{ provider, modelId }`), Pi Durable's `ModelRef`, for state and wires that name one; also its type |
+| `ModelRef` | The schema of a model's name (`{ provider, modelId }`), Pi Durable's `ModelRef`, for state and wires that name one; also its type. Its encoded form is Pi's (`PiModelRef`), its type has the ids branded |
+| `ProviderId`, `ModelId` | The branded ids of a provider and of a model within it (schemas and types). `ProviderId` replaces pi-ai's type of that name |
+| `fromPiModelRef`, `modelRefOf` | A `ModelRef` from Pi's plain form, and from a pi-ai model |
 | `StrictOmit<T, K>` | `Omit` that only takes keys `T` has: a key pi-ai renames fails to compile instead of being left in |
 
 ## Credentials and login
@@ -103,7 +115,7 @@ a `ConfigProvider` supplies the keys. Every secret the services and `getAuth` re
 
 ```ts
 import { Console, Effect, Layer, Redacted } from "effect";
-import { Credentials, getAuth, login, Models, ProviderAuthContext } from "@effectified/pi-ai";
+import { Credentials, getAuth, login, Models, ProviderAuthContext, ProviderId } from "@effectified/pi-ai";
 import { anthropicProvider } from "@effectified/pi-ai/providers/anthropic";
 
 const models = Models.layerWithAuth([anthropicProvider()]).pipe(
@@ -112,12 +124,12 @@ const models = Models.layerWithAuth([anthropicProvider()]).pipe(
 
 const program = Effect.gen(function* () {
 	// The provider's own OAuth flow; the credential it returns is stored.
-	yield* login("anthropic", "oauth", {
+	yield* login(ProviderId.make("anthropic"), "oauth", {
 		prompt: (prompt) => Effect.succeed(prompt.type === "select" ? (prompt.options[0]?.id ?? "") : ""),
 		notify: (event) => (event.type === "auth_url" ? Console.log(`Open ${event.url}`) : Effect.void),
 	});
 	// The auth a request would use, refreshing an expiring OAuth token first. None when not configured.
-	const auth = yield* getAuth("anthropic");
+	const auth = yield* getAuth(ProviderId.make("anthropic"));
 	return auth._tag === "Some" ? auth.value.source : "not configured";
 }).pipe(Effect.provide(models));
 ```
@@ -128,7 +140,9 @@ const program = Effect.gen(function* () {
 - `logout`, `checkAuth`, `getAvailable`, `getAvailableOfType`, `getAllAvailable` and `refreshModels` (pi-ai's
   `refresh`: the catalogs of configured providers) are the other auth members of `Models`.
 - Failures are `AuthError`, whose `reason` is pi-ai's code (`provider`, `auth`, `oauth`) or `login` when the
-  provider's flow failed; and `CredentialStoreError` from the store.
+  provider's flow failed; and `CredentialStoreError` from the store. Both keep what pi-ai or the store rejected with
+  as `cause`.
+- Provider ids are `ProviderId` everywhere: the auth functions, the `Credentials` service and its errors.
 - `redactCredential` and `revealCredential` convert between pi-ai's `Credential` and the redacted one, for a store
   that persists credentials.
 
@@ -140,11 +154,11 @@ gets Pi's providers and catalog.
 ```ts
 import { Effect, Layer } from "effect";
 import { LanguageModel } from "effect/ai";
-import { Models, PiLanguageModel } from "@effectified/pi-ai";
+import { fromPiModelRef, Models, PiLanguageModel } from "@effectified/pi-ai";
 
-const model = PiLanguageModel.layer({ provider: "anthropic", modelId: "claude-opus-4-7" }, { reasoning: "high" }).pipe(
-	Layer.provide(Models.layer([anthropicProvider()])),
-);
+const model = PiLanguageModel.layer(fromPiModelRef({ provider: "anthropic", modelId: "claude-opus-4-7" }), {
+	reasoning: "high",
+}).pipe(Layer.provide(Models.layer([anthropicProvider()])));
 
 const program = LanguageModel.generateText({ prompt: "Hello" }).pipe(
 	Effect.map((response) => response.text),
@@ -153,7 +167,8 @@ const program = LanguageModel.generateText({ prompt: "Hello" }).pipe(
 ```
 
 Carried: system, user, assistant and tool messages, inline images, the request's tools with their JSON Schema, text,
-reasoning, tool calls, finish reason and token usage, in `generateText` and `streamText`. A pi-ai error becomes an
+reasoning, tool calls, finish reason and token usage, in `generateText` and `streamText`. A tool's JSON Schema is
+compiled once per model (a `Cache`), since a toolkit's tools are the same from one request to the next. A pi-ai error becomes an
 `AiError` with reason `UnknownError` and pi-ai's error text.
 
 Not carried, because pi-ai has no place for it:
@@ -172,17 +187,17 @@ anything that takes a pi-ai `Models`.
 
 ```ts
 import { Effect } from "effect";
-import { complete, EffectProvider, getModel, Models } from "@effectified/pi-ai";
+import { complete, EffectProvider, fromPiModelRef, getModel, ModelId, Models, ProviderId } from "@effectified/pi-ai";
 
 const program = Effect.scoped(
 	Effect.gen(function* () {
 		const provider = yield* EffectProvider.make({
-			id: "router",
-			models: [{ id: "fast", contextWindow: 200000, maxTokens: 8192 }],
+			id: ProviderId.make("router"),
+			models: [{ id: ModelId.make("fast"), contextWindow: 200000, maxTokens: 8192 }],
 			layer: myLanguageModelLayer, // Layer<LanguageModel.LanguageModel, E, R>
 		});
 		return yield* Effect.gen(function* () {
-			const model = yield* getModel({ provider: "router", modelId: "fast" });
+			const model = yield* getModel(fromPiModelRef({ provider: "router", modelId: "fast" }));
 			return yield* complete(model, { messages: [{ role: "user", content: "Hello", timestamp: Date.now() }] });
 		}).pipe(Effect.provide(Models.layer([provider])));
 	}),
@@ -246,7 +261,8 @@ const program = Effect.gen(function* () {
 }).pipe(Effect.provide(ScriptedModels.layer())); // provides ScriptedModels and Models
 ```
 
-`ScriptedModels` wraps pi-ai's `fauxProvider`. `ScriptedLanguageModel.layer(responses)` is the same idea for
+`ScriptedModels` wraps pi-ai's `fauxProvider`; `scripted.ref` is its model's `ModelRef`, for `getModel` and for
+the model of an agent. `ScriptedLanguageModel.layer(responses)` is the same idea for
 `effect/ai`: a `LanguageModel` that answers with queued parts and records what it was asked. `conditions()` is how a
 test waits for a fake of its own without the clock: the fake calls `changed()` after each change of its state, and
 the test waits with `when(() => fake.calls.length === 2)`.

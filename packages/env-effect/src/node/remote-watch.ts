@@ -2,8 +2,7 @@
 
 import { RemoteWatcher, type RemoteWatchOptions } from "@earendil-works/pi-env";
 import type { WatchTarget } from "@effectified/pi-durable/env";
-import type { Effect, Scope } from "effect";
-import type { RemoteFailed } from "../errors.ts";
+import { Effect } from "effect";
 import * as Watcher from "../watcher.ts";
 import type { Connection } from "./connection.ts";
 import { remote } from "./rejection.ts";
@@ -13,10 +12,7 @@ import { remote } from "./rejection.ts";
  * Pi opens the watcher again once the connection starts again and reports `overflow`: changes in between were not
  * seen. Fails like Pi's local watcher when coverage cannot be established.
  */
-export function open(
-	connection: Connection,
-	targets: ReadonlyArray<WatchTarget>,
-	options?: RemoteWatchOptions,
-): Effect.Effect<Watcher.Watcher, RemoteFailed, Scope.Scope> {
-	return Watcher.acquire((onChange) => remote(() => RemoteWatcher.open(connection.pi, targets, onChange, options)));
-}
+export const open = Effect.fn("RemoteWatch.open")(
+	(connection: Connection, targets: ReadonlyArray<WatchTarget>, options?: RemoteWatchOptions) =>
+		Watcher.acquire((onChange) => remote(() => RemoteWatcher.open(connection.pi, targets, onChange, options))),
+);

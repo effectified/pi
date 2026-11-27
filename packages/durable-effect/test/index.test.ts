@@ -114,6 +114,7 @@ describe("the exports", () => {
 			"DEFAULT_RETRY_POLICY",
 			"DURABLE_TELEMETRY_SCHEMA",
 			"Doc",
+			"DurableError",
 			"Entry",
 			"Extension",
 			"Gate",
@@ -139,6 +140,8 @@ describe("the exports", () => {
 			"Task",
 			"TaskHooks",
 			"Tool",
+			"ToolCallId",
+			"ToolName",
 			"ToolResultEntry",
 			"ToolTask",
 			"Transcript",
@@ -151,6 +154,7 @@ describe("the exports", () => {
 			"Harness",
 			"abortSubmission",
 			"abortTask",
+			"attachCommits",
 			"closed",
 			"closing",
 			"commit",
@@ -203,7 +207,7 @@ describe("the exports", () => {
 		expect(Object.keys(Package.Scans).sort()).toEqual(["conversations", "tasks"]);
 		expect(Object.keys(Package.Idle).sort()).toEqual(["quiet"]);
 		expect(Object.keys(Package.Signal).sort()).toEqual(["SubmissionSettled", "make", "read", "stateIn", "toPiKey"]);
-		expect(Object.keys(Package.Watch).sort()).toEqual(["commits", "observed", "stream"]);
+		expect(Object.keys(Package.Watch).sort()).toEqual(["attachCommits", "commits", "observed", "stream"]);
 		// Each id schema keeps the number Pi stores and refuses anything else.
 		const ids = [Package.Conversation.Id, Package.Entry.Id, Package.Submission.Id, Package.Task.Id];
 		expect(ids.map((id) => Schema.decodeSync(id)(7))).toEqual([7, 7, 7, 7]);

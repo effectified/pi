@@ -1,6 +1,6 @@
 import { defineExtension, defineTask, type Report, type TaskId } from "@earendil-works/pi-durable";
 import { runTest } from "@effectified/pi-ai/testing";
-import { Context, Effect, Exit, Layer, Option, Schema, Scope, Stream } from "effect";
+import { Context, Effect, Exit, Fiber, Layer, Option, Schema, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { Extension, Harness, Registry, Signal, Task } from "../src/index.ts";
@@ -13,7 +13,9 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ?
 
 class Bank extends Context.Service<Bank, { readonly charge: (card: string) => Effect.Effect<number> }>()("test/Bank") {}
 
-class Declined extends Schema.TaggedError<Declined>()("Declined", { message: Schema.String }) {}
+class Declined extends Schema.TaggedError<Declined, { readonly brand: unique symbol }>()("Declined", {
+	message: Schema.String,
+}) {}
 
 // Values whose type differs from their JSON form: a Date travels as an ISO string.
 const PaymentState = Schema.Union([
@@ -72,15 +74,14 @@ const pay = (task: Task.Kind<{ readonly card: string; readonly due: Date }, unkn
 	);
 
 /** Every report of the harness from now on, collected until the scope closes. */
-const collectReports = Effect.gen(function* () {
-	const reports: Report[] = [];
-	// Started at once, it has subscribed when the fork returns.
-	yield* Effect.forkScoped(
-		Stream.runForEach(Harness.reports, (report) => Effect.sync(() => reports.push(report))),
-		{ startImmediately: true },
-	);
-	return reports;
-});
+/**
+ * The first report of Pi from now on, joined when it came. Started at once, it has subscribed when the fork returns.
+ * Pi reports a fault once it is durable, which may be after a wait for the task returned.
+ */
+const firstReport = Effect.map(
+	Effect.forkScoped(Stream.runCollect(Stream.take(Harness.reports, 1)), { startImmediately: true }),
+	(fiber): Effect.Effect<ReadonlyArray<Report>> => Fiber.join(fiber),
+);
 
 describe("make", () => {
 	it("infers the input, the state and the result from the schemas", () => {
@@ -230,10 +231,11 @@ describe("make", () => {
 		const seen = await Effect.runPromise(
 			Effect.scoped(
 				Effect.gen(function* () {
-					const reports = yield* collectReports;
+					const reported = yield* firstReport;
 					const id = yield* pay(Counted, "expired-1");
 					const settled = yield* Harness.waitForTaskOf(Counted, id);
 					yield* Harness.waitForIdle;
+					const reports = yield* reported;
 					return {
 						state: settled.state,
 						reports: reports.map((report) => ({

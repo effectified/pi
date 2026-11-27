@@ -36,26 +36,33 @@ export const Document: Doc.Doc<typeof Routing, "conversation", "latest"> = Doc.m
 });
 
 /** Gives `conversation` the limits `routing`, inside the caller's commit. */
-export function setIn(tx: Tx.Tx, conversation: ConversationId, routing: Routing): Effect.Effect<void, Doc.Failure> {
-	return Effect.flatMap(tx.doc(Document, conversation), (document) => document.set(routing));
-}
+export const setIn = Effect.fn("Routing.setIn")(function* (
+	tx: Tx.Tx,
+	conversation: ConversationId,
+	routing: Routing,
+): Effect.fn.Return<void, Doc.Failure> {
+	const document = yield* tx.doc(Document, conversation);
+	yield* document.set(routing);
+});
 
 /** Gives `conversation` the limits `from` has in this commit: for a child, which is routed as its parent is. */
-export function inheritIn(
+export const inheritIn = Effect.fn("Routing.inheritIn")(function* (
 	tx: Tx.Tx,
 	conversation: ConversationId,
 	from: ConversationId,
-): Effect.Effect<void, Doc.Failure> {
-	return Effect.gen(function* () {
-		const held = yield* (yield* tx.doc(Document, from)).get;
-		yield* setIn(tx, conversation, held);
-	});
-}
+): Effect.fn.Return<void, Doc.Failure> {
+	const document = yield* tx.doc(Document, from);
+	const held = yield* document.get;
+	yield* setIn(tx, conversation, held);
+});
 
-/** The limits of `conversation` now: none of either kind for one that was given none. One committed read. */
-export function of(conversation: ConversationId): Effect.Effect<Routing, Doc.Failure, Harness.Harness> {
-	return Effect.map(
-		Harness.snapshot(Document, conversation),
-		Option.getOrElse((): Routing => ({})),
-	);
-}
+/**
+ * The limits of `conversation` now: none of either kind for one that was given none. One committed read, for every
+ * provider request the constraint source answers: untraced, since the router's own span of the request covers it.
+ */
+export const of = Effect.fnUntraced(function* (
+	conversation: ConversationId,
+): Effect.fn.Return<Routing, Doc.Failure, Harness.Harness> {
+	const stored = yield* Harness.snapshot(Document, conversation);
+	return Option.getOrElse(stored, (): Routing => ({}));
+});

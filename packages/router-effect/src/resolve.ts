@@ -1,6 +1,7 @@
 // Resolution: the routes of an alias that may serve a request with given constraints, in table order.
 
-import { Effect } from "effect";
+import type { ModelId } from "@effectified/pi-ai";
+import { Array as Arr, Effect, Option, Order, Result } from "effect";
 import type { Constraints } from "./constraints.ts";
 import { type Exclusion, InvalidConstraints, NoRouteAvailable, UnknownAlias } from "./errors.ts";
 import type { Alias, Route, RouteTable } from "./route-table.ts";
@@ -21,72 +22,93 @@ import type { Alias, Route, RouteTable } from "./route-table.ts";
  *
  * Content no party classifies is treated as the highest label of the table.
  */
-export function resolveRoutes(
+export const resolveRoutes: (
 	table: RouteTable,
-	alias: string,
+	alias: ModelId,
 	constraints?: Constraints,
 	imposed?: Constraints,
-): Effect.Effect<readonly [Route, ...Route[]], UnknownAlias | InvalidConstraints | NoRouteAvailable> {
-	const entry = table.aliases.find((candidate) => candidate.alias === alias);
-	if (entry === undefined) return Effect.fail(new UnknownAlias({ alias }));
-	return Effect.flatMap(combine(table, entry, constraints, imposed ?? {}), (asked) => {
-		const allowed: Route[] = [];
-		const excluded: Exclusion[] = [];
-		for (const route of entry.routes) {
-			const { provider, model } = route;
-			const missing = asked.requires.filter((label) => !(route.labels ?? []).includes(label));
-			if (table.classifications.indexOf(route.ceiling) < asked.rank) {
-				excluded.push({ provider, model, reason: "classification" });
-			} else if (asked.regions !== undefined && !asked.regions.includes(route.region)) {
-				excluded.push({ provider, model, reason: "region" });
-			} else if (missing.length > 0) {
-				excluded.push({ provider, model, reason: "label", missing });
-			} else allowed.push(route);
-		}
-		const [first, ...rest] = allowed;
-		if (first !== undefined) return Effect.succeed([first, ...rest] as const);
-		const { classification, regions } = asked;
-		const requires = asked.requires.length === 0 ? undefined : asked.requires;
-		return Effect.fail(new NoRouteAvailable({ alias, classification, regions, requires, excluded }));
-	});
-}
+) => Effect.Effect<Arr.NonEmptyReadonlyArray<Route>, UnknownAlias | InvalidConstraints | NoRouteAvailable> = Effect.fn(
+	"Resolve.resolveRoutes",
+)(function* (table, alias, constraints, imposed = {}) {
+	const found = Arr.findFirst(table.aliases, (candidate) => candidate.alias === alias);
+	if (Option.isNone(found)) return yield* UnknownAlias.make({ alias });
+	const entry = found.value;
+	const ranks = byRank(table);
+	const asked = yield* combine(table, ranks, entry, constraints, imposed);
+	const [allowed, excluded] = Arr.separate(Arr.map(entry.routes, (route) => verdict(ranks, asked, route)));
+	if (Arr.isArrayNonEmpty(allowed)) return allowed;
+	const { classification, regions } = asked;
+	const requires = Arr.isReadonlyArrayNonEmpty(asked.requires) ? asked.requires : undefined;
+	return yield* NoRouteAvailable.make({ alias, classification, regions, requires, excluded });
+});
 
 /** What a request is checked against, once the request, its alias and the product have had their say. */
 interface Asked {
 	readonly classification: string;
-	/** The position of `classification` in the table's labels. */
-	readonly rank: number;
 	/** Absent when every region may serve. */
 	readonly regions: ReadonlyArray<string> | undefined;
 	/** Each required label once; empty when none is required. */
 	readonly requires: ReadonlyArray<string>;
 }
 
-/** Combines the three parties by the rule of `resolveRoutes`. Fails for a classification the table does not list. */
-function combine(
+/**
+ * Combines the three parties by the rule of `resolveRoutes`. Fails for a classification the table does not list.
+ * Untraced: a step of `Resolve.resolveRoutes`'s span.
+ */
+const combine = Effect.fnUntraced(function* (
 	table: RouteTable,
+	ranks: Order.Order<string>,
 	entry: Alias,
 	request: Constraints | undefined,
 	imposed: Constraints,
-): Effect.Effect<Asked, InvalidConstraints> {
+): Effect.fn.Return<Asked, InvalidConstraints> {
 	const { alias, defaults } = entry;
 	const labels = table.classifications;
-	const invalid = (reason: string) => Effect.fail(new InvalidConstraints({ alias, reason }));
-	const named = [request?.classification ?? defaults?.classification, imposed.classification].filter(
-		(label) => label !== undefined,
-	);
-	const unknown = named.find((label) => !labels.includes(label));
-	if (unknown !== undefined) return invalid(`"${unknown}" is not a classification of the route table`);
+	const named = Arr.getSomes([
+		Option.fromUndefinedOr(request?.classification ?? defaults?.classification),
+		Option.fromUndefinedOr(imposed.classification),
+	]);
+	const unknown = Arr.findFirst(named, (label) => !Arr.contains(labels, label));
+	if (Option.isSome(unknown)) {
+		return yield* InvalidConstraints.make({
+			alias,
+			reason: `"${unknown.value}" is not a classification of the route table`,
+		});
+	}
 	// Content no party classifies is the highest label; otherwise the stricter of the labels named.
-	const rank = named.length === 0 ? labels.length - 1 : Math.max(...named.map((label) => labels.indexOf(label)));
-	const classification = labels[rank];
+	const classification = Arr.isArrayNonEmpty(named) ? Option.some(Arr.max(named, ranks)) : Arr.last(labels);
 	// A table without labels has no route that passed validation, so there is nothing a request could be checked against.
-	if (classification === undefined) return invalid("the route table lists no classification");
+	if (Option.isNone(classification)) {
+		return yield* InvalidConstraints.make({ alias, reason: "the route table lists no classification" });
+	}
 	const own = request?.regions ?? defaults?.regions;
 	const regions =
 		own === undefined || imposed.regions === undefined
 			? (own ?? imposed.regions)
-			: own.filter((region) => imposed.regions?.includes(region));
-	const requires = [...new Set([...(request?.requires ?? defaults?.requires ?? []), ...(imposed.requires ?? [])])];
-	return Effect.succeed({ classification, rank, regions, requires });
+			: Arr.intersection(own, imposed.regions);
+	const requires = Arr.dedupe(Arr.appendAll(request?.requires ?? defaults?.requires ?? [], imposed.requires ?? []));
+	return { classification: classification.value, regions, requires };
+});
+
+/** The table's labels, lowest to highest: a label the table does not list is below every one. */
+function byRank(table: RouteTable): Order.Order<string> {
+	return Order.mapInput(Order.Number, (label: string) => table.classifications.indexOf(label));
+}
+
+/**
+ * Whether `route` may serve what was `asked`, or why not: the first of a ceiling below the classification, a region
+ * not allowed and a missing label that holds.
+ */
+function verdict(ranks: Order.Order<string>, asked: Asked, route: Route): Result.Result<Route, Exclusion> {
+	const { provider, model } = route;
+	if (Order.isLessThan(ranks)(route.ceiling, asked.classification)) {
+		return Result.fail({ provider, model, reason: "classification" });
+	}
+	if (asked.regions !== undefined && !Arr.contains(asked.regions, route.region)) {
+		return Result.fail({ provider, model, reason: "region" });
+	}
+	const missing = Arr.filter(asked.requires, (label) => !Arr.contains(route.labels ?? [], label));
+	return Arr.isArrayNonEmpty(missing)
+		? Result.fail({ provider, model, reason: "label", missing })
+		: Result.succeed(route);
 }

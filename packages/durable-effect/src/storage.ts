@@ -16,7 +16,7 @@ import * as SqlDatabase from "./sql-database.ts";
  * when no harness did. Either way the storage behind it is closed once.
  */
 export class HarnessStorage extends Context.Service<HarnessStorage, PiStorage>()(
-	"@effectified/pi-durable/HarnessStorage",
+	"@effectified/pi-durable/storage/HarnessStorage",
 ) {}
 
 /** Storage that keeps everything in memory: Pi's `MemoryStorage`, a fresh one per build of the Layer. */

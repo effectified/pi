@@ -26,10 +26,10 @@ export interface StdioOptions extends Omit<StdioTransportOptions, "onStderr"> {
  * A server started as a local program that speaks MCP over stdin and stdout, once a client connects over it. Closing
  * the scope (or the client) ends the program as Pi does: stdin closed, then SIGTERM, then SIGKILL.
  */
-export function stdioTransport(options: StdioOptions): Effect.Effect<StdioTransport, never, Scope.Scope> {
+export const stdioTransport = Effect.fn("McpTransports.stdioTransport")((options: StdioOptions) => {
 	const { stderrChunks, ...rest } = options;
 	return scoped(() => new StdioTransport({ ...rest, ...stderrTo(stderrChunks) }));
-}
+});
 
 /** Pi's Streamable HTTP transport options, with the bearer tokens from an `Auth` instead of Pi's provider. */
 export interface StreamableHttpOptions<R = never> extends Omit<StreamableHttpTransportOptions, "authProvider"> {
@@ -38,21 +38,21 @@ export interface StreamableHttpOptions<R = never> extends Omit<StreamableHttpTra
 }
 
 /** A server reached over Streamable HTTP. Closing the scope (or the client) ends its session as Pi does. */
-export function streamableHttpTransport<R = never>(
+export const streamableHttpTransport: <R = never>(
 	options: StreamableHttpOptions<R>,
-): Effect.Effect<StreamableHttpTransport, never, Scope.Scope | R> {
-	return Effect.gen(function* () {
-		const run = yield* currentRunner<R>();
-		const { auth, ...rest } = options;
-		return yield* scoped(
-			() =>
-				new StreamableHttpTransport({
-					...rest,
-					...(auth === undefined ? {} : { authProvider: toAuthProvider(auth, run) }),
-				}),
-		);
-	});
-}
+) => Effect.Effect<StreamableHttpTransport, never, Scope.Scope | R> = Effect.fn(
+	"McpTransports.streamableHttpTransport",
+)(function* <R>(options: StreamableHttpOptions<R>) {
+	const run = yield* currentRunner<R>();
+	const { auth, ...rest } = options;
+	return yield* scoped(
+		() =>
+			new StreamableHttpTransport({
+				...rest,
+				...(auth === undefined ? {} : { authProvider: toAuthProvider(auth, run) }),
+			}),
+	);
+});
 
 /** A running program's stdio as an application gives it: Pi's `McpPipe`, its end an Effect. */
 export interface Pipe extends Omit<McpPipe, "exited"> {
@@ -72,30 +72,28 @@ export interface PipeOptions<R = never> extends Omit<PipeTransportOptions, "open
  * MCP's stdio framing over a program that something else runs (another machine, a sandbox), once a client connects
  * over it. Closing the scope closes the program's stdin, then closes the pipe if it has not ended in time.
  */
-export function pipeTransport<R = never>(
+export const pipeTransport: <R = never>(
 	options: PipeOptions<R>,
-): Effect.Effect<PipeTransport, never, Scope.Scope | R> {
-	return Effect.gen(function* () {
-		const run = yield* currentRunner<R>();
-		const { open, stderrChunks, ...rest } = options;
-		return yield* scoped(
-			() =>
-				new PipeTransport({
-					...rest,
-					...stderrTo(stderrChunks),
-					open: async (handlers) => {
-						const pipe = await run(open(handlers));
-						return {
-							write: (data) => pipe.write(data),
-							closeStdin: () => pipe.closeStdin(),
-							close: () => pipe.close(),
-							exited: run(pipe.exited),
-						};
-					},
-				}),
-		);
-	});
-}
+) => Effect.Effect<PipeTransport, never, Scope.Scope | R> = Effect.fn("McpTransports.pipeTransport")(function* <R>(
+	options: PipeOptions<R>,
+) {
+	const run = yield* currentRunner<R>();
+	const { open, stderrChunks, ...rest } = options;
+	return yield* scoped(
+		() =>
+			new PipeTransport({
+				...rest,
+				...stderrTo(stderrChunks),
+				open: (handlers) =>
+					run(open(handlers)).then((pipe): McpPipe => ({
+						write: (data) => pipe.write(data),
+						closeStdin: () => pipe.closeStdin(),
+						close: () => pipe.close(),
+						exited: run(pipe.exited),
+					})),
+			}),
+	);
+});
 
 /** Pi's `onStderr` option feeding `queue`, or nothing. */
 function stderrTo(queue: Queue.Enqueue<string> | undefined): { onStderr?: (chunk: string) => void } {

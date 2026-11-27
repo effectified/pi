@@ -4,13 +4,14 @@ import { Cause, Predicate, Schema } from "effect";
 
 /**
  * The answer of one action call. A Rivet action that throws reaches the caller as an opaque internal error, so an
- * action of this host never throws: every outcome is one of these three.
+ * action of this host never throws: every outcome is one of these three. `Answer.match` picks one per case. The
+ * lowercase tags are the wire format between an actor and its callers, which may run different versions.
  */
 export const Answer = Schema.Union([
 	Schema.TaggedStruct("success", { value: Schema.Json }),
 	Schema.TaggedStruct("failure", { error: Schema.Json }),
 	Schema.TaggedStruct("defect", { message: Schema.String }),
-]);
+]).pipe(Schema.toTaggedUnion("_tag"));
 
 /** The answer of one action call. */
 export type Answer = typeof Answer.Type;

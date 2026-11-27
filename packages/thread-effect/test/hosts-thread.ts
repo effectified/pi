@@ -3,7 +3,7 @@
 
 import { type FauxResponseFactory, fauxProvider } from "@earendil-works/pi-ai";
 import * as Approvals from "@effectified/pi-approvals";
-import { Lease } from "@effectified/pi-budget";
+import { Lease, Reservation } from "@effectified/pi-budget";
 import { Extension, Tool } from "@effectified/pi-durable";
 import { answer, toolCall } from "@effectified/pi-durable/testing";
 import { ActorInfo } from "@effectified/pi-durable-rivet";
@@ -87,7 +87,7 @@ export function threadOn(url: string, host: string) {
 									conversation: request.conversation ?? null,
 									requestKey: request.requestKey ?? null,
 								}),
-								String,
+								(token) => Reservation.make(String(token)),
 							),
 						settle: (token, settlement) => say({ host, kind: "settle", actor, token, settlement }),
 					}),

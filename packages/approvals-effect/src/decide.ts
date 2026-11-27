@@ -1,7 +1,7 @@
 // Delivering a decision: what a host calls once a person it authenticated has decided a request.
 
-import { type DurableError, Harness, type Signal, Task, ToolTask } from "@effectified/pi-durable";
-import { Effect, Option } from "effect";
+import { type DurableError, Harness, type Signal, Task, ToolTask, type Tx } from "@effectified/pi-durable";
+import { Array as Arr, Effect, Match, Option, Schema } from "effect";
 import * as Asks from "./asks.ts";
 import type { Decision } from "./decision.ts";
 import { DigestMismatch, MalformedState } from "./errors.ts";
@@ -17,43 +17,48 @@ import { Decided } from "./signal.ts";
  * - `gone`: no decision can reach the call any more: it ran, was refused or was aborted, or the request expired.
  * - `unknown`: there is no such tool call, or it never made this request.
  */
-export type Delivery = "delivered" | "already_decided" | "superseded" | "gone" | "unknown";
+export const Delivery = Schema.Literals(["delivered", "already_decided", "superseded", "gone", "unknown"]);
+
+/** What became of a decision a host sent. */
+export type Delivery = typeof Delivery.Type;
+
+/** What `decide` fails with: Pi's failures, a decision Pi refuses, another digest, or a request that does not decode. */
+export type DecideError = DurableError | Signal.Failure | DigestMismatch | MalformedState;
 
 /**
  * Delivers `decision` to the request at `request` (a `Request`, or its `task` and `id`), in one commit that checks
  * the request and stores the decision together. It fails with `DigestMismatch`, and stores nothing, when the decision
  * names another digest than the request's. Nothing checks who decided: authenticate before you call it.
  */
-export function decide(
-	request: Address,
-	decision: Decision,
-): Effect.Effect<Delivery, DurableError | Signal.Failure | DigestMismatch | MalformedState, Harness.Harness> {
-	return Harness.commit((tx) =>
-		Effect.gen(function* () {
-			const task = yield* tx.task(request.task);
-			if (Option.isNone(task) || task.value.kind !== ToolTask.definition.name) return "unknown";
-			// Pi drops a task's memos, its requests among them, with its outcome.
-			if (Task.ended(task.value.state.status)) return "gone";
-			const asks = yield* Asks.ofRecord(task.value.memos);
-			const asked = asks.find((ask) => ask.id === request.id);
-			if (asked === undefined) return "unknown";
-			if (asked.digest !== decision.digest) {
-				return yield* new DigestMismatch({ request: asked.id, expected: asked.digest, actual: decision.digest });
-			}
-			if (asked !== asks.at(-1)) return "superseded";
-			const result = yield* tx.signal(request.task, Decided, asked.id, decision);
-			switch (result) {
-				case "delivered":
-					return "delivered";
-				case "duplicate":
-					return "already_decided";
-				case "closed":
-					return "gone";
-				case "not_found":
-					return "unknown";
-				case "invalid":
-					return yield* new MalformedState({ where: "decision", reason: "Pi refused its JSON form" });
-			}
-		}),
+export const decide: (request: Address, decision: Decision) => Effect.Effect<Delivery, DecideError, Harness.Harness> =
+	Effect.fn("Approvals.decide")(function* (request, decision) {
+		return yield* Harness.commit((tx) => deliver(tx, request, decision));
+	});
+
+/** The checks and the signal of `decide`, in its commit. Untraced: the commit's own span covers it. */
+const deliver = Effect.fnUntraced(function* (tx: Tx.Tx, request: Address, decision: Decision) {
+	const task = yield* tx.task(request.task);
+	if (Option.isNone(task) || task.value.kind !== ToolTask.definition.name) return "unknown" satisfies Delivery;
+	// Pi drops a task's memos, its requests among them, with its outcome.
+	if (Task.ended(task.value.state.status)) return "gone" satisfies Delivery;
+	const asks = yield* Asks.ofRecord(task.value.memos);
+	const asked = Arr.findFirst(asks, (ask) => ask.id === request.id);
+	if (Option.isNone(asked)) return "unknown" satisfies Delivery;
+	const { id, digest } = asked.value;
+	if (digest !== decision.digest) {
+		return yield* DigestMismatch.make({ request: id, expected: digest, actual: decision.digest });
+	}
+	if (Option.exists(Arr.last(asks), (last) => last.id !== id)) return "superseded" satisfies Delivery;
+	const result = yield* tx.signal(request.task, Decided, id, decision);
+	return yield* Match.value(result).pipe(
+		Match.withReturnType<Effect.Effect<Delivery, MalformedState>>(),
+		Match.when("delivered", () => Effect.succeed("delivered" as const)),
+		Match.when("duplicate", () => Effect.succeed("already_decided" as const)),
+		Match.when("closed", () => Effect.succeed("gone" as const)),
+		Match.when("not_found", () => Effect.succeed("unknown" as const)),
+		Match.when("invalid", () =>
+			Effect.fail(MalformedState.make({ where: "decision", reason: "Pi refused its JSON form" })),
+		),
+		Match.exhaustive,
 	);
-}
+});

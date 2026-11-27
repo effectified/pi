@@ -81,7 +81,7 @@ describe("the child setup port", () => {
 						created.push(child);
 						yield* (yield* tx.doc(Grant, child.conversationId)).set({ tools: ["c"] });
 					}).pipe(
-						Effect.mapError((cause) => new ChildSetupFailed({ reason: "The grant was not stored.", cause })),
+						Effect.mapError((cause) => ChildSetupFailed.make({ reason: "The grant was not stored.", cause })),
 					),
 				beforeStart: (child) => Effect.sync(() => void started.push(child)),
 			}),
@@ -114,7 +114,7 @@ describe("the child setup port", () => {
 					Effect.gen(function* () {
 						// A write of the failing commit: it must not be stored either.
 						yield* Effect.orDie(tx.doc(Grant, child.conversationId));
-						return yield* new ChildSetupFailed({ reason: `No grant is defined for ${child.subagent}.` });
+						return yield* ChildSetupFailed.make({ reason: `No grant is defined for ${child.subagent}.` });
 					}),
 				beforeStart: () => Effect.void,
 			}),
@@ -138,7 +138,7 @@ describe("the child setup port", () => {
 		const seen = await delegate(
 			Layer.succeed(ChildSetup.ChildSetup, {
 				created: () => Effect.void,
-				beforeStart: () => Effect.fail(new ChildSetupFailed({ reason: "The budget has no room for a child." })),
+				beforeStart: () => Effect.fail(ChildSetupFailed.make({ reason: "The budget has no room for a child." })),
 			}),
 		);
 		const id = seen.children[0] as ConversationId;

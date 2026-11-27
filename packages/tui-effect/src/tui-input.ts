@@ -7,7 +7,7 @@ import {
 	type TerminalColorScheme,
 	type TuiInputListener,
 } from "@earendil-works/pi-tui";
-import { Effect, Queue, Stream } from "effect";
+import { Array as Arr, Effect, Option, Queue, Stream } from "effect";
 import { Tui } from "./tui-service.ts";
 
 /**
@@ -29,10 +29,16 @@ export function presses<K extends Keybinding>(keybindings: readonly K[]): Stream
 	return listen((offer) => (data) => {
 		if (isKeyRelease(data)) return undefined;
 		const manager = getKeybindings();
-		const pressed = keybindings.find((keybinding) => manager.matches(data, keybinding));
-		if (pressed === undefined) return undefined;
-		offer(pressed);
-		return { consume: true };
+		return Option.match(
+			Arr.findFirst(keybindings, (keybinding) => manager.matches(data, keybinding)),
+			{
+				onNone: () => undefined,
+				onSome: (pressed) => {
+					offer(pressed);
+					return { consume: true };
+				},
+			},
+		);
 	});
 }
 

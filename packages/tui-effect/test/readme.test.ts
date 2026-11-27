@@ -155,7 +155,7 @@ describe("README: Components with timers and callbacks", () => {
 				const spinner = yield* cancellableLoader(dim, dim, "Searching...");
 				(yield* Tui.Tui).addChild(spinner);
 				yield* Tui.setFocus(spinner);
-				return yield* untilCancelled(spinner, search);
+				return yield* search.pipe(untilCancelled(spinner));
 			}),
 		);
 

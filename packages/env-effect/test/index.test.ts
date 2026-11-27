@@ -53,16 +53,20 @@ describe("the coverage of pi-env", () => {
 });
 
 describe("the exports", () => {
-	it("are the environment and the errors at the root, which imports no value of pi-env", () => {
+	it("are the environment, the command results and the errors at the root, which imports no value of pi-env", () => {
 		expect(Object.keys(Package).sort()).toEqual([
 			"EXECUTION_ERROR_CODES",
 			"Env",
+			"EnvError",
+			"ExecEvent",
 			"ExecFailed",
+			"ExecResult",
 			"FILE_ERROR_CODES",
 			"FileFailed",
 			"HostKeyChanged",
 			"HostKeyUnknown",
 			"RemoteFailed",
+			"SshError",
 			"SshFailed",
 			"UnexpectedError",
 		]);

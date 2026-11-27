@@ -56,19 +56,20 @@ const program = Effect.gen(function* () {
 	// Prime: one conversation reads the expensive context, once.
 	const root = yield* TestHarness.root;
 	yield* root.prompt("Read this document: ...", { requestId: "prime" });
-	// Fork per job under the cap, fan the typed results in, clean up.
+	// Fork per job under the cap, fan the typed results in, clean up. Ids and keys are branded: one never passes for another.
+	const id = Swarm.SwarmId.make("covers-1"); // the idempotency key: starting it twice is one swarm
 	yield* Swarm.start(Covers, {
-		id: "covers-1", // the idempotency key: starting it twice is one swarm
+		id,
 		source: root.id,
 		jobs: [
-			{ key: "rust", input: { topic: "Rust" } },
-			{ key: "go", input: { topic: "Go" } },
-			{ key: "zig", input: { topic: "Zig" } },
+			{ key: Swarm.JobKey.make("rust"), input: { topic: "Rust" } },
+			{ key: Swarm.JobKey.make("go"), input: { topic: "Go" } },
+			{ key: Swarm.JobKey.make("zig"), input: { topic: "Zig" } },
 		],
 		cap: 2,
 		onFailure: "collect",
 	});
-	return yield* Swarm.result(Covers, "covers-1");
+	return yield* Swarm.result(Covers, id);
 });
 
 // The in-storage driver needs the open harness, and the registry needs the driver: `layer` first, `attach` last.
@@ -117,21 +118,26 @@ A swarm has a part that is code and a part that is data.
 
 | Plan field | |
 |---|---|
-| `id` | The swarm id. It is the caller's idempotency key: a swarm id names one swarm of a harness storage |
+| `id` | The swarm id, a `SwarmId`. It is the caller's idempotency key: a swarm id names one swarm of a harness storage |
 | `source` | The primed conversation. The coordinator is a background task of it |
 | `at` | The newest entry of the source the forks see. Default: its newest entry at the moment it is idle |
-| `jobs` | `{ key, input }` each. Keys are unique in the swarm; results come back in this order |
+| `jobs` | `{ key, input }` each, `key` a `JobKey`. Keys are unique in the swarm; results come back in this order |
 | `cap` | How many forks may work at once: an integer, 1 or more |
 | `onFailure` | `fail`: the first failed job fails the swarm, open jobs are cancelled. `collect`: every job runs |
 | `pins` | The keys of the jobs whose forks are kept when the swarm ends. Default: none |
+
+**Ids.** A swarm id is a `Swarm.SwarmId` and a job key a `Swarm.JobKey`: strings with a brand, so that a job key never
+passes for a swarm id, nor either for another package's id. A caller brands its own with `make`
+(`Swarm.SwarmId.make("covers-1")`); what the swarm stores comes back branded, since it is decoded with these schemas.
+A driver's id of a fork is a `ForkId`, and the id of one request of a job in its fork a `RequestId`.
 | `agent` | An `Agent.Change` applied to every fork: a cheaper model, fewer tools |
 
 ```ts
 // A cheaper model of the same `Models`, such as { provider: "anthropic", modelId: "claude-haiku-5-5" }.
 yield* Swarm.start(Covers, {
-	id: "covers-cheap",
+	id: Swarm.SwarmId.make("covers-cheap"),
 	source: root.id,
-	jobs: [{ key: "rust", input: { topic: "Rust" } }],
+	jobs: [{ key: Swarm.JobKey.make("rust"), input: { topic: "Rust" } }],
 	cap: 1,
 	onFailure: "fail",
 	// Every fork answers with the other model and is offered no tool. The source keeps what it has.
@@ -161,7 +167,7 @@ An id nothing was started under fails each of them with `SwarmNotFound` (`events
 
 ```ts
 // A reconciliation job after a crash: is the coordinator there, and what did it plan?
-const probe = yield* Swarm.status("covers-1");
+const probe = yield* Swarm.status(Swarm.SwarmId.make("covers-1"));
 const alive = probe.running;
 const jobKeys = probe.jobs.map((job) => job.key);
 const open = probe.jobs.filter((job) => job.status !== "succeeded" && job.status !== "failed");
@@ -169,23 +175,24 @@ const open = probe.jobs.filter((job) => job.status !== "succeeded" && job.status
 
 ```ts
 // Cancel: nothing new starts, live forks are cancelled, unpinned forks are destroyed, collected results are kept.
-yield* Swarm.cancel("covers-1"); // "cancelling"
-const outcome = yield* Swarm.result(Covers, "covers-1");
+yield* Swarm.cancel(Swarm.SwarmId.make("covers-1")); // "cancelling"
+const outcome = yield* Swarm.result(Covers, Swarm.SwarmId.make("covers-1"));
 // outcome.ending === "cancelled"; a job that had not settled is a Failure with reason "cancelled"
 ```
 
 ```ts
 // A pinned fork is kept, as a conversation the product goes on with, until a janitor releases it.
-const kept = yield* Swarm.ForkDriver.use((driver) => driver.list("covers-pinned"));
-const released = yield* Swarm.destroyFork("covers-pinned", "rust"); // { bytesWritten: Option<number> }
+const kept = yield* Swarm.ForkDriver.use((driver) => driver.list(Swarm.SwarmId.make("covers-pinned")));
+const released = yield* Swarm.destroyFork(Swarm.SwarmId.make("covers-pinned"), Swarm.JobKey.make("rust")); // { bytesWritten: Option<number> }
 ```
 
 ```ts
 // Progress: one element when a job's fork was asked for, one when it settled or failed.
-yield* Stream.runForEach(Swarm.events("covers-1"), (event) => Effect.log(event._tag, event.key));
+yield* Stream.runForEach(Swarm.events(Swarm.SwarmId.make("covers-1")), (event) => Effect.log(event._tag, event.key));
 ```
 
-`events` is a watch of the statuses the coordinator stores, not a log. It starts with the events that lead to the
+An event is a `Swarm.JobEvent` (`Started`, `Settled`, `Failed` with its `reason`); `JobEvent.match` chooses between
+them. `events` is a watch of the statuses the coordinator stores, not a log. It starts with the events that lead to the
 statuses of now, so a host that attaches late misses no job; Pi folds the commits a slow consumer misses, so two
 events of a job may arrive together, always in their order. A job that failed before the host attached is one
 `Failed`. The stream ends once every job has settled.
@@ -195,7 +202,8 @@ events of a job may arrive together, always in their order. A job that failed be
 `result` gives an `Outcome<A>`: `ending` (`completed`, `failed`, `cancelled`), `jobs`, and `forks`.
 
 - `jobs` has one element per job, in the order of the plan: `{ _tag: "Success", key, value }` with the typed value,
-  or `{ _tag: "Failure", key, reason, message }`. A failed or cancelled swarm has a result too.
+  or `{ _tag: "Failure", key, reason, message }`. A failed or cancelled swarm has a result too. Its stored form is a
+  `Swarm.StoredJob`, whose `match` chooses between the two.
 - `forks` says what became of every fork: `destroyed` with `bytesWritten` as its driver measured them, `pinned`, or
   `left` when the driver could not destroy it; and `ran`, where the fork's job ran.
 
@@ -357,23 +365,25 @@ that conversation belongs to.
 
 ## The driver port
 
-`@effectified/pi-swarm/driver` holds the port alone: `ForkDriver`, its data and its two errors. It imports only
-`effect` and the type `Agent.Change`. The data (`Fork`, `Notice`, `JobStatus`) are schemas, so a driver can send
-them across a process boundary. Ids are plain numbers and strings.
+`@effectified/pi-swarm/driver` holds the port alone: `ForkDriver`, its data, its ids and its two errors, which
+`ForkFailure` unites (choose with `ForkFailure.match`). The data (`Fork`, `RunRequest`, `Notice`, `JobStatus`,
+`Destroyed`) are schemas, so a driver can send them across a process boundary. Pi's ids are Pi's (numbers in JSON);
+the swarm's are its brands (`SwarmId`, `JobKey`, `ForkId`, `RequestId`), strings in JSON. A driver brands the fork id
+it gives (`ForkId.make(id)`).
 
 ```ts
 interface ForkDriverService {
 	readonly fork: (request: ForkRequest) => Effect.Effect<Fork, ForkRetryLater | ForkGone>;
 	readonly run: (request: RunRequest) => Effect.Effect<Notice, ForkRetryLater | ForkGone>;
-	readonly job: (fork: Fork, requestId: string) => Effect.Effect<JobStatus, ForkRetryLater | ForkGone>;
+	readonly job: (fork: Fork, requestId: RequestId) => Effect.Effect<JobStatus, ForkRetryLater | ForkGone>;
 	readonly cancel: (fork: Fork) => Effect.Effect<void, ForkRetryLater>;
 	readonly destroy: (fork: Fork) => Effect.Effect<Destroyed, ForkRetryLater>;
-	readonly list: (swarmId: string) => Effect.Effect<ReadonlyArray<Fork>, ForkRetryLater>;
+	readonly list: (swarmId: SwarmId) => Effect.Effect<ReadonlyArray<Fork>, ForkRetryLater>;
 }
 
 interface ForkRequest {
-	readonly swarmId: string;
-	readonly jobKey: string; // with swarmId, the key of the fork
+	readonly swarmId: SwarmId;
+	readonly jobKey: JobKey; // with swarmId, the key of the fork
 	readonly coordinatorTaskId: number; // the coordinator's task, in the harness of the source
 	readonly sourceConversationId: number; // the primed conversation, in that harness
 	readonly at: number; // the newest entry of the source the fork may see
@@ -383,7 +393,7 @@ interface ForkRequest {
 
 interface RunRequest {
 	readonly fork: Fork; // { swarmId, jobKey, forkId }
-	readonly requestId: string; // unique in the fork
+	readonly requestId: RequestId; // unique in the fork
 	readonly prompt: string;
 	readonly notify: { readonly taskId: number; readonly key: string };
 }
@@ -579,26 +589,26 @@ const Agent = Actor.make("agent", {
 		...Rivet.actions,
 		// Primes the root conversation and starts a swarm on it. It answers once the swarm is stored.
 		start: Action.make({
-			input: Schema.Struct({ id: Schema.String, topics: Schema.Array(Schema.String) }),
+			input: Schema.Struct({ id: Swarm.SwarmId, topics: Schema.Array(Schema.String) }),
 			output: Schema.Null,
 			handler: ({ id, topics }) =>
 				Effect.gen(function* () {
 					const root = yield* TestHarness.root;
 					yield* root.prompt("Read this document: ...", { requestId: "prime" });
-					const jobs = topics.map((topic) => ({ key: topic, input: { topic } }));
+					const jobs = topics.map((topic) => ({ key: Swarm.JobKey.make(topic), input: { topic } }));
 					yield* Swarm.start(Covers, { id, source: root.id, jobs, cap: 2, onFailure: "collect" });
 					return null;
 				}).pipe(Effect.orDie),
 		}),
 		// Whether the swarm still runs. Its coordinator sleeps between two questions to its forks.
 		running: Action.make({
-			input: Schema.String,
+			input: Swarm.SwarmId,
 			output: Schema.Boolean,
 			handler: (id) => Effect.orDie(Effect.map(Swarm.status(id), (status) => status.running)),
 		}),
 		// The topics the document covers, from the result of a swarm that has ended.
 		covered: Action.make({
-			input: Schema.String,
+			input: Swarm.SwarmId,
 			output: Schema.Array(Schema.String),
 			handler: (id) =>
 				Effect.orDie(
@@ -612,13 +622,14 @@ const Agent = Actor.make("agent", {
 
 const program = Effect.gen(function* () {
 	const agent = yield* Client.getOrCreate(Agent, ["document-7"]);
-	yield* Client.call(agent, "start", { id: "covers-1", topics: ["Rust", "Go", "Zig"] });
+	const id = Swarm.SwarmId.make("covers-1");
+	yield* Client.call(agent, "start", { id, topics: ["Rust", "Go", "Zig"] });
 	// The swarm runs in the actor. An action does not wait for it: Rivet ends an action after its timeout.
-	yield* Effect.repeat(Client.call(agent, "running", "covers-1"), {
+	yield* Effect.repeat(Client.call(agent, "running", id), {
 		while: (running) => running,
 		schedule: Schedule.spaced("200 millis"),
 	});
-	return yield* Client.call(agent, "covered", "covers-1");
+	return yield* Client.call(agent, "covered", id);
 });
 
 // Locally: an engine of this process's own, on a free port, hosting the actor and its forks in this process.
@@ -649,9 +660,10 @@ after the actor's `actionTimeout`: ask `status` until `running` is false, then r
 
 | Export | |
 |---|---|
-| `layer(options?: { pollMillis?: number })` | `Layer<ForkDriver, never, Client.RivetClient \| ActorInfo \| ActorSql>` |
+| `layer(options?: Options)` | `Layer<ForkDriver, SchemaError, Client.RivetClient \| ActorInfo \| ActorSql>`: options off their schema fail the build before anything is read or asked |
+| `Options` | The `Schema` of `layer`'s options: `pollMillis`, a number of milliseconds, 0 or more (default 1000) |
 | `actions` | `{ swarmRun, swarmJob, swarmCancel }`, each an `Action` of the host; `Actions` is their type. `swarmRun` needs `ForkSetup` and answers `{ conversationId }`, the job conversation |
-| `forkHygiene` | `Fork.Hygiene<never>`: it uses the actor's `ActorInfo` and `ActorSql`, which every hygiene step has |
+| `forkHygiene` | A `Fork.Hygiene` with its failures named, `Effect<void, Doc.Failure \| RecordFailure, Harness \| ActorInfo \| ActorSql>`: it uses the actor's `ActorInfo` and `ActorSql`, which every hygiene step has |
 | `jobConversation` | `Effect<Option<Conversation>, Doc.Failure, Harness>`: in a fork, the conversation its job ran in |
 | `forkKey(sourceKey, swarmId, jobKey)` | `Array<string>`: the key of the actor that is a job's fork |
 | `Assignment` | The `Schema` of a fork's input (`Fork.lineage`): `swarmId`, `jobKey`, `sourceConversationId`, `at`, `agent` |

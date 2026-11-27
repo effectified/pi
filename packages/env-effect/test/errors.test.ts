@@ -1,12 +1,16 @@
 import { ExecutionError, FileError } from "@earendil-works/pi-durable/env";
 import { describe, expect, it } from "vitest";
 import {
+	EnvError,
 	EXECUTION_ERROR_CODES,
 	ExecFailed,
 	FILE_ERROR_CODES,
 	FileFailed,
 	fromExecutionError,
 	fromFileError,
+	RemoteFailed,
+	SshError,
+	SshFailed,
 	UnexpectedError,
 } from "../src/errors.ts";
 
@@ -52,6 +56,34 @@ describe("fromExecutionError", () => {
 	it("accepts every code of Pi's ExecutionError", () => {
 		for (const code of EXECUTION_ERROR_CODES)
 			expect(fromExecutionError(new ExecutionError(code, code)).code).toBe(code);
+	});
+});
+
+describe("EnvError and SshError", () => {
+	it("pick a handler per tag and test for one", () => {
+		const failures: ReadonlyArray<EnvError> = [
+			fromFileError(new FileError("not_found", "missing")),
+			RemoteFailed.make({ code: "ENOENT", message: "missing", lost: false }),
+			SshFailed.make({ message: "failed", exitCode: 255, stderr: "" }),
+		];
+		const tags = failures.map((failure) =>
+			EnvError.match(failure, {
+				FileFailed: (error) => `file ${error.code}`,
+				ExecFailed: (error) => `exec ${error.code}`,
+				RemoteFailed: (error) => `remote ${error.code}`,
+				HostKeyUnknown: () => "unknown key",
+				HostKeyChanged: () => "changed key",
+				SshFailed: (error) => `ssh ${error.exitCode}`,
+				UnexpectedError: (error) => error.message,
+			}),
+		);
+		expect(tags).toEqual(["file not_found", "remote ENOENT", "ssh 255"]);
+		expect(failures.map(SshError.guards.SshFailed)).toEqual([false, false, true]);
+	});
+
+	it("hold an exit code of `ssh` to an integer, or null when it did not exit", () => {
+		expect(SshFailed.make({ message: "killed", exitCode: null, stderr: "" }).exitCode).toBeNull();
+		expect(() => SshFailed.make({ message: "?", exitCode: 1.5, stderr: "" })).toThrow();
 	});
 });
 

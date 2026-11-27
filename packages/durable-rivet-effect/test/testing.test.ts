@@ -3,7 +3,7 @@
 
 import { Effect, type Scope } from "effect";
 import { describe, expect, it } from "vitest";
-import { type Client, EngineUnavailable } from "../src/index.ts";
+import { ActorId, type Client, EngineUnavailable } from "../src/index.ts";
 import * as Testing from "../src/testing/index.ts";
 import { Agent } from "./agent.ts";
 
@@ -30,7 +30,7 @@ describe("Testing", () => {
 	});
 
 	it("has recorded nothing of an actor that never ran here", async () => {
-		const handle: Client.Handle = { definition: Agent, actorId: "never", key: ["never"] };
+		const handle: Client.Handle = { definition: Agent, actorId: ActorId.make("never"), key: ["never"] };
 		expect(await Effect.runPromise(Testing.lifecycle(handle))).toEqual([]);
 	});
 

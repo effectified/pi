@@ -21,23 +21,27 @@ export interface InMemoryPair {
 	readonly server: Peer;
 }
 
-/** Two linked in-memory transports, the server's end started; the scope closes both. */
-export function inMemoryTransportPair(): Effect.Effect<InMemoryPair, never, Scope.Scope> {
-	return Effect.gen(function* () {
-		const pair = yield* Effect.acquireRelease(Effect.sync(createInMemoryTransportPair), (pair) =>
-			Effect.promise(() => Promise.all([pair.client.close(), pair.server.close()])),
-		);
-		const received = yield* Queue.unbounded<JsonRpcMessage, Cause.Done>();
-		pair.server.onMessage((message) => Queue.offerUnsafe(received, message));
-		pair.server.onClose(() => Queue.endUnsafe(received));
-		// Starting an in-memory transport only marks it open; it cannot fail before it is closed.
-		yield* Effect.promise(() => pair.server.start());
-		return {
-			client: pair.client,
-			server: {
-				messages: Stream.fromQueue(received),
-				send: (message) => Effect.tryPromise({ try: () => pair.server.send(message), catch: fromPi }),
-			},
-		};
-	});
-}
+/** Two new linked in-memory transports, the server's end started; the scope closes both. */
+export const inMemoryTransportPair: Effect.Effect<InMemoryPair, never, Scope.Scope> = Effect.gen(function* () {
+	const pair = yield* Effect.acquireRelease(Effect.sync(createInMemoryTransportPair), (pair) =>
+		Effect.all([Effect.promise(() => pair.client.close()), Effect.promise(() => pair.server.close())], {
+			concurrency: 2,
+			discard: true,
+		}),
+	);
+	// From when the pair is made, not from when a reader starts: no message the client sends meanwhile is lost.
+	const received = yield* Queue.unbounded<JsonRpcMessage, Cause.Done>();
+	pair.server.onMessage((message) => Queue.offerUnsafe(received, message));
+	pair.server.onClose(() => Queue.endUnsafe(received));
+	// Starting an in-memory transport only marks it open; it cannot fail before it is closed.
+	yield* Effect.promise(() => pair.server.start());
+	return {
+		client: pair.client,
+		server: {
+			messages: Stream.fromQueue(received),
+			send: Effect.fn("McpTesting.Peer.send")((message: JsonRpcMessage) =>
+				Effect.tryPromise({ try: () => pair.server.send(message), catch: fromPi }),
+			),
+		},
+	};
+});

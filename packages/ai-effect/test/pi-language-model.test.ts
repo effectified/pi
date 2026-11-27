@@ -2,14 +2,16 @@ import type { AssistantMessage, SimpleStreamOptions, TranscriptContext } from "@
 import { Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
 import { LanguageModel, Tool, Toolkit } from "effect/ai";
 import { describe, expect, it } from "vitest";
-import { PiLanguageModel } from "../src/index.ts";
+import { fromPiModelRef, PiLanguageModel } from "../src/index.ts";
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall, ScriptedModels } from "../src/testing/index.ts";
 
 // Equal bounds make every delta four characters, so the stream parts are exact.
 const scripted = () => ScriptedModels.layer({ tokenSize: { min: 1, max: 1 } });
 
 const piModel = (options?: PiLanguageModel.Options) =>
-	PiLanguageModel.layer({ provider: "faux", modelId: "faux-1" }, options).pipe(Layer.provideMerge(scripted()));
+	PiLanguageModel.layer(fromPiModelRef({ provider: "faux", modelId: "faux-1" }), options).pipe(
+		Layer.provideMerge(scripted()),
+	);
 
 /** A scripted response that keeps the transcript and options of the request that took it. */
 function recording(message: AssistantMessage) {
@@ -401,7 +403,9 @@ describe("PiLanguageModel.layer", () => {
 			Effect.flip(
 				LanguageModel.generateText({ prompt: "hi" }).pipe(
 					Effect.provide(
-						PiLanguageModel.layer({ provider: "faux", modelId: "missing" }).pipe(Layer.provide(scripted())),
+						PiLanguageModel.layer(fromPiModelRef({ provider: "faux", modelId: "missing" })).pipe(
+							Layer.provide(scripted()),
+						),
 					),
 				),
 			),

@@ -1,23 +1,27 @@
 // The fork setup port: what the product does to the conversation of a swarm's fork as it is created, such as a grant
 // and a budget cap.
 
-import type { ConversationId, Tx } from "@effectified/pi-durable";
-import { Context, Effect, Layer } from "effect";
+import { Conversation, type Tx } from "@effectified/pi-durable";
+import { Context, Effect, Layer, Schema } from "effect";
 import type { ForkSetupFailed } from "./errors.ts";
+import { JobKey, SwarmId } from "./ids.ts";
 
 /** The fork a setup is asked about. Every id is one of the harness storage the setup runs in. */
-export interface Forked {
-	readonly swarmId: string;
+export const Forked = Schema.Struct({
+	swarmId: SwarmId,
 	/** Unique in the swarm: with `swarmId` it names the fork, and says which job spends in it. */
-	readonly jobKey: string;
+	jobKey: JobKey,
 	/**
 	 * The primed conversation the fork was made of. With the Rivet driver the setup runs inside the fork actor, where
 	 * this is the copy of the primed conversation, under the id it has in the source actor.
 	 */
-	readonly sourceConversationId: ConversationId;
+	sourceConversationId: Conversation.Id,
 	/** The conversation the job runs in, created in this commit. */
-	readonly conversationId: ConversationId;
-}
+	conversationId: Conversation.Id,
+});
+
+/** The fork a setup is asked about. */
+export type Forked = typeof Forked.Type;
 
 /** What the product decides about every fork of a swarm. */
 export interface ForkSetupService {
@@ -47,7 +51,9 @@ export interface ForkSetupService {
  * job's conversation there, so the actor's own `layer` must provide it. A driver whose forks are in no Pi harness
  * cannot call it.
  */
-export class ForkSetup extends Context.Service<ForkSetup, ForkSetupService>()("@effectified/pi-swarm/ForkSetup") {}
+export class ForkSetup extends Context.Service<ForkSetup, ForkSetupService>()(
+	"@effectified/pi-swarm/fork-setup/ForkSetup",
+) {}
 
 /** A setup that does nothing, for a product without guards and budgets: the stated choice, never a default. */
 export const none: Layer.Layer<ForkSetup> = Layer.succeed(ForkSetup, {

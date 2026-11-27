@@ -1,4 +1,4 @@
-import { Registry } from "@effectified/pi-durable";
+import { Registry, ToolName } from "@effectified/pi-durable";
 import { Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import type { ForkDriver } from "../src/driver.ts";
@@ -42,8 +42,8 @@ describe("named", () => {
 				model: { provider: "p", modelId: "m" },
 				instructions: "Be brief.",
 				extensions: { add: [{ name: "search" }], remove: ["write"] },
-				tools: { remove: [{ name: "bash" }] },
-				modelTools: ["read", { name: "grep" }],
+				tools: { remove: [{ name: ToolName.make("bash") }] },
+				modelTools: [ToolName.make("read"), { name: ToolName.make("grep") }],
 			}),
 		).toEqual({
 			model: { provider: "p", modelId: "m" },

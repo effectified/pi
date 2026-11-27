@@ -9,14 +9,26 @@ import {
 	type Provider,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
-import { ModelRequestError, type ResponseEvent } from "@effectified/pi-ai";
+import { ModelId, ModelRequestError, ProviderId, type ResponseEvent } from "@effectified/pi-ai";
 import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Exit, Scope } from "effect";
 import { describe, expect, it } from "vitest";
-import { AttemptUnsettled, NoRouteAvailable, type RouterError, RoutesExhausted } from "../src/index.ts";
+import {
+	type Alias,
+	AttemptUnsettled,
+	NoRouteAvailable,
+	type RouterError,
+	RouterRequestId,
+	RoutesExhausted,
+} from "../src/index.ts";
 import * as PiProvider from "../src/provider.ts";
 import type { ValidRouteTable } from "../src/route-table.ts";
-import { context, failing, route, scripted, table } from "./scripted.ts";
+import { context, FAST, failing, route, scripted, table } from "./scripted.ts";
+
+/** The router's provider id, and the provider `a` and its model `m` of the routes. */
+const ROUTER = ProviderId.make("router");
+const A = ProviderId.make("a");
+const M = ModelId.make("m");
 
 const transcript = normalizeContext(context);
 
@@ -30,7 +42,7 @@ function twoRoutes(): ValidRouteTable {
 		input: ["text"],
 		cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
 	});
-	const entry = { alias: "fast", name: "Fast", routes: [route("a"), route("b")] };
+	const entry: Alias = { alias: FAST, name: "Fast", routes: [route("a"), route("b")] };
 	return { table: table([entry]), aliases: [{ entry, models: [a.getModel(), b.getModel()] }] };
 }
 
@@ -38,7 +50,7 @@ type Run = PiProvider.ProviderOptions["run"];
 
 /** A provider whose requests run `run`, alive until `scope` closes. */
 function provide(run: Run, scope: Scope.Scope): Effect.Effect<Provider> {
-	return Scope.provide(PiProvider.make({ id: "router", table: twoRoutes(), run }), scope);
+	return Scope.provide(PiProvider.make({ id: ROUTER, table: twoRoutes(), run }), scope);
 }
 
 /** Every event of one pi-ai request to the alias model of `provider`. */
@@ -81,7 +93,7 @@ describe("make", () => {
 				Effect.flatMap(Effect.scope, (scope) =>
 					provide(
 						failingWith(
-							new RoutesExhausted({ alias: "fast", failures: [{ provider: "a", model: "m", message: "x" }] }),
+							new RoutesExhausted({ alias: FAST, failures: [{ provider: A, model: M, message: "x" }] }),
 						),
 						scope,
 					),
@@ -150,7 +162,7 @@ describe("make", () => {
 	});
 
 	it("ends a request no route may serve in pi-ai's error event, as an empty message of the alias model", async () => {
-		const error = new NoRouteAvailable({ alias: "fast", classification: "secret", excluded: [] });
+		const error = new NoRouteAvailable({ alias: FAST, classification: "secret", excluded: [] });
 		const events = await requestWith(failingWith(error));
 		expect(events).toHaveLength(1);
 		const last = events[0];
@@ -179,22 +191,20 @@ describe("make", () => {
 			true,
 		]);
 
-		const failures = [{ provider: "a", model: "m", message: "overloaded" }] as const;
+		const failures = [{ provider: A, model: M, message: "overloaded" }] as const;
 		const last = failing("overloaded");
-		const exhausted = await requestWith(
-			failingWith(new RoutesExhausted({ alias: "fast", failures, response: last })),
-		);
+		const exhausted = await requestWith(failingWith(new RoutesExhausted({ alias: FAST, failures, response: last })));
 		expect(exhausted[0].type === "error" && exhausted[0].error).toBe(last);
 	});
 
 	it("ends a request whose attempt could not be settled with that route's message, under the typed error's text", async () => {
 		const response = failing("overloaded");
 		const error = new AttemptUnsettled({
-			alias: "fast",
-			requestId: "router-a-1",
+			alias: FAST,
+			requestId: RouterRequestId.make("router-a-1"),
 			attempt: 1,
-			provider: "a",
-			model: "m",
+			provider: A,
+			model: M,
 			reason: "the lease is fenced: 503 overloaded",
 			response,
 		});
@@ -213,8 +223,10 @@ describe("make", () => {
 	});
 
 	it("says every failure when no route answered at all", async () => {
-		const failures = [{ provider: "gone", model: "m", message: 'Provider "gone" is not registered' }] as const;
-		const events = await requestWith(failingWith(new RoutesExhausted({ alias: "fast", failures })));
+		const failures = [
+			{ provider: ProviderId.make("gone"), model: M, message: 'Provider "gone" is not registered' },
+		] as const;
+		const events = await requestWith(failingWith(new RoutesExhausted({ alias: FAST, failures })));
 		expect(events[0].type === "error" && events[0].error.errorMessage).toBe(
 			'Every route of alias "fast" failed: gone/m: Provider "gone" is not registered',
 		);
@@ -311,10 +323,10 @@ describe("the alias model's thinking levels", () => {
 
 	/** The levels pi-ai offers for an alias whose routes have `models`. */
 	function offered(...models: Model<Api>[]) {
-		const entry = { alias: "fast", routes: models.map((model) => route(model.provider)) };
+		const entry: Alias = { alias: FAST, routes: models.map((model) => route(model.provider)) };
 		const valid: ValidRouteTable = { table: table([entry]), aliases: [{ entry, models }] };
 		return runTest(
-			Effect.map(PiProvider.make({ id: "router", table: valid, run: () => Effect.never }), (provider) =>
+			Effect.map(PiProvider.make({ id: ROUTER, table: valid, run: () => Effect.never }), (provider) =>
 				getSupportedThinkingLevels(provider.getModels()[0]),
 			),
 		);

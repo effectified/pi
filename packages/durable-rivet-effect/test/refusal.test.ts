@@ -5,11 +5,11 @@
 
 import type { SqliteExecutor } from "@earendil-works/chord/sqlite";
 import { runTest } from "@effectified/pi-ai/testing";
-import { Clock, Effect, Exit, Fiber, FiberSet, Layer, Option, Result, Scope } from "effect";
+import { Clock, Effect, Exit, Fiber, FiberSet, Layer, Option, Result, Schema, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { type ClientRaw, RivetError } from "rivetkit/client";
 import { describe, expect, it } from "vitest";
-import { Client } from "../src/index.ts";
+import { ActorId, Client } from "../src/index.ts";
 import * as Refusal from "../src/refusal.ts";
 import type { RawDatabase } from "../src/sqlite-database.ts";
 import * as Database from "../src/sqlite-database.ts";
@@ -18,14 +18,16 @@ import { type Refusals, refusal, refusingStorage, standIn } from "./raw-stand-in
 
 describe("Refusal", () => {
 	it("reads the hint of Rivet's error, and none off anything else", () => {
-		expect(Refusal.retryAfterMillis(refusal())).toBe(100);
-		expect(Refusal.retryAfterMillis(new RivetError("actor", "not_found", "gone"))).toBeUndefined();
-		expect(Refusal.retryAfterMillis(new RivetError("depot", "overloaded", "x", { metadata: {} }))).toBeUndefined();
+		expect(Refusal.retryAfterMillis(refusal())).toEqual(Option.some(100));
+		expect(Refusal.retryAfterMillis(new RivetError("actor", "not_found", "gone"))).toEqual(Option.none());
+		expect(Refusal.retryAfterMillis(new RivetError("depot", "overloaded", "x", { metadata: {} }))).toEqual(
+			Option.none(),
+		);
 		expect(
 			Refusal.retryAfterMillis(new RivetError("depot", "overloaded", "x", { metadata: { retry_after_ms: "1" } })),
-		).toBeUndefined();
-		expect(Refusal.retryAfterMillis(new Error("The storage host refused the command"))).toBeUndefined();
-		expect(Refusal.retryAfterMillis(undefined)).toBeUndefined();
+		).toEqual(Option.none());
+		expect(Refusal.retryAfterMillis(new Error("The storage host refused the command"))).toEqual(Option.none());
+		expect(Refusal.retryAfterMillis(undefined)).toEqual(Option.none());
 	});
 
 	it("waits as long as the hint says, up to its limit", () => {
@@ -46,7 +48,7 @@ const attemptTimes = (hints: (attempt: number) => number | undefined) =>
 		});
 		const failing = Effect.retry(
 			attempt,
-			Refusal.honouringHint((hint: number | undefined) => hint),
+			Refusal.honouringHint((hint: number | undefined) => Option.fromUndefinedOr(hint)),
 		);
 		const fiber = yield* Effect.forkChild(Effect.flip(failing), { startImmediately: true });
 		yield* TestClock.adjust("1 minute");
@@ -117,7 +119,7 @@ const onTheClock = <A, E>(request: Effect.Effect<A, E>) =>
 		return yield* Fiber.join(fiber);
 	});
 
-const source: Client.Handle<typeof Agent> = { definition: Agent, actorId: "actor-1", key: ["source"] };
+const source: Client.Handle<typeof Agent> = { definition: Agent, actorId: ActorId.make("actor-1"), key: ["source"] };
 
 describe("a client request the engine refuses with a retry hint", () => {
 	it("is sent again after each hint until it is served: a lookup, a fork and an action call", () =>
@@ -205,9 +207,14 @@ const texts = (executor: SqliteExecutor) =>
 		(await executor.all<{ text: string }>("SELECT text FROM notes ORDER BY id")).map((row) => row.text),
 	);
 
+/** What a promise of the adapter rejected with, as it was. */
+class Rejected extends Schema.TaggedError<Rejected, { readonly brand: unique symbol }>()("Rejected", {
+	cause: Schema.Defect(),
+}) {}
+
 /** How a promise of the adapter settled, once the test clock has moved a minute on. */
 const settled = <A>(operation: () => Promise<A>) =>
-	onTheClock(Effect.tryPromise({ try: operation, catch: (error) => error }));
+	onTheClock(Effect.tryPromise({ try: operation, catch: (cause) => Rejected.make({ cause }) }));
 
 describe("a statement the storage refuses with a retry hint, inside the actor", () => {
 	it("is run again on the database after each hint until it is served, once", () =>
@@ -290,7 +297,7 @@ describe("a statement the storage refuses with a retry hint, inside the actor", 
 					}),
 				);
 				// The first statement of the transaction was the refused one; the callback ran once and is not run again.
-				expect(Refusal.retryAfterMillis(failureOf(rejected))).toBe(100);
+				expect(Refusal.retryAfterMillis(failureOf(rejected))).toEqual(Option.some(100));
 				expect({ called, transactions: asked.transactions }).toEqual({ called: 1, transactions: 1 });
 				expect(yield* texts(plain)).toEqual([]);
 			}),
@@ -301,7 +308,7 @@ describe("a statement the storage refuses with a retry hint, inside the actor", 
 			Effect.gen(function* () {
 				const always = yield* refusingDatabase({ statements: Number.POSITIVE_INFINITY });
 				const rejected = yield* settled(() => always.database.run("INSERT INTO notes (id) VALUES (1)"));
-				expect(Refusal.retryAfterMillis(failureOf(rejected))).toBe(100);
+				expect(Refusal.retryAfterMillis(failureOf(rejected))).toEqual(Option.some(100));
 				expect(always.asked.statements).toBe(Refusal.RETRIES + 1);
 
 				const unknown = yield* refusingDatabase(
@@ -384,6 +391,6 @@ describe("the adapter's fibers interrupted while a refused statement waits out i
 });
 
 /** What a settled promise of these tests rejected with; undefined when it resolved. */
-function failureOf<A>(outcome: Result.Result<A, unknown>): unknown {
-	return Option.getOrUndefined(Result.getFailure(outcome));
+function failureOf<A>(outcome: Result.Result<A, Rejected>): unknown {
+	return Option.getOrUndefined(Option.map(Result.getFailure(outcome), (rejected) => rejected.cause));
 }

@@ -1,5 +1,5 @@
 import { createTypedSpanStarter, defineTelemetrySchema, type TelemetrySpan } from "@earendil-works/pi-telemetry";
-import { Effect, Layer, Metric, Option, Tracer } from "effect";
+import { Data, Effect, Layer, Metric, Option, Tracer } from "effect";
 import { describe, expect, it } from "vitest";
 import { PiTelemetry } from "../src/index.ts";
 import { failure, makeRecorder, type Recorder } from "./recording-tracer.ts";
@@ -14,6 +14,9 @@ function run<A>(recorder: Recorder, program: Effect.Effect<A, never, PiTelemetry
 		),
 	);
 }
+
+/** A Pi call's rejection, in the error channel of the Effect that made the call. */
+class PiCallRejected extends Data.TaggedError("PiCallRejected")<{ readonly cause: unknown }> {}
 
 /** Pi code under test: it takes the span of its caller, as a Chord context carries it, and starts its own below. */
 function piCall(telemetry: TelemetrySpan): Promise<string> {
@@ -159,14 +162,17 @@ describe("PiTelemetry.currentSpan", () => {
 						span.startSpan({ name: "pi.span" }, () => {
 							throw error;
 						}),
-					catch: (cause) => cause,
+					catch: (cause) => new PiCallRejected({ cause }),
 				});
 			}).pipe(Effect.withSpan("outer"), Effect.exit),
 		);
 
 		expect(exit._tag).toBe("Failure");
 		expect(failure(recorder.span("pi.span"))).toEqual({ name: "Error", message: "provider down" });
-		expect(failure(recorder.span("outer"))).toBe(error);
+		const outer = failure(recorder.span("outer"));
+		expect(outer).toBeInstanceOf(PiCallRejected);
+		// The adapter passed the thrown error on unchanged.
+		expect(outer instanceof PiCallRejected ? outer.cause : undefined).toBe(error);
 	});
 
 	it("uses the adapter a Layer provides, also when the Layer is built inside a span", async () => {

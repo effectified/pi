@@ -18,7 +18,7 @@ export function nodePhoton(options?: NodePhotonImagesOptions): Effect.Effect<Pro
 		Effect.tryPromise({
 			try: () => createNodePhotonImages(options),
 			catch: (cause) =>
-				new ImageFailed({ message: Predicate.isError(cause) ? cause.message : String(cause), cause }),
+				ImageFailed.make({ message: Predicate.isError(cause) ? cause.message : String(cause), cause }),
 		}),
 		fromPi,
 	);

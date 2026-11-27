@@ -219,6 +219,33 @@ describe("ask", () => {
 		});
 	});
 
+	it("keeps a count pi-ai reports as a fraction, and records a non-finite one as 0, without faulting", async () => {
+		const reviewer = fauxProvider({ provider: "reviewer-lab", models: [{ id: "judge" }] });
+		const base = fauxAssistantMessage('{"findings":[]}');
+		// pi-ai types usage as numbers: an adapter copies what the provider sent.
+		const response: AssistantMessage = {
+			...base,
+			provider: "reviewer-lab",
+			model: "judge",
+			usage: { ...base.usage, input: 1.5, output: Number.NaN },
+		};
+		const answering = { completeSimple: () => Promise.resolve(response) } as unknown as Models;
+		const reply = await Effect.runPromise(
+			ask(
+				{
+					models: answering,
+					model: reviewer.getModel(),
+					sessionId: Option.none(),
+					now: 1,
+					instructions: Option.none(),
+				},
+				SUBJECT,
+			),
+		);
+		expect(reply._tag).toBe("Reviewed");
+		expect(reply.call?.usage).toMatchObject({ input: 1.5, output: 0 });
+	});
+
 	it("keeps of a response its api, the provider's ids, its times, and pi-ai's whole usage and cost", async () => {
 		const reviewer = fauxProvider({ provider: "reviewer-lab", models: [{ id: "judge" }] });
 		// A response as a provider with every field reports it: a billed total, the cache and reasoning splits.

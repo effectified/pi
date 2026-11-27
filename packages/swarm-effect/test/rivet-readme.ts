@@ -47,26 +47,26 @@ const Agent = Actor.make("agent", {
 		...Rivet.actions,
 		// Primes the root conversation and starts a swarm on it. It answers once the swarm is stored.
 		start: Action.make({
-			input: Schema.Struct({ id: Schema.String, topics: Schema.Array(Schema.String) }),
+			input: Schema.Struct({ id: Swarm.SwarmId, topics: Schema.Array(Schema.String) }),
 			output: Schema.Null,
 			handler: ({ id, topics }) =>
 				Effect.gen(function* () {
 					const root = yield* TestHarness.root;
 					yield* root.prompt("Read this document: ...", { requestId: "prime" });
-					const jobs = topics.map((topic) => ({ key: topic, input: { topic } }));
+					const jobs = topics.map((topic) => ({ key: Swarm.JobKey.make(topic), input: { topic } }));
 					yield* Swarm.start(Covers, { id, source: root.id, jobs, cap: 2, onFailure: "collect" });
 					return null;
 				}).pipe(Effect.orDie),
 		}),
 		// Whether the swarm still runs. Its coordinator sleeps between two questions to its forks.
 		running: Action.make({
-			input: Schema.String,
+			input: Swarm.SwarmId,
 			output: Schema.Boolean,
 			handler: (id) => Effect.orDie(Effect.map(Swarm.status(id), (status) => status.running)),
 		}),
 		// The topics the document covers, from the result of a swarm that has ended.
 		covered: Action.make({
-			input: Schema.String,
+			input: Swarm.SwarmId,
 			output: Schema.Array(Schema.String),
 			handler: (id) =>
 				Effect.orDie(
@@ -80,13 +80,14 @@ const Agent = Actor.make("agent", {
 
 const program = Effect.gen(function* () {
 	const agent = yield* Client.getOrCreate(Agent, ["document-7"]);
-	yield* Client.call(agent, "start", { id: "covers-1", topics: ["Rust", "Go", "Zig"] });
+	const id = Swarm.SwarmId.make("covers-1");
+	yield* Client.call(agent, "start", { id, topics: ["Rust", "Go", "Zig"] });
 	// The swarm runs in the actor. An action does not wait for it: Rivet ends an action after its timeout.
-	yield* Effect.repeat(Client.call(agent, "running", "covers-1"), {
+	yield* Effect.repeat(Client.call(agent, "running", id), {
 		while: (running) => running,
 		schedule: Schedule.spaced("200 millis"),
 	});
-	return yield* Client.call(agent, "covered", "covers-1");
+	return yield* Client.call(agent, "covered", id);
 });
 
 /** Registers the example on the local engine of one runtime: the host's `node` or `bun` entry. */

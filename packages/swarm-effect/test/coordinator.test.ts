@@ -3,12 +3,12 @@
 
 import type { EntryId } from "@earendil-works/pi-durable";
 import { runTest } from "@effectified/pi-ai/testing";
-import { Conversation, Extension, Harness, Signal, Task } from "@effectified/pi-durable";
+import { Conversation, Extension, Harness, Signal, Task, ToolName } from "@effectified/pi-durable";
 import { TestHarness } from "@effectified/pi-durable/testing";
 import { Effect, Fiber, Layer, Option, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-import { destroyInARow, Input } from "../src/coordinator.ts";
+import { destroyInARow, Input, State } from "../src/coordinator.ts";
 import { MAX_ATTEMPTS } from "../src/fan-out.ts";
 import * as Swarm from "../src/index.ts";
 import { type Fake, fake, Settled } from "./fake-driver.ts";
@@ -54,7 +54,14 @@ type Plan = Swarm.Plan<{ readonly word: string }>;
 
 /** A plan over `list` on `root`, with what a test changes. */
 function planOf(root: Conversation.Conversation, list: ReadonlyArray<string>, change: Partial<Plan> = {}): Plan {
-	return { id: "swarm-1", source: root.id, jobs: jobsOf(list), cap: 3, onFailure: "collect", ...change };
+	return {
+		id: Swarm.SwarmId.make("swarm-1"),
+		source: root.id,
+		jobs: jobsOf(list),
+		cap: 3,
+		onFailure: "collect",
+		...change,
+	};
 }
 
 /**
@@ -107,6 +114,46 @@ describe("the cap on live forks", () => {
 		expect(driver.maxLive).toBe(1);
 		expect(result.jobs).toHaveLength(5);
 	});
+
+	it("runs every job at once under a cap beyond the safe integers, which 0.2.0 took and stored", async () => {
+		const list = words(4);
+		const driver = fake({ job: (key) => answers(JSON.stringify(measured(key.slice(4))), 3) });
+		const { result } = await swarm(driver, list, { cap: 1e20 });
+		expect(driver.maxLive).toBe(4);
+		expect(result.jobs).toEqual(list.map(success));
+	});
+
+	it("reads what 0.2.0 stored of such a swarm, and a job it polls at a negative interval", () =>
+		runTest(
+			Effect.gen(function* () {
+				const input = {
+					swarmId: "s",
+					jobs: [{ key: "a", input: { word: "a" } }],
+					at: 12,
+					cap: 1e20,
+					onFailure: "collect",
+					pins: [],
+					agent: null,
+				};
+				expect(yield* Schema.decodeUnknownEffect(Input)(input)).toEqual(input);
+				// The Rivet driver's `pollMillis: -1`: asked again at once, each time.
+				const state = {
+					phase: "run",
+					at: 12,
+					jobs: [
+						{
+							status: "running",
+							fork: "f-a",
+							correction: 0,
+							wait: { _tag: "Poll", at: 99, everyMillis: -1 },
+							attempts: 0,
+							ran: null,
+						},
+					],
+				};
+				expect(yield* Schema.decodeUnknownEffect(State)(state)).toEqual(state);
+			}),
+		));
 });
 
 describe("a driver that says retry later", () => {
@@ -340,7 +387,7 @@ describe("a failed job", () => {
 describe("clean-up", () => {
 	it("destroys every fork that is not pinned, and records the bytes each wrote", async () => {
 		const driver = fake({ bytes: (key) => (key === "job-c" ? Option.none() : Option.some(key.length * 100)) });
-		const { result } = await swarm(driver, ["a", "b", "c"], { pins: ["job-b"] });
+		const { result } = await swarm(driver, ["a", "b", "c"], { pins: [Swarm.JobKey.make("job-b")] });
 		expect(result.forks).toEqual([
 			{
 				jobKey: "job-a",
@@ -373,6 +420,26 @@ describe("clean-up", () => {
 		expect(driver.destroyCalls.get("job-b")).toBe(1);
 		expect(result.forks.map((fork) => fork.fate)).toEqual(["destroyed", "destroyed"]);
 		expect(driver.forks.size).toBe(0);
+	});
+
+	it("waits for the longest hint of the forks still pending before it destroys again, whichever answered first", async () => {
+		const hints = new Map([
+			["job-a", 10],
+			["job-b", 5000],
+		]);
+		const waits: Array<number> = [];
+		// The forks are destroyed in the order of the plan: the short hint answers first, then the long one, then the
+		// other way round.
+		for (const list of [
+			["a", "b"],
+			["b", "a"],
+		]) {
+			const driver = fake({ destroyFails: (_key, call) => call === 1, destroyHint: (key) => hints.get(key) ?? 1 });
+			await swarm(driver, list);
+			const [first = 0, second = 0] = driver.destroyTimes.get("job-a") ?? [];
+			waits.push(second - first);
+		}
+		expect(waits).toEqual([5000, 5000]);
 	});
 
 	it("destroys a fork the coordinator never saw created", async () => {
@@ -516,11 +583,11 @@ describe("the source", () => {
 			Effect.gen(function* () {
 				const { root, entry: first } = yield* source;
 				const second = (yield* root.commit((tx) => tx.appendEntry(root.id, { kind: "test.later" }))).id;
-				yield* Swarm.start(Measure, planOf(root, ["a"], { id: "newest" }));
-				yield* Swarm.result(Measure, "newest");
+				yield* Swarm.start(Measure, planOf(root, ["a"], { id: Swarm.SwarmId.make("newest") }));
+				yield* Swarm.result(Measure, Swarm.SwarmId.make("newest"));
 				const newest = driver.ats.get("job-a");
-				yield* Swarm.start(Measure, planOf(root, ["b"], { id: "named", at: first }));
-				yield* Swarm.result(Measure, "named");
+				yield* Swarm.start(Measure, planOf(root, ["b"], { id: Swarm.SwarmId.make("named"), at: first }));
+				yield* Swarm.result(Measure, Swarm.SwarmId.make("named"));
 				return { first, second, newest, named: driver.ats.get("job-b") };
 			}),
 		);
@@ -534,12 +601,15 @@ describe("the source", () => {
 			driver,
 			Effect.gen(function* () {
 				const root = yield* Harness.root;
-				yield* Swarm.start(Measure, planOf(root, ["a"], { id: "empty" }));
-				const empty = yield* Swarm.result(Measure, "empty");
+				yield* Swarm.start(Measure, planOf(root, ["a"], { id: Swarm.SwarmId.make("empty") }));
+				const empty = yield* Swarm.result(Measure, Swarm.SwarmId.make("empty"));
 				yield* root.commit((tx) => tx.appendEntry(root.id, { kind: "test.primed" }));
 				// Pi brands ids in the type system only.
-				yield* Swarm.start(Measure, planOf(root, ["a"], { id: "blind", at: 999_999 as EntryId }));
-				return { empty, blind: yield* Swarm.result(Measure, "blind") };
+				yield* Swarm.start(
+					Measure,
+					planOf(root, ["a"], { id: Swarm.SwarmId.make("blind"), at: 999_999 as EntryId }),
+				);
+				return { empty, blind: yield* Swarm.result(Measure, Swarm.SwarmId.make("blind")) };
 			}),
 		);
 		expect(seen.empty.ending).toBe("failed");
@@ -559,8 +629,8 @@ describe("the fork's agent", () => {
 		await swarm(driver, ["a"], {
 			agent: {
 				model: { provider: "cheap", modelId: "small" },
-				tools: [{ name: "read" }, "search"],
-				modelTools: { remove: [{ name: "search" }] },
+				tools: [{ name: ToolName.make("read") }, ToolName.make("search")],
+				modelTools: { remove: [{ name: ToolName.make("search") }] },
 				maxTurns: 3,
 			},
 		});
@@ -614,8 +684,8 @@ describe("the fork's agent", () => {
 
 describe("the destroys of a cancel", () => {
 	const pending = (jobKey: string) => ({
-		jobKey,
-		forkId: `id-${jobKey}`,
+		jobKey: Swarm.JobKey.make(jobKey),
+		forkId: Swarm.ForkId.make(`id-${jobKey}`),
 		fate: "pending" as const,
 		bytesWritten: null,
 	});
@@ -624,9 +694,12 @@ describe("the destroys of a cancel", () => {
 	const callsOver = (driver: Fake, steps: ReadonlyArray<number>) =>
 		runTest(
 			Effect.gen(function* () {
-				const running = yield* Effect.forkChild(destroyInARow(driver.driver, "s", [pending("job-a")], 1), {
-					startImmediately: true,
-				});
+				const running = yield* Effect.forkChild(
+					destroyInARow(driver.driver, Swarm.SwarmId.make("s"), [pending("job-a")], 1),
+					{
+						startImmediately: true,
+					},
+				);
 				const calls = [driver.destroyCalls.get("job-a") ?? 0];
 				for (const millis of steps) {
 					yield* TestClock.adjust(millis);

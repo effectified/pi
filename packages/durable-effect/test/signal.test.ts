@@ -261,5 +261,8 @@ describe("stateIn", () => {
 			"Memo pi.signal.test.decision/odd cannot be read: it is not a signal memo of Pi Durable 1.6.0",
 		]);
 		expect((await messages("wrong"))[0]).toBe("SchemaDecodeError");
+		// Data-last on the record, for a pipe.
+		const piped = await Effect.runPromise(Effect.flatMap(Effect.succeed({ memos }), Signal.stateIn(Decision, "key")));
+		expect(piped).toEqual(await Effect.runPromise(Signal.stateIn({ memos }, Decision, "key")));
 	});
 });

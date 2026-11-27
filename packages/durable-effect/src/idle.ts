@@ -2,7 +2,7 @@
 
 import type { ConversationId, ConversationRecord, TaskId, TaskRecord } from "@earendil-works/pi-durable";
 import type { JsonValue } from "@effectified/pi-chord/json";
-import { Effect, Option } from "effect";
+import { Array as Arr, Effect, Option } from "effect";
 import type { DurableError } from "./errors.ts";
 
 /** What an idle read asks about: the whole harness (`Harness.waitForIdle`), or one conversation (its `waitForIdle`). */
@@ -25,39 +25,38 @@ export interface Reads {
  * harness an ownerless one, without meeting a background task, itself included. A task whose chain cannot be read
  * counts, as in Pi. `reads` are a commit's (`Tx`), so the owners are read at one point.
  */
-export function quiet(
+export const quiet: (
 	live: ReadonlyArray<TaskRecord<JsonValue, JsonValue, JsonValue>>,
 	scope: Scope,
 	reads: Reads,
-): Effect.Effect<boolean, DurableError> {
-	return Effect.gen(function* () {
-		const tasks = new Map<TaskId, Option.Option<TaskRecord<JsonValue, JsonValue, JsonValue>>>(
-			live.map((record) => [record.id, Option.some(record)]),
-		);
-		const owners = new Map<ConversationId, Option.Option<ConversationRecord>>();
-		const task = (id: TaskId) => kept(tasks, id, reads.task);
-		const conversation = (id: ConversationId) => kept(owners, id, reads.conversation);
-		for (const record of live) {
-			let at = Option.some(record);
-			let counts: boolean | undefined;
-			while (counts === undefined) {
-				// A record that is missing breaks the chain: Pi counts what it cannot place.
-				if (Option.isNone(at)) counts = true;
-				else if (at.value.background) counts = false;
-				else if (at.value.owner !== undefined) at = yield* task(at.value.owner);
-				else if (scope.kind === "conversation" && at.value.conversationId === scope.conversationId) counts = true;
-				else {
-					const found = yield* conversation(at.value.conversationId);
-					if (Option.isNone(found)) counts = true;
-					else if (found.value.owner === undefined) counts = scope.kind === "harness";
-					else at = yield* task(found.value.owner.taskId);
-				}
+) => Effect.Effect<boolean, DurableError> = Effect.fn("Idle.quiet")(function* (live, scope, reads) {
+	// Ids are numbers, which a `Map` compares by value.
+	const tasks = new Map<TaskId, Option.Option<TaskRecord<JsonValue, JsonValue, JsonValue>>>(
+		Arr.map(live, (record) => [record.id, Option.some(record)] as const),
+	);
+	const owners = new Map<ConversationId, Option.Option<ConversationRecord>>();
+	const task = (id: TaskId) => kept(tasks, id, reads.task);
+	const conversation = (id: ConversationId) => kept(owners, id, reads.conversation);
+	for (const record of live) {
+		let at = Option.some(record);
+		let counts: boolean | undefined;
+		while (counts === undefined) {
+			// A record that is missing breaks the chain: Pi counts what it cannot place.
+			if (Option.isNone(at)) counts = true;
+			else if (at.value.background) counts = false;
+			else if (at.value.owner !== undefined) at = yield* task(at.value.owner);
+			else if (scope.kind === "conversation" && at.value.conversationId === scope.conversationId) counts = true;
+			else {
+				const found = yield* conversation(at.value.conversationId);
+				if (Option.isNone(found)) counts = true;
+				else if (found.value.owner === undefined) counts = scope.kind === "harness";
+				else at = yield* task(found.value.owner.taskId);
 			}
-			if (counts) return false;
 		}
-		return true;
-	});
-}
+		if (counts) return false;
+	}
+	return true;
+});
 
 /** `read(id)`, once per id: a chain of owners is walked once per live task below it. */
 function kept<K, A>(

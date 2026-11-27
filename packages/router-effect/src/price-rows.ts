@@ -1,21 +1,22 @@
 // A route table's prices as plain rows: what a budget needs to price the same models, written once.
 
-import { TOKEN_KINDS, type TokenKind } from "@effectified/pi-ai";
-import { Effect, Schema } from "effect";
-import { type Price, PriceTier, type RouteTable } from "./route-table.ts";
+import { ModelId, ProviderId, type TokenKind } from "@effectified/pi-ai";
+import { Array as Arr, Effect, Equivalence, Schema } from "effect";
+import { DEFAULT_ROUTER_ID } from "./ids.ts";
+import { Price, type RouteTable, sameModel } from "./route-table.ts";
 
 /**
- * What one model charges, per million tokens, in integer micro units: the units and the tiers of `Price`. A row names
- * either the model of a route, or an alias under the router's provider id.
+ * What one model charges, per million tokens, in integer micro units, zero or more: the rates and the tiers of
+ * `Price`. A row names either the model of a route, or an alias under the router's provider id.
  */
 export const PriceRow = Schema.Struct({
-	provider: Schema.String,
-	model: Schema.String,
-	input: Schema.Int,
-	output: Schema.Int,
-	cacheRead: Schema.Int,
-	cacheWrite: Schema.Int,
-	tiers: Schema.optional(Schema.Array(PriceTier)),
+	provider: ProviderId,
+	model: ModelId,
+	input: Price.fields.input,
+	output: Price.fields.output,
+	cacheRead: Price.fields.cacheRead,
+	cacheWrite: Price.fields.cacheWrite,
+	tiers: Price.fields.tiers,
 });
 
 /** What one model charges, per million tokens, in integer micro units. */
@@ -33,37 +34,39 @@ export const PriceRows = Schema.Struct({
 /** The prices of a route table in one currency. */
 export type PriceRows = typeof PriceRows.Type;
 
-/** One reason a route table has no single set of price rows. */
-export const PriceRowsIssue = Schema.Union([
+/**
+ * One reason a route table has no single set of price rows. `PriceRowsIssue.match` picks a handler per tag and
+ * `PriceRowsIssue.guards` tests for one.
+ */
+export const PriceRowsIssue = Schema.TaggedUnion({
 	/** The table has no route, so it has no price and no currency. */
-	Schema.TaggedStruct("NoRoute", {}),
+	NoRoute: {},
 	/** Routes are priced in more than one currency; rows have one. `currencies` are in table order. */
-	Schema.TaggedStruct("MixedCurrencies", { currencies: Schema.Array(Schema.String) }),
+	MixedCurrencies: { currencies: Schema.Array(Schema.String) },
 	/** Two routes name this provider and model at different prices, or an alias row would share its name. */
-	Schema.TaggedStruct("ConflictingPrice", { provider: Schema.String, model: Schema.String }),
-]);
+	ConflictingPrice: { provider: ProviderId, model: ModelId },
+});
 
 /** One reason a route table has no single set of price rows. */
 export type PriceRowsIssue = typeof PriceRowsIssue.Type;
 
 /** A route table's prices cannot be given as rows. `issues` lists every reason. */
-export class PriceRowsError extends Schema.TaggedError<PriceRowsError>()("PriceRowsError", {
-	issues: Schema.NonEmptyArray(PriceRowsIssue),
-}) {
+export class PriceRowsError extends Schema.TaggedError<PriceRowsError, { readonly brand: unique symbol }>()(
+	"PriceRowsError",
+	{ issues: Schema.NonEmptyArray(PriceRowsIssue) },
+) {
 	override get message(): string {
-		return this.issues.map(describeIssue).join("; ");
+		return Arr.join(Arr.map(this.issues, describeIssue), "; ");
 	}
 }
 
 function describeIssue(issue: PriceRowsIssue): string {
-	switch (issue._tag) {
-		case "NoRoute":
-			return "The route table has no route";
-		case "MixedCurrencies":
-			return `The routes are priced in more than one currency: ${issue.currencies.join(", ")}`;
-		case "ConflictingPrice":
-			return `${issue.provider}/${issue.model} has more than one price`;
-	}
+	return PriceRowsIssue.match(issue, {
+		NoRoute: () => "The route table has no route",
+		MixedCurrencies: ({ currencies }) =>
+			`The routes are priced in more than one currency: ${Arr.join(currencies, ", ")}`,
+		ConflictingPrice: ({ provider, model }) => `${provider}/${model} has more than one price`,
+	});
 }
 
 /**
@@ -76,40 +79,49 @@ function describeIssue(issue: PriceRowsIssue): string {
  *   before it is known which route serves, never below what any route charges.
  *
  * Route rows first, then alias rows, each in table order. Fails with `PriceRowsError` when the table has no route,
- * prices its routes in more than one currency, or gives one model two prices.
+ * prices its routes in more than one currency, or gives one model two prices. `table` is a decoded table or one
+ * written in code (`typeof RouteTable.Encoded`); the ids of the rows are branded here.
  */
-export function priceRows(table: RouteTable, router = "router"): Effect.Effect<PriceRows, PriceRowsError> {
-	return Effect.suspend(() => {
-		const rows = new Map<string, PriceRow>();
-		const conflicts = new Map<string, PriceRowsIssue>();
-		const add = (row: PriceRow) => {
-			// A NUL cannot be part of either id, so two different models never share a key.
-			const key = `${row.provider}\0${row.model}`;
-			const known = rows.get(key);
-			if (known === undefined) rows.set(key, row);
-			else if (!samePrice(known, row)) {
-				conflicts.set(key, { _tag: "ConflictingPrice", provider: row.provider, model: row.model });
-			}
-		};
-		const routes = table.aliases.flatMap((alias) => alias.routes);
-		for (const { provider, model, price } of routes) add({ provider, model, ...amounts(price) });
-		for (const alias of table.aliases) {
-			const [first, ...rest] = alias.routes.flatMap((route) => [route.price, ...(route.price.tiers ?? [])]);
-			if (first !== undefined) add({ provider: router, model: alias.alias, ...rest.reduce(highest, rates(first)) });
-		}
-		const currencies = [...new Set(routes.map((route) => route.price.currency))];
-		const issues: PriceRowsIssue[] = [
-			...(currencies.length > 1 ? [{ _tag: "MixedCurrencies" as const, currencies }] : []),
-			...conflicts.values(),
-		];
-		const [currency] = currencies;
-		if (currency === undefined) return Effect.fail(new PriceRowsError({ issues: [{ _tag: "NoRoute" }] }));
-		const [issue, ...more] = issues;
-		return issue === undefined
-			? Effect.succeed({ currency, prices: [...rows.values()] })
-			: Effect.fail(new PriceRowsError({ issues: [issue, ...more] }));
-	});
-}
+export const priceRows: (
+	table: typeof RouteTable.Encoded,
+	router?: ProviderId,
+) => Effect.Effect<PriceRows, PriceRowsError> = Effect.fn("PriceRows.priceRows")(function* (
+	table,
+	router = DEFAULT_ROUTER_ID,
+) {
+	const routes = Arr.flatMap(table.aliases, (alias) => alias.routes);
+	const routeRows = Arr.map(routes, (route): PriceRow => ({
+		provider: ProviderId.make(route.provider),
+		model: ModelId.make(route.model),
+		...amounts(route.price),
+	}));
+	const aliasRows = Arr.flatMap(table.aliases, (alias) =>
+		Arr.matchLeft(
+			Arr.flatMap(alias.routes, (route): Array<Rates> => [route.price, ...(route.price.tiers ?? [])]),
+			{
+				onEmpty: (): Array<PriceRow> => [],
+				onNonEmpty: (first, rest) => [
+					{ provider: router, model: ModelId.make(alias.alias), ...Arr.reduce(rest, rates(first), highest) },
+				],
+			},
+		),
+	);
+	const all = [...routeRows, ...aliasRows];
+	const rows = Arr.dedupeWith(all, sameModel);
+	const conflicts = Arr.flatMap(rows, (row): Array<PriceRowsIssue> =>
+		Arr.some(all, (other) => sameModel(row, other) && !samePrice(row, other))
+			? [{ _tag: "ConflictingPrice", provider: row.provider, model: row.model }]
+			: [],
+	);
+	const currencies = Arr.dedupe(Arr.map(routes, (route) => route.price.currency));
+	if (!Arr.isArrayNonEmpty(currencies)) return yield* PriceRowsError.make({ issues: [{ _tag: "NoRoute" }] });
+	const issues: Array<PriceRowsIssue> = [
+		...(currencies.length > 1 ? [{ _tag: "MixedCurrencies" as const, currencies }] : []),
+		...conflicts,
+	];
+	if (Arr.isArrayNonEmpty(issues)) return yield* PriceRowsError.make({ issues });
+	return { currency: Arr.headNonEmpty(currencies), prices: rows };
+});
 
 /** The rates of a price or of a tier. */
 type Rates = Pick<Price, TokenKind>;
@@ -118,17 +130,17 @@ type Rates = Pick<Price, TokenKind>;
 type Amounts = Omit<PriceRow, "provider" | "model">;
 
 /** A route's price as the amounts of a row: its rates, and its tiers when it has any. */
-function amounts(price: Price): Amounts {
+function amounts(price: typeof Price.Encoded): Amounts {
 	const { tiers } = price;
 	return { ...rates(price), ...(tiers === undefined ? {} : { tiers }) };
 }
 
-function rates(price: Rates): Record<TokenKind, number> {
+function rates(price: Rates): Rates {
 	return { input: price.input, output: price.output, cacheRead: price.cacheRead, cacheWrite: price.cacheWrite };
 }
 
 /** For each kind of token, the higher of two rates. */
-function highest(one: Rates, other: Rates): Record<TokenKind, number> {
+function highest(one: Rates, other: Rates): Rates {
 	return {
 		input: Math.max(one.input, other.input),
 		output: Math.max(one.output, other.output),
@@ -137,19 +149,22 @@ function highest(one: Rates, other: Rates): Record<TokenKind, number> {
 	};
 }
 
-/** Whether two rows charge the same for every request: the same rates, and the same tiers in the same order. */
-function samePrice(one: Amounts, other: Amounts): boolean {
-	const tiers = one.tiers ?? [];
-	const others = other.tiers ?? [];
-	return (
-		sameRates(one, other) &&
-		tiers.length === others.length &&
-		tiers.every(
-			(tier, index) => tier.inputTokensAbove === others[index].inputTokensAbove && sameRates(tier, others[index]),
-		)
-	);
-}
+/** The four rates, each compared as a number. */
+const RATES = {
+	input: Equivalence.Number,
+	output: Equivalence.Number,
+	cacheRead: Equivalence.Number,
+	cacheWrite: Equivalence.Number,
+} satisfies Record<TokenKind, Equivalence.Equivalence<number>>;
 
-function sameRates(one: Rates, other: Rates): boolean {
-	return TOKEN_KINDS.every((kind) => one[kind] === other[kind]);
-}
+/**
+ * Whether two rows charge the same for every request: the same rates, and the same tiers in the same order. A row
+ * without tiers and one with none charge the same.
+ */
+const samePrice: Equivalence.Equivalence<Amounts> = Equivalence.combine(
+	Equivalence.Struct(RATES),
+	Equivalence.mapInput(
+		Equivalence.Array(Equivalence.Struct({ ...RATES, inputTokensAbove: Equivalence.Number })),
+		(row: Amounts) => row.tiers ?? [],
+	),
+);

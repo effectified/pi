@@ -1,4 +1,5 @@
 import { fauxAssistantMessage, fauxToolCall, runTest } from "@effectified/pi-ai/testing";
+import { McpServerName } from "@effectified/pi-mcp";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { Extension, McpTools } from "../src/index.ts";
@@ -10,7 +11,10 @@ describe("McpTools.tools", () => {
 		const definitions = await runTest(
 			Effect.gen(function* () {
 				const client = yield* connected;
-				const tools = yield* McpTools.tools(client, { server: "docs", description: "The docs server." });
+				const tools = yield* McpTools.tools(client, {
+					server: McpServerName.make("docs"),
+					description: "The docs server.",
+				});
 				return yield* Effect.forEach(tools, (tool) => tool.definition);
 			}),
 		);
@@ -34,7 +38,7 @@ describe("McpTools.tools", () => {
 		const results = await runTest(
 			Effect.gen(function* () {
 				const client = yield* connected;
-				const tools = yield* McpTools.tools(client, { server: "docs" });
+				const tools = yield* McpTools.tools(client, { server: McpServerName.make("docs") });
 				const { session, models } = yield* openSession({ extensions: [Extension.make("docs", { tools })] });
 				yield* models.setResponses([
 					fauxAssistantMessage(

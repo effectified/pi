@@ -1,17 +1,20 @@
 // The search and fetch tools: a model's call is brought within the limits and answered by the provider; the model
 // reads compact text, and the host finds the evidence of the call in the result's details.
 
-import { Tool } from "@effectified/pi-durable";
+import { Tool, ToolName } from "@effectified/pi-durable";
 import { Effect, Schema, SchemaTransformation } from "effect";
-import { capFetch, capSearch, defaultLimits, type Limits } from "./limits.ts";
+import { capFetch, capSearch, defaultLimits, Limits } from "./limits.ts";
 import { Count, Evidence, type Retrieval, SearchProvider } from "./provider/index.ts";
 import { fetchText, searchText } from "./render.ts";
 
-/** The search tool's name, as a model calls it and a conversation selects it. */
-export const SEARCH = "web_search";
+/**
+ * The search tool's name, as a model calls it and a grant names it. `ToolName.make` types its result as any name:
+ * the value is this literal, which the tool's type keeps.
+ */
+export const SEARCH = ToolName.make("web_search") as "web_search" & ToolName;
 
 /** The fetch tool's name. */
-export const FETCH = "web_fetch";
+export const FETCH = ToolName.make("web_fetch") as "web_fetch" & ToolName;
 
 /** The search tool: it needs the `SearchProvider` of the registry's context. */
 export type SearchTool = Tool.Tool<typeof SEARCH, typeof SearchParameters, Schema.String, never, SearchProvider>;
@@ -28,9 +31,10 @@ export interface SearchExtension {
 /**
  * The extension `search` for `Registry.layer`: both tools within `limits`, each absent limit its default. The
  * registry then requires a `SearchProvider`. It has no hooks, so its place among the extensions does not matter.
+ * A limit that is no whole number above zero is a defect here: limits are fixed in code.
  */
 export function extension(limits: Partial<Limits> = {}): SearchExtension {
-	const fixed: Limits = {
+	const fixed = Limits.make({
 		maxResults: limits.maxResults ?? defaultLimits.maxResults,
 		defaultResults: limits.defaultResults ?? defaultLimits.defaultResults,
 		snippetCharacters: limits.snippetCharacters ?? defaultLimits.snippetCharacters,
@@ -40,7 +44,7 @@ export function extension(limits: Partial<Limits> = {}): SearchExtension {
 		blockedDomains: limits.blockedDomains,
 		publishedAfter: limits.publishedAfter,
 		publishedBefore: limits.publishedBefore,
-	};
+	});
 	return { name: "search", tools: [search(fixed), fetch(fixed)] };
 }
 
@@ -61,7 +65,7 @@ const SearchParameters = Schema.Struct({
  * The tool `web_search` within `limits`. The model reads a numbered list of titles, addresses and snippets; the
  * result's details hold the evidence. A provider failure and a request no limit lets through are error results the
  * model reads. `replay: "safe"`: a call cut off by a crash asks the provider again, and the stored evidence is that
- * of the answer the model read.
+ * of the answer the model read. Not cached: each call's evidence is the provider's answer to that call, when it came.
  */
 export function search(limits: Limits): SearchTool {
 	return Tool.make(SEARCH, {
@@ -70,12 +74,16 @@ export function search(limits: Limits): SearchTool {
 		parameters: SearchParameters,
 		success: Schema.String,
 		replay: "safe",
-		handler: ({ query, ...asked }) =>
-			Effect.gen(function* () {
+		// Untraced: Pi Durable runs every tool call in a span of its own (`Tool.execute`) that names the tool and the call.
+		handler: Effect.fnUntraced(
+			function* ({ query, ...asked }) {
 				const provider = yield* SearchProvider;
-				const retrieval = yield* provider.search(query, yield* capSearch(limits, asked));
+				const options = yield* capSearch(limits, asked);
+				const retrieval = yield* provider.search(query, options);
 				return yield* answer(searchText(retrieval, limits.snippetCharacters), retrieval);
-			}).pipe(Effect.catch((error) => Effect.succeed(Tool.error(error.message)))),
+			},
+			Effect.catch((error) => Effect.succeed(Tool.error(error.message))),
+		),
 	});
 }
 
@@ -106,19 +114,25 @@ export function fetch(limits: Limits): FetchTool {
 		parameters: FetchParameters,
 		success: Schema.String,
 		replay: "safe",
-		handler: (asked) =>
-			Effect.gen(function* () {
+		// Untraced: Pi Durable runs every tool call in a span of its own (`Tool.execute`) that names the tool and the call.
+		handler: Effect.fnUntraced(
+			function* (asked) {
 				const provider = yield* SearchProvider;
 				const plan = yield* capFetch(limits, asked);
 				const retrieval = yield* provider.fetch(plan.urls, { maxCharacters: plan.maxCharacters });
 				// The plan's length, not the limit's: a model may ask for less than it is allowed.
 				return yield* answer(fetchText(retrieval, plan.maxCharacters, plan.skipped), retrieval);
-			}).pipe(Effect.catch((error) => Effect.succeed(Tool.error(error.message)))),
+			},
+			Effect.catch((error) => Effect.succeed(Tool.error(error.message))),
+		),
 	});
 }
 
-/** The result of a call: `text` for the model, the evidence of `retrieval` as the details for the host. */
-function answer(text: string, retrieval: Retrieval): Effect.Effect<Tool.Reply<string>> {
-	// Evidence is JSON by construction (strings, an instant, a JSON body): a failure to encode it is a defect.
-	return Effect.map(Effect.orDie(Evidence.toJson(retrieval)), (details) => Tool.result(text, { details }));
-}
+/**
+ * The result of a call: `text` for the model, the evidence of `retrieval` as the details for the host. Evidence is
+ * JSON by construction (strings, an instant, a JSON body): a failure to encode it is a defect.
+ */
+const answer = Effect.fnUntraced(function* (text: string, retrieval: Retrieval) {
+	const details = yield* Effect.orDie(Evidence.toJson(retrieval));
+	return Tool.result(text, { details });
+});

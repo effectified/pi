@@ -45,17 +45,17 @@ The product provides `Lease`, a service with two Effects.
 
 ```ts
 import { Effect, Layer } from "effect";
-import { Lease, LeaseFenced } from "@effectified/pi-budget";
+import { Lease, LeaseFenced, Reservation } from "@effectified/pi-budget";
 
 /** A product's lease. This one is a wallet in memory; a real one is a row the product fences and renews. */
-const wallet = { left: 1_000_000n, held: new Map<string, bigint>(), fenced: false };
+const wallet = { left: 1_000_000n, held: new Map<Reservation, bigint>(), fenced: false };
 
 const WalletLease = Layer.succeed(Lease, {
 	reserve: (estimate, request) =>
 		Effect.suspend(() => {
-			if (wallet.fenced) return Effect.fail(new LeaseFenced({ reason: "fenced" }));
-			if (wallet.left < estimate) return Effect.fail(new LeaseFenced({ reason: "out_of_money" }));
-			const token = `${request.provider}/${request.model}#${wallet.held.size + 1}`;
+			if (wallet.fenced) return Effect.fail(LeaseFenced.make({ reason: "fenced" }));
+			if (wallet.left < estimate) return Effect.fail(LeaseFenced.make({ reason: "out_of_money" }));
+			const token = Reservation.make(`${request.provider}/${request.model}#${wallet.held.size + 1}`);
 			wallet.left -= estimate;
 			wallet.held.set(token, estimate);
 			return Effect.succeed(token);
@@ -69,11 +69,12 @@ const WalletLease = Layer.succeed(Lease, {
 });
 ```
 
-- `reserve(estimate, request)` gives the token of a reservation, or fails with `LeaseFenced` and the product's own
-  `reason` (gone, expired, out of money). `request` says what is asked: `kind` (`chat`, `deferred`, `images`,
-  `classifier`), `provider`, `model`, `session` and `conversation` when known, `requestKey` for a chat request with
-  a session (the same for every send of one request: see [Guarantees and their limits](#guarantees-and-their-limits)),
-  and `key` for a spend recorded through `Spend`.
+- `reserve(estimate, request)` gives the token of a reservation, branded by the lease (`Reservation.make`), or fails
+  with `LeaseFenced` and the product's own `reason` (gone, expired, out of money). `request` says what is asked:
+  `kind` (`chat`, `deferred`, `images`, `classifier`), `provider` and `model` (pi-ai's `ProviderId` and `ModelId`),
+  `session` and `conversation` when known, `requestKey` for a chat request with a session (the same for every send
+  of one request: see [Guarantees and their limits](#guarantees-and-their-limits)), and `key` for a spend recorded
+  through `Spend`.
 - `settle(token, { usage, cost, outcome })` is called exactly once for every token, whatever happened: `usage` is
   what the provider reported (zeros when it reported nothing), `cost` is that usage at the price table, and
   `outcome` is `returned`, `failed` or `aborted`.
@@ -84,7 +85,7 @@ const WalletLease = Layer.succeed(Lease, {
 ```ts
 import { Estimator, type PriceTable } from "@effectified/pi-budget";
 
-const table: PriceTable = {
+const table: typeof PriceTable.Encoded = {
 	currency: "USD",
 	// Per million tokens, in millionths of the currency: USD 3.00 in, USD 15.00 out.
 	prices: [
@@ -104,8 +105,10 @@ const estimate = Estimator.fixed(50_000n);
   `cacheWrite` together) are more than a tier's `inputTokensAbove` is charged at that tier's prices for all of its
   tokens, the tier with the highest threshold below it winning. `{ ..., tiers: [{ inputTokensAbove: 200_000, input:
   6_000_000, output: 30_000_000, cacheRead: 600_000, cacheWrite: 7_500_000 }] }`.
-- `Prices.layer(table)` fails with `InvalidPriceTable` for a table that is not whole numbers or lists a model
-  twice. `Prices` also gives `priceOf` and `cost` as Effects, for an estimator that reads the table.
+- A table written in code or loaded from a file is the schema's `Encoded` form, with plain ids. `Prices.layer(table)`
+  decodes it, which brands the ids, and fails with `InvalidPriceTable` for a table that is not whole numbers or lists
+  a model twice. `Prices` also gives `priceOf` and `cost` as Effects, for an estimator that reads the table. Amounts
+  are `bigint` micro units, zero or more: the schema `Micros`.
 - `Estimator` is a port: `Estimator.fixed(micros)`, or `Layer.succeed(Estimator, { estimate: (request) => … })`
   for a rule that depends on the request. The budget has no pricing opinion of its own.
 
@@ -129,7 +132,7 @@ below are what it returns for an alias `author` with two routes.
 import { Prices, type PriceTable } from "@effectified/pi-budget";
 
 // From the product's route table: `yield* priceRows(routes)` of @effectified/pi-router, written out.
-const routerRows: PriceTable = {
+const routerRows: typeof PriceTable.Encoded = {
 	currency: "USD",
 	prices: [
 		// Each route's model at the route's price: what a response is settled at.
@@ -212,8 +215,8 @@ const program = Effect.gen(function* () {
 ```
 
 `BudgetEvents` is provided by `BudgetedModels.layer`. `subscribe` gives the events from now on; `stream` those
-from the moment it runs. `Refused` carries the typed refusal and no reservation. `BudgetEvent` is a `Schema`, so an
-event encodes to JSON.
+from the moment it runs. `Refused` carries the typed refusal and no reservation. `BudgetEvent` is a `Schema` tagged
+union, so an event encodes to JSON, and `BudgetEvent.match(event, { Reserved, Settled, Refused })` handles each case.
 
 ## Spend the budget did not see
 
@@ -226,7 +229,7 @@ answer before it tries the next route. A product implements the port with `Spend
 
 ```ts
 import { Effect, Layer } from "effect";
-import { Spend } from "@effectified/pi-budget";
+import { Spend, SpendKey } from "@effectified/pi-budget";
 import { AttemptSettlement } from "@effectified/pi-router";
 
 /** Charges each attempt another route takes over to the budget, before that route is tried. */
@@ -237,7 +240,7 @@ const SettleAttempts = Layer.effect(
 		return AttemptSettlement.of({
 			settle: (event) =>
 				spend.record({
-					key: `${event.requestId}#${event.attempt}`,
+					key: SpendKey.make(`${event.requestId}#${event.attempt}`),
 					provider: event.route.provider,
 					model: event.route.model,
 					session: event.sessionId,

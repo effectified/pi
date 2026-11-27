@@ -66,10 +66,13 @@ export function make<P extends Principal, R = never>(
 }
 
 /** A plugin's script that would not evaluate: what it threw, or a default export that is no facet. */
-export class ScriptFailed extends Schema.TaggedError<ScriptFailed>()("ScriptFailed", {
-	plugin: Schema.String,
-	cause: Schema.Defect(),
-}) {}
+export class ScriptFailed extends Schema.TaggedError<ScriptFailed, { readonly brand: unique symbol }>()(
+	"ScriptFailed",
+	{
+		plugin: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
 
 /**
  * Chord's `evaluateRegistered`: runs a registered plugin script and gives its facet. Its `require` answers `modules`
@@ -81,7 +84,7 @@ export function evaluate<P extends Principal = Principal>(
 ): Effect.Effect<Facet<P>, ScriptFailed> {
 	return Effect.try({
 		try: () => piEvaluateRegistered<P>(script, modules),
-		catch: (cause) => new ScriptFailed({ plugin: script.plugin, cause }),
+		catch: (cause) => ScriptFailed.make({ plugin: script.plugin, cause }),
 	});
 }
 

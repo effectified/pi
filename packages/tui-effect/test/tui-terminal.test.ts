@@ -43,7 +43,7 @@ describe("drainInput", () => {
 	it("completes once the terminal drained its input", async () => {
 		const terminal = new TestTerminal();
 		const drained = await run(
-			Effect.as(drainInput({ maxMs: 10, idleMs: 1 }), "drained").pipe(
+			Effect.as(drainInput({ max: "10 millis", idle: "1 millis" }), "drained").pipe(
 				Effect.provide(Tui.layer({ mode: "regular", terminal })),
 			),
 		);

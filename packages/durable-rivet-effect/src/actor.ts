@@ -3,7 +3,23 @@
 
 import type { Models, StrictOmit } from "@effectified/pi-ai";
 import { type DurableError, Harness, type Registry, UnexpectedError } from "@effectified/pi-durable";
-import { Cause, Clock, Context, Effect, Exit, FiberSet, Layer, Option, Predicate, Schema, Semaphore } from "effect";
+import {
+	Array as Arr,
+	Cause,
+	Clock,
+	Context,
+	Deferred,
+	Effect,
+	Exit,
+	Fiber,
+	FiberSet,
+	Layer,
+	Option,
+	Predicate,
+	Record as Rec,
+	Schema,
+	Semaphore,
+} from "effect";
 import {
 	type ActorCron,
 	type ActorFork,
@@ -17,12 +33,21 @@ import {
 import type { ClientRaw } from "rivetkit/client";
 import { db } from "rivetkit/db";
 import type * as Action from "./action.ts";
-import { ActorDatabase, ActorEngine, ActorInfo, ActorSql, storage } from "./actor-context.ts";
+import {
+	ActorDatabase,
+	ActorEngine,
+	ActorInfo,
+	ActorSql,
+	type ForkLink,
+	type Identity,
+	storage,
+} from "./actor-context.ts";
 import * as Sql from "./actor-sql.ts";
 import { type Answer, defect } from "./answer.ts";
 import type * as Fork from "./fork.ts";
 import * as ForkRecord from "./fork-record.ts";
 import * as Generation from "./generation.ts";
+import { ActorId } from "./ids.ts";
 import * as Protocol from "./protocol.ts";
 import * as SqliteDatabase from "./sqlite-database.ts";
 import * as WakeKeeper from "./wake-keeper.ts";
@@ -109,6 +134,9 @@ export type Any = Definition<string, Readonly<Record<string, Action.Any>>>;
  *   hook returns. What a stop cut off stays stored and resumes at the next wake.
  * - **Fork.** In an actor made by `Client.fork`, before anything else: every schedule the copy inherited is
  *   cancelled, then `forkHygiene` runs on the copied storage, then a row records that it ran, for which fork.
+ *
+ * Rivet calls the actor's hooks and actions and awaits promises: each one runs its Effect with `Effect.runPromise`,
+ * the only place this module leaves Effect.
  */
 export function make<
 	const Name extends string,
@@ -120,6 +148,9 @@ export function make<
 	HE = never,
 >(name: Name, config: Config<A, P, LE, S, SE, HE>): Definition<Name, A> {
 	type R = InActor<P, S> | WakeKeeper.WakeKeeper;
+	// What opening a wake's harness can fail with: the product's Layers and options, and Pi's storage and harness.
+	type OpenError = DurableError | LE | SE | HE;
+	type C = Cell<R, OpenError>;
 	const prefix = config.prefix ?? "pi_";
 	const given = config.harness ?? {};
 	// The one runtime check of a typed value here: the option is the options or an Effect of them, by its type.
@@ -130,7 +161,7 @@ export function make<
 	 * harness options: the wake-ups are its own, and whether work resumes as the harness opens.
 	 */
 	const harness = <DR>(
-		c: Cell<R>,
+		c: C,
 		database: Layer.Layer<ActorSql | ActorDatabase, never, DR>,
 		forkInput: Effect.Effect<Option.Option<Schema.Json>, DurableError, ActorSql>,
 		host: { readonly resume: boolean },
@@ -143,7 +174,7 @@ export function make<
 			Layer.provideMerge(
 				Layer.effect(
 					ActorInfo,
-					Effect.map(forkInput, (input) => identity(c, input)),
+					Effect.map(forkInput, (input) => identityOf(c, input)),
 				),
 			),
 			Layer.provideMerge(database),
@@ -152,139 +183,153 @@ export function make<
 		);
 
 	/** What a fork's hygiene recorded as the fork's input; none for an actor that is not a fork. */
-	const recordedForkInput = (c: Cell<R>) =>
-		Option.match(Option.fromUndefinedOr(c.forkChain.at(-1)), {
-			onNone: () => Effect.succeed(Option.none<Schema.Json>()),
+	const recordedForkInput = (c: C): Effect.Effect<Option.Option<Schema.Json>, DurableError, ActorSql> =>
+		Option.match(Arr.last(c.forkChain), {
+			onNone: () => Effect.succeedNone,
 			onSome: (link) =>
 				ActorSql.use((sql) =>
-					Effect.map(
-						Effect.flatMap(ForkRecord.record(sql, prefix), (forks) => forks.find(link)),
-						Option.flatten,
+					Effect.flatMap(ForkRecord.record(sql, prefix), (forks) =>
+						Effect.map(forks.find(forkLinkOf(link)), Option.flatten),
 					),
 				),
 		});
 
 	/**
-	 * This wake's runtime, opened on first use. A failed open is tried again by the next call. The actor's database
-	 * runs its operations on the wake's `Work`: on the wake's clock, and what is left of them once the harness has
-	 * closed ends with the wake.
+	 * This wake's runtime, opened on first use: a call that comes while it opens waits for that open. A failed open is
+	 * tried again by the next call. The actor's database runs its operations on the wake's `Work`: on the wake's clock,
+	 * and what is left of them once the harness has closed ends with the wake.
 	 */
-	const generation = (c: Cell<R>): Promise<Exit.Exit<Generation.Generation<R>, unknown>> => {
-		const wake = c.vars.wake;
-		const database = Layer.effectContext(Generation.Work.use((work) => databaseOf(c.db, work)));
-		wake.opening ??= Effect.runPromiseExit(
-			Generation.open(
-				Layer.mergeAll(config.services ?? Layer.empty, WakeKeeper.layer(alarm(c))).pipe(
-					Layer.provideMerge(harness(c, database, recordedForkInput(c), { resume: true })),
+	const generation = (c: C): Effect.Effect<Generation.Generation<R>, OpenError> =>
+		Effect.suspend(() => {
+			const wake = c.vars.wake;
+			if (wake.opening !== undefined) return Deferred.await(wake.opening);
+			const opening = Deferred.makeUnsafe<Generation.Generation<R>, OpenError>();
+			wake.opening = opening;
+			const database = Layer.effectContext(Generation.Work.use((work) => databaseOf(c.db, work)));
+			const layer = Layer.mergeAll(config.services ?? Layer.empty, WakeKeeper.layer(alarm(c))).pipe(
+				Layer.provideMerge(harness(c, database, recordedForkInput(c), { resume: true })),
+			);
+			return Effect.onExit(Generation.open(layer), (opened) =>
+				Effect.andThen(
+					Effect.sync(() => {
+						if (Exit.isFailure(opened)) wake.opening = undefined;
+					}),
+					Deferred.done(opening, opened),
 				),
-			),
-		).then((opened) => {
-			if (Exit.isFailure(opened)) wake.opening = undefined;
-			return opened;
+			);
 		});
-		return wake.opening;
-	};
 
-	/** Runs `effect` in this wake and answers as an action must: with data, whatever happened. */
-	const call = async (c: Cell<R>, effect: Effect.Effect<Answer, never, R>): Promise<Answer> => {
-		if (c.vars.wake.stopped) return STOPPING;
-		const opened = await generation(c);
-		if (Exit.isFailure(opened)) return defect(opened.cause);
-		const answered = await opened.value.run(effect);
-		return Exit.isSuccess(answered) ? answered.value : defect(answered.cause);
-	};
+	/** Runs `effect` in this wake as the action `action`, and answers as an action must: with data, whatever happened. */
+	const call = Effect.fn("Actor.call")(
+		function* (c: C, action: string, effect: Effect.Effect<Answer, never, R>) {
+			yield* Effect.annotateCurrentSpan({ actor: name, actorId: c.actorId, action });
+			if (c.vars.wake.stopped) return STOPPING;
+			const opened = yield* generation(c);
+			const handler = yield* opened.run(effect);
+			return yield* Fiber.join(handler);
+		},
+		Effect.catchCause((cause) => Effect.succeed(defect(cause))),
+	);
 
-	const close = async (c: Cell<R>): Promise<void> => {
+	/** A product's action between the wake keeper's guard, before it, and its settle, after it. */
+	const kept = Effect.fnUntraced(function* (answer: Effect.Effect<Answer, never, R>) {
+		const keeper = yield* WakeKeeper.WakeKeeper;
+		yield* keeper.guard;
+		const answered = yield* answer;
+		yield* keeper.settle;
+		return answered;
+	});
+
+	/** The actor woke: its harness opens and resumes. One that does not open leaves the actor up, for calls to retry. */
+	const awaken = Effect.fn("Actor.wake")(function* (c: C) {
+		const opened = yield* Effect.exit(generation(c));
+		if (Exit.isSuccess(opened)) return;
+		// The actor stays up, so a call can answer with the cause. The cause may quote content: only its name is logged.
+		yield* Effect.sync(() =>
+			c.log.warn({
+				msg: "the Pi Durable harness did not open; the next call tries again",
+				error: errorName(opened.cause),
+			}),
+		);
+	});
+
+	/** The actor sleeps or is destroyed: nothing opens in this wake any more, and an open runtime closes. */
+	const close = Effect.fn("Actor.close")(function* (c: C) {
 		const wake = c.vars.wake;
 		wake.stopped = true;
-		const opened = await wake.opening;
-		if (opened !== undefined && Exit.isSuccess(opened)) await Effect.runPromise(opened.value.close);
-	};
+		if (wake.opening === undefined) return;
+		const opened = yield* Effect.exit(Deferred.await(wake.opening));
+		if (Exit.isSuccess(opened)) yield* opened.value.close;
+	});
+
+	/** A scheduled wake action ran: Pi's due work resumes and the next wake is scheduled. */
+	const fired = (c: C): Effect.Effect<Answer, never, R> =>
+		WakeKeeper.WakeKeeper.use((keeper) => keeper.fired(Option.fromUndefinedOr(c.scheduledFire?.id))).pipe(
+			Effect.orDie,
+			Effect.as(WOKEN),
+		);
 
 	/**
 	 * What a fork does before its first call. A failure fails the actor's start, and Rivet runs the hook again. Its
 	 * database operations are fibers of its scope, so an abort of the actor ends them with it.
 	 */
-	const startFork = (c: Cell<R>, fork: ActorFork): Effect.Effect<void, unknown> =>
-		Effect.gen(function* () {
-			// Whatever the source had scheduled is the source's work: the copy starts with nothing scheduled.
-			for (const inherited of yield* rivetRequest(() => c.schedule.list())) {
-				yield* rivetRequest(() => c.schedule.cancel(inherited.id));
-			}
-			for (const job of yield* rivetRequest(() => c.cron.list())) {
-				yield* rivetRequest(() => c.cron.delete(job.name));
-			}
-			const database = yield* databaseOf(c.db, yield* FiberSet.make());
-			const forks = yield* ForkRecord.record(Context.get(database, ActorSql), prefix);
-			const link = { actorId: fork.actorId, key: fork.key, forkedAt: fork.forkedAt };
-			// Recorded already: a start that failed after the hygiene was stored. Running it again would be harmless too.
-			if (Option.isSome(yield* forks.find(link))) return;
-			// A trust boundary: the input comes from whoever forked the actor. Anything but JSON is dropped.
-			const input = Schema.decodeUnknownOption(Schema.Json)(fork.input);
-			const steps = config.forkHygiene ?? [];
-			if (steps.length > 0) {
-				yield* Effect.scoped(
-					Effect.gen(function* () {
-						const context = yield* Layer.build(
-							harness(c, Layer.succeedContext(database), Effect.succeed(input), { resume: false }),
-						);
-						for (const step of steps) yield* Effect.provideContext(step, context);
-					}),
-				);
-			}
-			yield* forks.mark(link, input, yield* Clock.currentTimeMillis);
-		}).pipe(Effect.scoped);
-
-	const actions = Object.fromEntries(
-		Object.entries(config.actions).map(([action, definition]) => [
-			action,
-			(c: Cell<R>, encoded: unknown) =>
-				call(
-					c,
-					Effect.gen(function* () {
-						const keeper = yield* WakeKeeper.WakeKeeper;
-						yield* keeper.guard;
-						const answer = yield* definition.run(encoded);
-						yield* keeper.settle;
-						return answer;
-					}),
+	const startFork = Effect.fn("Actor.fork")(function* (c: C, fork: ActorFork) {
+		// Whatever the source had scheduled is the source's work: the copy starts with nothing scheduled.
+		const inherited = yield* rivetRequest(() => c.schedule.list());
+		yield* Effect.forEach(inherited, (event) => rivetRequest(() => c.schedule.cancel(event.id)), {
+			concurrency: 1,
+			discard: true,
+		});
+		const jobs = yield* rivetRequest(() => c.cron.list());
+		yield* Effect.forEach(jobs, (job) => rivetRequest(() => c.cron.delete(job.name)), {
+			concurrency: 1,
+			discard: true,
+		});
+		const work = yield* FiberSet.make();
+		const database = yield* databaseOf(c.db, work);
+		const forks = yield* ForkRecord.record(Context.get(database, ActorSql), prefix);
+		const link = forkLinkOf(fork);
+		// Recorded already: a start that failed after the hygiene was stored. Running it again would be harmless too.
+		const recorded = yield* forks.find(link);
+		if (Option.isSome(recorded)) return;
+		// A trust boundary: the input comes from whoever forked the actor. Anything but JSON is dropped.
+		const input = Schema.decodeUnknownOption(Schema.Json)(fork.input);
+		const steps = Arr.map(config.forkHygiene ?? [], hygieneStep);
+		if (steps.length > 0) {
+			// The harness of the hygiene closes before the record is written.
+			const hygiene = harness(c, Layer.succeedContext(database), Effect.succeed(input), { resume: false });
+			yield* Effect.scoped(
+				Effect.flatMap(Layer.build(hygiene), (context) =>
+					Effect.forEach(steps, (step) => Effect.provideContext(step, context), { concurrency: 1, discard: true }),
 				),
-		]),
+			);
+		}
+		const at = yield* Clock.currentTimeMillis;
+		yield* forks.mark(link, input, at);
+	}, Effect.scoped);
+
+	// The product's actions alone: `pi` and `destroy` are never among them.
+	const product: Readonly<Record<string, Action.Action<Action.Wire, Action.Wire, Action.Wire, R>>> = config.actions;
+	const actions = Rec.map(
+		product,
+		(definition, action) => (c: C, encoded: unknown) =>
+			Effect.runPromise(call(c, action, kept(definition.run(encoded)))),
 	);
 
 	const rivet = actor({
 		db: db(),
-		createVars: (): Vars<R> => ({ wake: { opening: undefined, stopped: false } }),
-		onFork: (c: Cell<R>, fork) => Effect.runPromise(startFork(c, fork), { signal: c.abortSignal }),
-		onWake: async (c: Cell<R>) => {
-			const opened = await generation(c);
-			if (Exit.isSuccess(opened)) return;
-			// The actor stays up, so a call can answer with the cause. The cause may quote content: only its name is logged.
-			c.log.warn({
-				msg: "the Pi Durable harness did not open; the next call tries again",
-				error: errorName(opened),
-			});
-		},
-		onSleep: close,
-		onDestroy: close,
+		createVars: (): Vars<R, OpenError> => ({ wake: { opening: undefined, stopped: false } }),
+		onFork: (c: C, fork) => Effect.runPromise(startFork(c, fork), { signal: c.abortSignal }),
+		onWake: (c: C) => Effect.runPromise(awaken(c)),
+		onSleep: (c: C) => Effect.runPromise(close(c)),
+		onDestroy: (c: C) => Effect.runPromise(close(c)),
 		actions: {
 			...actions,
-			[Protocol.DESTROY]: (c: Cell<R>) => Effect.runPromise(destroy(c), { signal: c.abortSignal }),
+			[Protocol.DESTROY]: (c: C) => Effect.runPromise(destroy(c), { signal: c.abortSignal }),
 			pi: {
-				wake: (c: Cell<R>) =>
-					call(
-						c,
-						Effect.as(
-							Effect.orDie(
-								WakeKeeper.WakeKeeper.use((keeper) =>
-									keeper.fired(Option.fromUndefinedOr(c.scheduledFire?.id)),
-								),
-							),
-							{ _tag: "success", value: null },
-						),
-					),
-				status: (c: Cell<R>) => call(c, Protocol.status.run(null)),
-				lineage: (c: Cell<R>) => call(c, Protocol.lineage.run(null)),
+				wake: (c: C) => Effect.runPromise(call(c, Protocol.WAKE, fired(c))),
+				status: (c: C) => Effect.runPromise(call(c, Protocol.STATUS, Protocol.status.run(null))),
+				lineage: (c: C) => Effect.runPromise(call(c, Protocol.LINEAGE, Protocol.lineage.run(null))),
 			},
 		},
 		options: config.options,
@@ -296,7 +341,7 @@ export function make<
  * What this host uses of the context Rivet gives an actor's hooks and actions, typed structurally: Rivet's own context
  * types carry eight parameters this host does not use.
  */
-interface Cell<R> {
+interface Cell<R, E> {
 	readonly actorId: string;
 	readonly name: string;
 	readonly key: string[];
@@ -306,7 +351,7 @@ interface Cell<R> {
 	readonly schedule: ActorSchedule;
 	readonly cron: ActorCron;
 	readonly abortSignal: AbortSignal;
-	readonly vars: Vars<R>;
+	readonly vars: Vars<R, E>;
 	readonly log: { warn(fields: Readonly<Record<string, unknown>>): void };
 	/** Present only when a schedule invokes the action. */
 	readonly scheduledFire?: ScheduledFireInfo;
@@ -317,9 +362,10 @@ interface Cell<R> {
 }
 
 /** The in-memory state Rivet keeps for one wake of an actor (`createVars`): this wake's runtime, opened or not. */
-interface Vars<R> {
+interface Vars<R, E> {
 	readonly wake: {
-		opening: Promise<Exit.Exit<Generation.Generation<R>, unknown>> | undefined;
+		/** The open of this wake's runtime under way or done; none before the first, and after one that failed. */
+		opening: Deferred.Deferred<Generation.Generation<R>, E> | undefined;
 		/** Set when the actor began to sleep or to be destroyed: nothing opens the harness again in this wake. */
 		stopped: boolean;
 	};
@@ -327,19 +373,31 @@ interface Vars<R> {
 
 const STOPPING: Answer = { _tag: "defect", message: "The actor is stopping" };
 
-function identity<R>(c: Cell<R>, forkInput: Option.Option<Schema.Json>) {
+const WOKEN: Answer = { _tag: "success", value: null };
+
+/** A step of the product's fork hygiene, whose failure fails the fork's start, as an `UnexpectedError`. */
+// @effect-diagnostics-next-line anyUnknownInErrorContext:off A hygiene step may fail with anything (`Fork.Hygiene`): this line makes that an `UnexpectedError`.
+const hygieneStep = <R>(step: Fork.Hygiene<R>) => Effect.mapError(step, (cause) => UnexpectedError.make({ cause }));
+
+/** The actor's identity, its ids branded where they enter from Rivet's context. */
+function identityOf<R, E>(c: Cell<R, E>, forkInput: Option.Option<Schema.Json>): Identity {
 	return {
-		actorId: c.actorId,
+		actorId: ActorId.make(c.actorId),
 		name: c.name,
 		key: c.key,
 		namespace: c.namespace,
-		forkChain: c.forkChain,
+		forkChain: Arr.map(c.forkChain, forkLinkOf),
 		forkInput,
 	};
 }
 
+/** One fork behind an actor, as Rivet's context gives it, with the source's id branded. */
+function forkLinkOf(link: ActorForkLink): ForkLink {
+	return { actorId: ActorId.make(link.actorId), key: link.key, forkedAt: link.forkedAt };
+}
+
 /** The actor's schedule of wake actions and its keep-awake, as the wake keeper asks for them. */
-function alarm<R>(c: Cell<R>): WakeKeeper.Alarm {
+function alarm<R, E>(c: Cell<R, E>): WakeKeeper.Alarm {
 	let release: (() => void) | undefined;
 	const letSleep = (): void => {
 		release?.();
@@ -357,9 +415,10 @@ function alarm<R>(c: Cell<R>): WakeKeeper.Alarm {
 				() => [],
 			),
 			(events) =>
-				events
-					.filter((event) => event.action === Protocol.WAKE)
-					.map((event) => ({ id: event.id, at: event.runAt })),
+				Arr.map(
+					Arr.filter(events, (event) => event.action === Protocol.WAKE),
+					(event): WakeKeeper.Armed => ({ id: event.id, at: event.runAt }),
+				),
 		),
 		stayAwake: Effect.sync(() => {
 			if (release !== undefined || c.abortSignal.aborted) return;
@@ -373,46 +432,56 @@ function alarm<R>(c: Cell<R>): WakeKeeper.Alarm {
 
 /** A request to Rivet from inside the actor: its schedule, its database. A rejection is an `UnexpectedError`. */
 function rivetRequest<A>(request: () => Promise<A>): Effect.Effect<A, UnexpectedError> {
-	return Effect.tryPromise({ try: request, catch: (cause) => new UnexpectedError({ cause }) });
+	return Effect.tryPromise({ try: request, catch: (cause) => UnexpectedError.make({ cause }) });
 }
 
 /**
  * The actor's database as both services, on one queue: `ActorSql`, and the `ActorDatabase` adapter Pi's storage and
  * older code use. Their requests to Rivet are fibers of `work`.
  */
-function databaseOf(
-	raw: SqliteDatabase.RawDatabase,
-	work: FiberSet.FiberSet,
-): Effect.Effect<Context.Context<ActorSql | ActorDatabase>> {
-	return Effect.gen(function* () {
-		const queue = yield* Semaphore.make(1);
-		const sql = yield* Sql.make(raw, queue, work);
-		const database = SqliteDatabase.make(raw, yield* FiberSet.runtimePromise(work)(), queue);
-		return Context.make(ActorSql, sql).pipe(Context.add(ActorDatabase, database));
-	});
-}
+const databaseOf = Effect.fn("Actor.database")(function* (raw: SqliteDatabase.RawDatabase, work: FiberSet.FiberSet) {
+	const queue = yield* Semaphore.make(1);
+	const sql = yield* Sql.make(raw, queue, work);
+	const run = yield* FiberSet.runtimePromise(work)();
+	const database = SqliteDatabase.make(raw, run, queue);
+	return Context.make(ActorSql, sql).pipe(Context.add(ActorDatabase, database));
+});
 
 /** Reads the size of the database, destroys the actor, and answers with the size. */
-function destroy<R>(c: Cell<R>): Effect.Effect<Answer> {
-	return Effect.gen(function* () {
-		const databaseBytes = yield* Effect.option(rivetRequest(() => databaseSize(c.db)));
+const destroy = Effect.fn("Actor.destroy")(
+	function* <R, E>(c: Cell<R, E>) {
+		const databaseBytes = yield* Effect.option(databaseSize(c.db));
 		yield* Effect.sync(() => c.destroy());
 		const value = yield* Effect.orDie(encodeDestroyed({ databaseBytes }));
-		return { _tag: "success" as const, value };
-	}).pipe(Effect.catchCause((cause) => Effect.succeed(defect(cause))));
-}
+		return { _tag: "success", value } satisfies Answer;
+	},
+	Effect.catchCause((cause) => Effect.succeed(defect(cause))),
+);
 
 const encodeDestroyed = Schema.encodeUnknownEffect(Schema.toCodecJson(Protocol.Destroyed));
 
-/** Rivet reports no bytes written per actor; the size of the SQLite database is what an actor can read of itself. */
-async function databaseSize(raw: SqliteDatabase.RawDatabase): Promise<number> {
-	const [pages] = await raw.execute("PRAGMA page_count");
-	const [size] = await raw.execute("PRAGMA page_size");
-	return Number(pages?.page_count) * Number(size?.page_size);
-}
+/**
+ * Rivet reports no bytes written per actor; the size of the SQLite database is what an actor can read of itself. A
+ * decode boundary: the rows are what SQLite answered.
+ */
+const databaseSize = Effect.fnUntraced(function* (raw: SqliteDatabase.RawDatabase) {
+	const [pages] = yield* Effect.flatMap(
+		rivetRequest(() => raw.execute("PRAGMA page_count")),
+		decodePageCount,
+	);
+	const [size] = yield* Effect.flatMap(
+		rivetRequest(() => raw.execute("PRAGMA page_size")),
+		decodePageSize,
+	);
+	return pages.page_count * size.page_size;
+});
+
+const decodePageCount = Schema.decodeUnknownEffect(Schema.NonEmptyArray(Schema.Struct({ page_count: Schema.Int })));
+
+const decodePageSize = Schema.decodeUnknownEffect(Schema.NonEmptyArray(Schema.Struct({ page_size: Schema.Int })));
 
 /** The class of what a failed open failed with, for a log line without content. */
-function errorName(opened: Exit.Failure<unknown, unknown>): string {
-	const error = Cause.squash(opened.cause);
+function errorName(cause: Cause.Cause<unknown>): string {
+	const error = Cause.squash(cause);
 	return Predicate.isError(error) ? error.name : typeof error;
 }

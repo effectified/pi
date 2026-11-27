@@ -1,7 +1,7 @@
 // Test helper: a sink that keeps what it is given and can be told to fail or to wait, and the tools the tests call.
 
 import { conditions } from "@effectified/pi-ai/testing";
-import { Extension, Gate, Hook, Tool } from "@effectified/pi-durable";
+import { Extension, Gate, Hook, Tool, ToolName } from "@effectified/pi-durable";
 import { Effect, Layer, Option, Schema } from "effect";
 import { RecordSink, RecordSinkError, type Records } from "../src/index.ts";
 
@@ -88,7 +88,7 @@ export const Subagent = Tool.make("subagent", {
 					const existing = (yield* tx.scanConversations({ ownerTaskId: api.taskId }, 1)).items[0];
 					if (existing !== undefined) return existing.id;
 					const created = yield* tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
-					yield* tx.configure(created.id, { tools: { remove: ["subagent"] } });
+					yield* tx.configure(created.id, { tools: { remove: [ToolName.make("subagent")] } });
 					return created.id;
 				}),
 			);

@@ -2,8 +2,10 @@
 
 import type { ConversationId, SubmissionRecord } from "@effectified/pi-durable";
 import { Conversation, Doc, Harness, type Tx } from "@effectified/pi-durable";
-import { Effect, Option, Schema } from "effect";
+import * as Swarm from "@effectified/pi-swarm";
+import { Array as Arr, Effect, Option, Schema } from "effect";
 import { ThreadNotFound } from "./errors.ts";
+import { RequestKey, type ThreadKey } from "./ids.ts";
 
 /**
  * One document per thread key, kind `thread.work`, in the session scope:
@@ -25,8 +27,8 @@ export const Document = Doc.family({
 	scope: "session",
 	schema: Schema.Struct({
 		conversation: Schema.NullOr(Conversation.Id),
-		requests: Schema.Array(Schema.String),
-		swarms: Schema.Array(Schema.String),
+		requests: Schema.Array(RequestKey),
+		swarms: Schema.Array(Swarm.SwarmId),
 	}),
 	initial: (_seed: null) => ({ conversation: null, requests: [], swarms: [] }),
 	// Three small fields: every change is stored whole.
@@ -34,46 +36,48 @@ export const Document = Doc.family({
 });
 
 /** The conversation of the thread stored under `thread`; fails with `ThreadNotFound` for a key nothing started. */
-export function find(thread: string): Effect.Effect<ConversationId, ThreadNotFound | Doc.Failure, Harness.Harness> {
-	return Effect.flatMap(Harness.snapshot(Document, thread), (stored) =>
-		Effect.mapError(
-			Effect.fromNullishOr(Option.getOrUndefined(stored)?.conversation),
-			() => new ThreadNotFound({ thread }),
-		),
-	);
-}
+export const find = Effect.fn("Thread.find")(function* (
+	thread: ThreadKey,
+): Effect.fn.Return<ConversationId, ThreadNotFound | Doc.Failure, Harness.Harness> {
+	const stored = yield* Harness.snapshot(Document, thread);
+	const conversation = Option.flatMapNullishOr(stored, (held) => held.conversation);
+	return yield* Effect.fromOption(conversation, () => ThreadNotFound.make({ thread }));
+});
 
 /** The conversation of the thread stored under `thread`, as a handle; fails with `ThreadNotFound` as `find` does. */
-export function conversation(
-	thread: string,
-): Effect.Effect<Conversation.Conversation, ThreadNotFound | Doc.Failure, Harness.Harness> {
-	return Effect.flatMap(find(thread), handleOf);
-}
+export const conversation = Effect.fn("Thread.conversation")(function* (
+	thread: ThreadKey,
+): Effect.fn.Return<Conversation.Conversation, ThreadNotFound | Doc.Failure, Harness.Harness> {
+	const id = yield* find(thread);
+	return yield* handleOf(id);
+});
 
 /** The conversation `id`, which a thread's document names: a harness without it has lost its own storage. */
-export function handleOf(id: ConversationId): Effect.Effect<Conversation.Conversation, Doc.Failure, Harness.Harness> {
-	return Effect.flatMap(
-		Harness.conversation(id),
-		Option.match({
-			onNone: () => Effect.die(new Error(`Conversation ${id} of a stored thread does not exist`)),
-			onSome: (found) => Effect.succeed(found),
-		}),
-	);
-}
+export const handleOf = Effect.fn("Thread.handleOf")(function* (
+	id: ConversationId,
+): Effect.fn.Return<Conversation.Conversation, Doc.Failure, Harness.Harness> {
+	const found = yield* Harness.conversation(id);
+	if (Option.isNone(found))
+		return yield* Effect.die(new Error(`Conversation ${id} of a stored thread does not exist`));
+	return found.value;
+});
 
 /**
  * The request key a thread's submission number `attempt` gets when its caller names none: 0 is its task, 1 and up
  * are the continuations of runs that ended without an answer. Fixed by the thread's key, so a retried call finds the
  * submission it admitted.
  */
-export function requestId(thread: string, attempt: number): string {
-	return `${thread}#${attempt}`;
+export function requestId(thread: ThreadKey, attempt: number): RequestKey {
+	return RequestKey.make(`${thread}#${attempt}`);
 }
 
-/** The newest submission of a thread, its number, and the request key it was admitted under. */
+/**
+ * The newest submission of a thread, its number, and the request key it was admitted under. An interface, not a
+ * Schema: it carries Pi's record of the submission as Pi gives it.
+ */
 export interface Newest {
 	readonly attempt: number;
-	readonly key: string;
+	readonly key: RequestKey;
 	readonly record: SubmissionRecord;
 }
 
@@ -82,89 +86,96 @@ export interface Newest {
  * The thread's request keys are read newest first until one has a submission. Table reads: they come before the
  * commit's first table write.
  */
-export function newestIn(
+export const newestIn = Effect.fn("Thread.newestIn")(function* (
 	tx: Tx.Tx,
 	conversation: ConversationId,
-	thread: string,
-): Effect.Effect<Option.Option<Newest>, Doc.Failure> {
-	return Effect.gen(function* () {
-		const { requests } = yield* (yield* tx.doc(Document, thread, null)).get;
-		for (let attempt = requests.length - 1; attempt >= 0; attempt -= 1) {
-			const key = requests[attempt];
-			const record = yield* tx.submissionByRequest(conversation, key);
-			if (Option.isSome(record)) return Option.some({ attempt, key, record: record.value });
-		}
-		return Option.none();
-	});
-}
+	thread: ThreadKey,
+): Effect.fn.Return<Option.Option<Newest>, Doc.Failure> {
+	const document = yield* tx.doc(Document, thread, null);
+	const { requests } = yield* document.get;
+	for (let attempt = requests.length - 1; attempt >= 0; attempt -= 1) {
+		const key = requests[attempt];
+		const record = yield* tx.submissionByRequest(conversation, key);
+		if (Option.isSome(record)) return Option.some({ attempt, key, record: record.value });
+	}
+	return Option.none();
+});
 
 /** `newestIn`, in a commit of its own that only reads. */
-export function newest(
+export const newest = Effect.fn("Thread.newest")(function* (
 	conversation: ConversationId,
-	thread: string,
-): Effect.Effect<Option.Option<Newest>, Doc.Failure, Harness.Harness> {
-	return Harness.commit((tx) => newestIn(tx, conversation, thread));
-}
+	thread: ThreadKey,
+): Effect.fn.Return<Option.Option<Newest>, Doc.Failure, Harness.Harness> {
+	return yield* Harness.commit((tx) => newestIn(tx, conversation, thread));
+});
 
 /**
  * Every submission the thread's conversation admitted, oldest first, each as `newest` gives one: its task, then each
  * continuation. A request key without a submission yet is left out. One commit that only reads.
  */
-export function submissions(
+export const submissions = Effect.fn("Thread.submissions")(function* (
 	conversation: ConversationId,
-	thread: string,
-): Effect.Effect<ReadonlyArray<Newest>, Doc.Failure, Harness.Harness> {
-	return Harness.commit((tx) =>
-		Effect.gen(function* () {
-			const { requests } = yield* (yield* tx.doc(Document, thread, null)).get;
-			const found = yield* Effect.forEach(requests, (key, attempt) =>
-				Effect.map(
-					tx.submissionByRequest(conversation, key),
-					Option.map((record): Newest => ({ attempt, key, record })),
-				),
+	thread: ThreadKey,
+): Effect.fn.Return<ReadonlyArray<Newest>, Doc.Failure, Harness.Harness> {
+	return yield* Harness.commit(
+		Effect.fnUntraced(function* (tx) {
+			const document = yield* tx.doc(Document, thread, null);
+			const { requests } = yield* document.get;
+			// One read after the other: a commit's reads go through its one transaction.
+			const found = yield* Effect.forEach(
+				requests,
+				(key, attempt) =>
+					Effect.map(
+						tx.submissionByRequest(conversation, key),
+						Option.map((record): Newest => ({ attempt, key, record })),
+					),
+				{ concurrency: 1 },
 			);
-			return found.flatMap(Option.toArray);
+			return Arr.getSomes(found);
 		}),
 	);
-}
+});
 
 /**
  * Notes `key` as the thread's newest request key, inside the caller's commit, unless the thread holds it already. It
  * gives the request keys the thread then has.
  */
-export function noteRequestIn(
+export const noteRequestIn = Effect.fn("Thread.noteRequestIn")(function* (
 	tx: Tx.Tx,
-	thread: string,
-	key: string,
-): Effect.Effect<ReadonlyArray<string>, Doc.Failure> {
-	return Effect.gen(function* () {
-		const document = yield* tx.doc(Document, thread, null);
-		const held = yield* document.get;
-		if (held.requests.includes(key)) return held.requests;
-		const requests = [...held.requests, key];
-		yield* document.set({ ...held, requests });
-		return requests;
-	});
-}
+	thread: ThreadKey,
+	key: RequestKey,
+): Effect.fn.Return<ReadonlyArray<RequestKey>, Doc.Failure> {
+	const document = yield* tx.doc(Document, thread, null);
+	const held = yield* document.get;
+	if (Arr.contains(held.requests, key)) return held.requests;
+	const requests = Arr.append(held.requests, key);
+	yield* document.set({ ...held, requests });
+	return requests;
+});
 
 /** `noteRequestIn`, in a commit of its own. */
-export function noteRequest(
-	thread: string,
-	key: string,
-): Effect.Effect<ReadonlyArray<string>, Doc.Failure, Harness.Harness> {
-	return Harness.commit((tx) => noteRequestIn(tx, thread, key));
-}
+export const noteRequest = Effect.fn("Thread.noteRequest")(function* (
+	thread: ThreadKey,
+	key: RequestKey,
+): Effect.fn.Return<ReadonlyArray<RequestKey>, Doc.Failure, Harness.Harness> {
+	return yield* Harness.commit((tx) => noteRequestIn(tx, thread, key));
+});
 
 /** Notes `swarmId` as a swarm started on the thread, inside the caller's commit, unless the thread holds it already. */
-export function noteSwarmIn(tx: Tx.Tx, thread: string, swarmId: string): Effect.Effect<void, Doc.Failure> {
-	return Effect.gen(function* () {
-		const document = yield* tx.doc(Document, thread, null);
-		const held = yield* document.get;
-		if (!held.swarms.includes(swarmId)) yield* document.set({ ...held, swarms: [...held.swarms, swarmId] });
-	});
-}
+export const noteSwarmIn = Effect.fn("Thread.noteSwarmIn")(function* (
+	tx: Tx.Tx,
+	thread: ThreadKey,
+	swarmId: Swarm.SwarmId,
+): Effect.fn.Return<void, Doc.Failure> {
+	const document = yield* tx.doc(Document, thread, null);
+	const held = yield* document.get;
+	if (!Arr.contains(held.swarms, swarmId)) yield* document.set({ ...held, swarms: Arr.append(held.swarms, swarmId) });
+});
 
 /** The ids of the swarms started on the thread stored under `thread`, oldest first; none for a key nothing started. */
-export function swarms(thread: string): Effect.Effect<ReadonlyArray<string>, Doc.Failure, Harness.Harness> {
-	return Effect.map(Harness.snapshot(Document, thread), (stored) => Option.getOrUndefined(stored)?.swarms ?? []);
-}
+export const swarms = Effect.fn("Thread.swarms")(function* (
+	thread: ThreadKey,
+): Effect.fn.Return<ReadonlyArray<Swarm.SwarmId>, Doc.Failure, Harness.Harness> {
+	const stored = yield* Harness.snapshot(Document, thread);
+	return Option.match(stored, { onNone: () => [], onSome: (held) => held.swarms });
+});

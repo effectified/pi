@@ -123,7 +123,7 @@ describe("unabortable", () => {
 		const exit = await runLive(
 			Effect.gen(function* () {
 				const fiber = yield* Effect.forkChild(
-					unabortable(() => pending.promise, String),
+					unabortable(() => pending.promise, Effect.die),
 					{ startImmediately: true },
 				);
 				yield* Fiber.interrupt(fiber);
@@ -134,15 +134,26 @@ describe("unabortable", () => {
 		expect(Exit.hasInterrupts(exit)).toBe(true);
 	});
 
-	it("maps a rejection with `onRejection`", async () => {
+	it("maps a rejection, or a synchronous throw, with `onRejection`", async () => {
 		const exit = await runLive(
 			Effect.exit(
 				unabortable(
 					() => Promise.reject(new Error("x")),
-					() => "mapped",
+					() => Effect.fail("mapped"),
+				),
+			),
+		);
+		const thrown = await runLive(
+			Effect.exit(
+				unabortable(
+					() => {
+						throw new Error("sync");
+					},
+					() => Effect.fail("mapped"),
 				),
 			),
 		);
 		expect(exit).toEqual(Exit.fail("mapped"));
+		expect(thrown).toEqual(Exit.fail("mapped"));
 	});
 });

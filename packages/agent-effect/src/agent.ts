@@ -9,10 +9,11 @@ import {
 	Agent as PiAgent,
 	type QueueMode,
 } from "@earendil-works/pi-agent-core";
-import type { ImageContent } from "@effectified/pi-ai";
+import { formatThrownValue, type ImageContent, withoutParentSpan } from "@effectified/pi-ai";
 import type { SchemaConversionError } from "@effectified/pi-schema";
-import { type Cause, Clock, Effect, Queue, type Scope, Stream } from "effect";
+import { type Cause, Clock, Deferred, Effect, Predicate, Queue, type Scope, Stream } from "effect";
 import { AgentBusy, CannotContinue } from "./errors.ts";
+import { buffered, EVENT_BUFFER } from "./event-buffer.ts";
 import { type Hooks, toPi } from "./hooks.ts";
 import { runner } from "./runner.ts";
 import { StreamFn } from "./stream-fn.ts";
@@ -38,7 +39,11 @@ export interface Agent {
 	 * queued follow-up messages; fails with `CannotContinue` when there is nothing to continue from.
 	 */
 	readonly continue: Effect.Effect<void, AgentBusy | CannotContinue>;
-	/** The events of one prompt's run, from `agent_start` to `agent_end`. Ending the Stream early aborts the run. */
+	/**
+	 * The events of one prompt's run, from `agent_start` to `agent_end`. Pi awaits each event: when the consumer is 16
+	 * events behind, the run waits for it. Ending the Stream early aborts the run and waits until the agent is idle.
+	 * Fails with `AgentBusy` while another run is going.
+	 */
 	readonly stream: (input: Input, images?: ImageContent[]) => Stream.Stream<AgentEvent, AgentBusy>;
 	/**
 	 * Every event of every run from now until the scope closes, when the Stream ends: Pi's `subscribe`. The
@@ -102,47 +107,73 @@ export interface Options<R> extends Settings, Hooks<R> {
 /**
  * A new agent: Pi's `Agent`, sending its requests through the `StreamFn` service. Its tools and hooks run with the
  * services of the context `make` runs in. Closing the scope aborts a run that is going and waits until it settles.
+ * Untraced: the agent keeps this Effect's context for its tools and hooks as long as it lives, which a span of `make`
+ * would not outlive; runs, tool calls and hooks have spans of their own.
  */
-export function make<R = never>(
+export const make: <R = never>(
+	options?: Options<R>,
+) => Effect.Effect<Agent, SchemaConversionError, R | StreamFn | Scope.Scope> = Effect.fnUntraced(function* <R>(
 	options: Options<R> = {},
-): Effect.Effect<Agent, SchemaConversionError, R | StreamFn | Scope.Scope> {
-	return Effect.gen(function* () {
-		const streamFn = yield* StreamFn;
-		const run = runner(yield* Effect.context<R>());
-		const { initialState, prepareNextTurn, ...rest } = options;
-		const tools = yield* Effect.forEach(initialState?.tools ?? [], (tool) => tool.agentTool);
-		const signal = () => pi.signal;
-		const pi: PiAgent = new PiAgent({
-			...toPi(rest, run, signal),
-			streamFn,
-			initialState: { ...initialState, tools },
-			...(prepareNextTurn && {
-				prepareNextTurnWithContext: (context, aborted) => run(prepareNextTurn(context), aborted ?? signal()),
-			}),
-		});
-		yield* Effect.addFinalizer(() => abortAndWait(pi));
-		return handle(pi);
+): Effect.fn.Return<Agent, SchemaConversionError, R | StreamFn | Scope.Scope> {
+	const streamFn = yield* StreamFn;
+	// The agent outlives this Effect: Pi calls its hooks and tools later, so their spans start their own trace instead
+	// of hanging under the caller's, which may have ended by then.
+	const services = yield* Effect.map(Effect.context<R>(), withoutParentSpan);
+	const run = runner(services);
+	const { initialState, prepareNextTurn, ...rest } = options;
+	const tools = yield* Effect.forEach(initialState?.tools ?? [], (tool) => tool.agentTool, { concurrency: 1 }).pipe(
+		Effect.provideContext(services),
+	);
+	const signal = () => pi.signal;
+	const pi: PiAgent = new PiAgent({
+		...toPi(rest, run, signal),
+		streamFn,
+		initialState: { ...initialState, tools },
+		...(prepareNextTurn && {
+			prepareNextTurnWithContext: (context, aborted) =>
+				run(Effect.withSpan(prepareNextTurn(context), "Hooks.prepareNextTurn"), aborted ?? signal()),
+		}),
 	});
-}
+	// Completed first when the scope closes: a stream's event waiting for a consumer that stopped reading is dropped,
+	// so the run the close aborts can settle.
+	const closing = yield* Deferred.make<void>();
+	yield* Effect.addFinalizer(() => Effect.andThen(Deferred.succeed(closing, undefined), abortAndWait(pi)));
+	return handle(pi, Deferred.await(closing));
+});
 
-/** The handle of `pi`: each member one of Pi's, as an Effect or a Stream. */
-function handle(pi: PiAgent): Agent {
-	const prompt = (input: Input, images?: ImageContent[]) =>
-		Effect.flatMap(messagesOf(input, images), (messages) => running(pi, () => pi.prompt(messages), Effect.die));
+/** The handle of `pi`: each member one of Pi's, as an Effect or a Stream. `closing` completes as the agent closes. */
+function handle(pi: PiAgent, closing: Effect.Effect<void>): Agent {
+	const prompt = Effect.fn("Agent.prompt")(function* (input: Input, images?: ImageContent[]) {
+		const messages = yield* messagesOf(input, images);
+		return yield* running(pi, () => pi.prompt(messages), Effect.die);
+	});
 	return {
 		prompt,
 		continue: running(
 			pi,
 			() => pi.continue(),
-			(cause) => Effect.fail(new CannotContinue({ message: messageOf(cause) })),
-		),
+			(thrown) => Effect.fail(CannotContinue.make({ message: formatThrownValue(thrown) })),
+		).pipe(Effect.withSpan("Agent.continue")),
 		stream: (input, images) =>
-			Stream.callback<AgentEvent, AgentBusy>((queue) =>
-				Effect.gen(function* () {
-					yield* listen(pi, (event) => Queue.offerUnsafe(queue, event));
-					yield* prompt(input, images);
-					yield* Queue.end(queue);
-				}),
+			Stream.callback<AgentEvent, AgentBusy>(
+				(queue) =>
+					Effect.gen(function* () {
+						const messages = yield* messagesOf(input, images);
+						yield* running(
+							pi,
+							(consumer) => {
+								// Subscribed before the run starts, as Pi emits its first events while `prompt` is called. A run
+								// going already, whose call Pi then refuses, is not this Stream's.
+								const going = pi.signal;
+								const offer = buffered(queue, consumer, closing);
+								const unsubscribe = pi.subscribe((event, run) => (run === going ? undefined : offer(event)));
+								return pi.prompt(messages).finally(unsubscribe);
+							},
+							Effect.die,
+						).pipe(Effect.withSpan("Agent.stream"));
+						yield* Queue.end(queue);
+					}),
+				{ bufferSize: EVENT_BUFFER },
 			),
 		subscribe: Effect.gen(function* () {
 			const queue = yield* Queue.unbounded<AgentEvent, Cause.Done>();
@@ -151,49 +182,56 @@ function handle(pi: PiAgent): Agent {
 			return Stream.fromQueue(queue);
 		}),
 		state: Effect.sync(() => snapshot(pi.state)),
-		steer: (message) => Effect.sync(() => pi.steer(message)),
-		followUp: (message) => Effect.sync(() => pi.followUp(message)),
+		steer: Effect.fn("Agent.steer")((message: AgentMessage) => Effect.sync(() => pi.steer(message))),
+		followUp: Effect.fn("Agent.followUp")((message: AgentMessage) => Effect.sync(() => pi.followUp(message))),
 		clearSteeringQueue: Effect.sync(() => pi.clearSteeringQueue()),
 		clearFollowUpQueue: Effect.sync(() => pi.clearFollowUpQueue()),
 		clearAllQueues: Effect.sync(() => pi.clearAllQueues()),
 		hasQueuedMessages: Effect.sync(() => pi.hasQueuedMessages()),
 		peekQueuedMessages: Effect.sync(() => pi.peekQueuedMessages()),
-		setSteeringMode: (mode) =>
+		setSteeringMode: Effect.fn("Agent.setSteeringMode")((mode: QueueMode) =>
 			Effect.sync(() => {
 				pi.steeringMode = mode;
 			}),
-		setFollowUpMode: (mode) =>
+		),
+		setFollowUpMode: Effect.fn("Agent.setFollowUpMode")((mode: QueueMode) =>
 			Effect.sync(() => {
 				pi.followUpMode = mode;
 			}),
+		),
 		abort: Effect.sync(() => pi.abort()),
 		waitForIdle: Effect.promise(() => pi.waitForIdle()),
-		reset: refusing(pi, Effect.try({ try: () => pi.reset(), catch: (cause) => cause }), Effect.die),
-		setModel: (model) =>
+		// Pi's `reset` refuses only while a run is going.
+		reset: Effect.try({
+			try: () => pi.reset(),
+			catch: (thrown) => AgentBusy.make({ message: formatThrownValue(thrown) }),
+		}),
+		setModel: Effect.fn("Agent.setModel")((model: AgentState["model"]) =>
 			Effect.sync(() => {
 				pi.state.model = model;
 			}),
-		setThinkingLevel: (level) =>
+		),
+		setThinkingLevel: Effect.fn("Agent.setThinkingLevel")((level: AgentState["thinkingLevel"]) =>
 			Effect.sync(() => {
 				pi.state.thinkingLevel = level;
 			}),
-		setTools: (tools) =>
-			Effect.map(
-				Effect.forEach(tools, (tool) => tool.agentTool),
-				(built) => {
-					pi.state.tools = built;
-				},
-			),
-		setMessages: (messages) =>
+		),
+		setTools: Effect.fn("Agent.setTools")(function* <R>(
+			tools: ReadonlyArray<Tool.Any<R>>,
+		): Effect.fn.Return<void, SchemaConversionError, R> {
+			pi.state.tools = yield* Effect.forEach(tools, (tool) => tool.agentTool, { concurrency: 1 });
+		}),
+		setMessages: Effect.fn("Agent.setMessages")((messages: AgentMessage[]) =>
 			Effect.sync(() => {
 				pi.state.messages = messages;
 			}),
+		),
 	};
 }
 
 /** The messages of a prompt: text becomes a user message stamped with `Clock`, as Pi builds it. */
 function messagesOf(input: Input, images: ImageContent[] | undefined): Effect.Effect<AgentMessage | AgentMessage[]> {
-	if (typeof input !== "string") return Effect.succeed(input);
+	if (!Predicate.isString(input)) return Effect.succeed(input);
 	return Effect.map(Clock.currentTimeMillis, (timestamp) => ({
 		role: "user",
 		content: [{ type: "text", text: input }, ...(images ?? [])],
@@ -202,36 +240,26 @@ function messagesOf(input: Input, images: ImageContent[] | undefined): Effect.Ef
 }
 
 /**
- * Starts a run with `start` and waits for it to end, with the refusals of `refusing`. Interrupting it aborts the run
- * and waits until the agent is idle.
+ * Starts a run with `start` and waits for it to end. Pi refuses a call while a run is going: then it fails with
+ * `AgentBusy`, else with what `refused` makes of Pi's refusal. Interrupting it aborts the run (`start` gets the signal
+ * of that interruption) and waits until the agent is idle; a refused call has no run to abort.
  */
 function running<E>(
 	pi: PiAgent,
-	start: () => Promise<void>,
-	refused: (cause: unknown) => Effect.Effect<never, E>,
+	start: (signal: AbortSignal) => Promise<void>,
+	refused: (thrown: unknown) => Effect.Effect<never, E>,
 ): Effect.Effect<void, AgentBusy | E> {
-	return refusing(pi, Effect.tryPromise({ try: start, catch: (cause) => cause }), refused).pipe(
-		Effect.onInterrupt(() => abortAndWait(pi)),
-	);
-}
-
-/**
- * `call` with what Pi rejected it with as a typed failure: `AgentBusy` when a run was going as it was called (Pi's
- * agent has an abort signal exactly then), else what `refused` makes of it. Pi refuses with plain errors only.
- */
-function refusing<A, E>(
-	pi: PiAgent,
-	call: Effect.Effect<A, unknown>,
-	refused: (cause: unknown) => Effect.Effect<never, E>,
-): Effect.Effect<A, AgentBusy | E> {
-	return Effect.suspend(() => {
-		// Read in the same tick as the call, which is when Pi checks whether a run is active.
+	return Effect.callback<void, AgentBusy | E>((resume, signal) => {
+		// Read in the same tick as the call, which is when Pi checks whether a run is going.
 		const busy = pi.signal !== undefined;
-		return Effect.catch(
-			call,
-			(cause): Effect.Effect<never, AgentBusy | E> =>
-				busy ? Effect.fail(new AgentBusy({ message: messageOf(cause) })) : refused(cause),
+		const done = start(signal).then(
+			() => resume(Effect.void),
+			(thrown: unknown) =>
+				resume(busy ? Effect.fail(AgentBusy.make({ message: formatThrownValue(thrown) })) : refused(thrown)),
 		);
+		if (busy) return;
+		signal.addEventListener("abort", () => pi.abort(), { once: true });
+		return Effect.promise(() => done);
 	});
 }
 
@@ -267,9 +295,4 @@ function snapshot(state: AgentState): State {
 		pendingToolCalls: state.pendingToolCalls,
 		errorMessage: state.errorMessage,
 	};
-}
-
-/** The message of what Pi rejected with. */
-function messageOf(cause: unknown): string {
-	return cause instanceof Error ? cause.message : String(cause);
 }

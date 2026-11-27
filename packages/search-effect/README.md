@@ -60,7 +60,9 @@ Both calls give a `Retrieval`:
 `excludeDomains`, `publishedAfter`, `publishedBefore`; `FetchOptions`: `maxCharacters`) are `Schema`s. The four
 evidence fields are the schema `Evidence.Evidence`; `Evidence.toJson` and `Evidence.fromJson` are its JSON form.
 
-A call fails with one of five tagged errors, `SearchError`. A provider never retries: the caller decides.
+A call fails with one of five tagged errors; `SearchError` is their union as a `Schema`, with `SearchError.match` and
+`SearchError.guards`. Every error and every evidence names the provider by its `ProviderName`, a brand of its own, so
+a pi-ai `ProviderId` is never taken for one. A provider never retries: the caller decides.
 
 ```ts
 const patient = provider.search("effect").pipe(
@@ -207,7 +209,7 @@ is a page of `evil.test`. Domain limits on a search are the provider's filters: 
 A provider is one file. It imports `@effectified/pi-search/provider` and `effect`, and exports:
 
 - `layer`: a `Layer` that gives `SearchProvider`. Credentials come from `Config` as `Redacted`.
-- `name`: the string it writes into `provider`.
+- `name`: the `ProviderName` it writes into `provider`, branded with `ProviderName.make`.
 
 In `search` and `fetch` it must: put the body's text, unchanged, in `raw`; put the request without credentials in
 `request`; take `retrievedAt` from `DateTime.now`; map its hits to `Hit` and leave out what it was not given; and
@@ -215,46 +217,50 @@ fail only with the five errors. This is a whole provider for a made-up API
 ([`test/example-provider.ts`](test/example-provider.ts), with its test):
 
 ```ts
-export const name = "acme";
+export const name = ProviderName.make("acme");
 
-export function layer(): Layer.Layer<SearchProvider, Config.ConfigError, HttpClient.HttpClient> {
-	return Layer.effect(
-		SearchProvider,
-		Effect.gen(function* () {
-			const key = yield* Config.Redacted("ACME_API_KEY");
-			const client = yield* HttpClient.HttpClient;
-			const call = (request: HttpClientRequest.HttpClientRequest, sent: Retrieval["request"]) =>
-				Effect.gen(function* () {
-					const response = yield* client.execute(HttpClientRequest.bearerToken(request, key));
-					const raw = yield* response.text;
-					const retrievedAt = yield* DateTime.now;
-					if (response.status === 429) return yield* new SearchRateLimited({ provider: name });
-					if (response.status === 401) return yield* new SearchUnauthorized({ provider: name, status: 401 });
-					if (response.status !== 200) {
-						return yield* new SearchProviderFailure({ provider: name, status: response.status });
-					}
-					const { items } = yield* decode(raw);
-					const hits = items.map((item) => ({ url: item.link, title: item.name, snippet: item.excerpt }));
-					return { provider: name, request: sent, retrievedAt, raw, hits, unfetched: [] };
-				}).pipe(Effect.catchTags({ HttpClientError: unreachable, SchemaError: unreadable }));
-			return {
-				search: (query, options = {}) => {
-					const url = `https://api.acme.test/v1/search?q=${encodeURIComponent(query)}&n=${options.maxResults ?? 10}`;
-					return call(HttpClientRequest.get(url), { method: "GET", url, body: null });
-				},
-				fetch: (urls) => {
-					const url = "https://api.acme.test/v1/pages";
-					const body = { urls };
-					return call(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url), body), {
-						method: "POST",
-						url,
-						body,
-					});
-				},
-			};
-		}),
-	);
-}
+export const layer: Layer.Layer<SearchProvider, Config.ConfigError, HttpClient.HttpClient> = Layer.effect(
+	SearchProvider,
+	Effect.gen(function* () {
+		const key = yield* Config.Redacted("ACME_API_KEY");
+		const client = yield* HttpClient.HttpClient;
+		const call = Effect.fn("Acme.call")(
+			function* (request: HttpClientRequest.HttpClientRequest, sent: Retrieval["request"]) {
+				const response = yield* client.execute(HttpClientRequest.bearerToken(request, key));
+				const raw = yield* response.text;
+				const retrievedAt = yield* DateTime.now;
+				if (response.status === 429) return yield* SearchRateLimited.make({ provider: name });
+				if (response.status === 401) return yield* SearchUnauthorized.make({ provider: name, status: 401 });
+				if (response.status !== 200) {
+					return yield* SearchProviderFailure.make({ provider: name, status: response.status });
+				}
+				const { items } = yield* decode(raw);
+				const hits = Arr.map(items, (item) => ({ url: item.link, title: item.name, snippet: item.excerpt }));
+				return { provider: name, request: sent, retrievedAt, raw, hits, unfetched: [] };
+			},
+			Effect.catchTags({
+				HttpClientError: (error) =>
+					Effect.fail(SearchTransportFailure.make({ provider: name, detail: error.message })),
+				SchemaError: (error) => Effect.fail(SearchResponseInvalid.make({ provider: name, detail: error.message })),
+			}),
+		);
+		return {
+			search: (query, options = {}) => {
+				const url = `https://api.acme.test/v1/search?q=${encodeURIComponent(query)}&n=${options.maxResults ?? 10}`;
+				return call(HttpClientRequest.get(url), { method: "GET", url, body: null });
+			},
+			fetch: (urls) => {
+				const url = "https://api.acme.test/v1/pages";
+				const body = { urls };
+				return call(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url), body), {
+					method: "POST",
+					url,
+					body,
+				});
+			},
+		};
+	}),
+);
 ```
 
 A provider inside this package also gets a subpath in `package.json` `exports`; one in a product needs nothing more.

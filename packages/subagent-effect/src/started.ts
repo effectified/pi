@@ -1,14 +1,13 @@
 // The `subagent.started` document: the child a task of this package started, so that it is found again by its task.
 
-import type { ConversationId, TaskId } from "@effectified/pi-durable";
 import { Conversation, Doc, Task } from "@effectified/pi-durable";
 import { Schema } from "effect";
 
 /** A child that exists: its conversation, and the task that drives it. */
-export interface Started {
-	readonly conversationId: ConversationId;
-	readonly task: TaskId;
-}
+export const Started = Schema.Struct({ conversationId: Conversation.Id, task: Task.Id });
+
+/** A child that exists. */
+export type Started = typeof Started.Type;
 
 /**
  * The document, in the scope of a task, written in the commit that creates a child at two addresses: the tool call
@@ -20,9 +19,7 @@ export const Document = Doc.make({
 	kind: "subagent.started",
 	version: 1,
 	scope: "task",
-	schema: Schema.Struct({
-		started: Schema.NullOr(Schema.Struct({ conversationId: Conversation.Id, task: Task.Id })),
-	}),
+	schema: Schema.Struct({ started: Schema.NullOr(Started) }),
 	initial: () => ({ started: null }),
 	checkpointWhen: () => true,
 });

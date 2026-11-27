@@ -2,14 +2,30 @@
 // approval inbox in memory, kept across reopens; and the composition opened on scripted models, with no network.
 
 import { type FauxProviderHandle, type FauxResponseStep, fauxProvider } from "@earendil-works/pi-ai";
+import { fromPiModelRef } from "@effectified/pi-ai";
 import * as Approvals from "@effectified/pi-approvals";
-import { type BudgetRequest, Estimator, Lease, LeaseFenced, Prices, type Settlement } from "@effectified/pi-budget";
-import { Extension, Harness, Storage, Tool } from "@effectified/pi-durable";
+import {
+	type BudgetRequest,
+	Estimator,
+	Lease,
+	LeaseFenced,
+	Prices,
+	Reservation,
+	type Settlement,
+} from "@effectified/pi-budget";
+import { Extension, Harness, Storage, Tool, ToolName } from "@effectified/pi-durable";
 import { Policy as GuardPolicy, Matcher } from "@effectified/pi-guard";
 import { RecordSink, type Records } from "@effectified/pi-recorder";
 import * as Review from "@effectified/pi-review";
-import { type PriceRows, priceRows, type RouteEvent, RouteEvents, type RouteTable } from "@effectified/pi-router";
-import { SearchProvider, SearchTools } from "@effectified/pi-search";
+import {
+	decodeRouteTable,
+	type PriceRows,
+	priceRows,
+	type RouteEvent,
+	RouteEvents,
+	type RouteTable,
+} from "@effectified/pi-router";
+import { ProviderName, SearchProvider, SearchTools } from "@effectified/pi-search";
 import { Subagent, Subagents } from "@effectified/pi-subagent";
 import * as Swarm from "@effectified/pi-swarm";
 import { PiTelemetry } from "@effectified/pi-telemetry";
@@ -22,68 +38,76 @@ import {
 	OutcomeSinkError,
 	type Outcomes,
 	Reviewers,
+	ThreadKey,
 	type Threads,
 } from "../src/index.ts";
 
 /** The alias every thread and subagent answers with. */
-export const AUTHOR = { provider: "router", modelId: "author" };
+export const AUTHOR = fromPiModelRef({ provider: "router", modelId: "author" });
 
 /** The alias the review asks. */
-export const REVIEWER = { provider: "router", modelId: "reviewer" };
+export const REVIEWER = fromPiModelRef({ provider: "router", modelId: "reviewer" });
 
 /** A reviewer alias that is served by the author's own model. */
-export const SAME_FAMILY_REVIEWER = { provider: "router", modelId: "clone" };
+export const SAME_FAMILY_REVIEWER = fromPiModelRef({ provider: "router", modelId: "clone" });
 
 /** The author's first route: a model of family alpha. */
-export const WRITER = { provider: "author-lab", modelId: "writer" };
+export const WRITER = fromPiModelRef({ provider: "author-lab", modelId: "writer" });
 
 /** The author's second route: another lab's model of the same family. */
-export const BACKUP = { provider: "backup-lab", modelId: "writer-b" };
+export const BACKUP = fromPiModelRef({ provider: "backup-lab", modelId: "writer-b" });
 
 /** The reviewer's route: a model of family beta. */
-export const JUDGE = { provider: "reviewer-lab", modelId: "judge" };
+export const JUDGE = fromPiModelRef({ provider: "reviewer-lab", modelId: "judge" });
 
-/** The route table: the author falls back from its first lab to a second one. */
-export const ROUTES: RouteTable = {
-	classifications: ["public", "internal"],
-	limits: { author: { maxInFlight: 4 }, backup: { maxInFlight: 4 }, reviewer: { maxInFlight: 4 } },
-	aliases: [
-		{
-			alias: AUTHOR.modelId,
-			routes: [
-				route(WRITER, "author", {
-					input: 3_000_000,
-					output: 15_000_000,
-					cacheRead: 300_000,
-					cacheWrite: 3_750_000,
-				}),
-				route(BACKUP, "backup", { input: 1_000_000, output: 5_000_000, cacheRead: 100_000, cacheWrite: 1_250_000 }),
-			],
-		},
-		{
-			alias: REVIEWER.modelId,
-			routes: [
-				route(JUDGE, "reviewer", {
-					input: 2_000_001,
-					output: 8_000_000,
-					cacheRead: 200_000,
-					cacheWrite: 2_500_000,
-				}),
-			],
-		},
-		{
-			alias: SAME_FAMILY_REVIEWER.modelId,
-			routes: [
-				route(WRITER, "author", {
-					input: 3_000_000,
-					output: 15_000_000,
-					cacheRead: 300_000,
-					cacheWrite: 3_750_000,
-				}),
-			],
-		},
-	],
-};
+/** The route table: the author falls back from its first lab to a second one. Decoded, so its ids are branded. */
+export const ROUTES: RouteTable = Effect.runSync(
+	decodeRouteTable({
+		classifications: ["public", "internal"],
+		limits: { author: { maxInFlight: 4 }, backup: { maxInFlight: 4 }, reviewer: { maxInFlight: 4 } },
+		aliases: [
+			{
+				alias: AUTHOR.modelId,
+				routes: [
+					route(WRITER, "author", {
+						input: 3_000_000,
+						output: 15_000_000,
+						cacheRead: 300_000,
+						cacheWrite: 3_750_000,
+					}),
+					route(BACKUP, "backup", {
+						input: 1_000_000,
+						output: 5_000_000,
+						cacheRead: 100_000,
+						cacheWrite: 1_250_000,
+					}),
+				],
+			},
+			{
+				alias: REVIEWER.modelId,
+				routes: [
+					route(JUDGE, "reviewer", {
+						input: 2_000_001,
+						output: 8_000_000,
+						cacheRead: 200_000,
+						cacheWrite: 2_500_000,
+					}),
+				],
+			},
+			{
+				alias: SAME_FAMILY_REVIEWER.modelId,
+				routes: [
+					route(WRITER, "author", {
+						input: 3_000_000,
+						output: 15_000_000,
+						cacheRead: 300_000,
+						cacheWrite: 3_750_000,
+					}),
+				],
+			},
+		],
+	}),
+);
 
 type TokenPrices = {
 	readonly input: number;
@@ -269,7 +293,12 @@ function ran(state: Outside, tool: string, result: string): Effect.Effect<string
 /** A subagent that may look records up, and nothing else. */
 export const Researcher = Subagent.make("researcher", {
 	description: "Looks records up and reports what it found.",
-	agent: { model: AUTHOR, tools: ["lookup"], instructions: "Report what the record says.", maxTurns: 4 },
+	agent: {
+		model: AUTHOR,
+		tools: [ToolName.make("lookup")],
+		instructions: "Report what the record says.",
+		maxTurns: 4,
+	},
 });
 
 /** What the researcher may settle of the lease, in micro units. */
@@ -390,7 +419,7 @@ export function config(state: Outside, labs: Providers, options: Options = {}) {
 			SearchTools.extension({ maxResults: 3 }),
 		],
 		guard: { policy: GUARD_POLICY },
-		approvals: { tools: ["transfer"], expiresAfter: "1 day" } satisfies Approvals.Policy,
+		approvals: { tools: [ToolName.make("transfer")], expiresAfter: "1 day" } satisfies Approvals.Policy,
 		models: {
 			providers: [labs.author.provider, labs.backup.provider, labs.reviewer.provider],
 			routes: options.routes ?? ROUTES,
@@ -420,7 +449,9 @@ export function ports(state: Outside, options: Pick<Options, "tracer" | "routes"
 					state.lease.steps.push({ step: "fenced", reason: fenced });
 					return Effect.fail(new LeaseFenced({ reason: fenced }));
 				}
-				const token = `r${state.lease.steps.filter((step) => step.step === "reserve").length + 1}`;
+				const token = Reservation.make(
+					`r${state.lease.steps.filter((step) => step.step === "reserve").length + 1}`,
+				);
 				state.lease.steps.push({ step: "reserve", token, estimate, request, ...actor });
 				return Effect.succeed(token);
 			}),
@@ -465,7 +496,7 @@ export function ports(state: Outside, options: Pick<Options, "tracer" | "routes"
 	const search = Layer.succeed(SearchProvider, {
 		search: (query) =>
 			Effect.map(DateTime.now, (retrievedAt) => ({
-				provider: "scripted",
+				provider: ProviderName.make("scripted"),
 				request: { method: "POST", url: "https://search.test/search", body: { query } },
 				retrievedAt,
 				raw: JSON.stringify({ results: [{ url: "https://example.test/answer", title: "Answer" }] }),
@@ -524,7 +555,14 @@ export function open(state: Outside, labs: Providers, options: Options = {}) {
 
 /** The input of a thread of this product: the author's alias, internal content, and a cap no test reaches by chance. */
 export function work(thread: string, task: string, tools: ReadonlyArray<string> = ["lookup"]): Threads.Work {
-	return { thread, task, model: AUTHOR, grant: { tools: [...tools], classification: "internal" }, cap: 1_000_000n };
+	const granted = tools.map((tool) => ToolName.make(tool));
+	return {
+		thread: ThreadKey.make(thread),
+		task,
+		model: AUTHOR,
+		grant: { tools: granted, classification: "internal" },
+		cap: 1_000_000n,
+	};
 }
 
 /** The name of the foreground subagent tool, for a grant. */

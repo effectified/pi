@@ -46,5 +46,6 @@ export {
 	type WaitOptions,
 	waitForLoopbackSignIn,
 } from "./loopback.ts";
+export type { OAuthSettings } from "./settings.ts";
 export { type CompleteSignInOptions, completeMcpSignIn, type SignInOptions, startMcpSignIn } from "./sign-in.ts";
 export { memoryOAuthStore, type OAuthStore } from "./store.ts";

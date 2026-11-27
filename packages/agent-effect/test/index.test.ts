@@ -32,14 +32,19 @@ describe("the coverage of pi-agent-core", () => {
 		expect(Object.keys(Package).sort()).toEqual([
 			"Agent",
 			"AgentBusy",
+			"AgentEvents",
 			"AgentLoop",
 			"CannotContinue",
 			"DEFAULT_AGENT_IDENTITY",
 			"SchemaConversionError",
 			"StreamFn",
 			"Tool",
+			"ToolCallId",
+			"ToolFailed",
+			"ToolName",
 			"runToolCall",
 		]);
+		expect(Object.keys(Package.AgentEvents).sort()).toEqual(["messages"]);
 		expect(Object.keys(Package.Agent).sort()).toEqual(["make"]);
 		expect(Object.keys(Package.AgentLoop).sort()).toEqual(["run", "runContinue", "stream", "streamContinue"]);
 		expect(Object.keys(Package.Tool).sort()).toEqual(["error", "make", "result"]);

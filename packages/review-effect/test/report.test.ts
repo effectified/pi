@@ -19,7 +19,7 @@ function memos(stored = new Map<string, unknown>()) {
 	return { memo: memo as unknown as Report.Memos, stored };
 }
 
-class Down extends Schema.TaggedError<Down>()("Down", { service: Schema.String }) {
+class Down extends Schema.TaggedError<Down, { readonly brand: unique symbol }>()("Down", { service: Schema.String }) {
 	override get message(): string {
 		return `${this.service} is down`;
 	}

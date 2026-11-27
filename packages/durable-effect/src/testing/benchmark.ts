@@ -11,7 +11,7 @@ import {
 	seedStorageBenchmark,
 	seedStorageWriteBenchmark,
 } from "@earendil-works/pi-durable/testing";
-import type { Effect } from "effect";
+import { Array as Arr, type Effect } from "effect";
 import { call } from "../call.ts";
 import type { DurableError } from "../errors.ts";
 import { HarnessStorage } from "../storage.ts";
@@ -44,7 +44,7 @@ export interface ReadSample {
 }
 
 /** Pi's read samples (`STORAGE_READ_BENCHMARKS`). */
-export const reads: ReadonlyArray<ReadSample> = STORAGE_READ_BENCHMARKS.map((sample) => ({
+export const reads: ReadonlyArray<ReadSample> = Arr.map(STORAGE_READ_BENCHMARKS, (sample) => ({
 	name: sample.name,
 	run: (dataset) => HarnessStorage.use((storage) => call(() => sample.run(storage, dataset))),
 	expected: (dataset) => sample.expected(dataset),
@@ -58,7 +58,7 @@ export interface WriteSample {
 }
 
 /** Pi's write samples (`STORAGE_WRITE_BENCHMARKS`). */
-export const writes: ReadonlyArray<WriteSample> = STORAGE_WRITE_BENCHMARKS.map((sample) => ({
+export const writes: ReadonlyArray<WriteSample> = Arr.map(STORAGE_WRITE_BENCHMARKS, (sample) => ({
 	name: sample.name,
 	expected: sample.expected,
 	run: HarnessStorage.use((storage) => call(() => sample.run(storage))),

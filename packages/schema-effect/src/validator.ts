@@ -7,7 +7,7 @@ import {
 	type ParseResult,
 	type Static,
 } from "@earendil-works/pi-schema";
-import { Effect } from "effect";
+import { Effect, Predicate } from "effect";
 import { SchemaConversionError, SchemaDecodeError } from "./errors.ts";
 
 /** A compiled JSON Schema whose valid values have type `T`. */
@@ -37,10 +37,11 @@ export function validator<S extends JsonSchema>(
 				parse: (value) => fromParseResult(compiled.parse(value)),
 			};
 		},
-		catch: (cause) => new SchemaConversionError({ reason: cause instanceof Error ? cause.message : String(cause) }),
+		catch: (cause) =>
+			SchemaConversionError.make({ reason: Predicate.isError(cause) ? cause.message : String(cause) }),
 	});
 }
 
 function fromParseResult<T>(result: ParseResult<T>): Effect.Effect<T, SchemaDecodeError> {
-	return result.ok ? Effect.succeed(result.value) : Effect.fail(new SchemaDecodeError({ issues: result.errors }));
+	return result.ok ? Effect.succeed(result.value) : Effect.fail(SchemaDecodeError.make({ issues: result.errors }));
 }

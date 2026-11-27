@@ -1,11 +1,25 @@
 // The backstop: a tool that refuses to run in a conversation that does not ask the guard's extension first.
 
-import type { Tool, ToolExecutionResult, ToolRegistration } from "@effectified/pi-durable";
-import { Effect, PubSub } from "effect";
+import {
+	type Tool,
+	ToolCallId,
+	type ToolExecutionResult,
+	ToolName,
+	type ToolRegistration,
+} from "@effectified/pi-durable";
+import { Array as Arr, Effect, PubSub, Record, Struct } from "effect";
 import * as Enforced from "./enforced.ts";
 import type { Service } from "./guard.ts";
-import { unavailable } from "./refusal.ts";
+import { Refusal, unavailable } from "./refusal.ts";
 import * as Refused from "./refused.ts";
+
+/** A member of an extension (a tool, a hook, ...) of the shape `A`, whose registration needs `R`. */
+export type Needing<A extends { readonly registration: Effect.Effect<unknown, unknown, unknown> }, R> = Omit<
+	A,
+	"registration"
+> & {
+	readonly registration: Effect.Effect<Effect.Success<A["registration"]>, Effect.Error<A["registration"]>, R>;
+};
 
 /**
  * `tool` with the backstop of `guard`. Pi asks only the hooks of the extensions a conversation selects, in the order
@@ -18,7 +32,7 @@ import * as Refused from "./refused.ts";
  * The backstopped tool has exactly the members `MEMBERS` passes, and `execute` guarded: a member Pi does not declare
  * yet, set on a registration anyway, is left out, so it never runs unguarded.
  */
-export function backstopped(tool: Tool.Any, guard: Service): Tool.Any {
+export function backstopped<R>(tool: Needing<Tool.Any, R>, guard: Service): Needing<Tool.Any, R> {
 	return {
 		name: tool.name,
 		registration: Effect.map(tool.registration, (registration) => guarded(registration, guard)),
@@ -58,31 +72,28 @@ type Passed = {
 	readonly [K in keyof typeof MEMBERS]: (typeof MEMBERS)[K] extends "passed" ? K : never;
 }[keyof typeof MEMBERS];
 
-const PASSED: ReadonlySet<string> = new Set(
-	Object.entries(MEMBERS).flatMap(([key, disposition]) => (disposition === "passed" ? [key] : [])),
-);
+const PASSED = Arr.filter(Record.keys(MEMBERS), (key): key is Passed => MEMBERS[key] === "passed");
 
 function guarded(registration: ToolRegistration, guard: Service): ToolRegistration {
-	// The registration's own members of the passed keys, as its spread would copy them: `Object.entries` loses their
-	// types, which are those of `ToolRegistration`'s passed members.
-	const kept = Object.fromEntries(Object.entries(registration).filter(([key]) => PASSED.has(key))) as Pick<
-		ToolRegistration,
-		Passed
-	>;
 	return {
-		...kept,
+		// The registration's own members of the passed keys, as its spread would copy them.
+		...Struct.pick(registration, PASSED),
 		// Pi's own promise interface: a tool's `execute` is what Pi awaits.
 		execute: (args, api, context) =>
 			api.agent(context).then((agent) => {
 				if (Enforced.owns(guard, agent.extensions[0])) return registration.execute(args, api, context);
-				PubSub.publishUnsafe(guard.refusals, {
-					conversationId: api.conversationId,
-					taskId: api.taskId,
-					callId: api.callId,
-					tool: registration.name,
-					rule: "guard-not-first",
-				});
-				return blocked(registration.name);
+				const tool = ToolName.make(registration.name);
+				PubSub.publishUnsafe(
+					guard.refusals,
+					Refusal.make({
+						conversationId: api.conversationId,
+						taskId: api.taskId,
+						callId: ToolCallId.make(api.callId),
+						tool,
+						rule: "guard-not-first",
+					}),
+				);
+				return blocked(tool);
 			}),
 	};
 }
@@ -91,7 +102,7 @@ function guarded(registration: ToolRegistration, guard: Service): ToolRegistrati
  * The error result Pi writes for a call a `beforeTool` hook blocked (spec 7.3), with the guard's one sentence. The
  * record is written here: where the guard's extension is not selected, its `afterTool` hook is not asked.
  */
-function blocked(tool: string): ToolExecutionResult {
+function blocked(tool: ToolName): ToolExecutionResult {
 	const refused: Refused.Refused = { rule: "guard-not-first" };
 	return {
 		output: [],

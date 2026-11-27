@@ -26,8 +26,9 @@ import {
 	type ToolDefinition,
 	type ToolsOptions,
 } from "@earendil-works/pi-coding-agent";
+import { ToolName } from "@effectified/pi-agent";
 import type { Env } from "@effectified/pi-env";
-import { Effect, Predicate, Stream } from "effect";
+import { Effect, Match, Predicate, Record, Schema, Stream } from "effect";
 import { type CodingAgentFailure, fromPi } from "./errors.ts";
 
 /** Pi's execute of a tool definition, whatever its parameters and details. */
@@ -41,7 +42,7 @@ type Execute = (
 
 /** A built-in tool of Pi, made by one of this module's functions for a working directory. */
 export interface Builtin<D extends { readonly name: string; readonly execute: Execute }, T> {
-	readonly name: D["name"];
+	readonly name: D["name"] & ToolName;
 	/** Pi's definition, as its factory made it. */
 	readonly pi: D;
 	/** Pi's definition: what a session's `customTools` and an extension's `tools` take. */
@@ -146,14 +147,16 @@ export function readOnly(
  * it (by Pi's own tools too), and before those queued after it. It fails as `effect` does; interrupting it interrupts
  * `effect` and frees the queue.
  */
-export function withFileMutationQueue<A, E, R>(path: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> {
-	return Effect.flatMap(Effect.context<R>(), (context) => {
-		const runExit = Effect.runPromiseExitWith(context);
-		return Effect.flatten(
-			Effect.promise((signal) => piWithFileMutationQueue(path, () => runExit(effect, { signal }))),
-		);
-	});
-}
+export const withFileMutationQueue = Effect.fn("Builtin.withFileMutationQueue")(function* <A, E, R>(
+	path: string,
+	effect: Effect.Effect<A, E, R>,
+): Effect.fn.Return<A, E, R> {
+	const context = yield* Effect.context<R>();
+	const runExit = Effect.runPromiseExitWith(context);
+	return yield* Effect.flatten(
+		Effect.promise((signal) => piWithFileMutationQueue(path, () => runExit(effect, { signal }))),
+	);
+});
 
 /**
  * Pi's bash operations over `env`, an execution environment of `@effectified/pi-env` (local, over SSH, a pi-env
@@ -169,7 +172,8 @@ export function bashOperations(env: Env.Env): BashOperations {
 					.execOutput(command, {
 						cwd,
 						...(timeout === undefined ? {} : { timeout }),
-						...(variables === undefined ? {} : { env: defined(variables) }),
+						// Node's environment shape: only the variables with a value.
+						...(variables === undefined ? {} : { env: Record.filter(variables, Predicate.isString) }),
 					})
 					.pipe(
 						Stream.runFold(
@@ -181,11 +185,13 @@ export function bashOperations(env: Env.Env): BashOperations {
 							},
 						),
 						Effect.mapError((failure) =>
-							failure.code === "timeout"
-								? new Error(`timeout:${timeout}`)
-								: failure.code === "aborted"
-									? new Error("aborted")
-									: new Error(failure.message),
+							BashFailed.make({
+								message: Match.value(failure.code).pipe(
+									Match.when("timeout", () => `timeout:${timeout}`),
+									Match.when("aborted", () => "aborted"),
+									Match.orElse(() => failure.message),
+								),
+							}),
 						),
 					),
 				{ signal },
@@ -193,12 +199,13 @@ export function bashOperations(env: Env.Env): BashOperations {
 	};
 }
 
-/** The variables of Node's environment shape that have a value. */
-function defined(variables: Record<string, string | undefined>): Record<string, string> {
-	return Object.fromEntries(
-		Object.entries(variables).filter((entry): entry is [string, string] => Predicate.isString(entry[1])),
-	);
-}
+/**
+ * A command of `bashOperations` that did not run to its exit, as Pi's bash tool reads it from the rejection: its
+ * message is `timeout:<seconds>`, `aborted`, or the environment's message, as Pi's local shell words them.
+ */
+class BashFailed extends Schema.TaggedError<BashFailed, { readonly brand: unique symbol }>()("BashFailed", {
+	message: Schema.String,
+}) {}
 
 /** `definition` and its agent tool as a `Builtin`. */
 function builtin<D extends { readonly name: string; readonly execute: Execute }, T>(
@@ -206,7 +213,8 @@ function builtin<D extends { readonly name: string; readonly execute: Execute },
 	agentTool: () => T,
 ): Builtin<D, T> {
 	return {
-		name: definition.name,
+		// The brand checks nothing of a string, so the branded name keeps the literal type Pi's definition gives.
+		name: ToolName.make(definition.name) as D["name"] & ToolName,
 		pi: definition,
 		// A built-in definition is a definition whose parameters are its own schema: Pi's factories type them exactly.
 		definition: Effect.succeed(definition as unknown as ToolDefinition),

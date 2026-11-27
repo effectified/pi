@@ -58,8 +58,10 @@ Run it with `Effect.provide(program, Tui.layer({ mode: "regular" }))`.
   how a change made to a component is shown. **`Tui.setFocus`** gives keyboard focus.
 - **`Tui.showOverlay(component, options?)`** shows a component above the content, focused, until the scope closes.
 - **`Tui.queryColors(timeout)`** asks the terminal for its theme colors. **`Tui.setTitle`**,
-  **`Tui.setProgramStatus`**, **`Tui.progress`** (a busy indicator until the scope closes) and **`Tui.drainInput`**
-  reach the terminal.
+  **`Tui.setProgramStatus`**, **`Tui.progress`** (a busy indicator until the scope closes) and
+  **`Tui.drainInput({ max, idle })`** (durations, pi-tui's one second and 50 ms by default) reach the terminal.
+- Each of these Effects has a span of its own (`Tui.showOverlay`, ...), but for `render` and `requestRender`, which a
+  program calls per frame.
 
 ```typescript
 import { Effect, Stream } from "effect";
@@ -110,7 +112,7 @@ const quit = Effect.gen(function* () {
 - **`events(component, "on...")`** gives each call of a component's callback: an `Editor`'s or an `Input`'s
   `onSubmit`, a `SelectList`'s `onSelect` and `onCancel`. One stream at a time listens to a callback.
 - **`splitInput(chunks)`** splits raw terminal input into whole sequences, a key or a paste each, with pi-tui's
-  `StdinBuffer`:
+  `StdinBuffer`. A sequence is an `InputSequence`, a Schema union on `kind` (`InputSequence.match`):
 
 ```typescript
 import { Stream } from "effect";
@@ -126,7 +128,8 @@ const sequences = Stream.runCollect(splitInput(Stream.make("\x1b[", "Aab", "\x1b
 
 pi-tui's spinners animate on a timer from the moment they are made: **`loader`** and **`cancellableLoader`** make
 them for the `Tui` service and stop them when the scope closes. **`untilCancelled`** runs work that the user can
-cancel through the loader (`tui.select.cancel`, Escape by default): the work is interrupted.
+cancel through the loader (`tui.select.cancel`, Escape by default): the work is interrupted. It pipes
+(`work.pipe(untilCancelled(spinner))`) or takes the work first (`untilCancelled(work, spinner)`).
 
 ```typescript
 import { Effect } from "effect";
@@ -138,13 +141,14 @@ const searching = Effect.scoped(
 		const spinner = yield* cancellableLoader(dim, dim, "Searching...");
 		(yield* Tui.Tui).addChild(spinner);
 		yield* Tui.setFocus(spinner);
-		return yield* untilCancelled(spinner, search);
+		return yield* search.pipe(untilCancelled(spinner));
 	}),
 );
 ```
 
 **`settingsList(items, maxVisible, theme)`** makes pi-tui's `SettingsList` and gives what the user does in it as a
-Stream of `{ kind: "change", id, value }` and `{ kind: "cancel" }`, until the scope closes.
+Stream of `{ kind: "change", id, value }` and `{ kind: "cancel" }` (`SettingsListEvent`, a Schema union on `kind`),
+until the scope closes.
 
 ## Clipboard, autocomplete and colors
 
@@ -169,7 +173,7 @@ const accent = parseColor("#ff8000");
   `ClipboardError`.
 - **`getSuggestions(provider, lines, line, column)`** asks an autocomplete provider; it fails with
   `AutocompleteError`.
-- **`parseColor`** fails with `InvalidColor`. `TuiError` is the union of the three.
+- **`parseColor`** fails with `InvalidColor`. `TuiError` is the union of the three, a Schema union (`TuiError.match`).
 
 ## What the whole process shares
 

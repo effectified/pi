@@ -115,20 +115,28 @@ export {
 	SessionCleanupError,
 } from "./errors.ts";
 export { withClientIdentity } from "./identity.ts";
+// The provider, model, tool call and session ids, branded. `ProviderId` replaces pi-ai's type of that name
+// (`KnownProvider | string`).
+export { ModelId, ProviderId, SessionId, ToolCallId } from "./ids.ts";
 export { parseJsonWithRepair } from "./json.ts";
-export { getModel, ModelRef } from "./model-ref.ts";
+export { fromPiModelRef, getModel, ModelRef, modelRefOf, type PiModelRef } from "./model-ref.ts";
 export { Models } from "./models.ts";
 export * as PiLanguageModel from "./pi-language-model.ts";
 export {
 	complete,
 	completeSimple,
 	type ErrorReason,
+	finalMessage,
 	type RequestOptions,
 	type ResponseEvent,
 	stream,
 	streamSimple,
 } from "./request.ts";
-export { requestKey } from "./request-key.ts";
+export { RequestKey, requestKey } from "./request-key.ts";
+// The numbers pi-ai reports of a response, as a record keeps them: finite, a non-finite one as 0.
+export { Reported, reported } from "./reported.ts";
+// A context for the Effects of a callback Pi keeps, so their spans do not hang under one that ended.
+export { withoutParentSpan } from "./run-in-pi.ts";
 export { type RetryNotifications, retryAssistantCall } from "./retry.ts";
 export { cleanupSessionResources, registerSessionResourceCleanup } from "./session-resources.ts";
 export { ANSWERED } from "./stop-reason.ts";

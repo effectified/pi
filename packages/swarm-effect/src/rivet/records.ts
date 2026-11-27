@@ -1,24 +1,26 @@
 // The driver's durable record of the forks it asked for, in the source actor's own SQLite: the intent written before
 // each fork call, the actor the call gave, and what destroying it answered.
 
-import { ActorInfo, ActorSql } from "@effectified/pi-durable-rivet";
-import { type Cause, Effect, Option, Predicate, Schema } from "effect";
+import { ActorId, ActorInfo, ActorSql } from "@effectified/pi-durable-rivet";
+import { Array as Arr, type Cause, Effect, Option, Predicate, Schema } from "effect";
 import * as Migrator from "effect/sql/Migrator";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";
 import * as SqlSchema from "effect/sql/SqlSchema";
+import { Bytes } from "../driver.ts";
+import { JobKey, SwarmId } from "../ids.ts";
 
 /**
  * The actor's database could not be read or written, or held a row of another shape: the same call may work later.
  * `cause` is what failed: Effect's `SqlError`, a `SchemaError` or a `MigrationError`.
  */
-export class RecordFailure extends Schema.TaggedError<RecordFailure>()("SwarmRecordFailure", {
-	reason: Schema.String,
-	cause: Schema.Defect(),
-}) {}
+export class RecordFailure extends Schema.TaggedError<RecordFailure, { readonly brand: unique symbol }>()(
+	"SwarmRecordFailure",
+	{ reason: Schema.String, cause: Schema.Defect() },
+) {}
 
 /**
- * What the record holds for one job of one swarm.
+ * What the record holds for one job of one swarm. Choose with `Held.match`.
  *
  * - `Intended`: a fork was asked for, and its call has not returned here: the fork may exist.
  * - `Made`: the fork is the actor `actorId`.
@@ -26,16 +28,23 @@ export class RecordFailure extends Schema.TaggedError<RecordFailure>()("SwarmRec
  *
  * `baseBytes` is the size of the source's database when the fork was first asked for, when it could be read.
  */
-export type Held =
-	| { readonly _tag: "Intended"; readonly baseBytes: Option.Option<number> }
-	| { readonly _tag: "Made"; readonly actorId: string; readonly baseBytes: Option.Option<number> }
-	| { readonly _tag: "Destroyed"; readonly bytesWritten: Option.Option<number> };
+export const Held = Schema.TaggedUnion({
+	Intended: { baseBytes: Schema.Option(Bytes) },
+	Made: { actorId: ActorId, baseBytes: Schema.Option(Bytes) },
+	Destroyed: { bytesWritten: Schema.Option(Bytes) },
+});
+
+/** What the record holds for one job of one swarm. */
+export type Held = typeof Held.Type;
+
+/** What the record holds for a fork that was asked for and not destroyed. Choose with `LiveHeld.match`. */
+export const LiveHeld = Schema.Union([Held.cases.Intended, Held.cases.Made]).pipe(Schema.toTaggedUnion("_tag"));
 
 /** A fork that was asked for and not destroyed, with the job it is for. */
-export interface Live {
-	readonly jobKey: string;
-	readonly held: Exclude<Held, { readonly _tag: "Destroyed" }>;
-}
+export const Live = Schema.Struct({ jobKey: JobKey, held: LiveHeld });
+
+/** A fork that was asked for and not destroyed, with the job it is for. */
+export type Live = typeof Live.Type;
 
 /**
  * Makes the record's tables, or brings them up to this version, through Effect's `Migrator` with a table of its own.
@@ -51,7 +60,7 @@ export const migrate: Effect.Effect<void, RecordFailure, ActorSql> = Effect.flat
 );
 
 /** What the record holds for the job, if a fork was ever asked for. */
-export function find(swarmId: string, jobKey: string): Effect.Effect<Option.Option<Held>, RecordFailure, ActorSql> {
+export function find(swarmId: SwarmId, jobKey: JobKey): Effect.Effect<Option.Option<Held>, RecordFailure, ActorSql> {
 	return recorded((sql) =>
 		Effect.map(
 			SqlSchema.findOneOption({
@@ -69,7 +78,7 @@ export function find(swarmId: string, jobKey: string): Effect.Effect<Option.Opti
  * Records that a fork is about to be asked for, with the size of this actor's database now: written before the fork
  * call, so a fork whose call never returns is still found. A job that has a record keeps it.
  */
-export function intend(swarmId: string, jobKey: string): Effect.Effect<void, RecordFailure, ActorSql> {
+export function intend(swarmId: SwarmId, jobKey: JobKey): Effect.Effect<void, RecordFailure, ActorSql> {
 	return recorded((sql) =>
 		Effect.gen(function* () {
 			const size = yield* SqlSchema.findOne({ Request: Schema.Void, Result: Size, execute: () => sql.unsafe(SIZE) })(
@@ -82,7 +91,7 @@ export function intend(swarmId: string, jobKey: string): Effect.Effect<void, Rec
 }
 
 /** Records the actor a fork call gave. A destroyed fork stays destroyed. */
-export function made(swarmId: string, jobKey: string, actorId: string): Effect.Effect<void, RecordFailure, ActorSql> {
+export function made(swarmId: SwarmId, jobKey: JobKey, actorId: ActorId): Effect.Effect<void, RecordFailure, ActorSql> {
 	return recorded(
 		(sql) =>
 			sql`UPDATE ${sql(TABLE)} SET actor_id = ${actorId}
@@ -92,8 +101,8 @@ export function made(swarmId: string, jobKey: string, actorId: string): Effect.E
 
 /** Records that the job's fork was destroyed, for good, with the bytes it wrote when they are known. */
 export function destroyed(
-	swarmId: string,
-	jobKey: string,
+	swarmId: SwarmId,
+	jobKey: JobKey,
 	bytesWritten: Option.Option<number>,
 ): Effect.Effect<void, RecordFailure, ActorSql> {
 	const row = { swarm_id: swarmId, job_key: jobKey, destroyed: 1, bytes_written: Option.getOrNull(bytesWritten) };
@@ -105,16 +114,16 @@ export function destroyed(
 }
 
 /** Every fork of the swarm that was asked for and not destroyed, in the order the forks were asked for. */
-export function live(swarmId: string): Effect.Effect<Array<Live>, RecordFailure, ActorSql> {
+export function live(swarmId: SwarmId): Effect.Effect<Array<Live>, RecordFailure, ActorSql> {
 	return recorded((sql) =>
 		Effect.map(
 			SqlSchema.findAll({
-				Request: Schema.String,
+				Request: SwarmId,
 				Result: Row,
 				execute: (swarm) =>
 					sql`SELECT ${sql.literal(COLUMNS)} FROM ${sql(TABLE)} WHERE swarm_id = ${swarm} AND destroyed = 0 ORDER BY rowid`,
 			})(swarmId),
-			(rows) => rows.map((row) => ({ jobKey: row.job_key, held: liveOf(row) })),
+			(rows) => Arr.map(rows, (row) => ({ jobKey: row.job_key, held: liveOf(row) })),
 		),
 	);
 }
@@ -143,7 +152,7 @@ export const claim: Effect.Effect<void, RecordFailure, ActorSql | ActorInfo> = E
  * The actor is a fork, and the record it holds was never made its own: the fork hygiene did not run in it. Its
  * record lists the forks of the actor it was copied from, and its storage holds that actor's coordinators, live.
  */
-export class Unclean extends Schema.TaggedError<Unclean>()("SwarmForkUnclean", {}) {
+export class Unclean extends Schema.TaggedError<Unclean, { readonly brand: unique symbol }>()("SwarmForkUnclean", {}) {
 	override get message(): string {
 		return "This actor is a fork whose swarm fork hygiene did not run: put forkHygiene of @effectified/pi-swarm/rivet into the forkHygiene of Actor.make";
 	}
@@ -165,7 +174,9 @@ export const requireClean: Effect.Effect<void, Unclean | RecordFailure, ActorSql
 					})(undefined),
 				),
 				(owner) =>
-					Option.exists(owner, (row) => row.actor_id === info.actorId) ? Effect.void : Effect.fail(new Unclean()),
+					Option.exists(owner, (row) => row.actor_id === info.actorId)
+						? Effect.void
+						: Effect.fail(Unclean.make({})),
 			),
 );
 
@@ -202,29 +213,33 @@ const MIGRATIONS = Migrator.fromRecord({
 });
 
 /** One job of one swarm, as the record is asked about it. */
-const Job = Schema.Struct({ swarmId: Schema.String, jobKey: Schema.String });
+const Job = Schema.Struct({ swarmId: SwarmId, jobKey: JobKey });
 
-/** One row of the record, decoded: SQLite gives `destroyed` as 0 or 1. */
+/** One row of the record, decoded: SQLite gives `destroyed` as 0 or 1, and sizes as integers. */
 const Row = Schema.Struct({
-	job_key: Schema.String,
-	actor_id: Schema.NullOr(Schema.String),
-	base_bytes: Schema.NullOr(Schema.Number),
+	job_key: JobKey,
+	actor_id: Schema.NullOr(ActorId),
+	base_bytes: Schema.NullOr(Bytes),
 	destroyed: Schema.Literals([0, 1]),
-	bytes_written: Schema.NullOr(Schema.Number),
+	bytes_written: Schema.NullOr(Bytes),
 });
 
 /** The size of the database; NULL where a pragma gives nothing. */
-const Size = Schema.Struct({ bytes: Schema.NullOr(Schema.Number) });
+const Size = Schema.Struct({ bytes: Schema.NullOr(Bytes) });
 
-const Owner = Schema.Struct({ actor_id: Schema.String });
+const Owner = Schema.Struct({ actor_id: ActorId });
 
 function heldOf(row: typeof Row.Type): Held {
-	return row.destroyed === 1 ? { _tag: "Destroyed", bytesWritten: Option.fromNullOr(row.bytes_written) } : liveOf(row);
+	return row.destroyed === 1
+		? Held.cases.Destroyed.make({ bytesWritten: Option.fromNullOr(row.bytes_written) })
+		: liveOf(row);
 }
 
 function liveOf(row: typeof Row.Type): Live["held"] {
 	const baseBytes = Option.fromNullOr(row.base_bytes);
-	return row.actor_id === null ? { _tag: "Intended", baseBytes } : { _tag: "Made", actorId: row.actor_id, baseBytes };
+	return row.actor_id === null
+		? Held.cases.Intended.make({ baseBytes })
+		: Held.cases.Made.make({ actorId: row.actor_id, baseBytes });
 }
 
 /** What a use of the record can fail with, before it is a `RecordFailure`. */
@@ -242,5 +257,5 @@ function failed(cause: Failure): RecordFailure {
 	// A trust boundary: what the driver threw is unknown to Effect's error, and kept as it is.
 	const said = cause._tag === "SqlError" ? cause.reason.cause : undefined;
 	const reason = Predicate.isError(said) ? `${cause.message}: ${said.message}` : cause.message;
-	return new RecordFailure({ reason, cause });
+	return RecordFailure.make({ reason, cause });
 }

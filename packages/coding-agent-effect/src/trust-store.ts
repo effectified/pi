@@ -17,15 +17,14 @@ export const WRITES = ["set", "setMany"] as const;
 
 /** A trust store: every method of Pi's `ProjectTrustStore` as an Effect, under its name. */
 export interface ProjectTrustStoreHandle
-	extends Reads<PiProjectTrustStore, (typeof READS)[number]>,
-		Writes<PiProjectTrustStore, (typeof WRITES)[number]> {
+	extends Reads<PiProjectTrustStore, (typeof READS)[number]>, Writes<PiProjectTrustStore, (typeof WRITES)[number]> {
 	/** Pi's store, for what takes one as it is. */
 	readonly pi: PiProjectTrustStore;
 }
 
 /** The project trust decisions of the program. */
 export class ProjectTrustStore extends Context.Service<ProjectTrustStore, ProjectTrustStoreHandle>()(
-	"@effectified/pi-coding-agent/ProjectTrustStore",
+	"@effectified/pi-coding-agent/trust-store/ProjectTrustStore",
 ) {
 	/** `ProjectTrustStore.make(agentDir)` as a Layer. */
 	static layer(agentDir: string): Layer.Layer<ProjectTrustStore, CodingAgentFailure> {
@@ -33,9 +32,10 @@ export class ProjectTrustStore extends Context.Service<ProjectTrustStore, Projec
 	}
 
 	/** Pi's store of the trust decisions kept in `agentDir`. */
-	static make(agentDir: string): Effect.Effect<ProjectTrustStoreHandle, CodingAgentFailure> {
-		return Effect.try({ try: () => ProjectTrustStore.fromPi(new PiProjectTrustStore(agentDir)), catch: fromPi });
-	}
+	static readonly make = Effect.fn("ProjectTrustStore.make")(
+		(agentDir: string): Effect.Effect<ProjectTrustStoreHandle, CodingAgentFailure> =>
+			Effect.try({ try: () => ProjectTrustStore.fromPi(new PiProjectTrustStore(agentDir)), catch: fromPi }),
+	);
 
 	/** Pi's store as a handle. */
 	static fromPi(pi: PiProjectTrustStore): ProjectTrustStoreHandle {
@@ -44,6 +44,7 @@ export class ProjectTrustStore extends Context.Service<ProjectTrustStore, Projec
 }
 
 /** Whether `cwd` holds project resources that run only once the project is trusted (extensions, settings, packages). */
-export function hasTrustRequiringProjectResources(cwd: string): Effect.Effect<boolean, CodingAgentFailure> {
-	return Effect.try({ try: () => piHasTrustRequiringProjectResources(cwd), catch: fromPi });
-}
+export const hasTrustRequiringProjectResources = Effect.fn("ProjectTrustStore.hasTrustRequiringProjectResources")(
+	(cwd: string): Effect.Effect<boolean, CodingAgentFailure> =>
+		Effect.try({ try: () => piHasTrustRequiringProjectResources(cwd), catch: fromPi }),
+);

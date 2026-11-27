@@ -329,7 +329,7 @@ describe("lifecycle", () => {
 });
 
 describe("reports", () => {
-	const Failing = Hook.afterResponse(() => Effect.fail(new Error("the prompt said: launch codes 0000")));
+	const Failing = Hook.afterResponse(() => Effect.die(new Error("the prompt said: launch codes 0000")));
 	const failing = Registry.layer([Extension.make({ name: "app", hooks: [Failing] })]);
 
 	it("gives every report of Pi to each subscriber, whole", async () => {
@@ -849,6 +849,21 @@ describe("commits", () => {
 		expect(elements[0]?.changes).toMatchObject([
 			{ type: "document", kind: "change", record: { kind: "pi.agent" }, value: { instructions: "After." } },
 		]);
+	});
+
+	it("is attached when `attachCommits` returns, however often the fiber yields: a commit right after it is an element", async () => {
+		const kinds = await runTest(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const root = yield* Harness.rootWith({ agent: AGENT });
+					const commits = yield* Harness.attachCommits;
+					yield* root.commit((tx) => tx.appendEntry(root.id, { kind: "test.after" }));
+					const [first] = yield* Stream.runCollect(Stream.take(commits, 1));
+					return first?.changes.flatMap((change) => (change.type === "entry" ? [change.value.kind] : []));
+				}),
+			).pipe(Effect.provide(harnessLayer({})), Effect.provideService(References.MaxOpsBeforeYield, 1)),
+		);
+		expect(kinds).toEqual(["test.after"]);
 	});
 
 	it("fails with Pi's session closed when the harness closes", async () => {

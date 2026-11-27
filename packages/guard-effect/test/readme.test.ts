@@ -1,7 +1,8 @@
 // The examples of README.md, run as they stand on the scripted model.
 
+import { fromPiModelRef } from "@effectified/pi-ai";
 import type { ConversationId } from "@effectified/pi-durable";
-import { Extension, Harness, Storage, Tool, type Tx } from "@effectified/pi-durable";
+import { Extension, Harness, Storage, Tool, ToolName, type Tx } from "@effectified/pi-durable";
 import { answer, ScriptedModels, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
@@ -33,7 +34,7 @@ const Read = Tool.make("read", {
 });
 const App = Extension.make({ name: "app", tools: [Search, Read] });
 
-const policy: Policy.Policy = {
+const policy: Policy.Encoded = {
 	...Policy.empty,
 	// No tool may be registered under these verbs, in snake or camel case.
 	denied: [Matcher.firstWord(["approve", "sign", "export", "send", "delete"])],
@@ -69,9 +70,12 @@ const ChildrenLive = Layer.effect(
 		return {
 			// In the child's creating commit: at most these tools, and never more than the child was set to.
 			created: (tx, child) =>
-				Conversations.grantIn(tx, child, { tools: ["read", "search"] }, { mode: "narrow" }).pipe(
-					Effect.provideService(Guard.Guard, guard),
-				),
+				Conversations.grantIn(
+					tx,
+					child,
+					{ tools: [ToolName.make("read"), ToolName.make("search")] },
+					{ mode: "narrow" },
+				).pipe(Effect.provideService(Guard.Guard, guard)),
 		};
 	}),
 );
@@ -89,7 +93,7 @@ const Delegate = Tool.make("delegate", {
 			const child = yield* api.commit((tx) =>
 				Effect.gen(function* () {
 					const made = yield* tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
-					yield* tx.configure(made.id, { tools: ["read"] });
+					yield* tx.configure(made.id, { tools: [ToolName.make("read")] });
 					yield* children.created(tx, made.id);
 					return made.id;
 				}),
@@ -131,7 +135,7 @@ describe("the guard in two parts of the README", () => {
 				const { model } = yield* TestHarness.agent;
 				const parent = yield* Conversations.create({
 					ownership: { kind: "ownerless" },
-					grant: { tools: ["delegate"], classification: "public" },
+					grant: { tools: [ToolName.make("delegate")], classification: "public" },
 					model,
 				});
 				yield* parent.prompt("Have record 42 read.");
@@ -168,7 +172,7 @@ describe("the quick start of the README", () => {
 			// Exactly these tools, this classification and this model, stored in the creating commit.
 			const conversation = yield* Conversations.create({
 				ownership: { kind: "ownerless" },
-				grant: { tools: ["search"], classification: "public" },
+				grant: { tools: [ToolName.make("search")], classification: "public" },
 				model,
 			});
 			yield* conversation.prompt("Find record 42 and read it.");
@@ -209,8 +213,8 @@ describe("the guarantees of the README", () => {
 		// Building it fails: DeniedTool { tool: "signDocument", extension: "office", rule: the firstWord matcher }
 		const error = await Effect.runPromise(Effect.flip(Effect.scoped(Layer.build(refusedRegistry))));
 		expect(error).toEqual(
-			new DeniedTool({
-				tool: "signDocument",
+			DeniedTool.make({
+				tool: ToolName.make("signDocument"),
 				extension: "office",
 				rule: Matcher.firstWord(["approve", "sign", "export", "send", "delete"]),
 			}),
@@ -222,16 +226,22 @@ describe("the guarantees of the README", () => {
 			Effect.gen(function* () {
 				const conversation = yield* Conversations.create({
 					ownership: { kind: "ownerless" },
-					grant: { tools: ["search"], classification: "public" },
+					grant: { tools: [ToolName.make("search")], classification: "public" },
 				});
 				const at = (yield* conversation.commit((tx) => tx.appendEntry(conversation.id, { kind: "app.note" }))).id;
 				// Change the grant of an existing conversation, in one commit.
-				yield* Conversations.grant(conversation, { tools: ["search", "read"], classification: "public" });
+				yield* Conversations.grant(conversation, {
+					tools: [ToolName.make("search"), ToolName.make("read")],
+					classification: "public",
+				});
 				// Or inside a commit of your own, for example the one that forks.
 				const forkId = yield* Harness.commit((tx) =>
 					Effect.gen(function* () {
 						const fork = yield* tx.forkConversation(conversation.id, at, { ownership: { kind: "ownerless" } });
-						yield* Conversations.grantIn(tx, fork.id, { tools: ["read"], classification: "public" });
+						yield* Conversations.grantIn(tx, fork.id, {
+							tools: [ToolName.make("read")],
+							classification: "public",
+						});
 						return fork.id;
 					}),
 				);
@@ -239,7 +249,7 @@ describe("the guarantees of the README", () => {
 				// Take tools away and never add one: `write` is not in the grant the conversation has, so it is left out.
 				yield* Conversations.grant(
 					conversation,
-					{ tools: ["read", "write"], classification: "public" },
+					{ tools: [ToolName.make("read"), ToolName.make("write")], classification: "public" },
 					{ mode: "narrow" },
 				);
 				const narrowed = yield* Conversations.granted(conversation.id); // { tools: ["read"], classification: "public" }
@@ -264,13 +274,12 @@ describe("the guarantees of the README", () => {
 		const error = await Effect.runPromise(
 			Effect.flip(
 				// Fails with ModelNotCleared { provider: "faux", modelId: "faux-1", classification: "confidential", ceiling: "internal" }
-				Classification.checkModel(policy, { provider: "faux", modelId: "faux-1" }, "confidential"),
+				Classification.checkModel(policy, fromPiModelRef({ provider: "faux", modelId: "faux-1" }), "confidential"),
 			),
 		);
 		expect(error).toEqual(
-			new ModelNotCleared({
-				provider: "faux",
-				modelId: "faux-1",
+			ModelNotCleared.make({
+				...fromPiModelRef({ provider: "faux", modelId: "faux-1" }),
 				classification: "confidential",
 				ceiling: "internal",
 			}),
@@ -285,7 +294,7 @@ describe("the guarantees of the README", () => {
 			Effect.gen(function* () {
 				const conversation = yield* Conversations.create({
 					ownership: { kind: "ownerless" },
-					grant: { tools: ["search"], classification: "public" },
+					grant: { tools: [ToolName.make("search")], classification: "public" },
 				});
 				const ungranted = yield* Harness.createConversation({ ownership: { kind: "ownerless" } });
 				// The read needs the `Harness` and the `Guard` only: here a guard that built no registry.

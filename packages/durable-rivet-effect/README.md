@@ -128,7 +128,8 @@ open again.
 
 Inside the actor, four services describe it:
 
-- `ActorInfo`: `actorId`, `name`, `key`, `namespace`, `forkChain` and `forkInput`.
+- `ActorInfo`: `actorId`, `name`, `key`, `namespace`, `forkChain` and `forkInput`, an `Identity` (a Schema). The
+  actor's id is an `ActorId`: Rivet's string, branded where it enters this package, so it never passes for another id.
 - `ActorSql`: the actor's SQLite as an Effect `SqlClient`, on the queue Pi's storage uses. A product that keeps
   tables of its own uses this one, so its transactions queue with Pi's, and names them outside `prefix` (see
   [Storage](#storage)).
@@ -155,7 +156,9 @@ const Agent = Actor.make("agent", {
 ## Actions
 
 ```ts
-class Refused extends Schema.TaggedError<Refused>()("Refused", { reason: Schema.String }) {}
+class Refused extends Schema.TaggedError<Refused, { readonly brand: unique symbol }>()("Refused", {
+	reason: Schema.String,
+}) {}
 
 const approve = Action.make({
 	input: Schema.Struct({ id: Schema.String }),
@@ -208,8 +211,10 @@ or `{}` for a handle that is only forked, asked for its status or destroyed. `Cl
 ## The caller
 
 `Client.layer(options)` provides `RivetClient`; `options` are rivetkit's `createClient` options (`endpoint`,
-`token`, `namespace`). A `Handle` names one actor by its id: a call reaches that actor or fails with `ActorGone`, and
-never creates a new one under the same key.
+`namespace`, `poolName`), with the engine's token as a secret: `token` is a `Redacted`, and `getToken` an Effect that
+gives one. `Client.layerConfig()` reads `RIVET_ENDPOINT`, `RIVET_TOKEN` (as `Config.Redacted`) and `RIVET_NAMESPACE`
+through the `ConfigProvider`. A `Handle` names one actor by its id, an `ActorId`: a call reaches that actor or fails
+with `ActorGone`, and never creates a new one under the same key. A handle built by hand takes `ActorId.make(id)`.
 
 | | |
 |---|---|
@@ -219,8 +224,10 @@ never creates a new one under the same key.
 | `Client.status(handle)`, `isIdle(handle)` | Live tasks, how many of them are background tasks of the product, and unsettled submissions; idle is no task and no submission |
 | `Client.waitForIdle(handle, { schedule })` | Succeeds once the harness is idle |
 | `Client.fork(source, { key, input, retry })` | A new actor on a copy of the source's storage |
-| `Client.lineage(handle)` | The forks behind the actor, and the input its own fork was made with |
-| `Client.destroy(handle)` | Destroys the actor: `{ existed, databaseBytes }` |
+| `Client.lineage(handle)` | The forks behind the actor, and the input its own fork was made with: a `Fork.Lineage` |
+| `Client.destroy(handle)` | Destroys the actor: `{ existed, databaseBytes }`, a `Client.Destroyed` |
+
+`fork` and `waitForIdle` also pipe: `source.pipe(Client.fork({ key }))`, `handle.pipe(Client.waitForIdle())`.
 
 **Idle** means no live task and no unsettled submission. A parked call and a sleeping task are live work, so a
 harness that waits for an approval is not idle, and is not forked. A fork asks for less than idle: see
@@ -231,7 +238,8 @@ harness that waits for an approval is not idle, and is not forked. A fork asks f
 is ahead, the next question waits for that time, so the questions do not keep a parked actor awake. A schedule that
 ends fails the wait with `NotIdle`.
 
-**Errors.** A closed union of tagged errors:
+**Errors.** A closed union of tagged errors, the Schema `HostError` (`CallError` for what any call can fail with):
+`HostError.match(error, { ... })` picks a handler per tag, `HostError.guards.NotIdle(error)` tests for one.
 
 | | |
 |---|---|
@@ -497,7 +505,8 @@ transaction, a Rivet transaction) while the actor was forked 24 times.
   rivetkit asks for do nothing, for the life of the process; every other `process.exit` works as before. It is for
   a process that hosts several engines, or other work beside its actors, which must not end because one engine
   died. `Host.serve` also takes `use`, rivetkit actor definitions of the product's own, registered beside `actors`.
-- **A deployment.** `Host.serve({ actors, endpoint })` registers the actors with an engine that runs already.
+- **A deployment.** `Host.serve({ actors, endpoint })` registers the actors with an engine that runs already; its
+  `token`, if the engine wants one, is a `Redacted`.
   Needing one: hosts on several machines, actors that survive the machine, and engine upgrades (the only source of
   `actor.fork_unavailable`). Several host processes on one machine serve a local engine as well: a child process that
   calls `Host.serve` with the local engine's `endpoint`, which is how `packages/thread-effect/test/hosts-suite.ts` kills them.

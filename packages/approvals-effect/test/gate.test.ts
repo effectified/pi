@@ -5,7 +5,7 @@ import { answer, ScriptedModels, toolCall } from "@effectified/pi-durable/testin
 import { Context, Effect, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-import { approve, decide, deny, type Policy, pending } from "../src/index.ts";
+import { approve, Digest, decide, deny, type Policy, pending } from "../src/index.ts";
 import { HOUR, parked, results, scene, shown, status, submit } from "./scene.ts";
 
 /** The digest the package must give, computed without it. */
@@ -149,7 +149,7 @@ describe("a call that needs approval", () => {
 			Effect.gen(function* () {
 				const { root } = yield* submit();
 				const request = yield* parked(published);
-				const other = yield* approve({ digest: sha256('{"text":"bye"}') }, "ada");
+				const other = yield* approve({ digest: Digest.Digest.make(sha256('{"text":"bye"}')) }, "ada");
 				const error = yield* Effect.flip(decide(request, other));
 				const after = { status: yield* status(request.task), pending: yield* pending };
 				yield* root.abort();

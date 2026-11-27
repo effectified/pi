@@ -4,14 +4,14 @@
 import type { FauxResponseFactory } from "@earendil-works/pi-ai";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { Shares } from "@effectified/pi-budget";
-import { Harness } from "@effectified/pi-durable";
+import { Harness, ToolName } from "@effectified/pi-durable";
 import { answer, held } from "@effectified/pi-durable/testing";
 import { Conversations } from "@effectified/pi-guard";
 import * as Review from "@effectified/pi-review";
 import * as Swarm from "@effectified/pi-swarm";
 import { Effect, Option, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { Swarms, ThreadNotFound, Threads } from "../src/index.ts";
+import { Swarms, ThreadKey, ThreadNotFound, Threads } from "../src/index.ts";
 import {
 	Covers,
 	committed,
@@ -35,9 +35,9 @@ const scripted: FauxResponseFactory = (context) => {
 };
 
 const JOBS = [
-	{ key: "rust", input: { topic: "Rust" } },
-	{ key: "go", input: { topic: "Go" } },
-	{ key: "zig", input: { topic: "Zig" } },
+	{ key: Swarm.JobKey.make("rust"), input: { topic: "Rust" } },
+	{ key: Swarm.JobKey.make("go"), input: { topic: "Go" } },
+	{ key: Swarm.JobKey.make("zig"), input: { topic: "Zig" } },
 ];
 
 describe("a swarm of a primed thread", () => {
@@ -55,23 +55,23 @@ describe("a swarm of a primed thread", () => {
 				const swarms = yield* Swarms.Swarms;
 				const primed = yield* threads.work(work("t1", "Read this record: ...", ["lookup"]));
 				const plan = {
-					id: "covers-1",
-					thread: "t1",
+					id: Swarm.SwarmId.make("covers-1"),
+					thread: ThreadKey.make("t1"),
 					jobs: JOBS,
 					cap: 2,
 					onFailure: "collect",
-					pins: ["rust"],
+					pins: [Swarm.JobKey.make("rust")],
 					// One tool the thread holds and one it does not: a fork never gets more than its thread has.
-					fork: { tools: ["lookup", "write_note"], cap: FORK.cap },
+					fork: { tools: [ToolName.make("lookup"), ToolName.make("write_note")], cap: FORK.cap },
 				} as const;
 				const started = yield* swarms.run(Covers, plan);
 				// A second start is the same swarm: its plan and the allowance of its forks stand.
 				const again = yield* swarms.run(Covers, { ...plan, fork: { tools: [], cap: 1n } });
-				const during = yield* swarms.probe("covers-1");
-				const outcome = yield* swarms.result(Covers, "covers-1");
-				const after = yield* swarms.probe("covers-1");
-				const kept = yield* Swarm.ForkDriver.use((driver) => driver.list("covers-1"));
-				const destroyed = yield* swarms.destroyFork("covers-1", "rust");
+				const during = yield* swarms.probe(Swarm.SwarmId.make("covers-1"));
+				const outcome = yield* swarms.result(Covers, Swarm.SwarmId.make("covers-1"));
+				const after = yield* swarms.probe(Swarm.SwarmId.make("covers-1"));
+				const kept = yield* Swarm.ForkDriver.use((driver) => driver.list(Swarm.SwarmId.make("covers-1")));
+				const destroyed = yield* swarms.destroyFork(Swarm.SwarmId.make("covers-1"), Swarm.JobKey.make("rust"));
 				// What the storage says of each fork: its agent, its grant, its share and its review state.
 				const forks = yield* Effect.forEach(outcome.forks, (fork) =>
 					Effect.gen(function* () {
@@ -97,7 +97,7 @@ describe("a swarm of a primed thread", () => {
 				);
 				return {
 					primed,
-					source: (yield* threads.conversation("t1")).id,
+					source: (yield* threads.conversation(ThreadKey.make("t1"))).id,
 					started,
 					again,
 					during,
@@ -105,11 +105,11 @@ describe("a swarm of a primed thread", () => {
 					after,
 					kept: kept.map((fork) => fork.jobKey),
 					destroyed,
-					twice: yield* swarms.destroyFork("covers-1", "rust"),
-					left: yield* Swarm.ForkDriver.use((driver) => driver.list("covers-1")),
+					twice: yield* swarms.destroyFork(Swarm.SwarmId.make("covers-1"), Swarm.JobKey.make("rust")),
+					left: yield* Swarm.ForkDriver.use((driver) => driver.list(Swarm.SwarmId.make("covers-1"))),
 					forks,
-					spent: yield* swarms.spent("covers-1"),
-					thread: yield* threads.outcome("t1"),
+					spent: yield* swarms.spent(Swarm.SwarmId.make("covers-1")),
+					thread: yield* threads.outcome(ThreadKey.make("t1")),
 					// The swarm was started the moment the thread ended: its outcome was read for its sink a moment
 					// later, without waiting for the swarm.
 					events: yield* told(state, reached("Reviewed")),
@@ -179,15 +179,20 @@ describe("a swarm of a primed thread", () => {
 		// A fork draws on the lease under its own share: its request is attributed to its conversation.
 		const reserved = reservations(state);
 		const [rust, go, zig] = result.forks.map((fork) => fork.id);
-		expect(
-			reserved.map(({ request, settlements }) => [request.model, request.conversation, settlements.length]),
-		).toEqual([
+		const rows = reserved.map(({ request, settlements }) => [
+			request.model,
+			request.conversation,
+			settlements.length,
+		]);
+		expect(rows.slice(0, 2)).toEqual([
 			["author", result.source, 1],
 			["reviewer", result.source, 1],
-			["author", rust, 1],
-			["author", go, 1],
-			["author", zig, 1],
 		]);
+		// The forks run at once: their requests reach the lease in whatever order they are made.
+		const byConversation = (a: ReadonlyArray<unknown>, b: ReadonlyArray<unknown>) => Number(a[1]) - Number(b[1]);
+		expect(rows.slice(2).sort(byConversation)).toEqual(
+			[rust, go, zig].map((id) => ["author", id, 1]).sort(byConversation),
+		);
 		const spentBy = (conversation: number | undefined) =>
 			reserved
 				.filter(({ request }) => request.conversation === conversation)
@@ -234,17 +239,17 @@ describe("a swarm of a primed thread", () => {
 				yield* threads.work(work("t1", "Read this record: ...", []));
 				const [job] = JOBS;
 				yield* swarms.run(Covers, {
-					id: "covers-4",
-					thread: "t1",
+					id: Swarm.SwarmId.make("covers-4"),
+					thread: ThreadKey.make("t1"),
 					jobs: [job],
 					cap: 1,
 					onFailure: "collect",
 					fork: { tools: [], cap: 1n },
 				});
 				return {
-					source: (yield* threads.conversation("t1")).id,
-					outcome: yield* swarms.result(Covers, "covers-4"),
-					spent: yield* swarms.spent("covers-4"),
+					source: (yield* threads.conversation(ThreadKey.make("t1"))).id,
+					outcome: yield* swarms.result(Covers, Swarm.SwarmId.make("covers-4")),
+					spent: yield* swarms.spent(Swarm.SwarmId.make("covers-4")),
 				};
 			}),
 		);
@@ -273,10 +278,16 @@ describe("a swarm of a primed thread", () => {
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				yield* threads.work(work("t1", "Read this record: ...", []));
-				const source = (yield* threads.conversation("t1")).id;
+				const source = (yield* threads.conversation(ThreadKey.make("t1"))).id;
 				// Started past the composition's service: the fork setup finds no allowance, and fails closed.
-				yield* Swarm.start(Covers, { id: "covers-5", source, jobs: JOBS, cap: 2, onFailure: "collect" });
-				const outcome = yield* Swarm.result(Covers, "covers-5");
+				yield* Swarm.start(Covers, {
+					id: Swarm.SwarmId.make("covers-5"),
+					source,
+					jobs: JOBS,
+					cap: 2,
+					onFailure: "collect",
+				});
+				const outcome = yield* Swarm.result(Covers, Swarm.SwarmId.make("covers-5"));
 				const owned = yield* Harness.commit((tx) => tx.scanConversations({ ownerConversationId: source }, 10));
 				return { outcome, forks: owned.items.length };
 			}),
@@ -306,8 +317,8 @@ describe("a swarm of a primed thread", () => {
 				const swarms = yield* Swarms.Swarms;
 				yield* threads.work(work("t1", "Read this record: ...", []));
 				yield* swarms.run(Covers, {
-					id: "covers-2",
-					thread: "t1",
+					id: Swarm.SwarmId.make("covers-2"),
+					thread: ThreadKey.make("t1"),
 					jobs: JOBS,
 					cap: 2,
 					onFailure: "collect",
@@ -315,14 +326,14 @@ describe("a swarm of a primed thread", () => {
 				});
 				// Two forks work, under the cap; the third job has not started.
 				yield* Effect.forEach(stuck, (turn) => turn.requested);
-				const cancelling = yield* swarms.cancel("covers-2");
-				const outcome = yield* swarms.result(Covers, "covers-2");
+				const cancelling = yield* swarms.cancel(Swarm.SwarmId.make("covers-2"));
+				const outcome = yield* swarms.result(Covers, Swarm.SwarmId.make("covers-2"));
 				return {
 					cancelling,
 					outcome,
-					probe: yield* swarms.probe("covers-2"),
-					again: yield* swarms.cancel("covers-2"),
-					spent: yield* swarms.spent("covers-2"),
+					probe: yield* swarms.probe(Swarm.SwarmId.make("covers-2")),
+					again: yield* swarms.cancel(Swarm.SwarmId.make("covers-2")),
+					spent: yield* swarms.spent(Swarm.SwarmId.make("covers-2")),
 				};
 			}),
 		);
@@ -362,15 +373,15 @@ describe("a swarm of a primed thread", () => {
 				// The thread keeps a swarm's id before the swarm is stored, and this one never is.
 				const refused = yield* Effect.flip(
 					swarms.run(Covers, {
-						id: "covers-5",
-						thread: "t1",
+						id: Swarm.SwarmId.make("covers-5"),
+						thread: ThreadKey.make("t1"),
 						jobs: [JOBS[0], JOBS[0]],
 						cap: 1,
 						onFailure: "fail",
 						fork: FORK,
 					}),
 				);
-				return { primed, refused: refused._tag, thread: yield* threads.outcome("t1") };
+				return { primed, refused: refused._tag, thread: yield* threads.outcome(ThreadKey.make("t1")) };
 			}),
 		);
 		expect(result.refused).toBe("InvalidPlan");
@@ -387,23 +398,23 @@ describe("a swarm of a primed thread", () => {
 				return {
 					run: yield* Effect.flip(
 						swarms.run(Covers, {
-							id: "covers-3",
-							thread: "nobody",
+							id: Swarm.SwarmId.make("covers-3"),
+							thread: ThreadKey.make("nobody"),
 							jobs: JOBS,
 							cap: 1,
 							onFailure: "fail",
 							fork: FORK,
 						}),
 					),
-					probe: yield* Effect.flip(swarms.probe("covers-3")),
-					cancel: yield* Effect.flip(swarms.cancel("covers-3")),
-					spent: yield* Effect.flip(swarms.spent("covers-3")),
+					probe: yield* Effect.flip(swarms.probe(Swarm.SwarmId.make("covers-3"))),
+					cancel: yield* Effect.flip(swarms.cancel(Swarm.SwarmId.make("covers-3"))),
+					spent: yield* Effect.flip(swarms.spent(Swarm.SwarmId.make("covers-3"))),
 				};
 			}),
 		);
-		expect(result.run).toEqual(new ThreadNotFound({ thread: "nobody" }));
-		expect(result.probe).toEqual(new Swarm.SwarmNotFound({ swarmId: "covers-3" }));
-		expect(result.cancel).toEqual(new Swarm.SwarmNotFound({ swarmId: "covers-3" }));
-		expect(result.spent).toEqual(new Swarm.SwarmNotFound({ swarmId: "covers-3" }));
+		expect(result.run).toEqual(new ThreadNotFound({ thread: ThreadKey.make("nobody") }));
+		expect(result.probe).toEqual(new Swarm.SwarmNotFound({ swarmId: Swarm.SwarmId.make("covers-3") }));
+		expect(result.cancel).toEqual(new Swarm.SwarmNotFound({ swarmId: Swarm.SwarmId.make("covers-3") }));
+		expect(result.spent).toEqual(new Swarm.SwarmNotFound({ swarmId: Swarm.SwarmId.make("covers-3") }));
 	});
 });

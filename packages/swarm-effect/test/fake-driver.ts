@@ -37,6 +37,8 @@ export interface FakeOptions {
 	readonly runFails?: (jobKey: string, call: number) => boolean;
 	readonly jobFails?: (jobKey: string, call: number) => boolean;
 	readonly destroyFails?: (jobKey: string, call: number) => boolean;
+	/** The hint of a destroy call that fails, in milliseconds. Default 1. */
+	readonly destroyHint?: (jobKey: string) => number;
 	readonly listFails?: (call: number) => boolean;
 	/** The bytes a destroyed fork reports. Default: 1000 plus its number. */
 	readonly bytes?: (jobKey: string) => Option.Option<number>;
@@ -54,8 +56,8 @@ interface Request {
 
 /** One fork of the fake. Job keys are unique across the swarms of a test, so a fork is held under its job key. */
 interface FakeFork {
-	readonly swarmId: string;
-	readonly forkId: string;
+	readonly swarmId: Swarm.SwarmId;
+	readonly forkId: Swarm.ForkId;
 	readonly requests: Map<string, Request>;
 }
 
@@ -78,6 +80,8 @@ export interface Fake {
 	readonly cancelled: Array<string>;
 	readonly destroyed: Array<string>;
 	readonly destroyCalls: Map<string, number>;
+	/** Per job key: the time of the `Clock` at each `destroy` call, in order. */
+	readonly destroyTimes: Map<string, Array<number>>;
 	/** The most jobs that were accepted and not settled at once. */
 	maxLive: number;
 	listCalls: number;
@@ -127,14 +131,14 @@ export function fake(options: FakeOptions = {}): Fake {
 		state.ats.set(request.jobKey, request.at);
 		state.forks.set(request.jobKey, {
 			swarmId: request.swarmId,
-			forkId: `fake-${state.created.size}-${request.jobKey}`,
+			forkId: Swarm.ForkId.make(`fake-${state.created.size}-${request.jobKey}`),
 			requests: new Map(),
 		});
 		return "created";
 	};
-	const forkOf = (swarmId: string, jobKey: string, fork: FakeFork): Swarm.Fork => ({
+	const forkOf = (swarmId: Swarm.SwarmId, jobKey: string, fork: FakeFork): Swarm.Fork => ({
 		swarmId,
-		jobKey,
+		jobKey: Swarm.JobKey.make(jobKey),
 		forkId: fork.forkId,
 	});
 	const found = (fork: Swarm.Fork): Effect.Effect<FakeFork, Swarm.ForkGone> =>
@@ -171,7 +175,7 @@ export function fake(options: FakeOptions = {}): Fake {
 					if (options.forkAnswerLost?.(request.jobKey, call) === true) {
 						return Effect.fail(later("fork", "the answer was lost"));
 					}
-					return found({ swarmId: request.swarmId, jobKey: request.jobKey, forkId: "" }).pipe(
+					return found({ swarmId: request.swarmId, jobKey: request.jobKey, forkId: Swarm.ForkId.make("") }).pipe(
 						Effect.map((fork) => forkOf(request.swarmId, request.jobKey, fork)),
 					);
 				}),
@@ -240,10 +244,15 @@ export function fake(options: FakeOptions = {}): Fake {
 			),
 		destroy: (fork) =>
 			told(
-				Effect.suspend(() => {
+				Effect.flatMap(Clock.currentTimeMillis, (now) => {
 					const call = count(state.destroyCalls, fork.jobKey);
-					if (options.destroyFails?.(fork.jobKey, call) === true)
-						return Effect.fail(later("destroy", "timed out"));
+					state.destroyTimes.set(fork.jobKey, [...(state.destroyTimes.get(fork.jobKey) ?? []), now]);
+					if (options.destroyFails?.(fork.jobKey, call) === true) {
+						const afterMillis = options.destroyHint?.(fork.jobKey) ?? 1;
+						return Effect.fail(
+							new Swarm.ForkRetryLater({ operation: "destroy", reason: "timed out", afterMillis }),
+						);
+					}
 					const existed = state.forks.delete(fork.jobKey);
 					if (existed) state.destroyed.push(fork.jobKey);
 					const bytes = options.bytes?.(fork.jobKey) ?? Option.some(1000 + state.destroyed.length);
@@ -275,6 +284,7 @@ export function fake(options: FakeOptions = {}): Fake {
 		cancelled: [],
 		destroyed: [],
 		destroyCalls: new Map(),
+		destroyTimes: new Map(),
 		maxLive: 0,
 		listCalls: 0,
 		forks: new Map(),

@@ -1,19 +1,27 @@
 import { isContextOverflow, isRetryableAssistantError } from "@earendil-works/pi-ai";
+import { ModelId, ProviderId } from "@effectified/pi-ai";
 import { fauxAssistantMessage } from "@effectified/pi-ai/testing";
+import { Conversation } from "@effectified/pi-durable";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { LeaseFenced, PriceMissing, type Refusal, refusalOf, ShareExhausted } from "../src/index.ts";
-import { refusalText } from "../src/refusal.ts";
+import { refusalText as textOf } from "../src/refusal.ts";
 
 const read = (detail: unknown) => Effect.runSync(refusalOf(detail));
+
+const refusalText = (refusal: Refusal) => Effect.runSync(textOf(refusal));
 
 /** Words pi-ai retries a request for, and words it compacts and sends a request again for. */
 const HOSTILE = "429 rate limit overloaded timeout ECONNRESET: prompt is too long, maximum context length exceeded";
 
 const REFUSALS: ReadonlyArray<Refusal> = [
-	new LeaseFenced({ reason: HOSTILE }),
-	new PriceMissing({ provider: HOSTILE, model: "timeout-503" }),
-	new ShareExhausted({ conversation: 7, cap: 1_000_000n, settled: 12_345_678_901_234_567_890n }),
+	LeaseFenced.make({ reason: HOSTILE }),
+	PriceMissing.make({ provider: ProviderId.make(HOSTILE), model: ModelId.make("timeout-503") }),
+	ShareExhausted.make({
+		conversation: Conversation.Id.make(7),
+		cap: 1_000_000n,
+		settled: 12_345_678_901_234_567_890n,
+	}),
 ];
 
 describe("a refusal as the text of an error", () => {

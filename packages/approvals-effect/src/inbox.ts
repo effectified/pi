@@ -10,5 +10,5 @@ import type { Request } from "./request.ts";
  * `beforeTool` hook does.
  */
 export class Inbox extends Context.Service<Inbox, { readonly publish: (request: Request) => Effect.Effect<void> }>()(
-	"@effectified/pi-approvals/Inbox",
+	"@effectified/pi-approvals/inbox",
 ) {}

@@ -10,7 +10,8 @@ import type {
 	ExtensionToolContext as PiToolContext,
 	ExtensionUIContext as PiUi,
 } from "@earendil-works/pi-coding-agent";
-import { Context, Effect } from "effect";
+import type { ToolName } from "@effectified/pi-agent";
+import { Context, Effect, Schema } from "effect";
 import { type CodingAgentFailure, fromPi } from "./errors.ts";
 import { fromPiRegistry, type ModelRegistryHandle } from "./model-registry.ts";
 import { SessionManager, type SessionManagerHandle, type SessionView, view } from "./session-manager.ts";
@@ -106,36 +107,41 @@ export interface ToolContextHandle {
 	 * Interrupting the fiber aborts the nested call.
 	 */
 	readonly executeTool: (
-		name: string,
+		name: ToolName,
 		args: unknown,
 	) => Effect.Effect<Awaited<ReturnType<PiToolContext["executeTool"]>>, CodingAgentFailure>;
 }
 
 /** The result of a command's session change: `cancelled` when an extension refused it. */
-export interface Replacement {
-	readonly cancelled: boolean;
-}
+export const Replacement = Schema.Struct({ cancelled: Schema.Boolean });
+
+/** The result of a command's session change. */
+export type Replacement = typeof Replacement.Type;
 
 /**
- * What runs in the session a command replaced the current one with: its contexts are the services. A failure fails
- * the replacement's Effect, as a throw rejects Pi's.
+ * What runs in the session a command replaced the current one with: its contexts are the services. A failure (`E`)
+ * fails the replacement's Effect, as a throw rejects Pi's.
  */
-export type InNewSession = Effect.Effect<void, unknown, ExtensionContext | CommandContext | ReplacedSessionContext>;
+export type InNewSession<E = unknown> = Effect.Effect<
+	void,
+	E,
+	ExtensionContext | CommandContext | ReplacedSessionContext
+>;
 
 /** The context of a command: the session controls only a user's command may use. */
 export interface CommandContextHandle {
 	readonly getSystemPromptOptions: Effect.Effect<ReturnType<PiCommandContext["getSystemPromptOptions"]>>;
 	readonly waitForIdle: Effect.Effect<void, CodingAgentFailure>;
 	/** Starts a new session. `setup` writes its first entries; `withSession` runs in the new session. */
-	readonly newSession: (options?: {
+	readonly newSession: <E = never>(options?: {
 		readonly parentSession?: string;
 		readonly setup?: (sessionManager: SessionManagerHandle) => Effect.Effect<void>;
-		readonly withSession?: InNewSession;
+		readonly withSession?: InNewSession<E>;
 	}) => Effect.Effect<Replacement, CodingAgentFailure>;
 	/** Forks the session at the entry `entryId` into a new session file; `withSession` runs in the fork. */
-	readonly fork: (
+	readonly fork: <E = never>(
 		entryId: string,
-		options?: { readonly position?: "before" | "at"; readonly withSession?: InNewSession },
+		options?: { readonly position?: "before" | "at"; readonly withSession?: InNewSession<E> },
 	) => Effect.Effect<Replacement, CodingAgentFailure>;
 	/** Moves to another point of the session tree. */
 	readonly navigateTree: (
@@ -143,9 +149,9 @@ export interface CommandContextHandle {
 		options?: Parameters<PiCommandContext["navigateTree"]>[1],
 	) => Effect.Effect<Replacement, CodingAgentFailure>;
 	/** Switches to the session stored in `sessionPath`; `withSession` runs in it. */
-	readonly switchSession: (
+	readonly switchSession: <E = never>(
 		sessionPath: string,
-		options?: { readonly withSession?: InNewSession },
+		options?: { readonly withSession?: InNewSession<E> },
 	) => Effect.Effect<Replacement, CodingAgentFailure>;
 	/** Reloads extensions, skills, prompts, themes and context files. */
 	readonly reload: Effect.Effect<void, CodingAgentFailure>;
@@ -176,27 +182,27 @@ export interface ProjectTrustContextHandle {
 
 /** The context of the call an extension's handler, tool or command is running in. */
 export class ExtensionContext extends Context.Service<ExtensionContext, ExtensionContextHandle>()(
-	"@effectified/pi-coding-agent/ExtensionContext",
+	"@effectified/pi-coding-agent/extension-context/ExtensionContext",
 ) {}
 
 /** The context of the tool call a tool's handler is running in. */
 export class ToolContext extends Context.Service<ToolContext, ToolContextHandle>()(
-	"@effectified/pi-coding-agent/ToolContext",
+	"@effectified/pi-coding-agent/extension-context/ToolContext",
 ) {}
 
 /** The context of the command a command's handler is running in. */
 export class CommandContext extends Context.Service<CommandContext, CommandContextHandle>()(
-	"@effectified/pi-coding-agent/CommandContext",
+	"@effectified/pi-coding-agent/extension-context/CommandContext",
 ) {}
 
 /** The context of the session a command's `withSession` runs in. */
 export class ReplacedSessionContext extends Context.Service<ReplacedSessionContext, ReplacedSessionContextHandle>()(
-	"@effectified/pi-coding-agent/ReplacedSessionContext",
+	"@effectified/pi-coding-agent/extension-context/ReplacedSessionContext",
 ) {}
 
 /** The context of the `project_trust` question an extension's handler answers. */
 export class ProjectTrustContext extends Context.Service<ProjectTrustContext, ProjectTrustContextHandle>()(
-	"@effectified/pi-coding-agent/ProjectTrustContext",
+	"@effectified/pi-coding-agent/extension-context/ProjectTrustContext",
 ) {}
 
 /** Pi's project trust context as a handle. */
@@ -222,7 +228,7 @@ export function fromPiContext(pi: PiContext): ExtensionContextHandle {
 		hasPendingMessages: Effect.sync(() => pi.hasPendingMessages()),
 		shutdown: Effect.sync(() => pi.shutdown()),
 		getContextUsage: Effect.sync(() => pi.getContextUsage()),
-		compact: (customInstructions) =>
+		compact: Effect.fn("ExtensionContext.compact")((customInstructions?: string) =>
 			Effect.callback<CompactionResult, CodingAgentFailure>((resume) => {
 				pi.compact({
 					...(customInstructions === undefined ? {} : { customInstructions }),
@@ -230,6 +236,7 @@ export function fromPiContext(pi: PiContext): ExtensionContextHandle {
 					onError: (error) => resume(Effect.fail(fromPi(error))),
 				});
 			}),
+		),
 		getSystemPrompt: Effect.sync(() => pi.getSystemPrompt()),
 	};
 }
@@ -238,22 +245,25 @@ export function fromPiContext(pi: PiContext): ExtensionContextHandle {
 export function fromPiToolContext(pi: PiToolContext): ToolContextHandle {
 	return {
 		tools: Effect.sync(() => pi.tools),
-		executeTool: (name, args) =>
+		executeTool: Effect.fn("ToolContext.executeTool")((name: ToolName, args: unknown) =>
 			Effect.tryPromise({ try: (signal) => pi.executeTool(name, args, { signal }), catch: fromPi }),
+		),
 	};
 }
 
 /** Pi's command context as a handle of its own members. */
 export function fromPiCommandContext(pi: PiCommandContext): CommandContextHandle {
-	const call = <A>(start: () => Promise<A>) => Effect.tryPromise({ try: start, catch: fromPi });
-	const inNew = (withSession: InNewSession | undefined) =>
+	// Pi's asynchronous members, each a span named for it.
+	const call = <A>(name: string, start: () => Promise<A>) =>
+		Effect.tryPromise({ try: start, catch: fromPi }).pipe(Effect.withSpan(`CommandContext.${name}`));
+	const inNew = <E>(withSession: InNewSession<E> | undefined) =>
 		withSession === undefined ? {} : { withSession: inNewSession(withSession) };
 	return {
 		getSystemPromptOptions: Effect.sync(() => pi.getSystemPromptOptions()),
-		waitForIdle: call(() => pi.waitForIdle()),
+		waitForIdle: call("waitForIdle", () => pi.waitForIdle()),
 		newSession: (options) => {
 			const setup = options?.setup;
-			return call(() =>
+			return call("newSession", () =>
 				pi.newSession({
 					...(options?.parentSession === undefined ? {} : { parentSession: options.parentSession }),
 					...(setup === undefined
@@ -266,15 +276,16 @@ export function fromPiCommandContext(pi: PiCommandContext): CommandContextHandle
 			);
 		},
 		fork: (entryId, options) =>
-			call(() =>
+			call("fork", () =>
 				pi.fork(entryId, {
 					...(options?.position === undefined ? {} : { position: options.position }),
 					...inNew(options?.withSession),
 				}),
 			),
-		navigateTree: (targetId, options) => call(() => pi.navigateTree(targetId, options)),
-		switchSession: (sessionPath, options) => call(() => pi.switchSession(sessionPath, inNew(options?.withSession))),
-		reload: call(() => pi.reload()),
+		navigateTree: (targetId, options) => call("navigateTree", () => pi.navigateTree(targetId, options)),
+		switchSession: (sessionPath, options) =>
+			call("switchSession", () => pi.switchSession(sessionPath, inNew(options?.withSession))),
+		reload: call("reload", () => pi.reload()),
 	};
 }
 
@@ -290,12 +301,12 @@ export function inCommand<A, E, R>(
 }
 
 /** Pi's `withSession` callback that runs `withSession` in the session Pi replaced the current one with. */
-export function inNewSession(withSession: InNewSession): (ctx: PiReplacedSessionContext) => Promise<void> {
+export function inNewSession<E>(withSession: InNewSession<E>): (ctx: PiReplacedSessionContext) => Promise<void> {
 	return (ctx) => runIn(withSession, ctx);
 }
 
 /** Runs `withSession` in the session Pi replaced the current one with, whose context is `ctx`. */
-function runIn(withSession: InNewSession, ctx: PiReplacedSessionContext): Promise<void> {
+function runIn<E>(withSession: InNewSession<E>, ctx: PiReplacedSessionContext): Promise<void> {
 	const replaced: ReplacedSessionContextHandle = {
 		sendMessage: (message, options) =>
 			Effect.tryPromise({ try: () => ctx.sendMessage(message, options), catch: fromPi }),

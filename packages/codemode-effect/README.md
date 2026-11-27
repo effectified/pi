@@ -8,7 +8,7 @@ JavaScript runs in a QuickJS VM (WebAssembly) whose only capability is calling t
 - An execution is an `Effect`; a deterministic run reports its events as a `Stream`.
 - The tools a script calls are tools of [`@effectified/pi-agent`](../agent-effect/README.md): `Schema` parameters
   and results, handlers that are Effects.
-- One closed union of tagged errors.
+- One closed union of tagged errors, each keeping what Pi threw as its `cause`.
 - Interrupting a fiber aborts the execution.
 
 It adds no behaviour of its own: what pi-codemode does is what happens. Built for pi-codemode 1.6.1.
@@ -99,14 +99,16 @@ const sum = Effect.gen(function* () {
 });
 ```
 
-`sandbox.register` and `sandbox.unregister` change the tools of later executions. `ScriptTool.fromAgent` gives Pi's
+`sandbox.register` and `sandbox.unregister` change the tools of later executions; `unregister` takes the tool's
+`ToolName` (`sandbox.unregister(Lookup.name)`). `ScriptTool.fromAgent` gives Pi's
 tool for a tool, for `renderDeclarations` without a sandbox. `sandbox.pi` is Pi's own sandbox, for what takes one as
 it is, such as Pi Durable's code mode tool.
 
 ## Interruption
 
 Interrupting the fiber that waits for an execution aborts it: the tools' handlers are interrupted, the VM is asked to
-stop, and the interruption is done once Pi settled the execution. Closing the sandbox's scope aborts every execution
+stop, and the interruption is done once Pi settled the execution. Each execution has a span, `Sandbox.execute`, and
+each tool call one of its own, `Tool.execute`. Closing the sandbox's scope aborts every execution
 that still runs; their results have `kind: "aborted"`.
 
 ```ts
@@ -147,7 +149,7 @@ both from the `Clock` unless given; its randomness comes from `seed`.
 
 ```ts
 import { Stream } from "effect";
-import { InlineSandbox, Wasm } from "@effectified/pi-codemode";
+import { InlineSandbox, Run, Wasm } from "@effectified/pi-codemode";
 
 const replayable = Effect.gen(function* () {
 	const sandbox = yield* InlineSandbox.make({ wasm: yield* Wasm.load() });
@@ -155,36 +157,37 @@ const replayable = Effect.gen(function* () {
 		seed: 7,
 		tools: [{ name: "read" }],
 	});
-	let seq = 0;
-	yield* Effect.forkScoped(
-		Stream.runForEach(run.events, (event) =>
-			event._tag === "Call"
-				? run.deliver({ seq: ++seq, id: event.call.id, outcome: { ok: true, value: "contents" } })
-				: Effect.void,
-		),
-	);
+				const wasm = yield* Wasm.load();
+				const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+				const names: Array<string> = [];
 	return yield* run.result; // { ok: true, value: "contents", during: { seq: 1, issued: 1 }, ... }
 });
 ```
 
 A run belongs to the scope it was started in: closing it aborts the run. `deliver` fails with `DeliveryRejected` when
-Pi refuses an answer; `start` with `RunRejected` for options Pi refuses.
+Pi refuses an answer; `start` with `RunRejected` for options Pi refuses. The events (`Run.Event`, a tagged union with
+`match` and `guards`) and the answers (`Run.Answer`) are Schemas, so a host can keep them in a durable log. A call's
+number is a `Run.CallId`, branded so that a result number is never passed for it. The events wait in an unbounded
+buffer: Pi reports them without waiting for the consumer.
 
 ## Worker threads
 
 `WorkerSandbox.make` takes Pi's worker options as Effects. `acquireWorker` reserves a worker right before it starts
-and succeeds with its release, which runs when the worker exits; failing denies admission. `onWorkerStarted` gets an
-Effect that waits until the worker exits.
+and succeeds with its release, which runs when the worker exits; failing with `AdmissionDenied` denies admission.
+`onWorkerStarted` gets an Effect that waits until the worker exits.
 
 ```ts
 import { Semaphore } from "effect";
+import { AdmissionDenied } from "@effectified/pi-codemode";
 
 const limited = Effect.gen(function* () {
 	const workers = yield* Semaphore.make(4); // shared by every sandbox given it
 	return yield* WorkerSandbox.make({
 		tools: [Lookup],
 		acquireWorker: Effect.flatMap(workers.takeIfAvailable(1), (taken) =>
-			taken ? Effect.succeed(workers.release(1)) : Effect.fail(new Error("no free worker")),
+			taken
+				? Effect.succeed(workers.release(1))
+				: Effect.fail(AdmissionDenied.make({ message: "no free worker" })),
 		),
 	});
 });

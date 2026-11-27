@@ -4,11 +4,16 @@ import { ChordError as PiChordError, PluginError as PiPluginError } from "@earen
 import { PathError as PiPathError, UnsafePathError as PiUnsafePathError } from "@earendil-works/chord/delta";
 import { Predicate, Schema } from "effect";
 
-/** One segment of a Chord delta path: an object key or an array index. */
+/**
+ * One segment of a Chord delta path: an object key or an array index. The index is any number, because what Chord
+ * refuses (a negative, fractional or non-finite index) is what its path errors name.
+ */
+// @effect-diagnostics-next-line schemaNumber:off Chord's path errors name the index they refuse, NaN and Infinity too.
 const Segment = Schema.Union([Schema.String, Schema.Number]);
 
 /** A delta op names a path that does not resolve in the value it is applied to; `path` is that path, or its wire id. */
-export class PathError extends Schema.TaggedError<PathError>()("PathError", {
+export class PathError extends Schema.TaggedError<PathError, { readonly brand: unique symbol }>()("PathError", {
+	// @effect-diagnostics-next-line schemaNumber:off A wire path id is whatever number the op carried, as Chord names it.
 	path: Schema.Union([Schema.Array(Segment), Schema.Number]),
 	message: Schema.String,
 }) {}
@@ -17,29 +22,35 @@ export class PathError extends Schema.TaggedError<PathError>()("PathError", {
  * A delta path has a segment that would reach the prototype chain (`__proto__`, `constructor`, `prototype`), an index
  * that is not a non-negative integer, or an index past the end of its array; nothing was written.
  */
-export class UnsafePathError extends Schema.TaggedError<UnsafePathError>()("UnsafePathError", {
-	segment: Segment,
-	message: Schema.String,
-}) {}
+export class UnsafePathError extends Schema.TaggedError<UnsafePathError, { readonly brand: unique symbol }>()(
+	"UnsafePathError",
+	{
+		segment: Segment,
+		message: Schema.String,
+	},
+) {}
 
 /** A value is not a Chord delta op (`Op`, or `WireOp` on the wire): its verb, arity or payload is wrong. */
-export class InvalidOp extends Schema.TaggedError<InvalidOp>()("InvalidOp", {
+export class InvalidOp extends Schema.TaggedError<InvalidOp, { readonly brand: unique symbol }>()("InvalidOp", {
 	message: Schema.String,
 }) {}
 
 /** A value is not strict JSON: a non-finite number, a cycle, a non-plain object, a symbol key, an accessor. */
-export class NotJson extends Schema.TaggedError<NotJson>()("NotJson", {
+export class NotJson extends Schema.TaggedError<NotJson, { readonly brand: unique symbol }>()("NotJson", {
 	message: Schema.String,
 }) {}
 
 /** A name is not usable as a SQLite schema prefix: not an identifier, or reserved by SQLite (`sqlite_`). */
-export class InvalidSchemaPrefix extends Schema.TaggedError<InvalidSchemaPrefix>()("InvalidSchemaPrefix", {
-	prefix: Schema.String,
-	message: Schema.String,
-}) {}
+export class InvalidSchemaPrefix extends Schema.TaggedError<InvalidSchemaPrefix, { readonly brand: unique symbol }>()(
+	"InvalidSchemaPrefix",
+	{
+		prefix: Schema.String,
+		message: Schema.String,
+	},
+) {}
 
 /** A SQLite database, or Chord's migrations on it, rejected; `cause` is what it rejected with. */
-export class SqliteError extends Schema.TaggedError<SqliteError>()("SqliteError", {
+export class SqliteError extends Schema.TaggedError<SqliteError, { readonly brand: unique symbol }>()("SqliteError", {
 	cause: Schema.Defect(),
 }) {
 	override get message(): string {
@@ -90,7 +101,7 @@ export const CHORD_ERROR_REASONS = [
  * narrows it, its message and the JSON details some codes carry. The error a facet's method declares (`invalid`,
  * `forbidden`) reaches its caller as this.
  */
-export class ChordFailed extends Schema.TaggedError<ChordFailed>()("ChordFailed", {
+export class ChordFailed extends Schema.TaggedError<ChordFailed, { readonly brand: unique symbol }>()("ChordFailed", {
 	code: Schema.Literals(CHORD_ERROR_CODES),
 	reason: Schema.optional(Schema.Literals(CHORD_ERROR_REASONS)),
 	message: Schema.String,
@@ -98,11 +109,14 @@ export class ChordFailed extends Schema.TaggedError<ChordFailed>()("ChordFailed"
 }) {}
 
 /** A plugin's own error (Chord's `PluginError`): the code the plugin gave it, its message and details. */
-export class PluginFailed extends Schema.TaggedError<PluginFailed>()("PluginFailed", {
-	code: Schema.String,
-	message: Schema.String,
-	details: Schema.optional(Schema.Json),
-}) {}
+export class PluginFailed extends Schema.TaggedError<PluginFailed, { readonly brand: unique symbol }>()(
+	"PluginFailed",
+	{
+		code: Schema.String,
+		message: Schema.String,
+		details: Schema.optional(Schema.Json),
+	},
+) {}
 
 /** The failures of a Chord runtime call: Chord's two error classes. */
 export type ChordCallError = ChordFailed | PluginFailed;
@@ -114,7 +128,7 @@ export type ChordErrorClass = "ChordError" | "PluginError";
 const FROM_CHORD = {
 	ChordError: (thrown) =>
 		thrown instanceof PiChordError
-			? new ChordFailed({
+			? ChordFailed.make({
 					code: thrown.code,
 					message: thrown.message,
 					...(thrown.reason === undefined ? {} : { reason: thrown.reason }),
@@ -123,7 +137,7 @@ const FROM_CHORD = {
 			: undefined,
 	PluginError: (thrown) =>
 		thrown instanceof PiPluginError
-			? new PluginFailed({
+			? PluginFailed.make({
 					code: thrown.code,
 					message: thrown.message,
 					...(thrown.details === undefined ? {} : { details: thrown.details }),
@@ -148,13 +162,16 @@ export type ChordFailure = DeltaError | NotJson | InvalidSchemaPrefix | SqliteEr
 /** The error classes Chord's delta exports; `test/pi-conformance.ts` checks that these are all of them. */
 export type DeltaErrorClass = "PathError" | "UnsafePathError";
 
-/** What delta threw, as its tagged error: one entry per error class of Chord's delta. */
-const FROM_DELTA = {
-	PathError: (thrown) =>
-		thrown instanceof PiPathError ? new PathError({ path: thrown.path, message: thrown.message }) : undefined,
-	UnsafePathError: (thrown) =>
+/**
+ * What delta threw, as its tagged error: one entry per error class of Chord's delta, each `undefined` for anything
+ * else. A check that throws only one of them (`assertSafePath`) maps with its entry alone.
+ */
+export const FROM_DELTA = {
+	PathError: (thrown: unknown): PathError | undefined =>
+		thrown instanceof PiPathError ? PathError.make({ path: thrown.path, message: thrown.message }) : undefined,
+	UnsafePathError: (thrown: unknown): UnsafePathError | undefined =>
 		thrown instanceof PiUnsafePathError
-			? new UnsafePathError({ segment: thrown.segment, message: thrown.message })
+			? UnsafePathError.make({ segment: thrown.segment, message: thrown.message })
 			: undefined,
 } satisfies Record<DeltaErrorClass, (thrown: unknown) => DeltaError | undefined>;
 
@@ -165,5 +182,5 @@ const FROM_DELTA = {
 export function fromDelta(thrown: unknown): DeltaError | undefined {
 	const tagged = FROM_DELTA.PathError(thrown) ?? FROM_DELTA.UnsafePathError(thrown);
 	if (tagged !== undefined) return tagged;
-	return thrown instanceof TypeError ? new InvalidOp({ message: thrown.message }) : undefined;
+	return thrown instanceof TypeError ? InvalidOp.make({ message: thrown.message }) : undefined;
 }

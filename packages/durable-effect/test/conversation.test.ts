@@ -500,6 +500,9 @@ describe("Id", () => {
 		expect(decoded).toEqual({ conversation: 3 });
 		expect(await Effect.runPromise(Schema.encodeEffect(codec)(decoded))).toEqual({ conversation: 3 });
 		expect(refused._tag).toBe("Failure");
+		// Pi mints ids as integers from 1, and 0 names no record: a fraction or a negative number is no id.
+		const accepts = Schema.is(Conversation.Id);
+		expect([accepts(1), accepts(0), accepts(1.5), accepts(-3)]).toEqual([true, true, false, false]);
 	});
 });
 

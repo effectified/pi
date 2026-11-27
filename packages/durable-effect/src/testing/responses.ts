@@ -2,7 +2,7 @@
 
 import type { AssistantMessage } from "@effectified/pi-ai";
 import { type FauxResponseFactory, fauxAssistantMessage, fauxText, fauxToolCall } from "@effectified/pi-ai/testing";
-import { Effect } from "effect";
+import { Deferred, Effect, Exit } from "effect";
 
 /** A response the model is asked for but holds back: what a test uses to act while a run is busy. */
 export interface Held {
@@ -30,18 +30,19 @@ export function toolCall(
 
 /** `turn`, given only once `release` ran or the request was aborted. */
 export function held(turn: AssistantMessage): Held {
-	const requested = Promise.withResolvers<void>();
-	const released = Promise.withResolvers<void>();
+	// Made outside any fiber, as the scripted provider calls `response` from outside one: settled once, awaited by many.
+	const requested = Deferred.makeUnsafe<void>();
+	const released = Deferred.makeUnsafe<void>();
 	return {
+		// pi-ai's faux provider awaits a promise of the turn: the bridge of this test helper into it.
 		response: (_context, options) => {
-			requested.resolve();
-			return new Promise((resolve) => {
-				const give = () => resolve(turn);
-				options?.signal?.addEventListener("abort", give, { once: true });
-				void released.promise.then(give);
+			Deferred.doneUnsafe(requested, Exit.void);
+			const aborted = Effect.callback<void>((resume) => {
+				options?.signal?.addEventListener("abort", () => resume(Effect.void), { once: true });
 			});
+			return Effect.runPromise(Effect.as(Effect.raceFirst(Deferred.await(released), aborted), turn));
 		},
-		requested: Effect.promise(() => requested.promise),
-		release: Effect.sync(() => released.resolve()),
+		requested: Deferred.await(requested),
+		release: Effect.asVoid(Deferred.succeed(released, undefined)),
 	};
 }

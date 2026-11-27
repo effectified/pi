@@ -152,7 +152,9 @@ const hygieneStep = (step: string): Fork.Hygiene<never> =>
 	});
 
 /** An action failure of the product's own. */
-export class Refused extends Schema.TaggedError<Refused>()("Refused", { reason: Schema.String }) {}
+export class Refused extends Schema.TaggedError<Refused, { readonly brand: unique symbol }>()("Refused", {
+	reason: Schema.String,
+}) {}
 
 const root = Effect.orDie(TestHarness.root);
 

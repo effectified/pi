@@ -43,7 +43,8 @@ export function extension<const Checks extends ReadonlyArray<Check.Any> = readon
 	const task = ReviewTask.make({
 		policy: options.policy,
 		// TypeScript cannot carry each check's requirement through the list, where it is `unknown`: by construction
-		// the checks need the union of what each needs, which is `Check.Services`.
+		// the checks need the union of what each needs, which is `Check.Services`. What they fail with stays `unknown`:
+		// the review keeps any failure as its text.
 		checks: (options.checks ?? []) as ReadonlyArray<Check.Check<Check.Services<Checks[number]>>>,
 		correction: options.correction ?? Correction.standard,
 	});

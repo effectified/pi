@@ -14,21 +14,19 @@ import { messageOf, PromptMismatch } from "./errors.ts";
  * `expectedPiDocumentation` says so. Without `expectedPiDocumentation` every prompt fits. Fails with
  * `PromptMismatch`, whose message names the variant by `name`.
  */
-export function verify(
-	systemPrompt: string,
-	options: Pick<PiCodingAgentHarnessOptions, "name" | "expectedPiDocumentation">,
-): Effect.Effect<string, PromptMismatch> {
-	return Effect.try({ try: () => verifySystemPrompt(systemPrompt, options), catch: promptMismatch });
-}
+export const verify = Effect.fn("SystemPrompt.verify")(
+	(systemPrompt: string, options: Pick<PiCodingAgentHarnessOptions, "name" | "expectedPiDocumentation">) =>
+		Effect.try({ try: () => verifySystemPrompt(systemPrompt, options), catch: promptMismatch }),
+);
 
 /**
  * Pi's default system prompt without its documentation section, the rest unchanged: the `without_docs` variant.
  * Fails with `PromptMismatch` when the prompt has no complete documentation section before its working directory.
  */
-export function excludeDocumentation(defaultPrompt: string): Effect.Effect<string, PromptMismatch> {
-	return Effect.try({ try: () => excludePiDocumentation(defaultPrompt), catch: promptMismatch });
-}
+export const excludeDocumentation = Effect.fn("SystemPrompt.excludeDocumentation")((defaultPrompt: string) =>
+	Effect.try({ try: () => excludePiDocumentation(defaultPrompt), catch: promptMismatch }),
+);
 
 function promptMismatch(cause: unknown): PromptMismatch {
-	return new PromptMismatch({ message: messageOf(cause) });
+	return PromptMismatch.make({ message: messageOf(cause) });
 }

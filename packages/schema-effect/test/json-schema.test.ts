@@ -33,7 +33,7 @@ describe("toJsonSchema", () => {
 	});
 
 	it("keeps shared definitions under $defs so the schema stands alone", () => {
-		class Node extends Schema.Class<Node>("Node")({ name: Schema.String }) {}
+		class Node extends Schema.Class<Node, { readonly brand: unique symbol }>("Node")({ name: Schema.String }) {}
 		const jsonSchema = toJsonSchema(Schema.Struct({ root: Node, others: Schema.Array(Node) }));
 		const validator = compile(jsonSchema);
 		expect(validator.check({ root: { name: "a" }, others: [{ name: "b" }] })).toBe(true);

@@ -1,11 +1,20 @@
 // Fan-out: one job moved forward through the driver, with every answer of the driver folded into the job's state.
 
 import type { Agent, ConversationId, EntryId, TaskId } from "@effectified/pi-durable";
-import { Effect, type Option, type Schema } from "effect";
-import type { Fork, ForkDriverService, ForkGone, ForkRetryLater, Notice, Place } from "./driver.ts";
+import { Effect, type Option, Result, type Schema } from "effect";
+import {
+	type Fork,
+	type ForkDriverService,
+	ForkFailure,
+	type ForkRetryLater,
+	JobStatus,
+	Notice,
+	type Place,
+} from "./driver.ts";
 import type { InvalidValue } from "./errors.ts";
 import type { ForkSetupService } from "./fork-setup.ts";
-import { failed, type Job, type Planned, type Running, type Starting, type Wait } from "./job.ts";
+import { type ForkId, type JobKey, RequestId, type SwarmId } from "./ids.ts";
+import { failed, type Job, type Planned, Running, type Starting, Wait } from "./job.ts";
 import type { Work } from "./work.ts";
 
 /**
@@ -16,7 +25,7 @@ export interface Site {
 	readonly work: Pick<Work<never, unknown>, "corrections" | "promptOf" | "read" | "correctionOf">;
 	readonly driver: ForkDriverService;
 	readonly setup: ForkSetupService;
-	readonly swarmId: string;
+	readonly swarmId: SwarmId;
 	readonly coordinatorTaskId: TaskId;
 	readonly sourceConversationId: ConversationId;
 	readonly at: EntryId;
@@ -27,7 +36,7 @@ export interface Site {
 /** One job of the plan: its place in it, its key, and its input as stored. */
 export interface PlanJob {
 	readonly index: number;
-	readonly key: string;
+	readonly key: JobKey;
 	readonly input: Schema.Json;
 }
 
@@ -40,14 +49,16 @@ export function notifyKey(index: number, correction: number): string {
  * Starts a job, or tries again: its fork, found or made, then the job in it. Both calls are idempotent by key, so a
  * phase that runs again makes no second fork and asks no second time.
  */
-export function start(
+export const start = Effect.fn("Swarm.startJob")(function* (
 	site: Site,
 	planned: PlanJob,
 	job: typeof Planned.Type | typeof Starting.Type,
-): Effect.Effect<Job> {
+): Effect.fn.Return<Job> {
 	const before: Tries = job.status === "starting" ? job : { attempts: 0, busy: 0 };
 	const known = job.status === "starting" ? job.fork : null;
-	const fork =
+	const prompt = yield* Effect.result(site.work.promptOf(planned.input, { swarmId: site.swarmId, key: planned.key }));
+	if (Result.isFailure(prompt)) return failed(known, "invalid-input", prompt.failure.issues);
+	const fork = yield* Effect.result(
 		known === null
 			? site.driver.fork({
 					swarmId: site.swarmId,
@@ -58,53 +69,46 @@ export function start(
 					agent: site.agent,
 					setup: site.setup,
 				})
-			: Effect.succeed(forkOf(site, planned.key, known));
-	return site.work.promptOf(planned.input, { swarmId: site.swarmId, key: planned.key }).pipe(
-		Effect.flatMap((prompt) =>
-			Effect.matchEffect(fork, {
-				onFailure: (error) => Effect.succeed(refused(site, error, known, before)),
-				onSuccess: (made) =>
-					Effect.match(request(site, planned, made, 0, prompt), {
-						onFailure: (error) => refused(site, error, made.forkId, before),
-						onSuccess: (notice) => running(site, made.forkId, 0, notice, null),
-					}),
-			}),
-		),
-		Effect.catch((invalid: InvalidValue) => Effect.succeed(failed(known, "invalid-input", invalid.issues))),
+			: Effect.succeed(forkOf(site, planned.key, known)),
 	);
-}
+	if (Result.isFailure(fork)) return refused(site, fork.failure, known, before);
+	const made = fork.success;
+	const accepted = yield* Effect.result(request(site, planned, made, 0, prompt.success));
+	return Result.match(accepted, {
+		onFailure: (error) => refused(site, error, made.forkId, before),
+		onSuccess: (notice) => running(site, made.forkId, 0, notice, null),
+	});
+});
 
 /**
  * Reads a running job whose signal came or whose time is up: it stays running, succeeds with a decoded result, is
  * asked for a correction, or fails.
  */
-export function check(site: Site, planned: PlanJob, job: typeof Running.Type): Effect.Effect<Job> {
+export const check = Effect.fn("Swarm.readJob")(function* (
+	site: Site,
+	planned: PlanJob,
+	job: typeof Running.Type,
+): Effect.fn.Return<Job> {
 	const fork = forkOf(site, planned.key, job.fork);
-	return Effect.matchEffect(site.driver.job(fork, requestId(site, planned.key, job.correction)), {
-		onFailure: (error) => Effect.succeed(unread(site, error, job)),
-		onSuccess: (status): Effect.Effect<Job> => {
-			switch (status._tag) {
-				case "Running":
-					// Its signal is used up, or its time came: from here on the driver is asked.
-					return Effect.succeed({ ...job, attempts: 0, wait: again(site, job.wait) });
-				case "Unknown":
-					return Effect.succeed(
-						failed(job.fork, "gone", "The fork holds no job under the request it accepted", job.ran),
-					);
-				case "Unanswered":
-					return Effect.succeed(failed(job.fork, "unanswered", status.reason, job.ran));
-				case "Answered":
-					return Effect.matchEffect(site.work.read(status.text), {
-						onSuccess: (value) => Effect.succeed({ status: "succeeded", fork: job.fork, value, ran: job.ran }),
-						onFailure: (invalid) => correct(site, planned, job, fork, invalid),
-					});
-			}
-		},
+	const status = yield* Effect.result(site.driver.job(fork, requestIdOf(site, planned.key, job.correction)));
+	if (Result.isFailure(status)) return unread(site, status.failure, job);
+	return yield* JobStatus.match(status.success, {
+		// Its signal is used up, or its time came: from here on the driver is asked.
+		Running: (): Effect.Effect<Job> => Effect.succeed({ ...job, attempts: 0, wait: again(site, job.wait) }),
+		Unknown: () =>
+			Effect.succeed(failed(job.fork, "gone", "The fork holds no job under the request it accepted", job.ran)),
+		Unanswered: ({ reason }) => Effect.succeed(failed(job.fork, "unanswered", reason, job.ran)),
+		Answered: ({ text }) =>
+			Effect.matchEffect(site.work.read(text), {
+				onSuccess: (value): Effect.Effect<Job> =>
+					Effect.succeed({ status: "succeeded", fork: job.fork, value, ran: job.ran }),
+				onFailure: (invalid) => correct(site, planned, job, fork, invalid),
+			}),
 	});
-}
+});
 
 /** The fork of a job, as the driver takes it. */
-function forkOf(site: Site, key: string, forkId: string): Fork {
+function forkOf(site: Site, key: JobKey, forkId: ForkId): Fork {
 	return { swarmId: site.swarmId, jobKey: key, forkId };
 }
 
@@ -127,8 +131,8 @@ export function retryDelay(error: ForkRetryLater, attempts: number): number {
 }
 
 /** The id of one request of one job in its fork: the job itself (`correction` 0), or a correction of its answer. */
-function requestId(site: Site, key: string, correction: number): string {
-	return `${site.swarmId}/${key}/${correction}`;
+function requestIdOf(site: Site, key: JobKey, correction: number): RequestId {
+	return RequestId.make(`${site.swarmId}/${key}/${correction}`);
 }
 
 /** Hands the fork one request of the job. */
@@ -138,32 +142,32 @@ function request(
 	fork: Fork,
 	correction: number,
 	prompt: string,
-): Effect.Effect<Notice, ForkRetryLater | ForkGone> {
+): Effect.Effect<Notice, ForkFailure> {
 	return site.driver.run({
 		fork,
-		requestId: requestId(site, planned.key, correction),
+		requestId: requestIdOf(site, planned.key, correction),
 		prompt,
 		notify: { taskId: site.coordinatorTaskId, key: notifyKey(planned.index, correction) },
 	});
 }
 
 /** A job whose request the fork accepted; it runs where the driver says now, else where it was known to run. */
-function running(site: Site, fork: string, correction: number, notice: Notice, ran: Place | null): typeof Running.Type {
-	const wait: typeof Wait.Type =
-		notice._tag === "Signal"
-			? { _tag: "Signal", signal: notice.signal }
-			: { _tag: "Poll", at: site.now + notice.afterMillis, everyMillis: notice.afterMillis };
-	return { status: "running", fork, correction, wait, attempts: 0, ran: notice.place ?? ran };
+function running(site: Site, fork: ForkId, correction: number, notice: Notice, ran: Place | null): typeof Running.Type {
+	const wait = Notice.match(notice, {
+		Signal: ({ signal }) => Wait.cases.Signal.make({ signal }),
+		Poll: ({ afterMillis }) => Wait.cases.Poll.make({ at: site.now + afterMillis, everyMillis: afterMillis }),
+	});
+	return Running.make({ status: "running", fork, correction, wait, attempts: 0, ran: notice.place ?? ran });
 }
 
 /** How a job that still runs is asked next: at its driver's own pace, or at the default one after a used-up signal. */
-function again(site: Site, wait: typeof Wait.Type): typeof Wait.Type {
+function again(site: Site, wait: Wait): Wait {
 	const everyMillis = paceOf(wait);
-	return { _tag: "Poll", at: site.now + everyMillis, everyMillis };
+	return Wait.cases.Poll.make({ at: site.now + everyMillis, everyMillis });
 }
 
-function paceOf(wait: typeof Wait.Type): number {
-	return wait._tag === "Poll" ? wait.everyMillis : POLL_MILLIS;
+function paceOf(wait: Wait): number {
+	return Wait.match(wait, { Poll: ({ everyMillis }) => everyMillis, Signal: () => POLL_MILLIS });
 }
 
 /** How often in a row a job that has not started was answered "retry later", by what the answers said. */
@@ -173,23 +177,41 @@ type Tries = Pick<typeof Starting.Type, "attempts" | "busy">;
  * A job that could not start: asked again later, or failed for good. A source that is busy is waited out, as before
  * the first fork: the answer is not counted, so the job never fails over it, and only a cancel ends the wait.
  */
-function refused(site: Site, error: ForkRetryLater | ForkGone, fork: string | null, before: Tries): Job {
-	if (error._tag === "ForkGone") return failed(fork, error.what === "depth" ? "too-deep" : "gone", error.message);
-	if (error.sourceBusy === true) {
-		const pause = error.afterMillis ?? Math.min(BUSY_BASE_MILLIS * 2 ** before.busy, BUSY_MAX_MILLIS);
-		return { status: "starting", fork, attempts: before.attempts, busy: before.busy + 1, retryAt: site.now + pause };
-	}
-	if (before.attempts + 1 >= MAX_ATTEMPTS) return failed(fork, "driver-unavailable", error.message);
-	const retryAt = site.now + retryDelay(error, before.attempts);
-	return { status: "starting", fork, attempts: before.attempts + 1, busy: 0, retryAt };
+function refused(site: Site, error: ForkFailure, fork: ForkId | null, before: Tries): Job {
+	return ForkFailure.match(error, {
+		ForkGone: (gone) => failed(fork, gone.what === "depth" ? "too-deep" : "gone", gone.message),
+		ForkRetryLater: (later): Job => {
+			if (later.sourceBusy === true) {
+				const pause = later.afterMillis ?? Math.min(BUSY_BASE_MILLIS * 2 ** before.busy, BUSY_MAX_MILLIS);
+				return {
+					status: "starting",
+					fork,
+					attempts: before.attempts,
+					busy: before.busy + 1,
+					retryAt: site.now + pause,
+				};
+			}
+			if (before.attempts + 1 >= MAX_ATTEMPTS) return failed(fork, "driver-unavailable", later.message);
+			const retryAt = site.now + retryDelay(later, before.attempts);
+			return { status: "starting", fork, attempts: before.attempts + 1, busy: 0, retryAt };
+		},
+	});
 }
 
 /** A running job the driver could not read: asked again later, or failed for good. */
-function unread(site: Site, error: ForkRetryLater | ForkGone, job: typeof Running.Type): Job {
-	if (error._tag === "ForkGone") return failed(job.fork, "gone", error.message, job.ran);
-	if (job.attempts + 1 >= MAX_ATTEMPTS) return failed(job.fork, "driver-unavailable", error.message, job.ran);
-	const at = site.now + retryDelay(error, job.attempts);
-	return { ...job, attempts: job.attempts + 1, wait: { _tag: "Poll", at, everyMillis: paceOf(job.wait) } };
+function unread(site: Site, error: ForkFailure, job: typeof Running.Type): Job {
+	return ForkFailure.match(error, {
+		ForkGone: (gone) => failed(job.fork, "gone", gone.message, job.ran),
+		ForkRetryLater: (later): Job => {
+			if (job.attempts + 1 >= MAX_ATTEMPTS) return failed(job.fork, "driver-unavailable", later.message, job.ran);
+			const at = site.now + retryDelay(later, job.attempts);
+			return {
+				...job,
+				attempts: job.attempts + 1,
+				wait: Wait.cases.Poll.make({ at, everyMillis: paceOf(job.wait) }),
+			};
+		},
+	});
 }
 
 /**

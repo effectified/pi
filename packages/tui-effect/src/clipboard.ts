@@ -37,14 +37,14 @@ export function fromNative(native: NativeClipboard): Clipboard {
 		getText: transfer("getText", () => native.getText()),
 		getImage: transfer("getImage", () => native.getImage()),
 		getFilePaths:
-			getFilePaths === undefined
-				? Effect.succeed(undefined)
-				: transfer("getFilePaths", () => getFilePaths.call(native)),
+			getFilePaths === undefined ? Effect.undefined : transfer("getFilePaths", () => getFilePaths.call(native)),
 		...(setText === undefined ? {} : { setText: (text) => transfer("setText", () => setText.call(native, text)) }),
 	};
 }
 
-/** One transfer of the helper: what it rejects with is a `ClipboardError` of `operation`. */
+/** One transfer of the helper, in a span named for it: what it rejects with is a `ClipboardError` of `operation`. */
 function transfer<A>(operation: ClipboardError["operation"], run: () => Promise<A>): Effect.Effect<A, ClipboardError> {
-	return Effect.tryPromise({ try: run, catch: (cause) => new ClipboardError({ operation, cause }) });
+	return Effect.tryPromise({ try: run, catch: (cause) => ClipboardError.make({ operation, cause }) }).pipe(
+		Effect.withSpan(`Tui.Clipboard.${operation}`),
+	);
 }

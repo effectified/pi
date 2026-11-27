@@ -24,7 +24,7 @@ export * as Environment from "./environment.ts";
 export {
 	ArtifactFailed,
 	DockerFailed,
-	type EvalsError,
+	EvalsError,
 	InvalidPlan,
 	InvalidSetting,
 	PromptMismatch,

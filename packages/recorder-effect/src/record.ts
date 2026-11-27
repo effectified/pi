@@ -1,6 +1,32 @@
 // The records a recorder delivers: one Schema union of plain JSON values, each with a deterministic id.
 
+import { Reported, ToolCallId } from "@effectified/pi-ai";
+import { Conversation, Entry as StoredEntry, Task, ToolName } from "@effectified/pi-durable";
 import { Schema } from "effect";
+
+/**
+ * The id of a record: `<conversation>:<entry>:<message>:<part>`, the same for every delivery of the record (see the
+ * README's "Ids"). A sink keys what it stores by it, and by the storage when it serves several.
+ */
+export const Id = Schema.String.pipe(Schema.brand("@effectified/pi-recorder/RecordId"));
+
+/** The id of a record. */
+export type Id = typeof Id.Type;
+
+/**
+ * Epoch milliseconds, or a span of them, as Pi gives them: numbers. Pi's clock and pi-ai's timing give whole ones, an
+ * entry's own data may give a fraction, and records exported before 0.3.0 kept whatever number they found.
+ */
+const Millis = Schema.Finite;
+
+/**
+ * A count of tokens as the provider reported it and Pi stored it, a fraction included; a non-finite one is recorded
+ * as 0, and one a record exported before 0.3.0 kept as "NaN" reads as 0 (`Reported` of `@effectified/pi-ai`).
+ */
+const Tokens = Reported;
+
+/** An amount of Pi's cost, in the currency of its model catalog: a fraction of a unit, as `Tokens` keeps a count. */
+const Amount = Reported;
 
 /** An image of a message or a tool result, as Pi stores it: base64 data and its MIME type. */
 export const Image = Schema.Struct({ mimeType: Schema.String, data: Schema.String });
@@ -10,15 +36,15 @@ export type Image = typeof Image.Type;
 
 /** The tokens of one model response, or of a tool's own work; `null` where no such count is reported. */
 export const Usage = Schema.Struct({
-	input: Schema.Number,
-	output: Schema.Number,
-	cacheRead: Schema.Number,
-	cacheWrite: Schema.Number,
+	input: Tokens,
+	output: Tokens,
+	cacheRead: Tokens,
+	cacheWrite: Tokens,
 	/** The part of `cacheWrite` written with one hour of retention. */
-	cacheWrite1h: Schema.NullOr(Schema.Number),
+	cacheWrite1h: Schema.NullOr(Tokens),
 	/** The part of `output` spent on reasoning. */
-	reasoning: Schema.NullOr(Schema.Number),
-	totalTokens: Schema.Number,
+	reasoning: Schema.NullOr(Tokens),
+	totalTokens: Tokens,
 });
 
 /** The tokens of one model response, or of a tool's own work. */
@@ -26,11 +52,11 @@ export type Usage = typeof Usage.Type;
 
 /** Pi's cost of what `Usage` counts, in the currency of its model catalog. */
 export const Cost = Schema.Struct({
-	input: Schema.Number,
-	output: Schema.Number,
-	cacheRead: Schema.Number,
-	cacheWrite: Schema.Number,
-	total: Schema.Number,
+	input: Amount,
+	output: Amount,
+	cacheRead: Amount,
+	cacheWrite: Amount,
+	total: Amount,
 	/** True when `total` is what the provider billed; false when it is the catalog estimate. */
 	fromProvider: Schema.Boolean,
 });
@@ -51,13 +77,13 @@ export type Diagnostic = typeof Diagnostic.Type;
 /** What every record derived from a committed entry carries. */
 const committed = {
 	/** `<conversation>:<entry>:<message>:<part>`: the same for every delivery of the record. */
-	id: Schema.String,
+	id: Id,
 	/** The id of the conversation the entry belongs to. */
-	conversation: Schema.Number,
+	conversation: Conversation.Id,
 	/** The id of the entry the record was derived from. */
-	entry: Schema.Number,
+	entry: StoredEntry.Id,
 	/** The message's own timestamp, in epoch milliseconds. */
-	time: Schema.Number,
+	time: Millis,
 	/** Derived from an entry Pi committed with the step: delivered at least once, never lost. */
 	advisory: Schema.Literal(false),
 };
@@ -87,7 +113,7 @@ export type Message = typeof Message.Type;
 export const ModelCall = Schema.TaggedStruct("ModelCall", {
 	...committed,
 	/** The id of the generation task that made the request; `ModelCallRequested.task` names the same task. */
-	task: Schema.NullOr(Schema.Number),
+	task: Schema.NullOr(Task.Id),
 	provider: Schema.String,
 	model: Schema.String,
 	api: Schema.String,
@@ -101,7 +127,7 @@ export const ModelCall = Schema.TaggedStruct("ModelCall", {
 	usage: Usage,
 	cost: Cost,
 	/** Milliseconds from the request's start to the end of the response. */
-	durationMs: Schema.NullOr(Schema.Number),
+	durationMs: Schema.NullOr(Millis),
 	/**
 	 * Never on a record the recorder derives: a model message holds every field. A host sets it on a model call record
 	 * it derives itself from an entry a plugin stored about a request of its own, such as a reviewer's request in a
@@ -111,7 +137,7 @@ export const ModelCall = Schema.TaggedStruct("ModelCall", {
 	 * - `unknown`: the fields of this record that entry does not hold, by name (`api`, `cost.input`). Each of them
 	 *   carries its empty value (`""`, `0`, `false`), which there means "not known", never a measurement.
 	 */
-	derived: Schema.optionalKey(Schema.Struct({ from: Schema.String, unknown: Schema.Array(Schema.String) })),
+	derived: Schema.optionalKey(Schema.Struct({ from: Id, unknown: Schema.Array(Schema.String) })),
 });
 
 /** One model response. */
@@ -121,8 +147,9 @@ export type ModelCall = typeof ModelCall.Type;
 export const ToolCallRequested = Schema.TaggedStruct("ToolCallRequested", {
 	...committed,
 	/** The id the model gave the call; `ToolCallResult.callId` answers it. */
-	callId: Schema.String,
-	name: Schema.String,
+	callId: ToolCallId,
+	/** The tool the model asked for, by name: one the registry may not have (`tool_unavailable`). */
+	name: ToolName,
 	arguments: Schema.Json,
 	/** Set when the model's arguments were not a JSON object: what was wrong; `arguments` is then `{}`. */
 	argumentsError: Schema.NullOr(Schema.String),
@@ -139,8 +166,9 @@ export type ToolCallRequested = typeof ToolCallRequested.Type;
  */
 export const ToolCallResult = Schema.TaggedStruct("ToolCallResult", {
 	...committed,
-	callId: Schema.String,
-	name: Schema.String,
+	/** The id of the call this result answers: `ToolCallRequested.callId`. */
+	callId: ToolCallId,
+	name: ToolName,
 	isError: Schema.Boolean,
 	/** The codes of `diagnostics`, in order, without the remarks that have none. */
 	codes: Schema.Array(Schema.String),
@@ -154,7 +182,7 @@ export const ToolCallResult = Schema.TaggedStruct("ToolCallResult", {
 	usage: Schema.NullOr(Usage),
 	cost: Schema.NullOr(Cost),
 	/** Milliseconds from the call's start to its result. */
-	durationMs: Schema.NullOr(Schema.Number),
+	durationMs: Schema.NullOr(Millis),
 });
 
 /** The result of a tool call. */
@@ -168,23 +196,23 @@ export type ToolCallResult = typeof ToolCallResult.Type;
  */
 export const Entry = Schema.TaggedStruct("Entry", {
 	/** `<conversation>:<entry>:entry`: the same for every delivery of the record. */
-	id: Schema.String,
+	id: Id,
 	/** The id of the conversation the entry belongs to. */
-	conversation: Schema.Number,
+	conversation: Conversation.Id,
 	/** The id of the entry. */
-	entry: Schema.Number,
+	entry: StoredEntry.Id,
 	/** The entry's kind, as its writer named it: `review.verdict`, `app.note`. */
 	kind: Schema.String,
 	/** The entry's data as it is stored, in the shape its writer gave it; `null` for an entry without data. */
 	data: Schema.Json,
 	/** The id of the task that appended the entry; `null` for one a host's commit appended. */
-	task: Schema.NullOr(Schema.Number),
+	task: Schema.NullOr(Task.Id),
 	/**
-	 * Pi stores no time with an entry. This is the `time` field of the entry's data when that is a number (epoch
+	 * Pi stores no time with an entry. This is the `time` field of the entry's data when that is a whole number (epoch
 	 * milliseconds, by the convention of the kinds that carry one), and `null` otherwise. Never the time of delivery,
 	 * which would differ from one delivery to the next.
 	 */
-	time: Schema.NullOr(Schema.Number),
+	time: Schema.NullOr(Millis),
 	/** Derived from an entry Pi committed: delivered at least once, never lost. */
 	advisory: Schema.Literal(false),
 });
@@ -199,17 +227,17 @@ export type Entry = typeof Entry.Type;
  */
 export const ModelCallRequested = Schema.TaggedStruct("ModelCallRequested", {
 	/** `<conversation>:<after>:requested`. */
-	id: Schema.String,
-	conversation: Schema.Number,
+	id: Id,
+	conversation: Conversation.Id,
 	/**
 	 * The id of the newest entry of the conversation when the request was prepared, 0 for none. The `ModelCall` that
 	 * answers the request is the first one of the same `task` whose entry id is greater.
 	 */
-	after: Schema.Number,
+	after: StoredEntry.Id,
 	/** The id of the generation task that makes the request. */
-	task: Schema.Number,
+	task: Task.Id,
 	/** The harness clock when Pi first asked for this request, in epoch milliseconds. */
-	time: Schema.Number,
+	time: Millis,
 	/** Not derived from committed state: best effort. */
 	advisory: Schema.Literal(true),
 });
@@ -217,8 +245,18 @@ export const ModelCallRequested = Schema.TaggedStruct("ModelCallRequested", {
 /** A model request is about to be sent. */
 export type ModelCallRequested = typeof ModelCallRequested.Type;
 
-/** Every record a sink receives. Type and JSON form are the same, so a record can be stored or sent as it is. */
-export const Record = Schema.Union([Message, ModelCall, ToolCallRequested, ToolCallResult, Entry, ModelCallRequested]);
+/**
+ * Every record a sink receives. Its JSON form is the same value, so a record can be stored or sent as it is.
+ * `Record.match` picks a handler per `_tag` and `Record.guards` tests for one.
+ */
+export const Record = Schema.Union([
+	Message,
+	ModelCall,
+	ToolCallRequested,
+	ToolCallResult,
+	Entry,
+	ModelCallRequested,
+]).pipe(Schema.toTaggedUnion("_tag"));
 
 /** Every record a sink receives. */
 export type Record = typeof Record.Type;

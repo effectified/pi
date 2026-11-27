@@ -2,13 +2,16 @@
 // for the hold to end.
 
 import { type Conversation, Harness, type Signal } from "@effectified/pi-durable";
-import { Effect } from "effect";
+import { Effect, Match, Schema } from "effect";
 import { NotHeld } from "./errors.ts";
 import * as Hold from "./hold.ts";
 import { type Failure, type State, state } from "./state.ts";
 
 /** What `release` did: the decision was stored for the waiting task, or an earlier one was and stands. */
-export type Delivery = "released" | "already_released";
+export const Delivery = Schema.Literals(["released", "already_released"]);
+
+/** What `release` did. */
+export type Delivery = typeof Delivery.Type;
 
 /**
  * Releases the held `conversation` with a person's `decision`, in one commit that stores it with the waiting review
@@ -19,30 +22,31 @@ export type Delivery = "released" | "already_released";
  * the same hold is `already_released`, and the first stands. Fails with `NotHeld` for a conversation that is not
  * held. Nothing checks who calls it: authenticate the person in the host.
  */
-export function release(
+export const release: (
 	conversation: Conversation.Conversation,
 	decision: Hold.Decision,
-): Effect.Effect<Delivery, NotHeld | Failure | Signal.Failure, Harness.Harness> {
-	return Effect.gen(function* () {
+) => Effect.Effect<Delivery, NotHeld | Failure | Signal.Failure, Harness.Harness> = Effect.fn("Review.release")(
+	function* (conversation: Conversation.Conversation, decision: Hold.Decision) {
 		const current = yield* state(conversation);
 		if (current._tag === "Released") return "already_released";
-		if (current._tag !== "Held") return yield* new NotHeld({ conversationId: conversation.id, state: current._tag });
+		if (current._tag !== "Held") return yield* NotHeld.make({ conversationId: conversation.id, state: current._tag });
 		const { task } = current;
 		// A commit of its own, as `Harness.signal` makes, but one that starts no scheduling: a harness opened with
 		// `resume: false` takes the decision and runs nothing.
-		switch (yield* Harness.commit((tx) => tx.signal(task, Hold.Released, Hold.KEY, decision))) {
-			case "delivered":
-				return "released";
-			case "duplicate":
-				return "already_released";
+		const signalled = yield* Harness.commit((tx) => tx.signal(task, Hold.Released, Hold.KEY, decision));
+		return yield* Match.value(signalled).pipe(
+			Match.when("delivered", () => Effect.succeed<Delivery>("released")),
+			Match.when("duplicate", () => Effect.succeed<Delivery>("already_released")),
 			// The task ended between the two reads: the conversation was aborted meanwhile.
-			case "closed":
-			case "not_found":
-			case "invalid":
-				return yield* new NotHeld({ conversationId: conversation.id, state: (yield* state(conversation))._tag });
-		}
-	});
-}
+			Match.whenOr("closed", "not_found", "invalid", () =>
+				Effect.flatMap(state(conversation), (now) =>
+					Effect.fail(NotHeld.make({ conversationId: conversation.id, state: now._tag })),
+				),
+			),
+			Match.exhaustive,
+		);
+	},
+);
 
 /**
  * Waits until the hold of `conversation` has ended, and gives the state it then has: `Accepted` after an `Accept`,
@@ -51,13 +55,13 @@ export function release(
  * hold nobody releases keeps it waiting, and so does a harness that schedules nothing (`resume: false`).
  * Interrupting it cancels only the wait.
  */
-export function waitForHoldEnd(
+export const waitForHoldEnd: (
 	conversation: Conversation.Conversation,
-): Effect.Effect<State, Failure, Harness.Harness> {
-	return Effect.gen(function* () {
-		const current = yield* state(conversation);
-		if (current._tag !== "Held" && current._tag !== "Released") return current;
-		yield* Harness.waitForTask(current.task);
-		return yield* state(conversation);
-	});
-}
+) => Effect.Effect<State, Failure, Harness.Harness> = Effect.fn("Review.waitForHoldEnd")(function* (
+	conversation: Conversation.Conversation,
+) {
+	const current = yield* state(conversation);
+	if (current._tag !== "Held" && current._tag !== "Released") return current;
+	yield* Harness.waitForTask(current.task);
+	return yield* state(conversation);
+});

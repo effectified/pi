@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { runLive } from "@effectified/pi-ai/testing";
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { RpcClient } from "../src/index.ts";
+import { type JsonAgentSessionEvent, RpcClient } from "../src/index.ts";
 
 const AGENT = fileURLToPath(new URL("./fixtures/agent.ts", import.meta.url));
 
@@ -44,5 +44,19 @@ describe.skipIf(NO_NODE)("RpcClient.make (against an agent served by Modes.rpc)"
 			}),
 		);
 		expect(failure._tag).toBe("CodingAgentError");
+	});
+});
+
+describe("RpcClient.untilSettled", () => {
+	it("folds a process's events up to the next agent_settled, that one included", async () => {
+		// Only `type` matters to the fold: the events stand in for a process's own.
+		const event = (type: string) => ({ type }) as JsonAgentSessionEvent;
+		const collected = await runLive(
+			Stream.run(
+				Stream.make(event("agent_start"), event("agent_end"), event("agent_settled"), event("agent_start")),
+				RpcClient.untilSettled,
+			),
+		);
+		expect(collected.map((each) => each.type)).toEqual(["agent_start", "agent_end", "agent_settled"]);
 	});
 });

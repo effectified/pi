@@ -17,7 +17,21 @@ import type {
 	ToolChoice,
 	ToolResultMessage,
 } from "@earendil-works/pi-ai";
-import { Clock, DateTime, Effect, Layer, Stream } from "effect";
+import {
+	Array as Arr,
+	Cache,
+	Clock,
+	DateTime,
+	Effect,
+	Formatter,
+	Layer,
+	Match,
+	Option,
+	Predicate,
+	pipe,
+	String as Str,
+	Stream,
+} from "effect";
 import { AiError, LanguageModel, type Prompt, type Response, Tool } from "effect/ai";
 import { Base64 } from "effect/encoding";
 import type { ModelNotFound, ModelRequestError } from "./errors.ts";
@@ -43,26 +57,32 @@ export type Options = StrictOmit<ModelsSimpleStreamOptions, "signal" | "toolChoi
  * not inline images fail the same way; provider-executed tools are declared as ordinary tools; pi-ai's cost and its
  * replay signatures for reasoning stay on the pi side.
  */
-export const make = Effect.fnUntraced(function* (
+export const make = Effect.fn("PiLanguageModel.make")(function* (
 	ref: ModelRef,
 	options?: Options,
 ): Effect.fn.Return<LanguageModel.LanguageModel, ModelNotFound, Models> {
 	const models = yield* Models;
 	const model = yield* getModel(ref);
+	// A tool's JSON Schema is compiled from its Schema; a toolkit's tools are the same objects from one request to the
+	// next (effect/ai keeps them), so each is compiled once for this model.
+	const tools = yield* Cache.make({
+		capacity: TOOL_CAPACITY,
+		lookup: (tool: Tool.Any) => Effect.sync(() => toPiTool(tool)),
+	});
 	return yield* LanguageModel.make({
-		generateText: Effect.fnUntraced(
-			function* (request) {
-				const { context, toolChoice } = yield* toPiRequest(request, model, "generateText");
+		generateText: Effect.fn("PiLanguageModel.generateText")(
+			function* (request: LanguageModel.ProviderOptions) {
+				const { context, toolChoice } = yield* toPiRequest(request, model, tools, "generateText");
 				const message = yield* completeSimple(model, context, { ...options, toolChoice }).pipe(
 					Effect.mapError(toAiError("generateText")),
 				);
-				return [...message.content.map(contentPart), ...finalParts(message)];
+				return [...Arr.map(message.content, contentPart), ...finalParts(message)];
 			},
 			Effect.provideService(Models, models),
 		),
 		streamText: (request) =>
 			Stream.unwrap(
-				Effect.map(toPiRequest(request, model, "streamText"), ({ context, toolChoice }) =>
+				Effect.map(toPiRequest(request, model, tools, "streamText"), ({ context, toolChoice }) =>
 					streamSimple(model, context, { ...options, toolChoice }).pipe(
 						Stream.mapError(toAiError("streamText")),
 						Stream.map(eventParts),
@@ -83,6 +103,9 @@ export function layer(
 	return Layer.effect(LanguageModel.LanguageModel, make(ref, options));
 }
 
+/** How many tools' declarations one model keeps compiled. */
+const TOOL_CAPACITY = 256;
+
 const MODULE = "PiLanguageModel";
 
 interface PiRequest {
@@ -91,78 +114,102 @@ interface PiRequest {
 }
 
 /** One effect/ai request as pi-ai's request input. Fails for what pi-ai cannot be asked. */
-function toPiRequest(
-	request: LanguageModel.ProviderOptions,
-	model: Model<Api>,
-	method: string,
-): Effect.Effect<PiRequest, AiError.AiError> {
-	return Effect.gen(function* () {
+const toPiRequest = Effect.fn("PiLanguageModel.toPiRequest")(
+	function* (
+		request: LanguageModel.ProviderOptions,
+		model: Model<Api>,
+		tools: Cache.Cache<Tool.Any, PiTool>,
+		_method: string,
+	): Effect.fn.Return<PiRequest, AiError.InvalidRequestError> {
 		if (request.responseFormat.type === "json") {
 			return yield* notCarried("responseFormat", "pi-ai has no structured output option");
 		}
 		const toolChoice = yield* toToolChoice(request);
 		const timestamp = yield* Clock.currentTimeMillis;
-		const messages: Message[] = [];
-		let systemPrompt: string | undefined;
-		for (const message of request.prompt.content) {
-			switch (message.role) {
-				case "system":
-					// The first message of a prompt is pi-ai's system prompt; a later one stays where it is.
-					if (messages.length === 0 && systemPrompt === undefined) systemPrompt = message.content;
-					else messages.push({ role: "system", content: message.content, timestamp });
-					break;
-				case "user":
-					messages.push({ role: "user", content: yield* Effect.forEach(message.content, toContent), timestamp });
-					break;
-				case "assistant":
-					messages.push(toAssistantMessage(message, model, timestamp));
-					break;
-				case "tool":
-					for (const part of message.content) {
-						// An approval response has no pi-ai counterpart; effect/ai resolves it before the request.
-						if (part.type === "tool-result") messages.push(yield* toToolResult(part, timestamp));
-					}
-					break;
-			}
-		}
-		return { context: { systemPrompt, messages, tools: request.tools.map(toPiTool) }, toolChoice };
-	}).pipe(Effect.mapError((reason) => AiError.make({ module: MODULE, method, reason })));
-}
+		const converted = yield* Effect.forEach(
+			request.prompt.content,
+			(message) => toPiMessages(message, model, timestamp),
+			{ concurrency: 1 },
+		);
+		const piTools = yield* Effect.forEach(request.tools, (tool) => Cache.get(tools, tool), { concurrency: 1 });
+		const messages = Arr.flatten(converted);
+		const first = messages[0];
+		// A system message before any other message is pi-ai's system prompt; a later one stays where it is.
+		return first?.role === "system" && Predicate.isString(first.content)
+			? { context: { systemPrompt: first.content, messages: Arr.drop(messages, 1), tools: piTools }, toolChoice }
+			: { context: { systemPrompt: undefined, messages, tools: piTools }, toolChoice };
+	},
+	(effect, _request, _model, _tools, method) =>
+		Effect.mapError(effect, (reason) => AiError.make({ module: MODULE, method, reason })),
+);
 
 function notCarried(parameter: string, description: string): AiError.InvalidRequestError {
-	return new AiError.InvalidRequestError({ parameter, description });
+	return AiError.InvalidRequestError.make({ parameter, description });
 }
 
 /** pi-ai's provider-neutral tool choice is `auto` or `none`; a request without tools leaves it to the provider. */
-function toToolChoice(
+const toToolChoice = Effect.fnUntraced(function* (
 	request: LanguageModel.ProviderOptions,
-): Effect.Effect<ToolChoice | undefined, AiError.InvalidRequestError> {
+): Effect.fn.Return<ToolChoice | undefined, AiError.InvalidRequestError> {
 	const choice = request.toolChoice;
-	if (request.tools.length === 0) return Effect.succeed(undefined);
-	if (choice === "auto" || choice === "none") return Effect.succeed(choice);
+	if (request.tools.length === 0) return undefined;
+	if (choice === "auto" || choice === "none") return choice;
 	// effect/ai's tool choice is an untagged union we do not own, so `in` is the only way to tell its object forms
 	// apart. `oneOf` has already narrowed `request.tools`; only its mode is left to carry.
-	if (typeof choice === "object" && "oneOf" in choice && choice.mode !== "required") return Effect.succeed("auto");
-	return Effect.fail(notCarried("toolChoice", "pi-ai's provider-neutral tool choice cannot force a tool call"));
-}
+	if (typeof choice === "object" && "oneOf" in choice && choice.mode !== "required") return "auto";
+	return yield* notCarried("toolChoice", "pi-ai's provider-neutral tool choice cannot force a tool call");
+});
 
-function toContent(
+/** One effect/ai prompt message as pi-ai messages: a tool message holds one result per call. */
+const toPiMessages = Effect.fnUntraced(function* (
+	message: Prompt.Message,
+	model: Model<Api>,
+	timestamp: number,
+): Effect.fn.Return<ReadonlyArray<Message>, AiError.InvalidRequestError> {
+	return yield* Match.value(message).pipe(
+		Match.discriminatorsExhaustive("role")({
+			system: (system): Effect.Effect<ReadonlyArray<Message>> =>
+				Effect.succeed([{ role: "system", content: system.content, timestamp }]),
+			user: (user): Effect.Effect<ReadonlyArray<Message>, AiError.InvalidRequestError> =>
+				Effect.map(Effect.forEach(user.content, toContent, { concurrency: 1 }), (content) => [
+					{ role: "user", content, timestamp },
+				]),
+			assistant: (assistant): Effect.Effect<ReadonlyArray<Message>> =>
+				Effect.succeed([toAssistantMessage(assistant, model, timestamp)]),
+			tool: (tool): Effect.Effect<ReadonlyArray<Message>, AiError.InvalidRequestError> =>
+				// An approval response has no pi-ai counterpart; effect/ai resolves it before the request.
+				Effect.forEach(
+					Arr.filter(tool.content, (part): part is Prompt.ToolResultPart => part.type === "tool-result"),
+					(part) => toToolResult(part, timestamp),
+					{ concurrency: 1 },
+				),
+		}),
+	);
+});
+
+const toContent = Effect.fnUntraced(function* (
 	part: Prompt.TextPart | Prompt.FilePart,
-): Effect.Effect<TextContent | ImageContent, AiError.InvalidRequestError> {
-	if (part.type === "text") return Effect.succeed({ type: "text", text: part.text });
-	if (!part.mediaType.startsWith("image/") || part.data instanceof URL) {
-		return Effect.fail(notCarried("prompt", `pi-ai takes inline images only, not a ${part.mediaType} file or a URL`));
+): Effect.fn.Return<TextContent | ImageContent, AiError.InvalidRequestError> {
+	if (part.type === "text") return { type: "text", text: part.text };
+	if (!pipe(part.mediaType, Str.startsWith("image/")) || part.data instanceof URL) {
+		return yield* notCarried("prompt", `pi-ai takes inline images only, not a ${part.mediaType} file or a URL`);
 	}
-	return Effect.succeed({
+	return {
 		type: "image",
 		mimeType: part.mediaType,
-		data: typeof part.data === "string" ? withoutDataUrlPrefix(part.data) : Base64.encode(part.data),
-	});
-}
+		data: Predicate.isString(part.data) ? withoutDataUrlPrefix(part.data) : Base64.encode(part.data),
+	};
+});
 
 /** effect/ai accepts base64 text with or without a `data:<type>;base64,` prefix; pi-ai wants the bare base64. */
 function withoutDataUrlPrefix(data: string): string {
-	return data.startsWith("data:") ? data.slice(data.indexOf(",") + 1) : data;
+	if (!pipe(data, Str.startsWith("data:"))) return data;
+	return pipe(
+		data,
+		Str.indexOf(","),
+		Option.map((comma) => pipe(data, Str.slice(comma + 1))),
+		Option.getOrElse(() => data),
+	);
 }
 
 function toAssistantMessage(
@@ -170,16 +217,7 @@ function toAssistantMessage(
 	model: Model<Api>,
 	timestamp: number,
 ): PiAssistantMessage {
-	const content: PiAssistantMessage["content"] = [];
-	for (const part of message.content) {
-		if (part.type === "text") content.push({ type: "text", text: part.text });
-		else if (part.type === "reasoning") content.push({ type: "thinking", thinking: part.text });
-		else if (part.type === "tool-call" && !part.providerExecuted) {
-			// A decode boundary: a prompt's tool call params are the JSON object a model sent, typed `unknown`.
-			content.push({ type: "toolCall", id: part.id, name: part.name, arguments: part.params as JsonObject });
-		}
-		// Files, provider-executed calls and their results, and approval requests have no place in a pi-ai message.
-	}
+	const content = Arr.flatMap(message.content, assistantContent);
 	return {
 		role: "assistant",
 		content,
@@ -187,33 +225,50 @@ function toAssistantMessage(
 		provider: model.provider,
 		model: model.id,
 		usage: emptyUsage(),
-		stopReason: content.some((block) => block.type === "toolCall") ? "toolUse" : "stop",
+		stopReason: Arr.some(content, (block) => block.type === "toolCall") ? "toolUse" : "stop",
 		timestamp,
 	};
 }
 
-function toToolResult(
+/**
+ * The pi-ai content of one part of an assistant message. Files, provider-executed calls and their results, and
+ * approval requests have no place in a pi-ai message.
+ */
+const assistantContent = Match.type<Prompt.AssistantMessagePart>().pipe(
+	Match.discriminators("type")({
+		text: (part): PiAssistantMessage["content"] => [{ type: "text", text: part.text }],
+		reasoning: (part): PiAssistantMessage["content"] => [{ type: "thinking", thinking: part.text }],
+		"tool-call": (part): PiAssistantMessage["content"] =>
+			part.providerExecuted
+				? []
+				: // A decode boundary: a prompt's tool call params are the JSON object a model sent, typed `unknown`.
+					[{ type: "toolCall", id: part.id, name: part.name, arguments: part.params as JsonObject }],
+	}),
+	Match.orElse((): PiAssistantMessage["content"] => []),
+);
+
+const toToolResult = Effect.fnUntraced(function* (
 	part: Prompt.ToolResultPart,
 	timestamp: number,
-): Effect.Effect<ToolResultMessage, AiError.InvalidRequestError> {
-	const content: Effect.Effect<Array<TextContent | ImageContent>, AiError.InvalidRequestError> = part.modelOutput ===
-	undefined
-		? Effect.succeed([{ type: "text", text: resultText(part.result) }])
-		: Effect.forEach(part.modelOutput, toContent);
-	return Effect.map(content, (content) => ({
+): Effect.fn.Return<ToolResultMessage, AiError.InvalidRequestError> {
+	const content: ReadonlyArray<TextContent | ImageContent> =
+		part.modelOutput === undefined
+			? [{ type: "text", text: resultText(part.result) }]
+			: yield* Effect.forEach(part.modelOutput, toContent, { concurrency: 1 });
+	return {
 		role: "toolResult",
 		toolCallId: part.id,
 		toolName: part.name,
-		content,
+		content: [...content],
 		isError: part.isFailure,
 		timestamp,
-	}));
-}
+	};
+});
 
 /** A tool result as the text the model reads: a string as it is, anything else as JSON, nothing as "". */
 function resultText(result: unknown): string {
 	if (result === undefined) return "";
-	return typeof result === "string" ? result : JSON.stringify(result);
+	return Predicate.isString(result) ? result : Formatter.formatJson(result);
 }
 
 function toPiTool(tool: Tool.Any): PiTool {
@@ -223,11 +278,12 @@ function toPiTool(tool: Tool.Any): PiTool {
 /** pi-ai reports no status or category for a failed request, only its text, so the reason is always unknown. */
 function toAiError(method: string): (error: ModelRequestError) => AiError.AiError {
 	return (error) =>
-		AiError.make({ module: MODULE, method, reason: new AiError.UnknownError({ description: error.message }) });
+		AiError.make({ module: MODULE, method, reason: AiError.UnknownError.make({ description: error.message }) });
 }
 
 /** The stream parts of one pi-ai event. A block's id is its content index; a tool call keeps its own id. */
 function eventParts(event: ResponseEvent): ReadonlyArray<Response.StreamPartEncoded> {
+	// idiom-allow match: called for every event of a streamed response (each token); a switch costs no matcher per event.
 	switch (event.type) {
 		case "start":
 			return [];
@@ -258,16 +314,13 @@ function eventParts(event: ResponseEvent): ReadonlyArray<Response.StreamPartEnco
 	}
 }
 
-function contentPart(block: TextContent | ThinkingContent | ToolCall): Response.PartEncoded {
-	switch (block.type) {
-		case "text":
-			return { type: "text", text: block.text };
-		case "thinking":
-			return { type: "reasoning", text: block.thinking };
-		case "toolCall":
-			return toolCallPart(block);
-	}
-}
+const contentPart = Match.type<TextContent | ThinkingContent | ToolCall>().pipe(
+	Match.discriminatorsExhaustive("type")({
+		text: (block): Response.PartEncoded => ({ type: "text", text: block.text }),
+		thinking: (block): Response.PartEncoded => ({ type: "reasoning", text: block.thinking }),
+		toolCall: (block): Response.PartEncoded => toolCallPart(block),
+	}),
+);
 
 function toolCallPart(call: ToolCall): Response.ToolCallPartEncoded {
 	return { type: "tool-call", id: call.id, name: call.name, params: call.arguments };

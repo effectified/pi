@@ -33,9 +33,8 @@ half-written ones included.
 
 | Step | It failed because | Do |
 |---|---|---|
-| format and lint | Formatting or a lint rule | `node_modules/.bin/biome check --write <your paths>`, your paths only |
-| types | A type error. Tests are held back only for the packages it can reach | Fix it. A Pi type that moved shows here first |
-| Effect diagnostics | A dropped Effect, `Date` or a timer where `Clock` belongs, a `node:` import in a package core, or an unstable Effect module nobody allowed | Fix the code. A new unstable module is one line of `allowedUnstableApis` in `effect/tsconfig.json`, with its reason |
+| format and lint | Formatting, a lint rule, or an idiom rule of `effect/AGENTS.md` ("Effect-native design") | `node effect/scripts/style.ts --write <your paths>` formats, your paths only; a lint finding is fixed in the code, or carries `// idiom-allow <rule>: <why>` above it |
+| types and Effect rules | A type error (`error TS1234`), or an Effect rule (`<rule>:`): a dropped Effect, `Date` or a timer where `Clock` belongs, a `node:` import in a package core, an unstable Effect module nobody allowed. Tests are held back only for the packages a type error can reach | Fix it; `node effect/scripts/types.ts --package <dir>` lists one package's. A Pi type that moved shows here first. A new unstable module is one line of `allowedUnstableApis` in `effect/tsconfig.json`, with its reason |
 | Pi pins, release and surface record | The names a package imports from Pi changed, or a README opens with another Pi version than the pins | `node effect/scripts/pi-surface.ts`, read what it prints, commit `effect/pi-surface/` with the change |
 | fork boundary | A changed file outside the boundary | Move the change into a package or `effect/` |
 | dependency rules | A plugin imports a plugin, a facade imports a plugin, a platform import sits outside a `node` or `bun` file, or a package's `src` imports a Pi package that is not its own to wrap | Move the code. Plugins meet only in a product's composition. Import a Pi name from its package's facade; if the facade lacks it, offer it there |

@@ -2,7 +2,7 @@ import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Fiber, Option, Ref, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-import { InlineSandbox, type Run, Wasm } from "../src/index.ts";
+import { InlineSandbox, Run, Wasm } from "../src/index.ts";
 
 const sandbox = Effect.flatMap(Wasm.load(), (wasm) => InlineSandbox.make({ wasm }));
 
@@ -14,7 +14,7 @@ function answering(run: Run.Run, answer: (args: unknown) => unknown) {
 		yield* Stream.runForEach(run.events, (event) =>
 			Effect.gen(function* () {
 				yield* Ref.update(tags, (all) => [...all, event._tag]);
-				if (event._tag !== "Call") return;
+				if (!Run.Event.guards.Call(event)) return;
 				const next = yield* Ref.updateAndGet(seq, (n) => n + 1);
 				yield* run.deliver({ seq: next, id: event.call.id, outcome: { ok: true, value: answer(event.call.args) } });
 			}),
@@ -26,7 +26,7 @@ function answering(run: Run.Run, answer: (args: unknown) => unknown) {
 /** The first call `run` reports. */
 function firstCall(run: Run.Run) {
 	return run.events.pipe(
-		Stream.filter((event): event is Run.Call => event._tag === "Call"),
+		Stream.filter(Run.Event.guards.Call),
 		Stream.runHead,
 		Effect.map((head) => Option.getOrThrow(head).call),
 	);
@@ -91,7 +91,9 @@ describe("start", () => {
 					tools: [{ name: "echo" }],
 				});
 				const { id } = yield* firstCall(run);
-				const failure = yield* Effect.flip(run.deliver({ seq: 1, id: id + 1, outcome: { ok: true, value: 1 } }));
+				const failure = yield* Effect.flip(
+					run.deliver({ seq: 1, id: Run.CallId.make(id + 1), outcome: { ok: true, value: 1 } }),
+				);
 				yield* run.deliver({ seq: 1, id, outcome: { ok: true, value: "echoed" } });
 				return [failure, yield* run.result] as const;
 			}),

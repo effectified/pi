@@ -75,8 +75,7 @@ export const VIEW = [
 
 /** A session's storage: every public method of Pi's `SessionManager` as an Effect, under its name. */
 export interface SessionManagerHandle
-	extends Reads<PiSessionManager, (typeof READS)[number]>,
-		Writes<PiSessionManager, (typeof WRITES)[number]> {
+	extends Reads<PiSessionManager, (typeof READS)[number]>, Writes<PiSessionManager, (typeof WRITES)[number]> {
 	/** Pi's manager, for what takes one as it is: `createAgentSession`, a runtime factory. */
 	readonly pi: PiSessionManager;
 }
@@ -86,7 +85,7 @@ export type SessionView = Reads<PiSessionManager, (typeof VIEW)[number]>;
 
 /** The session storage a session is created with. */
 export class SessionManager extends Context.Service<SessionManager, SessionManagerHandle>()(
-	"@effectified/pi-coding-agent/SessionManager",
+	"@effectified/pi-coding-agent/session-manager/SessionManager",
 ) {
 	/** `SessionManager` from an Effect that opens one, such as `SessionManager.inMemory()`. */
 	static layer<E, R>(open: Effect.Effect<SessionManagerHandle, E, R>): Layer.Layer<SessionManager, E, R> {
@@ -94,71 +93,53 @@ export class SessionManager extends Context.Service<SessionManager, SessionManag
 	}
 
 	/** A session kept in memory only, never written. `entries` restores an earlier session's. */
-	static inMemory(
-		cwd?: string,
-		options?: NewSessionOptions,
-		entries?: Parameters<typeof PiSessionManager.inMemory>[2],
-	): Effect.Effect<SessionManagerHandle, CodingAgentFailure> {
-		return opened(() => PiSessionManager.inMemory(cwd, options, entries));
-	}
+	static readonly inMemory = Effect.fn("SessionManager.inMemory")(
+		(cwd?: string, options?: NewSessionOptions, entries?: Parameters<typeof PiSessionManager.inMemory>[2]) =>
+			opened(() => PiSessionManager.inMemory(cwd, options, entries)),
+	);
 
 	/** A new session written to `sessionDir` (default: the agent directory's sessions of `cwd`). */
-	static create(
-		cwd: string,
-		sessionDir?: string,
-		options?: NewSessionOptions,
-	): Effect.Effect<SessionManagerHandle, CodingAgentFailure> {
-		return opened(() => PiSessionManager.create(cwd, sessionDir, options));
-	}
+	static readonly create = Effect.fn("SessionManager.create")(
+		(cwd: string, sessionDir?: string, options?: NewSessionOptions) =>
+			opened(() => PiSessionManager.create(cwd, sessionDir, options)),
+	);
 
 	/** The session stored in the file `path`. */
-	static open(
-		path: string,
-		sessionDir?: string,
-		cwdOverride?: string,
-	): Effect.Effect<SessionManagerHandle, CodingAgentFailure> {
-		return opened(() => PiSessionManager.open(path, sessionDir, cwdOverride));
-	}
+	static readonly open = Effect.fn("SessionManager.open")((path: string, sessionDir?: string, cwdOverride?: string) =>
+		opened(() => PiSessionManager.open(path, sessionDir, cwdOverride)),
+	);
 
 	/** The most recent session of `cwd`, or a new one when there is none. */
-	static continueRecent(cwd: string, sessionDir?: string): Effect.Effect<SessionManagerHandle, CodingAgentFailure> {
-		return opened(() => PiSessionManager.continueRecent(cwd, sessionDir));
-	}
+	static readonly continueRecent = Effect.fn("SessionManager.continueRecent")((cwd: string, sessionDir?: string) =>
+		opened(() => PiSessionManager.continueRecent(cwd, sessionDir)),
+	);
 
 	/** A new session in `targetCwd` holding a copy of the session in the file `sourcePath`. */
-	static forkFrom(
-		sourcePath: string,
-		targetCwd: string,
-		sessionDir?: string,
-		options?: NewSessionOptions,
-	): Effect.Effect<SessionManagerHandle, CodingAgentFailure> {
-		return opened(() => PiSessionManager.forkFrom(sourcePath, targetCwd, sessionDir, options));
-	}
+	static readonly forkFrom = Effect.fn("SessionManager.forkFrom")(
+		(sourcePath: string, targetCwd: string, sessionDir?: string, options?: NewSessionOptions) =>
+			opened(() => PiSessionManager.forkFrom(sourcePath, targetCwd, sessionDir, options)),
+	);
 
 	/** The file of the session of `cwd` with the id `id`, if one is stored. */
-	static findById(
-		cwd: string,
-		id: string,
-		sessionDir?: string,
-	): Effect.Effect<string | undefined, CodingAgentFailure> {
-		return Effect.try({ try: () => PiSessionManager.findById(cwd, id, sessionDir), catch: fromPi });
-	}
+	static readonly findById = Effect.fn("SessionManager.findById")(
+		(cwd: string, id: string, sessionDir?: string): Effect.Effect<string | undefined, CodingAgentFailure> =>
+			Effect.try({ try: () => PiSessionManager.findById(cwd, id, sessionDir), catch: fromPi }),
+	);
 
 	/** The stored sessions of `cwd`, most recent first. Interrupting it stops reading them. */
-	static list(cwd: string, sessionDir?: string): Effect.Effect<SessionInfo[], CodingAgentFailure> {
-		return Effect.tryPromise({
-			try: (signal) => PiSessionManager.list(cwd, sessionDir, undefined, signal),
-			catch: fromPi,
-		});
-	}
+	static readonly list = Effect.fn("SessionManager.list")(
+		(cwd: string, sessionDir?: string): Effect.Effect<SessionInfo[], CodingAgentFailure> =>
+			Effect.tryPromise({
+				try: (signal) => PiSessionManager.list(cwd, sessionDir, undefined, signal),
+				catch: fromPi,
+			}),
+	);
 
 	/** The stored sessions of every directory, most recent first. Interrupting it stops reading them. */
-	static listAll(sessionDir?: string): Effect.Effect<SessionInfo[], CodingAgentFailure> {
-		return Effect.tryPromise({
-			try: (signal) => PiSessionManager.listAll(sessionDir, undefined, signal),
-			catch: fromPi,
-		});
-	}
+	static readonly listAll = Effect.fn("SessionManager.listAll")(
+		(sessionDir?: string): Effect.Effect<SessionInfo[], CodingAgentFailure> =>
+			Effect.tryPromise({ try: (signal) => PiSessionManager.listAll(sessionDir, undefined, signal), catch: fromPi }),
+	);
 
 	/** Pi's manager as a handle. It stays the caller's. */
 	static fromPi(pi: PiSessionManager): SessionManagerHandle {

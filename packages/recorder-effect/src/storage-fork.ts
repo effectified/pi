@@ -1,8 +1,7 @@
 // A forked storage starts clean: what a host runs on a copy of a whole harness storage before its first call.
 
-import type { ConversationId } from "@effectified/pi-durable";
 import { type DurableError, Harness } from "@effectified/pi-durable";
-import { Effect, Option, Stream } from "effect";
+import { Array as Arr, Effect, Option, Stream } from "effect";
 import { Cursor } from "./cursor.ts";
 
 /**
@@ -17,13 +16,15 @@ import { Cursor } from "./cursor.ts";
 export const onStorageFork: Effect.Effect<void, DurableError, Harness.Harness> = Harness.commit((tx) =>
 	Effect.gen(function* () {
 		// Pi's rule for a commit: every table read comes before the first write.
-		const heads: Array<readonly [ConversationId, number]> = [];
-		yield* Stream.runForEach(tx.conversations(), (conversation) =>
-			Effect.map(tx.latestEntryId(conversation.id), (head) => {
-				if (Option.isSome(head)) heads.push([conversation.id, head.value]);
-			}),
+		const heads = yield* Stream.runCollect(
+			Stream.mapEffect(tx.conversations(), (conversation) =>
+				Effect.map(
+					tx.latestEntryId(conversation.id),
+					Option.map((head) => [conversation.id, head] as const),
+				),
+			),
 		);
 		const cursors = yield* tx.doc(Cursor);
-		for (const [conversationId, delivered] of heads) cursors.draft[conversationId] = delivered;
+		for (const [conversationId, delivered] of Arr.getSomes(heads)) cursors.draft[conversationId] = delivered;
 	}),
-);
+).pipe(Effect.withSpan("StorageFork.onStorageFork"));

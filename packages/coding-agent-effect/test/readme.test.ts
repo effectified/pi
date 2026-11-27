@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { fauxAssistantMessage, fauxToolCall, runLive, runTest, ScriptedModels } from "@effectified/pi-ai/testing";
 import { Env } from "@effectified/pi-env";
-import type { McpClientService } from "@effectified/pi-mcp";
+import { type McpClientService, McpServerName } from "@effectified/pi-mcp";
 import { Context, Effect, Fiber, Latch, Layer, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {
@@ -205,7 +205,9 @@ describe("the built-in tools of the README", () => {
 
 // README: MCP tools
 const docsExtension = (client: McpClientService) =>
-	Effect.map(McpTools.tools(client, { server: "docs" }), (tools) => Extension.make("docs", { tools }));
+	Effect.map(McpTools.tools(client, { server: McpServerName.make("docs") }), (tools) =>
+		Extension.make("docs", { tools }),
+	);
 
 describe("the MCP tools of the README", () => {
 	it("make an extension of an MCP server's tools", async () => {

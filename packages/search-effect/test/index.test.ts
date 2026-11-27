@@ -23,7 +23,9 @@ describe("the public surface", () => {
 			"FetchOptions",
 			"Hit",
 			"Limits",
+			"ProviderName",
 			"Retrieval",
+			"SearchError",
 			"SearchOptions",
 			"SearchProvider",
 			"SearchProviderFailure",
@@ -68,6 +70,7 @@ describe("the port and a provider file", () => {
 			"provider/evidence.ts",
 			"provider/index.ts",
 			"provider/options.ts",
+			"provider/provider-name.ts",
 			"provider/retrieval.ts",
 			"provider/search-provider.ts",
 		]);

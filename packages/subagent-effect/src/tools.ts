@@ -1,35 +1,34 @@
 // The tools a parent's model delegates with: one that waits for the child, one that does not, and a status.
 
 import type { ConversationId, ToolRegistration } from "@effectified/pi-durable";
-import {
-	type DurableError,
-	type SchemaConversionError,
-	type SchemaDecodeError,
-	Task,
-	Tool,
-} from "@effectified/pi-durable";
-import { Effect, Option, Schema } from "effect";
+import { type SchemaConversionError, Task, Tool, ToolName } from "@effectified/pi-durable";
+import { Array as Arr, Effect, Match, Option, Schema } from "effect";
 import * as Child from "./child.ts";
 import type * as Declared from "./declared.ts";
 import type { ChildSetupFailed, DepthExceeded, TooManyChildren, UnknownSubagent } from "./errors.ts";
 import * as Outcome from "./outcome.ts";
 import type * as Run from "./run.ts";
 import * as Start from "./start.ts";
+import { Name } from "./subagent-name.ts";
 
 /** The names of the tools, as a parent's agent lists them and a guard grants them. */
-export const NAMES = { foreground: "subagent", background: "subagent_start", status: "subagent_status" } as const;
+export const NAMES = {
+	foreground: ToolName.make("subagent"),
+	background: ToolName.make("subagent_start"),
+	status: ToolName.make("subagent_status"),
+} as const;
 
-/** What the model passes to start a subagent. */
+/** What the model passes to start a subagent: decoding brands the subagent's name. */
 const Delegation = Schema.Struct({
-	subagent: Schema.String.annotate({ description: "The name of the subagent, one of those the tool lists." }),
+	subagent: Name.annotate({ description: "The name of the subagent, one of those the tool lists." }),
 	task: Schema.String.annotate({
 		description: "What the subagent must do. It sees nothing of this conversation: say everything it needs.",
 	}),
 });
 
-/** What the model passes to read a background subagent. */
+/** What the model passes to read a background subagent: decoding brands the handle. */
 const Handle = Schema.Struct({
-	handle: Schema.String.annotate({ description: `The handle ${NAMES.background} gave.` }),
+	handle: Child.Handle.annotate({ description: `The handle ${NAMES.background} gave.` }),
 });
 
 /**
@@ -37,14 +36,18 @@ const Handle = Schema.Struct({
  * crash runs again and finds the child it already started. They are registered only once `declared` is ready, so a
  * registry with a declaration that cannot work does not build. Every result about a child names its conversation in
  * the details, which the model never reads: `{ conversationId, handle, subagent, mode, status }`, with `result` for a
- * typed result and `reason` for a failure.
+ * typed result and `reason` for a failure. The handlers are not `Effect.fn`: Pi Durable's `Tool.make` traces every
+ * call already.
  */
 export function make(
 	config: Declared.Config,
 	declared: Effect.Effect<Declared.Declared, SchemaConversionError>,
 	run: Run.Run,
 ) {
-	const subagents = config.subagents.map((subagent) => `- ${subagent.name}: ${subagent.description}`).join("\n");
+	const subagents = Arr.join(
+		Arr.map(config.subagents, (subagent) => `- ${subagent.name}: ${subagent.description}`),
+		"\n",
+	);
 	const delegate = (mode: Child.Mode, request: typeof Delegation.Type, api: Tool.Api) =>
 		Effect.flatMap(declared, (ready) => Start.start(api, ready, run, { ...request, mode }));
 	const foreground = Tool.make(NAMES.foreground, {
@@ -94,16 +97,16 @@ export function make(
 }
 
 /** What a registry installs of a tool: its name, and how it is built. */
-export interface Installable<Name extends string, R> {
-	readonly name: Name;
+export interface Installable<N extends string, R> {
+	readonly name: N;
 	readonly registration: Effect.Effect<ToolRegistration, SchemaConversionError, R>;
 }
 
 /** `tool`, built only once the declarations are ready: their failure is the registry's. */
-function checked<Name extends string, R>(
+function checked<N extends string, R>(
 	declared: Effect.Effect<Declared.Declared, SchemaConversionError>,
-	tool: Installable<Name, R>,
-): Installable<Name, R> {
+	tool: Installable<N, R>,
+): Installable<N, R> {
 	return { name: tool.name, registration: Effect.andThen(declared, tool.registration) };
 }
 
@@ -120,7 +123,7 @@ const REFUSALS = {
 	ChildSetupFailed: (refused: ChildSetupFailed) => refusal(refused._tag, refused.message),
 };
 
-/** How far a child is, as the details say it. */
+/** How far a child is, as the details say it. The details are JSON for a host, written here and never read back. */
 type Progress =
 	| { readonly status: "running" }
 	| { readonly status: "answered" }
@@ -128,25 +131,17 @@ type Progress =
 	| { readonly status: "failed"; readonly reason: string };
 
 /** The details of a tool result about a child: what a host opens the child by, and how far it is. */
-function detailsOf(
-	conversationId: ConversationId,
-	subagent: string,
-	mode: Child.Mode,
-	progress: Progress,
-): Schema.Json {
+function detailsOf(conversationId: ConversationId, subagent: Name, mode: Child.Mode, progress: Progress): Schema.Json {
 	return { conversationId, handle: Child.key(conversationId), subagent, mode, ...progress };
 }
 
 /** How a child ended, as the details say it. */
 function progressOf(state: Child.Ended): Progress {
-	switch (state._tag) {
-		case "Answered":
-			return { status: "answered" };
-		case "Typed":
-			return { status: "answered", result: state.result };
-		case "Failed":
-			return { status: "failed", reason: state.reason };
-	}
+	return Match.valueTags(state, {
+		Answered: (): Progress => ({ status: "answered" }),
+		Typed: ({ result }): Progress => ({ status: "answered", result }),
+		Failed: ({ reason }): Progress => ({ status: "failed", reason }),
+	});
 }
 
 /**
@@ -154,34 +149,30 @@ function progressOf(state: Child.Ended): Progress {
  * that says why it failed, or that it is still working. A handle that is no child of the asking conversation is an
  * error result: a model reads only its own children.
  */
-function read(api: Tool.Api, handle: string): Effect.Effect<Tool.Reply<string>, DurableError | SchemaDecodeError> {
-	return Effect.gen(function* () {
-		const found = yield* api.snapshot(Child.Document, handle);
-		if (Option.isNone(found) || found.value.parent !== api.conversationId) {
-			return Tool.error(`No subagent of yours has the handle ${handle}.`, { details: { status: "unknown" } });
-		}
-		const { conversation: conversationId, subagent, mode, state, task } = found.value;
-		if (state._tag === "Running") {
-			const ended = Option.match(yield* api.getTask(task), {
-				onNone: () => true,
-				onSome: (record) => Task.ended(record.state.status),
-			});
-			// A run that ended and left `Running` never got to write: Pi faulted or orphaned it.
-			return ended
-				? Tool.error(`Subagent ${subagent} ended without recording a result.`, {
-						details: detailsOf(conversationId, subagent, mode, { status: "failed", reason: "no_result" }),
-					})
-				: Tool.result(`Subagent ${subagent} (handle ${handle}) is still working.`, {
-						details: detailsOf(conversationId, subagent, mode, { status: "running" }),
-					});
-		}
-		const answer = yield* Option.match(Outcome.answerOf(state), {
-			onNone: () => Effect.succeedNone,
-			// Any entry by id, read in a commit without writes.
-			onSome: (id) => api.commit((tx) => tx.entry(id)),
-		});
-		const { isError, text } = Outcome.reading(state, answer);
-		const details = detailsOf(conversationId, subagent, mode, progressOf(state));
-		return isError ? Tool.error(text, { details }) : Tool.result(text, { details });
+const read = Effect.fn("SubagentTools.read")(function* (api: Tool.Api, handle: Child.Handle) {
+	const found = yield* api.snapshot(Child.Document, handle);
+	if (Option.isNone(found) || found.value.parent !== api.conversationId) {
+		return Tool.error(`No subagent of yours has the handle ${handle}.`, { details: { status: "unknown" } });
+	}
+	const { conversation: conversationId, subagent, mode, state, task } = found.value;
+	if (state._tag === "Running") {
+		const record = yield* api.getTask(task);
+		// A run that ended and left `Running` never got to write: Pi faulted or orphaned it.
+		const ended = Option.match(record, { onNone: () => true, onSome: (kept) => Task.ended(kept.state.status) });
+		return ended
+			? Tool.error(`Subagent ${subagent} ended without recording a result.`, {
+					details: detailsOf(conversationId, subagent, mode, { status: "failed", reason: "no_result" }),
+				})
+			: Tool.result(`Subagent ${subagent} (handle ${handle}) is still working.`, {
+					details: detailsOf(conversationId, subagent, mode, { status: "running" }),
+				});
+	}
+	const answer = yield* Option.match(Outcome.answerOf(state), {
+		onNone: () => Effect.succeedNone,
+		// Any entry by id, read in a commit without writes.
+		onSome: (id) => api.commit((tx) => tx.entry(id)),
 	});
-}
+	const { isError, text } = Outcome.reading(state, answer);
+	const details = detailsOf(conversationId, subagent, mode, progressOf(state));
+	return isError ? Tool.error(text, { details }) : Tool.result(text, { details });
+});

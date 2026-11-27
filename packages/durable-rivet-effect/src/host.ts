@@ -1,23 +1,28 @@
 // The process that hosts actors: a rivetkit registry of this package's actors, started and stopped with a scope.
 
 import type { StrictOmit } from "@effectified/pi-ai";
-import { Effect, Exit, Predicate, type Scope } from "effect";
+import { Array as Arr, Effect, Exit, Predicate, Record, Redacted, type Scope } from "effect";
 import { type RegistryActors, type RegistryConfigInput, setup } from "rivetkit";
 import { decodeBridgeRivetError } from "rivetkit/errors";
 import type * as Actor from "./actor.ts";
 import { EngineUnavailable } from "./errors.ts";
 import * as ExitGuard from "./node/exit-guard.ts";
 
-/** Options of `serve`: the actors, and rivetkit's `setup` options, passed on unchanged. */
-export interface ServeOptions extends StrictOmit<RegistryConfigInput<RegistryActors>, "use"> {
+/**
+ * Options of `serve`: the actors, and rivetkit's `setup` options, passed on unchanged but for the engine's token,
+ * which is a secret.
+ */
+export interface ServeOptions extends StrictOmit<RegistryConfigInput<RegistryActors>, "use" | "token"> {
 	readonly actors: ReadonlyArray<Actor.Any>;
 	/** rivetkit actor definitions of the product's own, registered beside `actors` under the names given here. */
 	readonly use?: RegistryActors;
+	/** The engine's token, shown in no log or error. */
+	readonly token?: Redacted.Redacted<string>;
 }
 
 /** The actors by the name each is registered under: the `use` of a registry a product sets up itself. */
 export function use(actors: ReadonlyArray<Actor.Any>): RegistryActors {
-	return Object.fromEntries(actors.map((definition) => [definition.name, definition.rivet]));
+	return Record.fromEntries(Arr.map(actors, (definition) => [definition.name, definition.rivet] as const));
 }
 
 /**
@@ -41,12 +46,16 @@ export function use(actors: ReadonlyArray<Actor.Any>): RegistryActors {
  * - A shutdown does not stop an engine that never became healthy: rivetkit stops that process only when its health
  *   checks run out. The local engine entries stop it themselves.
  */
-export function serve(options: ServeOptions): Effect.Effect<void, EngineUnavailable, Scope.Scope> {
-	const { actors, use: others, ...config } = options;
-	return Effect.uninterruptibleMask((restore) =>
+export const serve: (options: ServeOptions) => Effect.Effect<void, EngineUnavailable, Scope.Scope> = Effect.fn(
+	"Host.serve",
+)(function* (options: ServeOptions) {
+	const { actors, use: others, token, ...config } = options;
+	// The token leaves `Redacted` here, where rivetkit sends it.
+	const secrets = token === undefined ? {} : { token: Redacted.value(token) };
+	return yield* Effect.uninterruptibleMask((restore) =>
 		Effect.gen(function* () {
 			const registry = yield* Effect.try({
-				try: () => setup({ ...config, use: { ...others, ...use(actors) } }),
+				try: () => setup({ ...config, ...secrets, use: { ...others, ...use(actors) } }),
 				catch: startFailure,
 			});
 			const started = yield* Effect.exit(
@@ -64,7 +73,7 @@ export function serve(options: ServeOptions): Effect.Effect<void, EngineUnavaila
 			return yield* Effect.failCause(started.cause);
 		}),
 	);
-}
+});
 
 const FAILED_START_SHUTDOWN_MILLIS = 2_000;
 
@@ -82,6 +91,6 @@ function startFailure(cause: unknown): EngineUnavailable {
 	// rivetkit's native core reports through an error whose message holds the encoded error.
 	const rivet = decodeBridgeRivetError(message);
 	return rivet === undefined
-		? new EngineUnavailable({ code: "start", message, retryable: false })
-		: new EngineUnavailable({ code: `${rivet.group}.${rivet.code}`, message: rivet.message, retryable: false });
+		? EngineUnavailable.make({ code: "start", message, retryable: false })
+		: EngineUnavailable.make({ code: `${rivet.group}.${rivet.code}`, message: rivet.message, retryable: false });
 }

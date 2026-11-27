@@ -4,33 +4,26 @@
 export * as ConversationForks from "./conversation-forks.ts";
 export type { Coordinator } from "./coordinator.ts";
 export {
-	type Destroyed,
+	Destroyed,
 	Fork,
 	ForkDriver,
 	type ForkDriverService,
+	ForkFailure,
 	ForkGone,
 	type ForkRequest,
 	ForkRetryLater,
 	JobStatus,
 	Notice,
 	Place,
-	type RunRequest,
+	RunRequest,
 } from "./driver.ts";
 export { ForkSetupFailed, InvalidPlan, InvalidValue, SwarmFaulted, SwarmIdTaken, SwarmNotFound } from "./errors.ts";
-export { events, type JobEvent } from "./events.ts";
+export { events, JobEvent } from "./events.ts";
 export * as ForkSetup from "./fork-setup.ts";
-export {
-	cancel,
-	destroyFork,
-	type JobReport,
-	result,
-	type Started,
-	type Status,
-	start,
-	status,
-} from "./host.ts";
+export { cancel, destroyFork, JobReport, result, Started, Status, start, status } from "./host.ts";
+export { ForkId, JobKey, RequestId, SwarmId } from "./ids.ts";
 export { Reason, Status as JobState } from "./job.ts";
-export { type Cleaned, type Ending, type JobOutcome, type Outcome, Stored, typed } from "./outcome.ts";
+export { Cleaned, Ending, type JobOutcome, type Outcome, Stored, StoredJob, typed } from "./outcome.ts";
 export { onStorageFork } from "./storage-fork.ts";
 export { extension, make, named, type Plan, type PlannedJob, type Swarm, type SwarmExtension } from "./swarm.ts";
-export type { Definition, JobRef, Work } from "./work.ts";
+export { type Definition, JobRef, type Work } from "./work.ts";

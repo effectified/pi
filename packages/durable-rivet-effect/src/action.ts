@@ -26,8 +26,11 @@ export interface Boundary<Input extends Wire, Output extends Wire, Failure exten
  * One action of an actor, made by `make`. `run` is the action inside the actor, with the harness and the product's
  * services: it decodes the JSON input, runs the handler, and always succeeds with the answer that crosses back.
  */
-export interface Action<Input extends Wire, Output extends Wire, Failure extends Wire, R>
-	extends Boundary<Input, Output, Failure> {
+export interface Action<Input extends Wire, Output extends Wire, Failure extends Wire, R> extends Boundary<
+	Input,
+	Output,
+	Failure
+> {
 	readonly run: (encoded: unknown) => Effect.Effect<Answer, never, R>;
 }
 

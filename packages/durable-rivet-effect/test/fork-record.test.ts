@@ -4,10 +4,11 @@ import { runTest } from "@effectified/pi-ai/testing";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import * as ForkRecord from "../src/fork-record.ts";
+import { ActorId } from "../src/ids.ts";
 import { sqlOver, standIn } from "./raw-stand-in.ts";
 
-const first = { actorId: "source-a", key: ["a"], forkedAt: 1_000 };
-const second = { actorId: "source-b", key: ["b"], forkedAt: 2_000 };
+const first = { actorId: ActorId.make("source-a"), key: ["a"], forkedAt: 1_000 };
+const second = { actorId: ActorId.make("source-b"), key: ["b"], forkedAt: 2_000 };
 
 describe("ForkRecord.record", () => {
 	it("finds nothing for a fork whose hygiene was not recorded", () =>
@@ -26,7 +27,7 @@ describe("ForkRecord.record", () => {
 				yield* forks.mark(first, Option.some({ job: 7, tags: ["x", null] }), 1_500);
 				yield* forks.mark(second, Option.none(), 2_500);
 				// JSON's own `null` is an input, which is not the absence of one.
-				const third = { actorId: "source-c", key: ["c"], forkedAt: 3_000 };
+				const third = { actorId: ActorId.make("source-c"), key: ["c"], forkedAt: 3_000 };
 				yield* forks.mark(third, Option.some(null), 3_500);
 				expect(yield* forks.find(third)).toEqual(Option.some(Option.some(null)));
 				// A second record of the same fork changes nothing: the first one stands.

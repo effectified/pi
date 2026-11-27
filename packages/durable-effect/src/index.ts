@@ -37,7 +37,7 @@ export {
 	Cancelled,
 	ConversationBusy,
 	ConversationIdle,
-	type DurableError,
+	DurableError,
 	ReadAfterWrite,
 	ReadOnlySession,
 	SessionFailed,
@@ -59,6 +59,9 @@ export * as Submission from "./submission.ts";
 export * as Task from "./task.ts";
 export * as TaskHooks from "./task-hooks.ts";
 export * as Tool from "./tool.ts";
+export { ToolName } from "./tool-name.ts";
+// The id a model gives a tool call: pi-ai's, branded by @effectified/pi-ai, here for the plugins that build on this.
+export { ToolCallId } from "@effectified/pi-ai";
 export * as Transcript from "./transcript.ts";
 export * as Tx from "./tx.ts";
 export * as Watch from "./watch.ts";

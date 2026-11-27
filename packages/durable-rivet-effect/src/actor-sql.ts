@@ -1,7 +1,7 @@
 // An Effect `SqlClient` over a Rivet actor's raw database: Rivet's own transactions under Effect's transaction rules,
 // one queue with every other user of the database, and this host's rule for a refusal with a retry hint.
 
-import { Effect, Fiber, FiberSet, type Semaphore, Stream } from "effect";
+import { Array as Arr, Effect, Fiber, FiberSet, Option, Record as Rec, type Semaphore, Stream } from "effect";
 import * as Reactivity from "effect/reactivity/Reactivity";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { Connection } from "effect/sql/SqlConnection";
@@ -32,107 +32,109 @@ import type { RawDatabase } from "./sqlite-database.ts";
  * - Rows are Rivet's: objects with the columns in order. `values` reads them in that order, so two columns of one
  *   name give one value. A BLOB reads back as an array of numbers. `stream` reads every row first.
  */
-export function make(
+export const make: (
 	raw: RawDatabase,
 	queue: Semaphore.Semaphore,
 	work: FiberSet.FiberSet,
-): Effect.Effect<SqlClient.SqlClient> {
-	return Effect.gen(function* () {
-		/** One request to Rivet, as a fiber of the wake's work; interrupting the caller interrupts it. */
-		const inWake = <A>(request: Effect.Effect<A, SqlError>): Effect.Effect<A, SqlError> =>
-			Effect.flatMap(FiberSet.run(work, request), (fiber) =>
-				Effect.onInterrupt(Fiber.join(fiber), () => Fiber.interrupt(fiber)),
-			);
-		const outside = connection((sql, params) =>
-			inWake(
-				Effect.retry(
-					attempt(() => raw.execute(sql, ...params)),
-					HINTED,
-				),
-			),
+) => Effect.Effect<SqlClient.SqlClient> = Effect.fn("ActorSql.make")(function* (
+	raw: RawDatabase,
+	queue: Semaphore.Semaphore,
+	work: FiberSet.FiberSet,
+) {
+	/** One request to Rivet, as a fiber of the wake's work; interrupting the caller interrupts it. */
+	const inWake = <A>(request: Effect.Effect<A, SqlError>): Effect.Effect<A, SqlError> =>
+		Effect.flatMap(FiberSet.run(work, request), (fiber) =>
+			Effect.onInterrupt(Fiber.join(fiber), () => Fiber.interrupt(fiber)),
 		);
-
-		// The transaction that holds the queue: at most one, since it holds the queue.
-		let open: Open | undefined;
-		const inside = (sql: string, params: ReadonlyArray<unknown>) =>
-			Effect.suspend(() => {
-				// Set: a statement reaches this connection only inside its transaction, whose end it cannot outlive.
-				const transaction = open as Open;
-				if (transaction.refusal !== undefined) return Effect.fail(transaction.refusal);
-				return inWake(
-					Effect.tapError(
-						attempt(() => transaction.handle.execute(sql, ...params)),
-						(error) =>
-							Effect.sync(() => {
-								if (hintOf(error) !== undefined) transaction.refusal = error;
-							}),
-					),
-				);
-			});
-		const transactionConnection = connection(inside);
-		/** A savepoint statement; nothing to do in a transaction a refusal ended, which is rolled back as a whole. */
-		const savepoint = (sql: string) =>
-			// Set: savepoints are taken and ended inside the transaction.
-			Effect.suspend(() => ((open as Open).refusal === undefined ? Effect.asVoid(inside(sql, [])) : Effect.void));
-
-		const client = yield* SqlClient.make({
-			driver: "rivet",
-			acquirer: Effect.as(
-				Effect.acquireRelease(queue.take(1), () => queue.release(1), { interruptible: true }),
-				outside,
+	const outside = connection((sql, params) =>
+		inWake(
+			Effect.retry(
+				attempt(() => raw.execute(sql, ...params)),
+				HINTED,
 			),
-			borrower: (use) => queue.withPermit(use(outside)),
-			compiler: Statement.makeCompilerSqlite(),
-			spanAttributes: [[ATTR_DB_SYSTEM_NAME, "sqlite"]],
-		}).pipe(Effect.provide(Reactivity.layer));
+		),
+	);
 
-		const withTransaction = SqlClient.makeWithTransaction({
-			transactionService: client.transactionService,
-			spanAttributes: [[ATTR_DB_SYSTEM_NAME, "sqlite"]],
-			// Rivet's transaction begins here, in the turn of the queue: what waits for it waits for the connection.
-			acquireConnection: (restore) =>
-				Effect.gen(function* () {
-					yield* Effect.acquireRelease(restore(queue.take(1)), () => queue.release(1));
-					// Ends a transaction this scope began and nothing ended: an interrupted or failed start.
-					yield* Effect.addFinalizer(() =>
-						Effect.suspend(() => {
-							const left = open;
-							open = undefined;
-							return left === undefined ? Effect.void : rolledBack(left);
+	// The transaction that holds the queue: at most one, since it holds the queue.
+	let open: Open | undefined;
+	const inside = (sql: string, params: ReadonlyArray<unknown>) =>
+		Effect.suspend(() => {
+			// Set: a statement reaches this connection only inside its transaction, whose end it cannot outlive.
+			const transaction = open as Open;
+			if (transaction.refusal !== undefined) return Effect.fail(transaction.refusal);
+			return inWake(
+				Effect.tapError(
+					attempt(() => transaction.handle.execute(sql, ...params)),
+					(error) =>
+						Effect.sync(() => {
+							if (Option.isSome(hintOf(error))) transaction.refusal = error;
 						}),
-					);
-					const opening = begin(raw, (opened) => {
-						open = opened;
-					});
-					yield* restore(Effect.retry(opening, HINTED));
-					return transactionConnection;
-				}),
-			begin: () => Effect.void,
-			commit: () =>
-				Effect.suspend(() => {
-					// Set: Effect commits and rolls back only a transaction this client began.
-					const transaction = open as Open;
-					open = undefined;
-					const { refusal } = transaction;
-					return refusal === undefined
-						? committed(transaction)
-						: Effect.andThen(rolledBack(transaction), Effect.fail(refusal));
-				}),
-			rollback: () =>
-				Effect.suspend(() => {
-					// Set: as for the commit.
-					const transaction = open as Open;
-					open = undefined;
-					return rolledBack(transaction);
-				}),
-			savepoint: (_, id) => savepoint(`SAVEPOINT effect_sql_${id}`),
-			releaseSavepoint: (_, id) => savepoint(`RELEASE SAVEPOINT effect_sql_${id}`),
-			rollbackSavepoint: (_, id) => savepoint(`ROLLBACK TO SAVEPOINT effect_sql_${id}`),
+				),
+			);
 		});
-		// As `@effect/sql-sqlite-do` does for Durable Objects: the client's own `withTransaction` would send `BEGIN`.
-		return Object.assign(client, { withTransaction });
+	const transactionConnection = connection(inside);
+	/** A savepoint statement; nothing to do in a transaction a refusal ended, which is rolled back as a whole. */
+	const savepoint = (sql: string) =>
+		// Set: savepoints are taken and ended inside the transaction.
+		Effect.suspend(() => ((open as Open).refusal === undefined ? Effect.asVoid(inside(sql, [])) : Effect.void));
+
+	const client = yield* SqlClient.make({
+		driver: "rivet",
+		acquirer: Effect.as(
+			Effect.acquireRelease(queue.take(1), () => queue.release(1), { interruptible: true }),
+			outside,
+		),
+		borrower: (use) => queue.withPermit(use(outside)),
+		compiler: Statement.makeCompilerSqlite(),
+		spanAttributes: [[ATTR_DB_SYSTEM_NAME, "sqlite"]],
+	}).pipe(Effect.provideServiceEffect(Reactivity.Reactivity, Reactivity.make));
+
+	const withTransaction = SqlClient.makeWithTransaction({
+		transactionService: client.transactionService,
+		spanAttributes: [[ATTR_DB_SYSTEM_NAME, "sqlite"]],
+		// Rivet's transaction begins here, in the turn of the queue: what waits for it waits for the connection.
+		acquireConnection: (restore) =>
+			Effect.gen(function* () {
+				yield* Effect.acquireRelease(restore(queue.take(1)), () => queue.release(1));
+				// Ends a transaction this scope began and nothing ended: an interrupted or failed start.
+				yield* Effect.addFinalizer(() =>
+					Effect.suspend(() => {
+						const left = open;
+						open = undefined;
+						return left === undefined ? Effect.void : rolledBack(left);
+					}),
+				);
+				const opening = begin(raw, (opened) => {
+					open = opened;
+				});
+				yield* restore(Effect.retry(opening, HINTED));
+				return transactionConnection;
+			}),
+		begin: () => Effect.void,
+		commit: () =>
+			Effect.suspend(() => {
+				// Set: Effect commits and rolls back only a transaction this client began.
+				const transaction = open as Open;
+				open = undefined;
+				const { refusal } = transaction;
+				return refusal === undefined
+					? committed(transaction)
+					: Effect.andThen(rolledBack(transaction), Effect.fail(refusal));
+			}),
+		rollback: () =>
+			Effect.suspend(() => {
+				// Set: as for the commit.
+				const transaction = open as Open;
+				open = undefined;
+				return rolledBack(transaction);
+			}),
+		savepoint: (_, id) => savepoint(`SAVEPOINT effect_sql_${id}`),
+		releaseSavepoint: (_, id) => savepoint(`RELEASE SAVEPOINT effect_sql_${id}`),
+		rollbackSavepoint: (_, id) => savepoint(`ROLLBACK TO SAVEPOINT effect_sql_${id}`),
 	});
-}
+	// As `@effect/sql-sqlite-do` does for Durable Objects: the client's own `withTransaction` would send `BEGIN`.
+	return Object.assign(client, { withTransaction });
+});
 
 /** OpenTelemetry's attribute for the database system, as Effect's SQLite drivers set it. */
 const ATTR_DB_SYSTEM_NAME = "db.system.name";
@@ -160,13 +162,14 @@ function begin(raw: RawDatabase, opened: (transaction: Open) => void): Effect.Ef
 		const finished = Promise.withResolvers<boolean>();
 		let called = false;
 		let abandoned = false;
-		const done = raw.transaction(async (handle) => {
+		// Rivet's callback, which commits when its promise resolves and rolls back when it rejects.
+		const done = raw.transaction((handle) => {
 			called = true;
-			if (abandoned) throw ROLLED_BACK;
+			if (abandoned) return Promise.reject(ROLLED_BACK);
 			// Given in this call, not through the fiber: an interruption cannot come between Rivet and its owner.
 			opened({ handle, finish: finished.resolve, done, refusal: undefined });
 			resume(Effect.void);
-			if (!(await finished.promise)) throw ROLLED_BACK;
+			return finished.promise.then((commit) => (commit ? undefined : Promise.reject(ROLLED_BACK)));
 		}, TRANSACTION);
 		done.catch((cause: unknown) => {
 			if (!called) resume(Effect.fail(sqlError(cause, "transaction")));
@@ -217,7 +220,7 @@ function connection(
 	const rows: Connection["execute"] = (sql, params, transform) =>
 		transform === undefined ? run(sql, params) : Effect.map(run(sql, params), transform);
 	const values = (sql: string, params: ReadonlyArray<unknown>) =>
-		Effect.map(run(sql, params), (found) => found.map((row) => Object.values(row)));
+		Effect.map(run(sql, params), (found) => Arr.map(found, (row) => Rec.values(row)));
 	return {
 		execute: rows,
 		executeRaw: run,
@@ -235,11 +238,11 @@ function attempt(request: () => Promise<ReadonlyArray<Record<string, unknown>>>)
 }
 
 function sqlError(cause: unknown, operation: string): SqlError {
-	return new SqlError({ reason: classifySqliteError(cause, { operation }) });
+	return SqlError.make({ reason: classifySqliteError(cause, { operation }) });
 }
 
 /** The retry hint of a refusal, read off Rivet's error under the `SqlError`. */
-function hintOf(error: SqlError): number | undefined {
+function hintOf(error: SqlError): Option.Option<number> {
 	return Refusal.retryAfterMillis(error.reason.cause);
 }
 

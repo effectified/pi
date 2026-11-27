@@ -5,11 +5,13 @@ import { describe, expect, it } from "vitest";
 import { CarriedFailure, carriedFailure, currentRunner } from "../src/run-in-pi.ts";
 import { runTest } from "../src/testing/index.ts";
 
-class Failed extends Schema.TaggedError<Failed>()("Failed", { message: Schema.String }) {}
+class Failed extends Schema.TaggedError<Failed, { readonly brand: unique symbol }>()("Failed", {
+	message: Schema.String,
+}) {}
 
 describe("currentRunner", () => {
 	it("resolves with the value, and rejects with the failure carried", async () => {
-		const failure = new Failed({ message: "no" });
+		const failure = Failed.make({ message: "no" });
 		const result = await runTest(
 			Effect.gen(function* () {
 				const run = yield* currentRunner<never>();
@@ -23,6 +25,17 @@ describe("currentRunner", () => {
 		expect(result.rejection).toBeInstanceOf(CarriedFailure);
 		expect((result.rejection as CarriedFailure).message).toBe("no");
 		expect(carriedFailure(result.rejection)).toEqual(Option.some(failure));
+	});
+
+	it("runs a callback made inside a span outside it: the span ended when the runner was made", async () => {
+		const parent = await runTest(
+			Effect.gen(function* () {
+				const run = yield* currentRunner<never>().pipe(Effect.withSpan("setup"));
+				// The callback runs later, as pi-ai calls one: it finds no current span, not the ended "setup".
+				return yield* Effect.promise(() => run(Effect.option(Effect.currentSpan)));
+			}),
+		);
+		expect(parent).toEqual(Option.none());
 	});
 
 	it("rejects with a defect as it is, and interrupts the Effect when the signal aborts", async () => {
@@ -50,7 +63,7 @@ describe("currentRunner", () => {
 
 describe("carriedFailure", () => {
 	it("finds the failure in the chain of causes, and nothing elsewhere", () => {
-		const wrapped = new Error("outer", { cause: new CarriedFailure("inner") });
+		const wrapped = new Error("outer", { cause: CarriedFailure.make({ failure: "inner" }) });
 		expect(carriedFailure(wrapped)).toEqual(Option.some("inner"));
 		expect(carriedFailure(new Error("plain"))).toEqual(Option.none());
 		expect(carriedFailure("text")).toEqual(Option.none());

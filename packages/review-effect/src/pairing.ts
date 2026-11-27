@@ -1,18 +1,24 @@
 // The family rule: a reviewer reviews an author only when both families are known and differ.
 
-import { Option } from "effect";
+import { Option, Schema } from "effect";
 import { familyOf, type ModelRef, type Policy } from "./policy.ts";
-import type { Party } from "./verdict.ts";
+import { Party, Unreviewed } from "./verdict.ts";
+
+/**
+ * An author and a reviewer with their families, and whether that reviewer may review that author: `Reviewable`, or
+ * `Unreviewable` with the reason, which is one of a verdict's (`Unreviewed`).
+ */
+export const Pairing = Schema.TaggedUnion({
+	Reviewable: { author: Party, reviewer: Party },
+	Unreviewable: {
+		author: Party,
+		reviewer: Party,
+		reason: Unreviewed.pick(["author_family_unknown", "reviewer_family_unknown", "same_family"]),
+	},
+});
 
 /** An author and a reviewer with their families, and whether that reviewer may review that author. */
-export type Pairing =
-	| { readonly _tag: "Reviewable"; readonly author: Party; readonly reviewer: Party }
-	| {
-			readonly _tag: "Unreviewable";
-			readonly author: Party;
-			readonly reviewer: Party;
-			readonly reason: "author_family_unknown" | "reviewer_family_unknown" | "same_family";
-	  };
+export type Pairing = typeof Pairing.Type;
 
 /**
  * Pairs `author` with `reviewer`: the policy's reviewer before a request, and afterwards the model the reviewer's
@@ -23,16 +29,19 @@ export function pair(policy: Policy, author: ModelRef, reviewer: ModelRef = poli
 	const authorFamily = familyOf(policy.families, author);
 	const reviewerFamily = familyOf(policy.families, reviewer);
 	const parties = { author: party(author, authorFamily), reviewer: party(reviewer, reviewerFamily) };
-	if (Option.isNone(authorFamily)) return { _tag: "Unreviewable", ...parties, reason: "author_family_unknown" };
-	if (Option.isNone(reviewerFamily)) return { _tag: "Unreviewable", ...parties, reason: "reviewer_family_unknown" };
-	if (authorFamily.value === reviewerFamily.value) return { _tag: "Unreviewable", ...parties, reason: "same_family" };
-	return { _tag: "Reviewable", ...parties };
+	const unreviewable = (reason: typeof Pairing.cases.Unreviewable.Type.reason) =>
+		Pairing.cases.Unreviewable.make({ ...parties, reason });
+	if (Option.isNone(authorFamily)) return unreviewable("author_family_unknown");
+	if (Option.isNone(reviewerFamily)) return unreviewable("reviewer_family_unknown");
+	if (authorFamily.value === reviewerFamily.value) return unreviewable("same_family");
+	return Pairing.cases.Reviewable.make(parties);
 }
 
+/** `model` as a party of a review, with its family when the table gives one. */
 function party(model: ModelRef, family: Option.Option<string>): Party {
-	return {
+	return Party.make({
 		provider: model.provider,
 		modelId: model.modelId,
 		...(Option.isSome(family) ? { family: family.value } : {}),
-	};
+	});
 }

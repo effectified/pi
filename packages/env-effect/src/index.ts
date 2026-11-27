@@ -10,7 +10,7 @@ export type * from "@earendil-works/pi-env";
 export type * from "@effectified/pi-durable/env";
 export * as Env from "./env.ts";
 export {
-	type EnvError,
+	EnvError,
 	EXECUTION_ERROR_CODES,
 	ExecFailed,
 	FILE_ERROR_CODES,
@@ -18,10 +18,10 @@ export {
 	HostKeyChanged,
 	HostKeyUnknown,
 	RemoteFailed,
-	type SshError,
+	SshError,
 	SshFailed,
 	UnexpectedError,
 } from "./errors.ts";
-export type { Command, ExecEvent, ExecOptions } from "./exec.ts";
+export { type Command, ExecEvent, type ExecOptions, ExecResult } from "./exec.ts";
 export type { BinaryReader } from "./readers.ts";
 export type { WatchChange, Watcher } from "./watcher.ts";

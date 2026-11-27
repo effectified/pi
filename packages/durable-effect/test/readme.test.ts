@@ -6,7 +6,7 @@ import { type AssistantMessage, Models } from "@effectified/pi-ai";
 import { fauxAssistantMessage, fauxText, runTest } from "@effectified/pi-ai/testing";
 // The Chord facade by its sources, as this package by its own: durable-effect does not depend on it.
 import { ChordContext } from "@effectified/pi-chord/context";
-import { Context, Effect, Fiber, Latch, Layer, Option, Queue, Schedule, Schema, Stream } from "effect";
+import { Array as Arr, Context, Effect, Fiber, Latch, Layer, Option, Queue, Schedule, Schema, Stream } from "effect";
 import { Tool as AiTool, Toolkit } from "effect/ai";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
@@ -14,7 +14,7 @@ import * as NodeEnv from "../src/env/node.ts";
 import type { ConversationId, EntryId, Report, TaskId, Wake } from "../src/index.ts";
 import {
 	BuiltinDoc,
-	type Conversation,
+	Conversation,
 	Doc,
 	Entry,
 	Extension,
@@ -29,6 +29,7 @@ import {
 	Task,
 	TaskHooks,
 	Tool,
+	ToolName,
 } from "../src/index.ts";
 import { answer, held, ScriptedModels, storageConformance, TestHarness, toolCall } from "../src/testing/index.ts";
 import * as Tools from "../src/tools.ts";
@@ -112,7 +113,9 @@ const Todos = Doc.make({
 });
 const Note = Entry.make("app.note", Schema.Struct({ text: Schema.String, at: Schema.Date }));
 
-class TooMany extends Schema.TaggedError<TooMany>()("TooMany", { max: Schema.Number }) {}
+class TooMany extends Schema.TaggedError<TooMany, { readonly brand: unique symbol }>()("TooMany", {
+	max: Schema.Int,
+}) {}
 
 const addTodo = (item: string, at: Date) =>
 	Effect.gen(function* () {
@@ -122,7 +125,7 @@ const addTodo = (item: string, at: Date) =>
 				const todos = yield* tx.doc(Todos, root.id);
 				const { items } = yield* todos.get;
 				// A failing body fails the commit with its own error, and nothing of it is stored.
-				if (items.length >= 2) return yield* new TooMany({ max: 2 });
+				if (items.length >= 2) return yield* TooMany.make({ max: 2 });
 				yield* todos.set({ items: [...items, item] });
 				const note = yield* tx.append(Note, root.id, { data: { text: `added ${item}`, at } });
 				return note.id;
@@ -195,7 +198,7 @@ const Subagent = Tool.make("subagent", {
 					if (existing !== undefined) return existing.id;
 					const created = yield* tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
 					// It starts as a copy of this conversation's agent; without the subagent tool itself.
-					yield* tx.configure(created.id, { tools: { remove: ["subagent"] } });
+					yield* tx.configure(created.id, { tools: { remove: [ToolName.make("subagent")] } });
 					return created.id;
 				}),
 			);
@@ -245,11 +248,11 @@ describe("the tool examples of the README", () => {
 			Effect.gen(function* () {
 				const root = yield* TestHarness.root;
 				yield* root.prompt("Delegate.");
-				const [result] = yield* toolResults;
-				const child = (result?.details as { readonly conversationId: number }).conversationId;
+				const result = Option.getOrThrow(Arr.head(yield* toolResults));
+				const child = (result.details as { readonly conversationId: number }).conversationId;
 				const conversation = Option.getOrThrow(yield* Harness.conversation(child as typeof root.id));
 				return {
-					content: result?.content,
+					content: result.content,
 					childTools: (yield* conversation.agent).tools.map((tool) => tool.name),
 					rootTools: (yield* root.agent).tools.map((tool) => tool.name),
 				};
@@ -282,7 +285,7 @@ describe("the agent example of the README", () => {
 				const tools = Effect.map(root.agent, (agent) => agent.tools.map((tool) => tool.name));
 				// README: Agent.
 				// Exactly these two tools, whatever else the selected extensions bring.
-				yield* root.configure({ tools: ["lookup", "read"] });
+				yield* root.configure({ tools: [Lookup, ToolName.make("read")] });
 				const named = yield* tools;
 				// Of those, the model is offered only `lookup`; a tool may still call `read`.
 				yield* root.configure({ modelTools: [Lookup] });
@@ -371,7 +374,7 @@ describe("the host example of the README", () => {
 	});
 
 	it("hands reports and wakes to the host, and gives every conversation its documents", async () => {
-		const Failing = Hook.afterResponse(() => Effect.fail(new Error("refused")));
+		const Failing = Hook.afterResponse(() => Effect.die(new Error("refused")));
 		const seen = await runTest(
 			Effect.gen(function* () {
 				// What the host was handed, in order: the test takes as many as it expects, then what else is there.
@@ -654,13 +657,13 @@ const Jobs = Doc.family({
 	kind: "swarm.job",
 	version: 1,
 	scope: "session",
-	schema: Schema.Struct({ conversationId: Schema.NullOr(Schema.Number) }),
+	schema: Schema.Struct({ conversationId: Schema.NullOr(Conversation.Id) }),
 	initial: () => ({ conversationId: null }),
 	checkpointWhen: () => false,
 });
 
-class AlreadyForked extends Schema.TaggedError<AlreadyForked>()("AlreadyForked", {
-	conversationId: Schema.Number,
+class AlreadyForked extends Schema.TaggedError<AlreadyForked, { readonly brand: unique symbol }>()("AlreadyForked", {
+	conversationId: Conversation.Id,
 }) {}
 
 // One fork per job key: `init` claims the key in the commit that creates the fork.
@@ -673,7 +676,7 @@ const forkFor = (parent: Conversation.Conversation, at: EntryId, key: string) =>
 				const job = yield* tx.doc(Jobs, key, null);
 				const claimed = (yield* job.get).conversationId;
 				// A failing init fails the creating commit: a retried job stores no second fork.
-				if (claimed !== null) return yield* new AlreadyForked({ conversationId: claimed });
+				if (claimed !== null) return yield* AlreadyForked.make({ conversationId: claimed });
 				yield* job.set({ conversationId });
 			}),
 	}); // Effect<Conversation, AlreadyForked | DurableError | SchemaDecodeError>
@@ -813,7 +816,7 @@ const Delegate = Tool.make("delegate", {
 					const existing = (yield* tx.scanConversations({ ownerTaskId: api.taskId }, 1)).items[0];
 					if (existing !== undefined) return existing.id;
 					const created = yield* tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
-					yield* tx.configure(created.id, { tools: { remove: ["delegate"] } });
+					yield* tx.configure(created.id, { tools: { remove: [ToolName.make("delegate")] } });
 					return created.id;
 				}),
 			);
@@ -1125,7 +1128,7 @@ describe("the sections and wrappers of the README", () => {
 
 		const rules = Section.make("rules", () => Policy.use(({ text }) => Effect.succeedSome(text)));
 
-		const audited = Tool.wrap("lookup", (tool) => ({
+		const audited = Tool.wrap(Lookup.name, (tool) => ({
 			execute: (args, api) => Effect.tap(tool.execute(args, api), () => Effect.logInfo(`lookup ${api.callId}`)),
 		}));
 

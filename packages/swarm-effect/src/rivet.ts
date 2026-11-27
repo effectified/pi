@@ -3,6 +3,6 @@
 
 export { type Actions, actions } from "./rivet/actions.ts";
 export { Assignment, forkKey } from "./rivet/assignment.ts";
-export { layer, type Needs, type Options } from "./rivet/driver.ts";
+export { layer, type Needs, Options } from "./rivet/driver.ts";
 export { forkHygiene } from "./rivet/hygiene.ts";
 export { conversation as jobConversation, JobRefused } from "./rivet/job.ts";

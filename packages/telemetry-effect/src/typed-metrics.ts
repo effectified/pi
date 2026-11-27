@@ -48,30 +48,32 @@ export interface TypedMetrics<S extends Schemas> {
  * descriptions, units and boundaries, each measurement an Effect. They update the Effect metrics of their names, the
  * series Pi's own instruments update. Schemas that declare a metric name twice do not type-check, as in Pi.
  */
-export function make<const S extends Schemas>(
+export const make: <const S extends Schemas>(
 	schemas: Parameters<typeof createTypedMetrics<S>>[1],
-): Effect.Effect<TypedMetrics<S>, never, PiTelemetry> {
-	return Effect.map(Effect.service(PiTelemetry), (telemetry) => {
-		// Pi's instruments take exactly the arguments `Counter` and `Histogram` derive from their types, per name; one
-		// implementation for every name sees them with the loose signature of `Loose`.
-		const typed = createTypedMetrics(telemetry.metrics ?? NOOP_TELEMETRY_METRICS, schemas) as unknown as Loose;
-		const measured: LooseMeasured = {
-			counter: (name) => {
-				const instrument = typed.counter(name);
-				return { add: (...args) => Effect.sync(() => instrument.add(...args)) };
-			},
-			upDownCounter: (name) => {
-				const instrument = typed.upDownCounter(name);
-				return { add: (...args) => Effect.sync(() => instrument.add(...args)) };
-			},
-			histogram: (name) => {
-				const instrument = typed.histogram(name);
-				return { record: (...args) => Effect.sync(() => instrument.record(...args)) };
-			},
-		};
-		return measured as unknown as TypedMetrics<S>;
-	});
-}
+) => Effect.Effect<TypedMetrics<S>, never, PiTelemetry> = Effect.fn("TypedMetrics.make")(function* <
+	const S extends Schemas,
+>(schemas: Parameters<typeof createTypedMetrics<S>>[1]) {
+	const telemetry = yield* PiTelemetry;
+	// Pi's instruments take exactly the arguments `Counter` and `Histogram` derive from their types, per name; one
+	// implementation for every name sees them with the loose signature of `Loose`.
+	const typed = createTypedMetrics(telemetry.metrics ?? NOOP_TELEMETRY_METRICS, schemas) as unknown as Loose;
+	// A measurement is a per-item hot path: a plain `Effect.sync`, no span.
+	const measured: LooseMeasured = {
+		counter: (name) => {
+			const instrument = typed.counter(name);
+			return { add: (...args) => Effect.sync(() => instrument.add(...args)) };
+		},
+		upDownCounter: (name) => {
+			const instrument = typed.upDownCounter(name);
+			return { add: (...args) => Effect.sync(() => instrument.add(...args)) };
+		},
+		histogram: (name) => {
+			const instrument = typed.histogram(name);
+			return { record: (...args) => Effect.sync(() => instrument.record(...args)) };
+		},
+	};
+	return measured as unknown as TypedMetrics<S>;
+});
 
 /** pi-telemetry's typed metrics, seen by one implementation for every name. */
 interface Loose {

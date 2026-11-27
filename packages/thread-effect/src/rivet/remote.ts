@@ -2,11 +2,12 @@
 // client of the Rivet host, one actor per thread, with errors that say whether to try again.
 
 import type * as Approvals from "@effectified/pi-approvals";
-import { type Action, type CallError, Client } from "@effectified/pi-durable-rivet";
+import { type Action, CallError, Client } from "@effectified/pi-durable-rivet";
 import type * as Review from "@effectified/pi-review";
 import * as Swarm from "@effectified/pi-swarm";
-import { Context, Duration, Effect, Layer, Option, type Schedule } from "effect";
+import { Context, Duration, Effect, Layer, Option, type Schedule, Schema } from "effect";
 import { type ReviewerSharesFamily, ThreadNotFound } from "../errors.ts";
+import { type RequestKey, ThreadKey } from "../ids.ts";
 import type { Outcome } from "../outcome.ts";
 import type * as Swarms from "../swarms.ts";
 import type * as Threads from "../threads.ts";
@@ -15,26 +16,35 @@ import * as SwarmId from "./swarm-id.ts";
 import type * as ThreadActor from "./thread-actor.ts";
 import { HostUnavailable, OperationFailed, StillWorking } from "./wire.ts";
 
-/** What every operation can fail with: the host cannot be reached now, or the operation failed in the actor. */
-export type Failure = HostUnavailable | OperationFailed;
+/**
+ * What every operation can fail with: the host cannot be reached now, or the operation failed in the actor. Choose
+ * with `Failure.match`.
+ */
+export const Failure = Schema.Union([HostUnavailable, OperationFailed]).pipe(Schema.toTaggedUnion("_tag"));
+
+/** What every operation can fail with. */
+export type Failure = typeof Failure.Type;
 
 /**
  * One fork of a swarm: the swarm, and the job the fork was made for. `thread` is the thread the swarm runs on; left
  * out, the swarm id names it (`SwarmId`).
  */
-export interface ForkRef {
-	readonly thread?: string;
-	readonly swarmId: string;
-	readonly jobKey: string;
-}
+export const ForkRef = Schema.Struct({
+	thread: Schema.optionalKey(ThreadKey),
+	swarmId: Swarm.SwarmId,
+	jobKey: Swarm.JobKey,
+});
+
+/** One fork of a swarm. */
+export type ForkRef = typeof ForkRef.Type;
 
 /**
  * One operation on a swarm, found in the actor of its thread. With the swarm id alone, the id names the thread, as
  * every id `run` accepts does; with the thread given first, the id is taken as it is.
  */
 export interface OnSwarm<A> {
-	(swarmId: string): Effect.Effect<A, Failure | ThreadNotFound | SwarmId.SwarmIdNotOfThread>;
-	(thread: string, swarmId: string): Effect.Effect<A, Failure | ThreadNotFound>;
+	(swarmId: Swarm.SwarmId): Effect.Effect<A, Failure | ThreadNotFound | SwarmId.SwarmIdNotOfThread>;
+	(thread: ThreadKey, swarmId: Swarm.SwarmId): Effect.Effect<A, Failure | ThreadNotFound>;
 }
 
 /**
@@ -58,19 +68,19 @@ export interface Service {
 		 */
 		readonly start: (
 			work: Threads.Work,
-			key: string,
+			key: RequestKey,
 		) => Effect.Effect<Threads.Admitted, Failure | ReviewerSharesFamily>;
 		/**
 		 * Takes a stopped thread on, under the request key `key` (`Threads.takeOn`): a run that ended without an answer
 		 * is continued, a deferred review is asked for again. It returns once that is admitted.
 		 */
-		readonly resume: (thread: string, key: string) => Effect.Effect<Threads.TakenOn, Failure | ThreadNotFound>;
+		readonly resume: (thread: ThreadKey, key: RequestKey) => Effect.Effect<Threads.TakenOn, Failure | ThreadNotFound>;
 		/** Cancels a thread's run; succeeds once nothing of it runs. Idempotent. */
-		readonly cancel: (thread: string) => Effect.Effect<void, Failure | ThreadNotFound>;
+		readonly cancel: (thread: ThreadKey) => Effect.Effect<void, Failure | ThreadNotFound>;
 		/** Whether the thread has unfinished work. False for a thread nothing started: no actor is created to ask. */
-		readonly probe: (thread: string) => Effect.Effect<{ readonly alive: boolean }, Failure>;
+		readonly probe: (thread: ThreadKey) => Effect.Effect<Threads.Probe, Failure>;
 		/** The thread's durable outcome so far; none while it works. */
-		readonly outcome: (thread: string) => Effect.Effect<Option.Option<Outcome>, Failure | ThreadNotFound>;
+		readonly outcome: (thread: ThreadKey) => Effect.Effect<Option.Option<Outcome>, Failure | ThreadNotFound>;
 		/**
 		 * The thread's outcome once it has one, asking again on `schedule`. A schedule that ends fails the wait with
 		 * `StillWorking`. Every question wakes the thread's actor, so a schedule that asks a thread parked for a person
@@ -78,19 +88,21 @@ export interface Service {
 		 * asks nothing: the thread's actor calls its `OutcomeSink` for every outcome the thread reaches.
 		 */
 		readonly ended: (
-			thread: string,
+			thread: ThreadKey,
 			schedule: Schedule.Schedule<unknown>,
 		) => Effect.Effect<Outcome, Failure | ThreadNotFound | StillWorking>;
 		/** Delivers a person's decision to a held thread; succeeds once it is stored. */
 		readonly release: (
-			thread: string,
+			thread: ThreadKey,
 			decision: Review.Decision,
 		) => Effect.Effect<Review.Delivery, Failure | ThreadNotFound>;
 		/** The approval requests of the thread's parked calls that a decision can still reach. */
-		readonly pending: (thread: string) => Effect.Effect<ReadonlyArray<Approvals.Request>, Failure | ThreadNotFound>;
+		readonly pending: (
+			thread: ThreadKey,
+		) => Effect.Effect<ReadonlyArray<Approvals.Request>, Failure | ThreadNotFound>;
 		/** Delivers a person's decision about one pending approval request of the thread. */
 		readonly decide: (
-			thread: string,
+			thread: ThreadKey,
 			request: Approvals.Address,
 			decision: Approvals.Decision,
 		) => Effect.Effect<Approvals.Delivery, Failure | ThreadNotFound>;
@@ -114,22 +126,22 @@ export interface Service {
 			Failure | ThreadNotFound | Swarm.InvalidValue | Swarm.InvalidPlan | SwarmId.SwarmIdNotOfThread
 		>;
 		/** Cancels a swarm: `cancelling` once the abort is durably marked, `ended` for one that had ended. Idempotent. */
-		readonly cancel: OnSwarm<"cancelling" | "ended">;
+		readonly cancel: OnSwarm<Swarms.Cancelled>;
 		/** Whether the coordinator still runs, and the keys of the jobs it planned, in plan order. */
 		readonly probe: OnSwarm<Swarms.Probe>;
 		/** The swarm's typed result; none while it runs. The thread, between the two, is optional as in `OnSwarm`. */
 		readonly result: {
 			<A>(
 				swarm: Swarm.Swarm<never, A>,
-				swarmId: string,
+				swarmId: Swarm.SwarmId,
 			): Effect.Effect<
 				Option.Option<Swarm.Outcome<A>>,
 				Failure | ThreadNotFound | Swarm.InvalidValue | SwarmId.SwarmIdNotOfThread
 			>;
 			<A>(
 				swarm: Swarm.Swarm<never, A>,
-				thread: string,
-				swarmId: string,
+				thread: ThreadKey,
+				swarmId: Swarm.SwarmId,
 			): Effect.Effect<Option.Option<Swarm.Outcome<A>>, Failure | ThreadNotFound | Swarm.InvalidValue>;
 		};
 		/** What each job's fork settled so far, in plan order. */
@@ -145,15 +157,12 @@ export interface Service {
 		 */
 		readonly destroy: (
 			fork: ForkRef,
-		) => Effect.Effect<
-			{ readonly bytesWritten: Option.Option<number> },
-			Failure | ThreadNotFound | SwarmId.SwarmIdNotOfThread
-		>;
+		) => Effect.Effect<Swarm.Destroyed, Failure | ThreadNotFound | SwarmId.SwarmIdNotOfThread>;
 	};
 }
 
 /** The operations on the thread actors of one definition. */
-export class Remote extends Context.Service<Remote, Service>()("@effectified/pi-thread/Rivet/Remote") {}
+export class Remote extends Context.Service<Remote, Service>()("@effectified/pi-thread/rivet/remote") {}
 
 /** Options of `layer` and of `product`. */
 export interface Options {
@@ -169,7 +178,7 @@ export interface Options {
 	 * swarm's by the thread its id names, a fork's by its swarm. A fork's own key is made from its source's, inside
 	 * the actor, so it follows. Give `layer` and `product` the same function.
 	 */
-	readonly actorKey?: (thread: string) => Client.Key;
+	readonly actorKey?: (thread: ThreadKey) => Client.Key;
 }
 
 /** The operations on the actors of `definition`, on the `RivetClient` of the context (`Client.layer`). */
@@ -191,7 +200,7 @@ export function layer(
 export interface Product<P extends Readonly<Record<string, Action.Any>>> {
 	/** One product action of the actor of a thread that has one. It never creates an actor: `ThreadNotFound` then. */
 	readonly call: <Name extends keyof P & string>(
-		thread: string,
+		thread: ThreadKey,
 		action: Name,
 		input: Action.Input<P[Name]>,
 	) => Effect.Effect<Action.Output<P[Name]>, Action.Failure<P[Name]> | Failure | ThreadNotFound>;
@@ -200,7 +209,7 @@ export interface Product<P extends Readonly<Record<string, Action.Any>>> {
 	 * what it needs before `threads.start`, which is the first thing the actor's own Layers and services read.
 	 */
 	readonly callOrCreate: <Name extends keyof P & string>(
-		thread: string,
+		thread: ThreadKey,
 		action: Name,
 		input: Action.Input<P[Name]>,
 	) => Effect.Effect<Action.Output<P[Name]>, Action.Failure<P[Name]> | Failure>;
@@ -240,7 +249,7 @@ type Reach = ReturnType<typeof reach<ThreadActor.Definition>>;
  */
 function reach<D extends Client.Target>(definition: D, options: Options, context: Context.Context<Client.RivetClient>) {
 	const timeout = Duration.fromInputUnsafe(options.timeout ?? DEFAULT_TIMEOUT);
-	const keyOf = options.actorKey ?? ((thread: string): Client.Key => [thread]);
+	const keyOf = options.actorKey ?? ((thread: ThreadKey): Client.Key => [thread]);
 	/**
 	 * One operation: on the client, bounded in time, and failing as a caller tells failures apart. The action's own
 	 * error crosses as it is; a thread without an actor, or whose actor is gone, does not exist; an engine that cannot
@@ -248,88 +257,84 @@ function reach<D extends Client.Target>(definition: D, options: Options, context
 	 */
 	const bounded = <A, E>(
 		operation: string,
-		thread: string,
+		thread: ThreadKey,
 		effect: Effect.Effect<A, CallFailure<E>, Client.RivetClient>,
 	): Effect.Effect<A, E | Failure | ThreadNotFound> =>
 		effect.pipe(
 			Effect.mapError((error): E | Failure | ThreadNotFound => {
-				switch (error._tag) {
-					case "ActionFailed":
-						return error.error;
-					case "ThreadNotFound":
-						return error;
-					case "ActorGone":
-						return new ThreadNotFound({ thread });
-					case "ActorDefect":
-						return new OperationFailed({ operation, reason: error._tag, message: error.message });
-					case "EngineUnavailable": {
-						const { code, message, retryAfterMillis } = error;
-						return error.retryable
-							? new HostUnavailable({
+				// The action's own error `E` is generic, which `match` cannot carry: it and the lookup's failure first.
+				if (error._tag === "ActionFailed") return error.error;
+				if (error._tag === "ThreadNotFound") return error;
+				return CallError.match(error, {
+					ActorGone: () => ThreadNotFound.make({ thread }),
+					ActorDefect: (defect) =>
+						OperationFailed.make({ operation, reason: defect._tag, message: defect.message }),
+					EngineUnavailable: ({ code, message, retryable, retryAfterMillis }) =>
+						retryable
+							? HostUnavailable.make({
 									operation,
 									message,
 									...(retryAfterMillis === undefined ? {} : { retryAfterMillis }),
 								})
-							: new OperationFailed({ operation, reason: code, message });
-					}
-				}
+							: OperationFailed.make({ operation, reason: code, message }),
+				});
 			}),
-			Effect.timeoutOption(timeout),
-			Effect.flatMap(
-				Option.match({
-					onNone: () =>
-						Effect.fail(
-							new HostUnavailable({ operation, message: `No answer in ${Duration.toMillis(timeout)} ms` }),
-						),
-					onSome: (value) => Effect.succeed(value),
-				}),
-			),
+			Effect.timeoutOrElse({
+				duration: timeout,
+				orElse: () =>
+					Effect.fail(
+						HostUnavailable.make({ operation, message: `No answer in ${Duration.toMillis(timeout)} ms` }),
+					),
+			}),
 			Effect.provideContext(context),
 		);
 	/** The actor of a thread that was started; `ThreadNotFound` when there is none. It never creates one. */
-	const actorOf = (thread: string): Effect.Effect<Client.Handle<D>, CallError | ThreadNotFound, Client.RivetClient> =>
+	const actorOf = (
+		thread: ThreadKey,
+	): Effect.Effect<Client.Handle<D>, CallError | ThreadNotFound, Client.RivetClient> =>
 		Effect.flatMap(
 			Client.find(definition, keyOf(thread)),
-			Option.match({
-				onNone: () => Effect.fail(new ThreadNotFound({ thread })),
-				onSome: (handle) => Effect.succeed(handle),
-			}),
+			Effect.fromOption(() => ThreadNotFound.make({ thread })),
 		);
 	return {
 		/** One action of the actor of a thread that was started. */
 		on: <A, E>(
 			operation: string,
-			thread: string,
+			thread: ThreadKey,
 			call: (handle: Client.Handle<D>) => Effect.Effect<A, CallFailure<E>, Client.RivetClient>,
 		) => bounded(operation, thread, Effect.flatMap(actorOf(thread), call)),
 		/** One action of the actor of a thread, found or created. An actor destroyed in between took nothing. */
 		creating: <A, E>(
 			operation: string,
-			thread: string,
+			thread: ThreadKey,
 			call: (handle: Client.Handle<D>) => Effect.Effect<A, CallFailure<E>, Client.RivetClient>,
 		) =>
 			bounded(operation, thread, Effect.flatMap(Client.getOrCreate(definition, keyOf(thread)), call)).pipe(
-				Effect.catchIf(
-					(error): error is ThreadNotFound => error instanceof ThreadNotFound,
-					(error) => Effect.fail(destroyed(operation, error)),
-				),
+				Effect.catchIf(isThreadNotFound, (error) => Effect.fail(destroyed(operation, error))),
 			),
 	};
 }
 
+const isThreadNotFound = Schema.is(ThreadNotFound);
+
 /** The operations of `Remote` on the ways `reach` gives to the actors of a thread actor's definition. */
 function make({ on, creating }: Reach): Service {
-	const outcome = (thread: string) => on("outcome", thread, (handle) => Client.call(handle, "outcome", { thread }));
+	const outcome = (thread: ThreadKey) => on("outcome", thread, (handle) => Client.call(handle, "outcome", { thread }));
 	/** `call` as an operation on a swarm: with the thread it is given, or with the one the swarm id names. */
 	const onSwarm = <A>(
-		call: (thread: string, swarmId: string) => Effect.Effect<A, Failure | ThreadNotFound>,
+		call: (thread: ThreadKey, swarmId: Swarm.SwarmId) => Effect.Effect<A, Failure | ThreadNotFound>,
 	): OnSwarm<A> => {
-		function addressed(swarmId: string): Effect.Effect<A, Failure | ThreadNotFound | SwarmId.SwarmIdNotOfThread>;
-		function addressed(thread: string, swarmId: string): Effect.Effect<A, Failure | ThreadNotFound>;
-		function addressed(first: string, second?: string) {
+		function addressed(
+			swarmId: Swarm.SwarmId,
+		): Effect.Effect<A, Failure | ThreadNotFound | SwarmId.SwarmIdNotOfThread>;
+		function addressed(thread: ThreadKey, swarmId: Swarm.SwarmId): Effect.Effect<A, Failure | ThreadNotFound>;
+		function addressed(first: ThreadKey | Swarm.SwarmId, second?: Swarm.SwarmId) {
+			// One argument is a swarm id, two are a thread and a swarm id: the overloads say which.
 			return second === undefined
-				? Effect.flatMap(SwarmId.threadOf(first), (thread) => call(thread, first))
-				: call(first, second);
+				? Effect.flatMap(SwarmId.threadOf(Swarm.SwarmId.make(first)), (thread) =>
+						call(thread, Swarm.SwarmId.make(first)),
+					)
+				: call(ThreadKey.make(first), second);
 		}
 		return addressed;
 	};
@@ -339,25 +344,46 @@ function make({ on, creating }: Reach): Service {
 	);
 	function result<A>(
 		swarm: Swarm.Swarm<never, A>,
-		swarmId: string,
+		swarmId: Swarm.SwarmId,
 	): Effect.Effect<
 		Option.Option<Swarm.Outcome<A>>,
 		Failure | ThreadNotFound | Swarm.InvalidValue | SwarmId.SwarmIdNotOfThread
 	>;
 	function result<A>(
 		swarm: Swarm.Swarm<never, A>,
-		thread: string,
-		swarmId: string,
+		thread: ThreadKey,
+		swarmId: Swarm.SwarmId,
 	): Effect.Effect<Option.Option<Swarm.Outcome<A>>, Failure | ThreadNotFound | Swarm.InvalidValue>;
-	function result<A>(swarm: Swarm.Swarm<never, A>, first: string, second?: string) {
+	function result<A>(swarm: Swarm.Swarm<never, A>, first: ThreadKey | Swarm.SwarmId, second?: Swarm.SwarmId) {
 		return Effect.flatMap(
-			second === undefined ? stored(first) : stored(first, second),
+			second === undefined ? stored(Swarm.SwarmId.make(first)) : stored(ThreadKey.make(first), second),
 			Option.match({
 				onNone: () => Effect.succeedNone,
 				onSome: (value) => Effect.asSome(Swarm.typed(swarm.work, value)),
 			}),
 		);
 	}
+	/**
+	 * `swarms.run`: the id is checked against the thread before anything is sent, since an id that names another
+	 * thread could never be found again by itself; each input crosses in its JSON form, which is what the coordinator
+	 * stores; the agent change crosses by name, since a tool or an extension is code installed in the actor.
+	 */
+	const runSwarm: Service["swarms"]["run"] = Effect.fn("Remote.runSwarm")(function* <I>(
+		swarm: Swarm.Swarm<I, unknown>,
+		{ thread, id, jobs, cap, onFailure, pins, at, agent, fork }: Plan<I>,
+	) {
+		yield* SwarmId.ofThread(thread, id);
+		const encoded = yield* Effect.forEach(
+			jobs,
+			(job) => Effect.map(swarm.work.encodeInput(job.input), (input) => ({ key: job.key, input })),
+			{ concurrency: 1 },
+		);
+		const plan = { swarm: swarm.name, thread, id, jobs: encoded, cap, onFailure, pins: pins ?? [], fork };
+		const change = agent === undefined ? {} : { agent: yield* ForkAgent.toWire(id, agent) };
+		return yield* on("runSwarm", thread, (handle) =>
+			Client.call(handle, "runSwarm", { ...plan, ...change, ...(at === undefined ? {} : { at }) }),
+		);
+	});
 	return {
 		threads: {
 			start: (work, key) => creating("start", work.thread, (handle) => Client.call(handle, "start", { work, key })),
@@ -371,10 +397,7 @@ function make({ on, creating }: Reach): Service {
 			ended: (thread, schedule) =>
 				Effect.flatMap(
 					outcome(thread),
-					Option.match({
-						onNone: () => Effect.fail(new StillWorking({ thread })),
-						onSome: (ended) => Effect.succeed(ended),
-					}),
+					Effect.fromOption(() => StillWorking.make({ thread })),
 				).pipe(Effect.retry({ schedule, while: (error) => error._tag === "StillWorking" })),
 			release: (thread, decision) =>
 				on("release", thread, (handle) => Client.call(handle, "release", { thread, decision })),
@@ -385,21 +408,7 @@ function make({ on, creating }: Reach): Service {
 				),
 		},
 		swarms: {
-			run: (swarm, { thread, id, jobs, cap, onFailure, pins, at, agent, fork }) =>
-				Effect.gen(function* () {
-					// Before anything is sent: an id that names another thread could never be found again by itself.
-					yield* SwarmId.ofThread(thread, id);
-					// The JSON form of each input, which is what the coordinator stores and what crosses.
-					const encoded = yield* Effect.forEach(jobs, (job) =>
-						Effect.map(swarm.work.encodeInput(job.input), (input) => ({ key: job.key, input })),
-					);
-					const plan = { swarm: swarm.name, thread, id, jobs: encoded, cap, onFailure, pins: pins ?? [], fork };
-					// Names only: a tool or an extension is code, installed in the actor under its name.
-					const change = agent === undefined ? {} : { agent: yield* ForkAgent.toWire(id, agent) };
-					return yield* on("runSwarm", thread, (handle) =>
-						Client.call(handle, "runSwarm", { ...plan, ...change, ...(at === undefined ? {} : { at }) }),
-					);
-				}),
+			run: runSwarm,
 			cancel: onSwarm((thread, swarmId) =>
 				on("cancelSwarm", thread, (handle) => Client.call(handle, "cancelSwarm", { swarmId })),
 			),
@@ -422,7 +431,7 @@ function make({ on, creating }: Reach): Service {
 
 /** A call that found its actor destroyed between the lookup and the call: nothing was admitted. */
 function destroyed(operation: string, error: ThreadNotFound): OperationFailed {
-	return new OperationFailed({
+	return OperationFailed.make({
 		operation,
 		reason: error._tag,
 		message: `The actor of thread ${error.thread} was destroyed`,

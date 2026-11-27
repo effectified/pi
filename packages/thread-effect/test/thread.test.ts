@@ -5,7 +5,7 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { answer, held, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Fiber, Option } from "effect";
 import { describe, expect, it } from "vitest";
-import { ThreadNotFound, Threads } from "../src/index.ts";
+import { ThreadKey, ThreadNotFound, Threads } from "../src/index.ts";
 import {
 	advisory,
 	committed,
@@ -36,14 +36,14 @@ describe("a thread that calls a granted tool and answers", () => {
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				const outcome = yield* threads.work(work("t1", "What is record 42 called?"));
-				const conversation = yield* threads.conversation("t1");
+				const conversation = yield* threads.conversation(ThreadKey.make("t1"));
 				return {
 					outcome,
 					conversation: conversation.id,
 					events: [...(yield* routed(state, 3))],
 					again: yield* threads.work(work("t1", "What is record 42 called?")),
-					stored: yield* threads.outcome("t1"),
-					probe: yield* threads.probe("t1"),
+					stored: yield* threads.outcome(ThreadKey.make("t1")),
+					probe: yield* threads.probe(ThreadKey.make("t1")),
 				};
 			}),
 		);
@@ -204,12 +204,17 @@ describe("a thread that does not reach an answer", () => {
 				const threads = yield* Threads.Threads;
 				const working = yield* Effect.forkScoped(threads.work(work("t1", "Say hi.")));
 				yield* turn.requested;
-				const during = yield* threads.probe("t1");
-				yield* threads.cancel("t1");
+				const during = yield* threads.probe(ThreadKey.make("t1"));
+				yield* threads.cancel(ThreadKey.make("t1"));
 				const outcome = yield* Fiber.join(working);
 				// A second cancel, and a resume, change nothing: a cancelled thread is not continued.
-				yield* threads.cancel("t1");
-				return { during, outcome, resumed: yield* threads.resume("t1"), after: yield* threads.probe("t1") };
+				yield* threads.cancel(ThreadKey.make("t1"));
+				return {
+					during,
+					outcome,
+					resumed: yield* threads.resume(ThreadKey.make("t1")),
+					after: yield* threads.probe(ThreadKey.make("t1")),
+				};
 			}),
 		);
 		const cancelled = {
@@ -290,7 +295,11 @@ describe("a thread that does not reach an answer", () => {
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				const errored = yield* threads.work(work("t1", "Say hi."));
-				return { errored: errored._tag, resumed: yield* threads.resume("t1"), again: yield* threads.resume("t1") };
+				return {
+					errored: errored._tag,
+					resumed: yield* threads.resume(ThreadKey.make("t1")),
+					again: yield* threads.resume(ThreadKey.make("t1")),
+				};
 			}),
 		);
 		expect(result.errored).toBe("Errored");
@@ -309,7 +318,7 @@ describe("a thread that does not reach an answer", () => {
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				const refused = yield* Effect.flip(threads.admit({ ...work("t1", "Say hi."), maxTurns: 0 }));
-				return { refused: refused._tag, probe: yield* threads.probe("t1") };
+				return { refused: refused._tag, probe: yield* threads.probe(ThreadKey.make("t1")) };
 			}),
 		);
 		expect(result).toEqual({ refused: "SchemaDecodeError", probe: { alive: false } });
@@ -324,14 +333,14 @@ describe("a thread that does not reach an answer", () => {
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				return {
-					probe: yield* threads.probe("nobody"),
-					resume: yield* Effect.flip(threads.resume("nobody")),
-					cancel: yield* Effect.flip(threads.cancel("nobody")),
+					probe: yield* threads.probe(ThreadKey.make("nobody")),
+					resume: yield* Effect.flip(threads.resume(ThreadKey.make("nobody"))),
+					cancel: yield* Effect.flip(threads.cancel(ThreadKey.make("nobody"))),
 				};
 			}),
 		);
 		expect(result.probe).toEqual({ alive: false });
-		expect(result.resume).toEqual(new ThreadNotFound({ thread: "nobody" }));
-		expect(result.cancel).toEqual(new ThreadNotFound({ thread: "nobody" }));
+		expect(result.resume).toEqual(new ThreadNotFound({ thread: ThreadKey.make("nobody") }));
+		expect(result.cancel).toEqual(new ThreadNotFound({ thread: ThreadKey.make("nobody") }));
 	});
 });

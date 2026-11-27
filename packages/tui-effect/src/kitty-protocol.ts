@@ -13,6 +13,6 @@ export const isKittyProtocolActive: Effect.Effect<boolean> = Effect.sync(piIsKit
  * Sets the flag pi-tui's key decoding reads. pi-tui's terminal sets it when the terminal confirms the protocol and
  * clears it when it stops; set it only for a terminal of your own.
  */
-export function setKittyProtocolActive(active: boolean): Effect.Effect<void> {
-	return Effect.sync(() => piSetKittyProtocolActive(active));
-}
+export const setKittyProtocolActive = Effect.fn("Tui.setKittyProtocolActive")((active: boolean) =>
+	Effect.sync(() => piSetKittyProtocolActive(active)),
+);

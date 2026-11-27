@@ -83,23 +83,24 @@ export function stream(
  * A new, empty transcript of Pi's conversation, paging its entries. Fails with `UnexpectedError` when `pageSize` is
  * not an integer `1` or more, as Pi's constructor throws.
  */
-export function fromPi(conversation: PiConversation, options?: Options): Effect.Effect<Transcript, DurableError> {
-	return Effect.map(
-		Effect.try({
+export const fromPi: (conversation: PiConversation, options?: Options) => Effect.Effect<Transcript, DurableError> =
+	Effect.fn("Transcript.make")(function* (conversation, options) {
+		const transcript = yield* Effect.try({
 			try: () =>
 				new ConversationTranscript(
 					(query, limit, context) => conversation.entries(query, limit, undefined, context),
 					options,
 				),
-			catch: (cause) => new UnexpectedError({ cause }),
-		}),
-		(transcript): Transcript => ({
+			catch: (cause) => UnexpectedError.make({ cause }),
+		});
+		return {
 			conversationId: conversation.id,
 			merge: (view) => Effect.sync(() => transcript.merge(view)),
 			loadEarlier: call((context) => transcript.loadEarlier(context)),
-			fillGap: (gap) => call((context) => transcript.fillGap(gap, context)),
+			fillGap: Effect.fn("Transcript.fillGap")(function* (gap: Gap) {
+				return yield* call((context) => transcript.fillGap(gap, context));
+			}),
 			newest: Effect.sync(() => Option.fromUndefinedOr(transcript.newest)),
 			resume: Effect.sync(() => Option.fromUndefinedOr(transcript.resume)),
-		}),
-	);
-}
+		} satisfies Transcript;
+	});

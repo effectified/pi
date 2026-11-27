@@ -18,6 +18,6 @@ export const getKeybindings: Effect.Effect<KeybindingsManager> = Effect.sync(piG
  * from the program's definitions (pi-tui's `TUI_KEYBINDINGS` and its own) and the user's configuration, so keys stay
  * configurable.
  */
-export function setKeybindings(keybindings: KeybindingsManager): Effect.Effect<void> {
-	return Effect.sync(() => piSetKeybindings(keybindings));
-}
+export const setKeybindings = Effect.fn("Tui.setKeybindings")((keybindings: KeybindingsManager) =>
+	Effect.sync(() => piSetKeybindings(keybindings)),
+);

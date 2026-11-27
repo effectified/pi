@@ -3,6 +3,7 @@
 
 import type {
 	CodemodeExecuteOptions,
+	CodemodeOutcome,
 	CodemodeRun,
 	CodemodeRunOptions,
 	CodemodeSandboxBase,
@@ -60,17 +61,23 @@ export type RunCallbacksAreEvents = Assert<
 	Conform<CallbackKeys<CodemodeRunOptions>, "onStarted" | "onCall" | "onIdle">
 >;
 
-/** Each event carries its callback's arguments. */
+/** Pi's call with its number branded, as `Run.HostCall` carries it. */
+type BrandedCall = Omit<Parameters<CodemodeRunOptions["onCall"]>[0], "id"> & { readonly id: Run.CallId };
+
+/** Each event carries its callback's arguments, the call's number branded. */
 export type RunEventsCarryArguments = Assert<
 	Conform<
 		[[Run.Started["fingerprint"]], [Run.Call["call"]], [Run.Idle["seq"], Run.Idle["issued"]]],
 		[
 			Parameters<NonNullable<CodemodeRunOptions["onStarted"]>>,
-			Parameters<CodemodeRunOptions["onCall"]>,
+			[BrandedCall],
 			Parameters<NonNullable<CodemodeRunOptions["onIdle"]>>,
 		]
 	>
 >;
+
+/** `Run.Outcome` mirrors Pi's outcome of a call. */
+export type OutcomeConforms = Assert<Conform<Run.Outcome, CodemodeOutcome>>;
 
 /** Every option of a run is one of `Run.Options`, or the abort signal (the scope owns the run), or an event. */
 export type RunOptionsCovered = Assert<
@@ -80,11 +87,14 @@ export type RunOptionsCovered = Assert<
 /** Every member of Pi's run is one of `Run.Run`. */
 export type RunMembersCovered = Assert<Covers<CodemodeRun, Run.Run>>;
 
-/** An answer carries what Pi's `deliver` takes, `now` defaulting to the `Clock`. */
+/** What Pi's `deliver` takes. */
+type Deliver = Parameters<CodemodeRun["deliver"]>;
+
+/** An answer carries what Pi's `deliver` takes, `now` defaulting to the `Clock` and the call's number branded. */
 export type AnswerConforms = Assert<
 	Conform<
 		[Run.Answer["seq"], NonNullable<Run.Answer["now"]>, Run.Answer["id"], Run.Answer["outcome"]],
-		Parameters<CodemodeRun["deliver"]>
+		[Deliver[0], Deliver[1], Run.CallId, Deliver[3]]
 	>
 >;
 

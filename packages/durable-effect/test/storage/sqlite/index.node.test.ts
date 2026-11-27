@@ -1,9 +1,14 @@
 import { openNodeSqliteDatabase } from "@effectified/pi-chord/sqlite/node";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Storage } from "../../../src/index.ts";
 import { applyMigrations, CURRENT_SQLITE_SCHEMA_VERSION, sqlite } from "../../../src/storage/sqlite/index.ts";
 import { storageConformance } from "../../../src/testing/index.ts";
+
+/** The database refused a statement after the storage closed it. */
+class Closed extends Schema.TaggedError<Closed, { readonly brand: unique symbol }>()("Closed", {
+	cause: Schema.Defect(),
+}) {}
 
 /** Pi's SQLite storage on a Chord database in memory, made for each build. */
 const inMemory = Layer.unwrap(Effect.map(openNodeSqliteDatabase(":memory:"), (database) => sqlite(database)));
@@ -49,7 +54,9 @@ describe.skipIf("Bun" in globalThis)("sqlite on a Chord database", () => {
 				Effect.gen(function* () {
 					const database = yield* openNodeSqliteDatabase(":memory:");
 					yield* Effect.scoped(Layer.build(sqlite(database)));
-					return yield* Effect.exit(Effect.tryPromise(() => database.get("SELECT 1")));
+					return yield* Effect.exit(
+						Effect.tryPromise({ try: () => database.get("SELECT 1"), catch: (cause) => Closed.make({ cause }) }),
+					);
 				}),
 			),
 		);

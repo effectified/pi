@@ -10,7 +10,7 @@ describe("inMemoryTransportPair", () => {
 	it("hands what the client end sends to the peer's Stream, and what the peer sends to the client end", async () => {
 		const seen = await runTest(
 			Effect.gen(function* () {
-				const pair = yield* inMemoryTransportPair();
+				const pair = yield* inMemoryTransportPair;
 				const delivered: JsonRpcMessage[] = [];
 				pair.client.onMessage((message) => delivered.push(message));
 				yield* Effect.promise(() => pair.client.start());
@@ -28,14 +28,13 @@ describe("inMemoryTransportPair", () => {
 	it("closes both ends with the scope: the peer's Stream ends and its sends fail as closed", async () => {
 		const seen = await runTest(
 			Effect.gen(function* () {
-				const pair = yield* Effect.scoped(inMemoryTransportPair());
+				const pair = yield* Effect.scoped(inMemoryTransportPair);
 				const rest = yield* Stream.runCollect(pair.server.messages);
 				const sent = yield* Effect.exit(pair.server.send({ jsonrpc: "2.0", method: "late" }));
 				return { rest, sent };
 			}),
 		);
 		expect(seen.rest).toEqual([]);
-		expect(Exit.isFailure(seen.sent)).toBe(true);
-		if (Exit.isFailure(seen.sent)) expect(String(seen.sent.cause)).toContain("McpConnectionClosedError");
+		expect(Exit.isFailure(seen.sent) ? String(seen.sent.cause) : "succeeded").toContain("McpConnectionClosedError");
 	});
 });

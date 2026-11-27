@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+	AdmissionDenied,
 	type CodemodeFailure,
 	CodemodeSourceError,
 	DeliveryRejected,
@@ -13,12 +14,12 @@ import {
 describe("the errors", () => {
 	it("are tagged, carry Pi's message, and a catchTags covers the union", async () => {
 		const failures: ReadonlyArray<CodemodeFailure> = [
-			new CodemodeSourceError({ message: "empty" }),
-			new SandboxClosed({ message: "Sandbox is closed" }),
-			new ToolRejected({ message: "duplicate" }),
-			new RunRejected({ message: "seed" }),
-			new DeliveryRejected({ message: "not waiting" }),
-			new WasmLoadFailed({ message: "missing", cause: new Error("ENOENT") }),
+			CodemodeSourceError.make({ message: "empty", cause: new Error("empty") }),
+			SandboxClosed.make({ message: "Sandbox is closed" }),
+			ToolRejected.make({ message: "duplicate", cause: new Error("duplicate") }),
+			RunRejected.make({ message: "seed", cause: new Error("seed") }),
+			DeliveryRejected.make({ message: "not waiting", cause: new Error("not waiting") }),
+			WasmLoadFailed.make({ message: "missing", cause: new Error("ENOENT") }),
 		];
 		const handled = await Effect.runPromise(
 			Effect.forEach(failures, (failure) =>
@@ -42,5 +43,11 @@ describe("the errors", () => {
 			"delivery: not waiting",
 			"wasm: missing",
 		]);
+	});
+
+	it("AdmissionDenied is a tagged error whose message Pi reports", () => {
+		const denied = AdmissionDenied.make({ message: "no free worker" });
+		expect(denied).toBeInstanceOf(Error);
+		expect(denied).toMatchObject({ _tag: "AdmissionDenied", message: "no free worker" });
 	});
 });

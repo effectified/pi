@@ -1,7 +1,7 @@
 // The agent's hooks as Effects: what pi-agent-core calls around requests, turns and tool calls, in Effect terms.
 
 import type { AgentLoopConfig } from "@earendil-works/pi-agent-core";
-import type { Effect } from "effect";
+import { Effect } from "effect";
 import type { Run } from "./runner.ts";
 
 /** A Pi callback of one argument (and Pi's abort signal) as an Effect of the same argument and the awaited result. */
@@ -62,7 +62,9 @@ export type PiHooks = Partial<Pick<AgentLoopConfig, Exclude<HookKey, "prepareNex
 /**
  * `config` with its hooks replaced by Pi's callbacks, each running its Effect with `run`; its other fields are kept.
  * A hook Pi gives an abort signal runs with it; the others run with `signal()`, the signal of the run that asks them.
- * `prepareNextTurn` is dropped and left to the caller: Pi's loop and Pi's agent take it in different shapes.
+ * Each call of a hook has a span, `Hooks.<name>` (Pi asks them per turn, per request or per tool call), except
+ * `onProviderStreamEvent`, which Pi asks per event of a provider's stream. `prepareNextTurn` is dropped and left to
+ * the caller: Pi's loop and Pi's agent take it in different shapes.
  */
 export function toPi<R, C extends Hooks<R>>(
 	config: C,
@@ -85,21 +87,38 @@ export function toPi<R, C extends Hooks<R>>(
 	} = config;
 	return {
 		...settings,
-		...(convertToLlm && { convertToLlm: (messages) => run(convertToLlm(messages), signal()) }),
+		...(convertToLlm && {
+			convertToLlm: (messages) => run(Effect.withSpan(convertToLlm(messages), "Hooks.convertToLlm"), signal()),
+		}),
 		...(transformContext && {
-			transformContext: (messages, aborted) => run(transformContext(messages), aborted ?? signal()),
+			transformContext: (messages, aborted) =>
+				run(Effect.withSpan(transformContext(messages), "Hooks.transformContext"), aborted ?? signal()),
 		}),
-		...(getApiKey && { getApiKey: (provider) => run(getApiKey(provider), signal()) }),
+		...(getApiKey && {
+			getApiKey: (provider) => run(Effect.withSpan(getApiKey(provider), "Hooks.getApiKey"), signal()),
+		}),
 		...(beforeToolCall && {
-			beforeToolCall: (context, aborted) => run(beforeToolCall(context), aborted ?? signal()),
+			beforeToolCall: (context, aborted) =>
+				run(Effect.withSpan(beforeToolCall(context), "Hooks.beforeToolCall"), aborted ?? signal()),
 		}),
-		...(afterToolCall && { afterToolCall: (context, aborted) => run(afterToolCall(context), aborted ?? signal()) }),
-		...(finishTurn && { finishTurn: (turn, aborted) => run(finishTurn(turn), aborted ?? signal()) }),
+		...(afterToolCall && {
+			afterToolCall: (context, aborted) =>
+				run(Effect.withSpan(afterToolCall(context), "Hooks.afterToolCall"), aborted ?? signal()),
+		}),
+		...(finishTurn && {
+			finishTurn: (turn, aborted) => run(Effect.withSpan(finishTurn(turn), "Hooks.finishTurn"), aborted ?? signal()),
+		}),
 		...(prepareRequest && {
-			prepareRequest: (request, aborted) => run(prepareRequest(request), aborted ?? signal()),
+			prepareRequest: (request, aborted) =>
+				run(Effect.withSpan(prepareRequest(request), "Hooks.prepareRequest"), aborted ?? signal()),
 		}),
-		...(onPayload && { onPayload: (payload, model) => run(onPayload(payload, model), signal()) }),
-		...(onResponse && { onResponse: (response, model) => run(onResponse(response, model), signal()) }),
+		...(onPayload && {
+			onPayload: (payload, model) => run(Effect.withSpan(onPayload(payload, model), "Hooks.onPayload"), signal()),
+		}),
+		...(onResponse && {
+			onResponse: (response, model) =>
+				run(Effect.withSpan(onResponse(response, model), "Hooks.onResponse"), signal()),
+		}),
 		...(onProviderStreamEvent && {
 			onProviderStreamEvent: (data, model) => run(onProviderStreamEvent(data, model), signal()),
 		}),

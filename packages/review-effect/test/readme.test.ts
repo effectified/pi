@@ -1,6 +1,6 @@
 // The examples of README.md, each as it is written there, run on scripted models.
 
-import { Models } from "@effectified/pi-ai";
+import { fromPiModelRef, Models } from "@effectified/pi-ai";
 import { type FauxResponseStep, fauxAssistantMessage, fauxProvider } from "@effectified/pi-ai/testing";
 import { Harness, Registry, Storage } from "@effectified/pi-durable";
 import { answer, TestHarness } from "@effectified/pi-durable/testing";
@@ -10,11 +10,13 @@ import * as Review from "../src/index.ts";
 import { reached } from "./scene.ts";
 
 // Policy as data: who reviews, the family of every model, how many corrective runs, what blocks.
+const writer = fromPiModelRef({ provider: "author-lab", modelId: "writer" });
+const judge = fromPiModelRef({ provider: "reviewer-lab", modelId: "judge" });
 const policy: Review.Policy.Policy = {
-	reviewer: { provider: "reviewer-lab", modelId: "judge" },
+	reviewer: judge,
 	families: [
-		{ provider: "author-lab", modelId: "writer", family: "alpha" },
-		{ provider: "reviewer-lab", modelId: "judge", family: "beta" },
+		{ ...writer, family: "alpha" },
+		{ ...judge, family: "beta" },
 	],
 	maxCorrections: 1,
 	blocking: "block",
@@ -97,7 +99,7 @@ describe("README", () => {
 			blocking: "block",
 		});
 		const familyOf = (provider: string, modelId: string) =>
-			Review.Policy.familyOf(routed.families, { provider, modelId });
+			Review.Policy.familyOf(routed.families, fromPiModelRef({ provider, modelId }));
 		expect([
 			familyOf("router", "reviewer"),
 			familyOf("reviewer-lab", "judge"),
@@ -387,8 +389,8 @@ describe("README", () => {
 		const sameFamily = {
 			...policy,
 			families: [
-				{ provider: "author-lab", modelId: "writer", family: "alpha" },
-				{ provider: "reviewer-lab", modelId: "judge", family: "alpha" },
+				{ ...writer, family: "alpha" },
+				{ ...judge, family: "alpha" },
 			],
 		};
 		const live = harness({ policy: sameFamily, author: ["It is 41."], reviewer: [] });

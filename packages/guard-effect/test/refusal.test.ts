@@ -1,3 +1,4 @@
+import { ToolName } from "@effectified/pi-durable";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { Refusal } from "../src/index.ts";
@@ -15,6 +16,6 @@ describe("Refusal", () => {
 
 describe("unavailable", () => {
 	it("is the sentence Pi writes for a tool it does not have", () => {
-		expect(Refusal.unavailable("write")).toBe("Tool write is not available");
+		expect(Refusal.unavailable(ToolName.make("write"))).toBe("Tool write is not available");
 	});
 });

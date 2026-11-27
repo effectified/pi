@@ -9,6 +9,7 @@ import {
 	type RegisterFauxProviderOptions,
 } from "@earendil-works/pi-ai";
 import { Context, Effect, Layer } from "effect";
+import { type ModelRef, modelRefOf } from "../model-ref.ts";
 import { Models } from "../models.ts";
 
 /** The controls of the scripted provider `ScriptedModels.layer` registers. */
@@ -17,6 +18,8 @@ export interface ScriptedModelsService {
 	readonly provider: Provider;
 	/** The provider's first model: `faux/faux-1` unless the options name others. */
 	readonly model: Model<string>;
+	/** The name of `model`, for `getModel` and for the model of an agent. */
+	readonly ref: ModelRef;
 	/** Every model of the provider. */
 	readonly models: readonly Model<string>[];
 	/** Replaces the queue of responses. Each request takes the next one; a request with none queued fails. */
@@ -31,7 +34,7 @@ export interface ScriptedModelsService {
 
 /** A scripted pi-ai provider for tests: no network, no keys, responses in the order they were queued. */
 export class ScriptedModels extends Context.Service<ScriptedModels, ScriptedModelsService>()(
-	"@effectified/pi-ai/testing/ScriptedModels",
+	"@effectified/pi-ai/testing/scripted-models/ScriptedModels",
 ) {
 	/**
 	 * A fresh scripted provider and a `Models` that holds only it. `options` are pi-ai's `fauxProvider` options; give
@@ -45,12 +48,18 @@ export class ScriptedModels extends Context.Service<ScriptedModels, ScriptedMode
 }
 
 function fromHandle(handle: FauxProviderHandle): ScriptedModelsService {
+	const model = handle.getModel();
 	return {
 		provider: handle.provider,
-		model: handle.getModel(),
+		model,
+		ref: modelRefOf(model),
 		models: handle.models,
-		setResponses: (responses) => Effect.sync(() => handle.setResponses([...responses])),
-		appendResponses: (responses) => Effect.sync(() => handle.appendResponses([...responses])),
+		setResponses: Effect.fn("ScriptedModels.setResponses")(function* (responses: readonly FauxResponseStep[]) {
+			yield* Effect.sync(() => handle.setResponses([...responses]));
+		}),
+		appendResponses: Effect.fn("ScriptedModels.appendResponses")(function* (responses: readonly FauxResponseStep[]) {
+			yield* Effect.sync(() => handle.appendResponses([...responses]));
+		}),
 		callCount: Effect.sync(() => handle.state.callCount),
 		pendingResponseCount: Effect.sync(() => handle.getPendingResponseCount()),
 	};

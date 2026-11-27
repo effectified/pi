@@ -4,7 +4,7 @@ import * as Approvals from "@effectified/pi-approvals";
 import { answer, toolCall } from "@effectified/pi-durable/testing";
 import { Effect, Fiber, Queue } from "effect";
 import { describe, expect, it } from "vitest";
-import { Threads } from "../src/index.ts";
+import { ThreadKey, Threads } from "../src/index.ts";
 import { committed, type Outside, outside, providers, run, shape, work } from "./world.ts";
 
 /** A thread whose model asks for a transfer, worked until a person decided with `decide`. */
@@ -26,8 +26,8 @@ const play = (
 			// The call parks before it runs. The thread has not ended: it is alive, and has no outcome yet.
 			const request = yield* Queue.take(state.inbox);
 			const parked = {
-				probe: yield* threads.probe("t1"),
-				outcome: yield* threads.outcome("t1"),
+				probe: yield* threads.probe(ThreadKey.make("t1")),
+				outcome: yield* threads.outcome(ThreadKey.make("t1")),
 				pending: (yield* Approvals.pending).map((open) => open.id),
 				ran: { ...state.ran },
 			};

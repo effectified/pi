@@ -4,30 +4,32 @@
 import { Entry, type Registry } from "@effectified/pi-durable";
 import { Action } from "@effectified/pi-durable-rivet";
 import * as Swarm from "@effectified/pi-swarm";
-import { Effect, Schema } from "effect";
+import { Array as Arr, Effect, Schema } from "effect";
 import * as ForkSetup from "../fork-setup.ts";
+import { ThreadKey } from "../ids.ts";
 import * as Swarms from "../swarms.ts";
 import * as ForkAgent from "./fork-agent.ts";
 import * as SwarmId from "./swarm-id.ts";
 import { crossing, Failure, OperationFailed } from "./wire.ts";
 
 /** One swarm of the actor's thread, by its id. */
-const OneSwarm = Schema.Struct({ swarmId: Schema.String });
+const OneSwarm = Schema.Struct({ swarmId: Swarm.SwarmId });
 
 /**
  * What `runSwarm` takes: `Swarms.Plan` as data. `swarm` is the name of the definition, which is code and installed
  * in the actor; every job's `input` is in the JSON form of the definition's input schema, as the coordinator stores
  * it; `agent`, the change of the forks' agent, names its tools and extensions (`ForkAgent.Wire`), which are code and
- * installed in the actor too.
+ * installed in the actor too. `cap` is any finite number here: `Swarm.start` refuses one that is no integer of 1 or
+ * more with its own `InvalidPlan`.
  */
 const Run = Schema.Struct({
 	swarm: Schema.String,
-	thread: Schema.String,
-	id: Schema.String,
-	jobs: Schema.Array(Schema.Struct({ key: Schema.String, input: Schema.Json })),
-	cap: Schema.Number,
+	thread: ThreadKey,
+	id: Swarm.SwarmId,
+	jobs: Schema.Array(Schema.Struct({ key: Swarm.JobKey, input: Schema.Json })),
+	cap: Schema.Finite,
 	onFailure: Schema.Literals(["fail", "collect"]),
-	pins: Schema.Array(Schema.String),
+	pins: Schema.Array(Swarm.JobKey),
 	at: Schema.optionalKey(Entry.Id),
 	agent: Schema.optionalKey(ForkAgent.Wire),
 	fork: ForkSetup.Allowance,
@@ -35,9 +37,6 @@ const Run = Schema.Struct({
 
 /** What `runSwarm` takes. */
 export type Run = typeof Run.Type;
-
-/** What `swarmSpent` answers: `Swarms.JobSpend` per job, in plan order. */
-const Spent = Schema.Array(Schema.Struct({ key: Schema.String, settledMicros: Schema.Option(Schema.BigInt) }));
 
 /**
  * The swarm actions of a thread actor that has `swarms` installed, by name. As the thread actions, none waits and
@@ -55,41 +54,16 @@ const Spent = Schema.Array(Schema.Struct({ key: Schema.String, settledMicros: Sc
  * - `destroyFork`: destroys the fork of one job, a pinned one included, and answers the bytes it wrote.
  */
 export function actions(swarms: ReadonlyArray<Swarm.Swarm<never, unknown>>) {
-	const installed = (name: string) =>
-		Effect.mapError(
-			Effect.fromNullishOr(swarms.find((swarm) => swarm.name === name)),
-			() => new OperationFailed({ operation: "runSwarm", reason: "UnknownSwarm", message: `No swarm ${name}` }),
-		);
 	return {
 		runSwarm: Action.make({
 			input: Run,
 			output: Schema.Struct({ created: Schema.Boolean }),
 			error: Failure,
-			handler: ({ swarm: name, at, ...plan }) =>
-				Effect.gen(function* () {
-					const swarm = yield* installed(name);
-					// Wire input: whoever calls, a swarm of this actor has an id that names its thread.
-					yield* crossing("runSwarm", SwarmId.ofThread(plan.thread, plan.id));
-					// Wire input: each job's input is checked against the definition, which builds its prompt from it.
-					yield* Effect.forEach(
-						plan.jobs,
-						(job) => crossing("runSwarm", swarm.work.promptOf(job.input, { swarmId: plan.id, key: job.key })),
-						{ discard: true },
-					);
-					// Wire input: what the forks' agent change names is installed here, or the swarm does not start.
-					yield* agentInstalled(plan);
-					const started = yield* crossing(
-						"runSwarm",
-						Swarms.Swarms.use((service) =>
-							service.run(asStored(swarm), { ...plan, ...(at === undefined ? {} : { at }) }),
-						),
-					);
-					return { created: started.created };
-				}),
+			handler: (run) => started(swarms, run),
 		}),
 		cancelSwarm: Action.make({
 			input: OneSwarm,
-			output: Schema.Literals(["cancelling", "ended"]),
+			output: Swarms.Cancelled,
 			error: Failure,
 			handler: ({ swarmId }) =>
 				crossing(
@@ -99,7 +73,7 @@ export function actions(swarms: ReadonlyArray<Swarm.Swarm<never, unknown>>) {
 		}),
 		probeSwarm: Action.make({
 			input: OneSwarm,
-			output: Schema.Struct({ alive: Schema.Boolean, jobKeys: Schema.Array(Schema.String) }),
+			output: Swarms.Probe,
 			error: Failure,
 			handler: ({ swarmId }) =>
 				crossing(
@@ -119,7 +93,7 @@ export function actions(swarms: ReadonlyArray<Swarm.Swarm<never, unknown>>) {
 		}),
 		swarmSpent: Action.make({
 			input: OneSwarm,
-			output: Spent,
+			output: Schema.Array(Swarms.JobSpend),
 			error: Failure,
 			handler: ({ swarmId }) =>
 				crossing(
@@ -128,8 +102,8 @@ export function actions(swarms: ReadonlyArray<Swarm.Swarm<never, unknown>>) {
 				),
 		}),
 		destroyFork: Action.make({
-			input: Schema.Struct({ swarmId: Schema.String, jobKey: Schema.String }),
-			output: Schema.Struct({ bytesWritten: Schema.Option(Schema.Number) }),
+			input: Schema.Struct({ swarmId: Swarm.SwarmId, jobKey: Swarm.JobKey }),
+			output: Swarm.Destroyed,
 			error: Failure,
 			handler: ({ swarmId, jobKey }) =>
 				crossing(
@@ -140,15 +114,34 @@ export function actions(swarms: ReadonlyArray<Swarm.Swarm<never, unknown>>) {
 	};
 }
 
-/** Whether what the plan's agent change names is installed in this actor. */
-function agentInstalled(plan: Pick<Run, "id" | "agent">): Effect.Effect<void, OperationFailed, Registry.Registry> {
-	return plan.agent === undefined
-		? Effect.void
-		: crossing("runSwarm", ForkAgent.requireInstalled(plan.id, plan.agent));
-}
-
 /** The swarm actions of a thread actor, as a caller's `Client.call` is typed by them. */
 export type Actions = ReturnType<typeof actions>;
+
+/**
+ * `runSwarm`: the definition `run` names, checked against what crossed, then `Swarms.run`. Each check is of wire
+ * input: whoever calls, a swarm of this actor has an id that names its thread, every job's input is one the
+ * definition builds its prompt from, and what the forks' agent change names is installed here.
+ */
+const started = Effect.fn("SwarmActions.runSwarm")(function* (
+	swarms: ReadonlyArray<Swarm.Swarm<never, unknown>>,
+	{ swarm: name, at, ...plan }: Run,
+): Effect.fn.Return<{ readonly created: boolean }, Failure, Swarms.Swarms | Registry.Registry> {
+	const swarm = yield* Effect.fromOption(
+		Arr.findFirst(swarms, (installed) => installed.name === name),
+		() => OperationFailed.make({ operation: "runSwarm", reason: "UnknownSwarm", message: `No swarm ${name}` }),
+	);
+	yield* crossing("runSwarm", SwarmId.ofThread(plan.thread, plan.id));
+	yield* Effect.forEach(
+		plan.jobs,
+		(job) => crossing("runSwarm", swarm.work.promptOf(job.input, { swarmId: plan.id, key: job.key })),
+		{ concurrency: 1, discard: true },
+	);
+	if (plan.agent !== undefined) yield* crossing("runSwarm", ForkAgent.requireInstalled(plan.id, plan.agent));
+	const service = yield* Swarms.Swarms;
+	const run = service.run(asStored(swarm), { ...plan, ...(at === undefined ? {} : { at }) });
+	const result = yield* crossing("runSwarm", run);
+	return { created: result.created };
+});
 
 /**
  * `swarm` for a plan whose job inputs are already in the JSON form the coordinator stores: `Swarm.start` encodes

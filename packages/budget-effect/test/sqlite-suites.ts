@@ -11,7 +11,7 @@ import { Effect, Layer, Logger, Option, Schema, Stream } from "effect";
 import type { SqlClient } from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";
 import { expect, it } from "vitest";
-import { continueStopped, onStorageFork, refusalOf, Shares, Spend, stopOf } from "../src/index.ts";
+import { continueStopped, onStorageFork, refusalOf, Shares, Spend, SpentUsage, stopOf } from "../src/index.ts";
 import {
 	type Budgeted,
 	budgetedHarness,
@@ -309,14 +309,14 @@ export function registerSqliteSuites(describe: Describe, driver: string, client:
 						const [reserve, settle] = lease.steps;
 						if (reserve?.step !== "reserve" || settle?.step !== "settle")
 							throw new Error("a reserve and a settle");
-						const spent = {
+						const spent = yield* Schema.decodeEffect(SpentUsage)({
 							key: "lz4k2q9xw-1#1",
 							provider: scripted.model.provider,
 							model: scripted.model.id,
 							session: reserve.request.session,
 							usage,
-							outcome: "failed" as const,
-						};
+							outcome: "failed",
+						});
 						const recorded = yield* spend.record(spent);
 						const again = yield* spend.record(spent);
 						return { conversation: root.id, served: settle.settlement.cost, spent, recorded, again };

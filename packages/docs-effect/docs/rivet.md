@@ -17,6 +17,7 @@ From the thread README, "The Rivet form" (`config`, `productPorts`, `openRecordS
 ```ts
 import { Effect, Layer, Schedule } from "effect";
 import { ActorInfo, Client, Host } from "@effectified/pi-durable-rivet";
+import { RequestKey } from "@effectified/pi-thread";
 import { Remote, ThreadActor } from "@effectified/pi-thread/rivet";
 
 // The product's ports as one Layer, built in each actor at each wake. It may read the actor it is built in.
@@ -34,7 +35,7 @@ const host = Host.serve({ actors: [Thread], endpoint });
 // A caller, such as the binding of the product's ports:
 const program = Effect.gen(function* () {
 	const remote = yield* Remote.Remote;
-	yield* remote.threads.start(work, jobKey); // returns once the task is durably admitted
+	yield* remote.threads.start(work, RequestKey.make(jobKey)); // returns once the task is durably admitted
 	// The thread's actor tells the product's `OutcomeSink` when it ends. A caller that wants to wait asks:
 	return yield* remote.threads.ended(work.thread, Schedule.spaced("2 seconds"));
 }).pipe(Effect.provide(Remote.layer(Thread)), Effect.provide(Client.layer({ endpoint })));

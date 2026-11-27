@@ -2,7 +2,7 @@
 // against a local authorization server and its protected MCP endpoint.
 
 import { runLive } from "@effectified/pi-ai/testing";
-import { Effect, Queue } from "effect";
+import { Effect, Option, Queue, Redacted } from "effect";
 import { describe, expect, it } from "vitest";
 import { McpClient, streamableHttpTransport } from "../../src/index.ts";
 import {
@@ -47,8 +47,8 @@ describe("createMcpAuthProvider", () => {
 	it("sends the stored access token, so a signed-in client connects", async () => {
 		const seen = await runLive(
 			Effect.gen(function* () {
-				const server = yield* authorizationServer();
-				const store = yield* memoryOAuthStore();
+				const server = yield* authorizationServer;
+				const store = yield* memoryOAuthStore;
 				yield* signIn(server, store);
 				const auth = yield* createMcpAuthProvider({
 					serverUrl: server.serverUrl,
@@ -68,8 +68,8 @@ describe("createMcpAuthProvider", () => {
 	it("fails with McpOAuthAuthorizationRequiredError when the user has to sign in, and hands on the challenge", async () => {
 		const seen = await runLive(
 			Effect.gen(function* () {
-				const server = yield* authorizationServer();
-				const store = yield* memoryOAuthStore();
+				const server = yield* authorizationServer;
+				const store = yield* memoryOAuthStore;
 				const challenges = yield* Queue.unbounded<OAuthChallenge>();
 				const auth = yield* createMcpAuthProvider({
 					serverUrl: server.serverUrl,
@@ -92,7 +92,7 @@ describe("adaptOAuthProvider", () => {
 	it("reads the access token of Pi's OAuth client as an Auth", async () => {
 		const token = await runLive(
 			Effect.gen(function* () {
-				const server = yield* authorizationServer();
+				const server = yield* authorizationServer;
 				const provider = new McpOAuthProvider({
 					serverUrl: server.serverUrl,
 					redirectUrl: ROUTE,
@@ -104,6 +104,6 @@ describe("adaptOAuthProvider", () => {
 				return yield* auth.token;
 			}),
 		);
-		expect(token).toBe("given");
+		expect(Option.map(token, Redacted.value)).toEqual(Option.some("given"));
 	});
 });

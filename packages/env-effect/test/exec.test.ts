@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runLive } from "@effectified/pi-ai/testing";
-import { Effect, Exit, Fiber, Stream } from "effect";
+import { Effect, Exit, Fiber, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { exec, execOutput } from "../src/exec.ts";
+import { ExecEvent, exec, execOutput } from "../src/exec.ts";
 import { nodeEnv, tempDir } from "./fixtures.ts";
 
 /** Whether a process with this pid still runs. */
@@ -98,6 +98,21 @@ describe.skipIf(process.platform === "win32")("execOutput", () => {
 		);
 		expect(pid).toBeGreaterThan(0);
 		expect(running(pid)).toBe(false);
+	});
+
+	it("gives events of the ExecEvent schema: matched by kind, and encoded for a log", async () => {
+		const events = await runLive(
+			Effect.flatMap(tempDir, (directory) => Stream.runCollect(execOutput(nodeEnv(directory), "printf hi; exit 2"))),
+		);
+		const described = events.map((event) =>
+			ExecEvent.match(event, {
+				output: (output) => `${output.stream}: ${output.text}`,
+				exited: (exited) => `exit ${exited.exitCode}`,
+			}),
+		);
+		const encoded = Schema.encodeSync(Schema.Array(ExecEvent))(events);
+		expect(described).toEqual(["stdout: hi", "exit 2"]);
+		expect(Schema.decodeUnknownSync(Schema.Array(ExecEvent))(encoded)).toEqual(events);
 	});
 
 	it("fails the stream with ExecFailed", async () => {

@@ -6,15 +6,20 @@ import {
 	isRetryableAssistantError,
 	type ProviderResponse,
 } from "@effectified/pi-ai";
+import { DateTime, Option, Record, Schema, String as Str } from "effect";
+
+/** What a failed response means for routing. `FailureKind.match` picks a handler per tag. */
+export const FailureKind = Schema.TaggedUnion({
+	/** The request fails with this response: no other route is tried. */
+	Final: {},
+	/** A transient failure of the provider: the next route may be tried. */
+	Retryable: {},
+	/** A transient rate limit: the next route may be tried, and the route's concurrency key backs off. */
+	RateLimited: { retryAfterMillis: Schema.UndefinedOr(Schema.Finite) },
+});
 
 /** What a failed response means for routing. */
-export type FailureKind =
-	/** The request fails with this response: no other route is tried. */
-	| { readonly _tag: "Final" }
-	/** A transient failure of the provider: the next route may be tried. */
-	| { readonly _tag: "Retryable" }
-	/** A transient rate limit: the next route may be tried, and the route's concurrency key backs off. */
-	| { readonly _tag: "RateLimited"; readonly retryAfterMillis: number | undefined };
+export type FailureKind = typeof FailureKind.Type;
 
 /** pi-ai's wordings of a rate limit, taken from the retryable patterns of its `utils/retry.ts`. */
 const RATE_LIMIT =
@@ -37,14 +42,25 @@ export function classify(response: AssistantMessage, answer: ProviderResponse | 
 /** The wait a `retry-after-ms` or `retry-after` header asks for. Wire input: anything unreadable is no hint. */
 function headerHint(answer: ProviderResponse | undefined, now: number): number | undefined {
 	if (answer === undefined) return undefined;
-	const headers = new Map(Object.entries(answer.headers).map(([name, value]) => [name.toLowerCase(), value]));
-	const millis = Number.parseFloat(headers.get("retry-after-ms") ?? "");
+	const headers = Record.mapKeys(answer.headers, (name) => Str.toLowerCase(name));
+	const millis = Number.parseFloat(Option.getOrElse(Record.get(headers, "retry-after-ms"), () => ""));
 	if (Number.isFinite(millis)) return positive(millis);
-	const retryAfter = headers.get("retry-after");
-	if (retryAfter === undefined) return undefined;
-	const seconds = Number.parseFloat(retryAfter);
-	// The header is a number of seconds or an HTTP date.
-	return positive(Number.isNaN(seconds) ? Date.parse(retryAfter) - now : seconds * 1000);
+	return Option.match(Record.get(headers, "retry-after"), {
+		onNone: () => undefined,
+		onSome: (retryAfter) => {
+			const seconds = Number.parseFloat(retryAfter);
+			// The header is a number of seconds or an HTTP date.
+			return positive(Number.isNaN(seconds) ? untilDate(retryAfter, now) : seconds * 1000);
+		},
+	});
+}
+
+/** The milliseconds from `now` to the HTTP date `text`; not a number when it is no date. */
+function untilDate(text: string, now: number): number {
+	return Option.match(DateTime.make(text), {
+		onNone: () => Number.NaN,
+		onSome: (date) => DateTime.toEpochMillis(date) - now,
+	});
 }
 
 /** pi-ai's own text when a server asked for a longer wait than the request's `maxRetryDelayMs` allows. */

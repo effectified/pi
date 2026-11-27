@@ -1,0 +1,57 @@
+// The lint of the pi-effect packages and this directory: oxlint, run by `node effect/scripts/style.ts`. Upstream's
+// Biome leaves these paths to it (root biome.json, listed in effect/boundary.json). The Effect rules are not here:
+// `effect/scripts/types.ts` runs them, with the types, on effect/tsconfig.json, whose plugin block they read.
+{
+	"$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
+	"plugins": ["typescript", "unicorn", "oxc", "import", "vitest"],
+	// oxlint's correctness category is code that is wrong or useless, with no false positives by design.
+	"categories": { "correctness": "error" },
+	// effect/AGENTS.md, "Effect-native design": the rules a syntax rule can see (the overrides below turn them on).
+	"jsPlugins": ["./idioms/plugin.ts"],
+	"ignorePatterns": ["**/dist/**", "**/node_modules/**"],
+	"rules": {
+		// The rules of upstream's Biome configuration that its recommended set and its own choices enforced here.
+		"eslint/no-unused-vars": "error",
+		"eslint/no-useless-rename": "error",
+		"eslint/no-var": "error",
+		"eslint/prefer-const": "error",
+		"eslint/prefer-template": "error",
+		"typescript/consistent-type-imports": "error",
+		"typescript/no-inferrable-types": "error",
+		"typescript/no-namespace": "error",
+		"typescript/prefer-as-const": "error",
+		"unicorn/prefer-node-protocol": "error",
+		// `Effect.fn` takes a generator: a body that builds a value in one synchronous step yields nothing and still
+		// gets its span.
+		"eslint/require-yield": "off",
+		// Reads the data-first `Effect.catch(effect, handler)` as a Promise's `catch` with one argument too many.
+		"promise/valid-params": "off",
+		// Vitest takes a message as `expect`'s second argument; the rule is Jest's.
+		"vitest/valid-expect": "off"
+	},
+	"overrides": [
+		{
+			"files": ["**/packages/*-effect/src/**/*.ts"],
+			"rules": {
+				"idioms/branded-id": "error",
+				"idioms/effect-fn": "error",
+				"idioms/effect-fn-arrow": "error",
+				"idioms/effect-fn-name": "error",
+				"idioms/match": "error"
+			}
+		},
+		{
+			// Shared suites (storage conformance, engine suites) are functions that declare tests: their titles are
+			// arguments, their assertions live in helpers, and they return what they set up. Tests that run upstream's
+			// own declarations reference them with a triple-slash directive, as upstream's tests do.
+			"files": ["**/packages/*-effect/test/**/*.ts"],
+			"rules": {
+				"typescript/triple-slash-reference": "off",
+				"vitest/expect-expect": "off",
+				"vitest/require-to-throw-message": "off",
+				"vitest/valid-describe-callback": "off",
+				"vitest/valid-title": "off"
+			}
+		}
+	]
+}

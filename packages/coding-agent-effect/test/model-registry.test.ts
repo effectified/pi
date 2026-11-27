@@ -1,4 +1,5 @@
 import { runTest, ScriptedModels } from "@effectified/pi-ai/testing";
+import { ModelId, ProviderId } from "@effectified/pi-ai";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { ModelRegistry, ModelRuntime } from "../src/index.ts";
@@ -15,8 +16,8 @@ describe("ModelRegistry.layer", () => {
 				const all = yield* registry.getAll;
 				return {
 					listed: all.some((model) => model.id === models.model.id),
-					found: (yield* registry.find(models.model.provider, models.model.id))?.id,
-					missing: yield* registry.find(models.model.provider, "no-such-model"),
+					found: (yield* registry.find(ProviderId.make(models.model.provider), ModelId.make(models.model.id)))?.id,
+					missing: yield* registry.find(ProviderId.make(models.model.provider), ModelId.make("no-such-model")),
 				};
 			}).pipe(Effect.provide(Layer.provideMerge(ModelRegistry.layer, services))),
 		);

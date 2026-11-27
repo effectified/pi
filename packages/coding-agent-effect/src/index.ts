@@ -148,7 +148,7 @@ export {
 } from "./dialogs.ts";
 export {
 	CodingAgentError,
-	type CodingAgentFailure,
+	CodingAgentFailure,
 	CredentialSynchronizationError,
 	SessionImportFileNotFound,
 } from "./errors.ts";
@@ -171,7 +171,7 @@ export {
 	type ProjectTrustContextHandle,
 	ReplacedSessionContext,
 	type ReplacedSessionContextHandle,
-	type Replacement,
+	Replacement,
 	ToolContext,
 	type ToolContextHandle,
 	type Ui,
@@ -179,7 +179,7 @@ export {
 export type { AnswerOf, Answers, EventOf, EventType, Handlers } from "./handlers.ts";
 export { convertToPng, detectSupportedImageMimeTypeFromFile, resizeImage } from "./images.ts";
 export {
-	type Ending as InteractiveModeEnding,
+	Ending as InteractiveModeEnding,
 	InteractiveMode,
 	type InteractiveModeHandle,
 	type Options as InteractiveModeOptions,

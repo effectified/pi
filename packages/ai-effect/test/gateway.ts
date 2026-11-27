@@ -17,86 +17,84 @@ export interface Gateway {
 }
 
 /** Starts the gateway; it stops when the scope closes. Each token it issues is numbered: `access-1`, `refresh-1`. */
-export function gateway(): Effect.Effect<Gateway, never, Scope.Scope> {
-	return Effect.gen(function* () {
-		let issued = 0;
-		const state: { -readonly [K in keyof Gateway]: Gateway[K] } = {
-			origin: "",
-			tokenRequests: [],
-			configAuthorizations: [],
-			deviceError: undefined,
-		};
-		const tokens = () => {
-			issued++;
-			return { access_token: `access-${issued}`, refresh_token: `refresh-${issued}`, expires_in: 3600 };
-		};
-		const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-			const url = new URL(request.url ?? "/", state.origin);
-			switch (url.pathname) {
-				case "/v1/oauth/device":
-					return json(response, 200, {
-						device_code: "device-1",
-						user_code: "ABCD-EFGH",
-						verification_uri: `${state.origin}/device`,
-						expires_in: 600,
-						interval: 1,
-					});
-				case "/v1/oauth/token": {
-					const form = new URLSearchParams(await readBody(request));
-					state.tokenRequests.push(form);
-					const deviceError = state.deviceError;
-					if (form.get("grant_type")?.endsWith("device_code") && deviceError !== undefined) {
-						return json(response, 400, { error: deviceError });
-					}
-					if (form.get("grant_type") === "refresh_token" && !form.get("refresh_token")?.startsWith("refresh-")) {
-						return json(response, 400, { error: "invalid_grant" });
-					}
-					return json(response, 200, tokens());
+export const gateway: Effect.Effect<Gateway, never, Scope.Scope> = Effect.gen(function* () {
+	let issued = 0;
+	const state: { -readonly [K in keyof Gateway]: Gateway[K] } = {
+		origin: "",
+		tokenRequests: [],
+		configAuthorizations: [],
+		deviceError: undefined,
+	};
+	const tokens = () => {
+		issued++;
+		return { access_token: `access-${issued}`, refresh_token: `refresh-${issued}`, expires_in: 3600 };
+	};
+	const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+		const url = new URL(request.url ?? "/", state.origin);
+		switch (url.pathname) {
+			case "/v1/oauth/device":
+				return json(response, 200, {
+					device_code: "device-1",
+					user_code: "ABCD-EFGH",
+					verification_uri: `${state.origin}/device`,
+					expires_in: 600,
+					interval: 1,
+				});
+			case "/v1/oauth/token": {
+				const form = new URLSearchParams(await readBody(request));
+				state.tokenRequests.push(form);
+				const deviceError = state.deviceError;
+				if (form.get("grant_type")?.endsWith("device_code") && deviceError !== undefined) {
+					return json(response, 400, { error: deviceError });
 				}
-				case "/v1/config":
-					state.configAuthorizations.push(request.headers.authorization);
-					return json(response, 200, {
-						baseUrl: `${state.origin}/v1`,
-						models: [
-							{
-								id: "gateway-model",
-								name: "Gateway model",
-								reasoning: false,
-								input: ["text"],
-								cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
-								contextWindow: 1000,
-								maxTokens: 100,
-							},
-						],
-					});
-				default:
-					return json(response, 404, { error: "not_found" });
+				if (form.get("grant_type") === "refresh_token" && !form.get("refresh_token")?.startsWith("refresh-")) {
+					return json(response, 400, { error: "invalid_grant" });
+				}
+				return json(response, 200, tokens());
 			}
-		};
-		const server = yield* Effect.acquireRelease(
+			case "/v1/config":
+				state.configAuthorizations.push(request.headers.authorization);
+				return json(response, 200, {
+					baseUrl: `${state.origin}/v1`,
+					models: [
+						{
+							id: "gateway-model",
+							name: "Gateway model",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 1000,
+							maxTokens: 100,
+						},
+					],
+				});
+			default:
+				return json(response, 404, { error: "not_found" });
+		}
+	};
+	const server = yield* Effect.acquireRelease(
+		Effect.promise(
+			() =>
+				new Promise<ReturnType<typeof createServer>>((resolve) => {
+					const server = createServer((request, response) => {
+						handle(request, response).catch((error: unknown) => json(response, 500, { error: String(error) }));
+					});
+					server.listen(0, "127.0.0.1", () => resolve(server));
+				}),
+		),
+		(server) =>
 			Effect.promise(
 				() =>
-					new Promise<ReturnType<typeof createServer>>((resolve) => {
-						const server = createServer((request, response) => {
-							handle(request, response).catch((error: unknown) => json(response, 500, { error: String(error) }));
-						});
-						server.listen(0, "127.0.0.1", () => resolve(server));
+					new Promise<void>((resolve) => {
+						server.closeAllConnections();
+						server.close(() => resolve());
 					}),
 			),
-			(server) =>
-				Effect.promise(
-					() =>
-						new Promise<void>((resolve) => {
-							server.closeAllConnections();
-							server.close(() => resolve());
-						}),
-				),
-		);
-		const address = server.address();
-		state.origin = `http://127.0.0.1:${typeof address === "object" && address !== null ? address.port : 0}`;
-		return state;
-	});
-}
+	);
+	const address = server.address();
+	state.origin = `http://127.0.0.1:${typeof address === "object" && address !== null ? address.port : 0}`;
+	return state;
+});
 
 async function readBody(request: IncomingMessage): Promise<string> {
 	const chunks: Buffer[] = [];

@@ -39,7 +39,8 @@ export const AWAITS = ["reload"] as const;
 
 /** A session's resources: every method of Pi's `ResourceLoader` as an Effect, under its name. */
 export interface ResourceLoaderHandle
-	extends Reads<PiResourceLoader, (typeof READS)[number]>,
+	extends
+		Reads<PiResourceLoader, (typeof READS)[number]>,
 		Writes<PiResourceLoader, (typeof WRITES)[number]>,
 		Awaits<PiResourceLoader, (typeof AWAITS)[number]> {
 	/** Pi's loader, for what takes one as it is: `createAgentSession`. */
@@ -51,8 +52,10 @@ export interface ResourceLoaderHandle
  * `extensions` written in Effect besides Pi's own inline ones. Package installation reports its progress on Pi's
  * console output (`onPackageProgress` and `packageCommandOutput` are left out).
  */
-export interface Options<R>
-	extends Omit<DefaultResourceLoaderOptions, "settingsManager" | "onPackageProgress" | "packageCommandOutput"> {
+export interface Options<R> extends Omit<
+	DefaultResourceLoaderOptions,
+	"settingsManager" | "onPackageProgress" | "packageCommandOutput"
+> {
 	readonly settingsManager?: SettingsManagerHandle;
 	/** Extensions written in Effect, loaded after `extensionFactories` in this order. */
 	readonly extensions?: ReadonlyArray<Extension.Extension<R>>;
@@ -60,7 +63,7 @@ export interface Options<R>
 
 /** The resources a session loads. */
 export class ResourceLoader extends Context.Service<ResourceLoader, ResourceLoaderHandle>()(
-	"@effectified/pi-coding-agent/ResourceLoader",
+	"@effectified/pi-coding-agent/resource-loader/ResourceLoader",
 ) {
 	/** `ResourceLoader.make(options)` as a Layer. */
 	static layer<R = never>(options: Options<R>): Layer.Layer<ResourceLoader, CodingAgentFailure, R> {
@@ -72,19 +75,20 @@ export class ResourceLoader extends Context.Service<ResourceLoader, ResourceLoad
 	 * of `agentDir` and of `cwd`'s project, the paths and inline extensions of `options`, and `extensions`, whose
 	 * Effects run with the services of the context this Effect runs in.
 	 */
-	static make<R = never>(options: Options<R>): Effect.Effect<ResourceLoaderHandle, CodingAgentFailure, R> {
+	static readonly make = Effect.fn("ResourceLoader.make")(function* <R = never>(
+		options: Options<R>,
+	): Effect.fn.Return<ResourceLoaderHandle, CodingAgentFailure, R> {
 		const { settingsManager, extensions, extensionFactories, ...rest } = options;
-		return Effect.gen(function* () {
-			const inline = yield* Effect.forEach(extensions ?? [], (extension) => extension.inline);
-			const loader = new DefaultResourceLoader({
-				...rest,
-				...(settingsManager === undefined ? {} : { settingsManager: settingsManager.pi }),
-				extensionFactories: [...(extensionFactories ?? []), ...inline],
-			});
-			yield* Effect.tryPromise({ try: () => loader.reload(), catch: fromPi });
-			return ResourceLoader.fromPi(loader);
+		// One after another, as Pi loads its extension factories in order.
+		const inline = yield* Effect.forEach(extensions ?? [], (extension) => extension.inline, { concurrency: 1 });
+		const loader = new DefaultResourceLoader({
+			...rest,
+			...(settingsManager === undefined ? {} : { settingsManager: settingsManager.pi }),
+			extensionFactories: [...(extensionFactories ?? []), ...inline],
 		});
-	}
+		yield* Effect.tryPromise({ try: () => loader.reload(), catch: fromPi });
+		return ResourceLoader.fromPi(loader);
+	});
 
 	/** Pi's loader (the default one, or one of the application's own) as a handle. It stays the caller's. */
 	static fromPi(pi: PiResourceLoader): ResourceLoaderHandle {
@@ -93,22 +97,24 @@ export class ResourceLoader extends Context.Service<ResourceLoader, ResourceLoad
 }
 
 /** The context files (`AGENTS.md`, `CLAUDE.md`) of the agent directory and of `cwd` and its parents, as Pi reads them. */
-export function loadProjectContextFiles(options: {
-	readonly cwd: string;
-	readonly agentDir: string;
-}): Effect.Effect<ReturnType<typeof piLoadProjectContextFiles>, CodingAgentFailure> {
-	return Effect.try({ try: () => piLoadProjectContextFiles(options), catch: fromPi });
-}
+export const loadProjectContextFiles = Effect.fn("ResourceLoader.loadProjectContextFiles")(
+	(options: {
+		readonly cwd: string;
+		readonly agentDir: string;
+	}): Effect.Effect<ReturnType<typeof piLoadProjectContextFiles>, CodingAgentFailure> =>
+		Effect.try({ try: () => piLoadProjectContextFiles(options), catch: fromPi }),
+);
 
 /** The extensions of `configuredPaths`, the agent directory and `cwd`'s project, loaded as Pi's loader loads them. */
-export function discoverAndLoadExtensions(
-	configuredPaths: ReadonlyArray<string>,
-	cwd: string,
-	agentDir?: string,
-	eventBus?: EventBus,
-): Effect.Effect<LoadExtensionsResult, CodingAgentFailure> {
-	return Effect.tryPromise({
-		try: () => piDiscoverAndLoadExtensions([...configuredPaths], cwd, agentDir, eventBus),
-		catch: fromPi,
-	});
-}
+export const discoverAndLoadExtensions = Effect.fn("ResourceLoader.discoverAndLoadExtensions")(
+	(
+		configuredPaths: ReadonlyArray<string>,
+		cwd: string,
+		agentDir?: string,
+		eventBus?: EventBus,
+	): Effect.Effect<LoadExtensionsResult, CodingAgentFailure> =>
+		Effect.tryPromise({
+			try: () => piDiscoverAndLoadExtensions([...configuredPaths], cwd, agentDir, eventBus),
+			catch: fromPi,
+		}),
+);

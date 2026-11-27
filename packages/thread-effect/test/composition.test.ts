@@ -8,7 +8,7 @@ import { Evidence } from "@effectified/pi-search";
 import { ChildSetup, ChildSetupFailed, Subagents } from "@effectified/pi-subagent";
 import { Context, Effect, Layer, Tracer } from "effect";
 import { describe, expect, it } from "vitest";
-import { Composition, Threads } from "../src/index.ts";
+import { Composition, ThreadKey, Threads } from "../src/index.ts";
 import { committed, config, GUARD_POLICY, outside, ports, providers, Researcher, run, work } from "./world.ts";
 
 describe("the composition", () => {
@@ -30,7 +30,7 @@ describe("the composition", () => {
 			Effect.gen(function* () {
 				const threads = yield* Threads.Threads;
 				const outcome = yield* threads.work(work("t1", "Say hi."));
-				const agent = yield* (yield* threads.conversation("t1")).agent;
+				const agent = yield* (yield* threads.conversation(ThreadKey.make("t1"))).agent;
 				return { outcome: outcome._tag, extensions: agent.extensions.map((extension) => extension.name) };
 			}).pipe(Effect.provide(live)),
 		);
@@ -98,6 +98,6 @@ describe("the composition", () => {
 			// @ts-expect-error The registry still requires the `Guard` it provides, so it cannot be built.
 			Effect.scoped(Layer.build(whole)),
 		);
-		expect(String(exit)).toContain("Service not found: @effectified/pi-guard/Guard");
+		expect(String(exit)).toContain("Service not found: @effectified/pi-guard/guard");
 	});
 });

@@ -2,10 +2,17 @@
 // in its own commit, and decides: the answer stands, the run continues with a correction, the task waits for a
 // person, or it waits to ask a reviewer again whose request failed.
 
-import type { AssistantMessage, Message } from "@effectified/pi-ai";
-import type { EntryId, SubmissionId, TaskId } from "@effectified/pi-durable";
+import { type AssistantMessage, fromPiModelRef, type Message } from "@effectified/pi-ai";
+import type {
+	DurableError,
+	EntryId,
+	SchemaConversionError,
+	SchemaDecodeError,
+	SubmissionId,
+	TaskId,
+} from "@effectified/pi-durable";
 import { BuiltinDoc, Entry, Hook, Task } from "@effectified/pi-durable";
-import { Effect, Option, Schema, Stream } from "effect";
+import { Array as Arr, Effect, Option, Result, Schema, Stream } from "effect";
 import type * as Check from "./check.ts";
 import * as Correction from "./correction.ts";
 import * as Deferral from "./deferral.ts";
@@ -14,10 +21,10 @@ import { blocks } from "./finding.ts";
 import * as Hold from "./hold.ts";
 import * as ModelReview from "./model-review.ts";
 import { type Pairing, pair } from "./pairing.ts";
-import type { ModelRef, Policy } from "./policy.ts";
+import { ModelRef, type Policy } from "./policy.ts";
 import * as Report from "./report.ts";
 import * as Run from "./run.ts";
-import { type Unreviewed, type Verdict, VerdictEntry } from "./verdict.ts";
+import { Ordinal, Outcome, type Unreviewed, type Verdict, VerdictEntry } from "./verdict.ts";
 
 /** What a review task is built from. `R` is what the product's checks need. */
 export interface Options<R> {
@@ -38,10 +45,10 @@ const Input = Schema.Struct({});
  * after the request number `attempt` failed.
  */
 const State = Schema.Union([
-	Schema.Struct({ phase: Schema.Literal("review"), attempt: Schema.Number }),
+	Schema.Struct({ phase: Schema.Literal("review"), attempt: Ordinal }),
 	Schema.Struct({ phase: Schema.Literal("held"), answer: Entry.Id }),
-	Schema.Struct({ phase: Schema.Literal("deferred"), attempt: Schema.Number }),
-]);
+	Schema.Struct({ phase: Schema.Literal("deferred"), attempt: Ordinal }),
+]).pipe(Schema.toTaggedUnion("phase"));
 
 /** The review task of an extension: what the hook asks for, and what the registry installs. */
 export interface ReviewTask<R> extends Task.Task<typeof Input, typeof State, typeof Hook.YieldDecision, R> {}
@@ -64,7 +71,7 @@ export function make<R>(options: Options<R>): ReviewTask<R> {
 			held: (task, api) => released(task.state.answer, api),
 			deferred: (task, api) => retried(task.state.attempt, api),
 		},
-		abort: (task, api) => aborted(options, task.state, api),
+		abort: (task, api) => aborted(options.policy, task.state, api),
 	});
 }
 
@@ -72,13 +79,16 @@ type Api = Task.Api<typeof Input.Type, typeof State.Type, Hook.YieldDecision>;
 
 type Step = Task.Step<typeof State.Type, Hook.YieldDecision>;
 
+/** What a phase fails with: a failed Pi call, a stored value or a definition Pi refuses, or no answer to review. */
+type Failure = DurableError | SchemaDecodeError | SchemaConversionError | NoAnswerUnderReview;
+
 /**
  * Reviews the answer the run yielded and commits the verdict with the task's step. Pi runs it again from its top
  * after a close or a crash that came before that commit: every check's report is a memo by then or is made again,
  * and the verdict, the correction count with it, is stored once or not at all.
  */
-function review<R>(options: Options<R>, attempt: number, api: Api) {
-	return Effect.gen(function* () {
+const review: <R>(options: Options<R>, attempt: number, api: Api) => Effect.Effect<Task.Committed, Failure, R> =
+	Effect.fn("ReviewTask.review")(function* <R>(options: Options<R>, attempt: number, api: Api) {
 		const { policy } = options;
 		const yielded = yield* examined(api);
 		const author = authorOf(yielded);
@@ -96,17 +106,16 @@ function review<R>(options: Options<R>, attempt: number, api: Api) {
 			pass: yielded.pass,
 			transcript: yielded.transcript,
 		};
+		const provider = yield* api.snapshot(BuiltinDoc.provider, api.conversationId);
+		const now = yield* api.now;
 		const reply = yield* ModelReview.once(
 			api.memo,
 			memoName(attempt, 0, ModelReview.NAME),
 			{
 				models: api.pi.models,
 				model,
-				sessionId: Option.map(
-					yield* api.snapshot(BuiltinDoc.provider, api.conversationId),
-					(provider) => provider.sessionId,
-				),
-				now: yield* api.now,
+				sessionId: Option.map(provider, (session) => session.sessionId),
+				now,
 				instructions: Option.fromUndefinedOr(policy.instructions),
 			},
 			subject,
@@ -118,23 +127,28 @@ function review<R>(options: Options<R>, attempt: number, api: Api) {
 		if (served._tag === "Unreviewable") return yield* unreviewed(api, asked, served.reason);
 		// One after another: each report is a memo, which is a commit of its own. The attempt and the position are
 		// part of the memo's name, so two checks of one name, and two attempts, never read each other's report.
-		const others = yield* Effect.forEach(options.checks, (check, index) =>
-			Effect.map(Report.once(api.memo, memoName(attempt, index + 1, check.name), check, subject), (report) => ({
-				check: check.name,
-				report,
-			})),
+		const others = yield* Effect.forEach(
+			options.checks,
+			(check, index) =>
+				Effect.map(Report.once(api.memo, memoName(attempt, index + 1, check.name), check, subject), (report) => ({
+					check: check.name,
+					report,
+				})),
+			{ concurrency: 1 },
 		);
 		const { verdict, step } = decided(options, asked, { task: api.taskId, attempt }, reply, others);
 		return yield* conclude(api, verdict, step);
 	});
-}
 
 /** The memo that keeps what the check `name`, at `position` among the checks, came to for the request `attempt`. */
-function memoName(attempt: number, position: number, name: string): string {
+function memoName(attempt: number, position: number, name: Check.Name): string {
 	return `review.check/${attempt}/${position}/${name}`;
 }
 
-/** The answer a review task decides about, the run that led to it, and the run's count so far. */
+/**
+ * The answer a review task decides about, the run that led to it, and the run's count so far. An interface, not a
+ * Schema: it holds Pi's own messages, and lives for one phase.
+ */
 interface Yielded {
 	readonly answerId: EntryId;
 	/** The submissions the run answers. */
@@ -155,38 +169,38 @@ interface Yielded {
  * A run Pi recorded no first entry for is read from the start of the conversation: it then counts every earlier
  * correction, and is held sooner, never later.
  */
-function examined(api: Api) {
-	return Effect.gen(function* () {
-		const missing = new NoAnswerUnderReview({ conversationId: api.conversationId, taskId: api.taskId });
-		const run = Run.view(yield* api.snapshot(BuiltinDoc.live, api.conversationId));
-		if (Option.isNone(run.yielded)) return yield* missing;
-		const answerId = run.yielded.value;
-		const entries = yield* Stream.runCollect(
-			api.entries({
-				order: "ascending",
-				maxEntryId: answerId,
-				...(Option.isSome(run.first) ? { minEntryId: run.first.value } : {}),
-			}),
-		);
-		const message = entries.at(-1)?.model?.[0];
-		if (message?.role !== "assistant") return yield* missing;
-		const earlier = (yield* Effect.forEach(entries, (entry) => VerdictEntry.read(entry))).flatMap(Option.toArray);
-		const yielded: Yielded = {
-			answerId,
-			inputs: run.inputs,
-			message,
-			transcript: entries.flatMap((entry) => entry.model ?? []),
-			// Per answer: an earlier answer whose review was deferred and asked again has two verdicts and one pass.
-			pass: new Set(earlier.map((verdict) => verdict.data.answer)).size + 1,
-			corrections: earlier.filter((verdict) => verdict.data.outcome._tag === "Corrected").length,
-		};
-		return yielded;
-	});
-}
+const examined = Effect.fn("ReviewTask.examined")(function* (api: Api) {
+	const missing = NoAnswerUnderReview.make({ conversationId: api.conversationId, taskId: api.taskId });
+	const live = yield* api.snapshot(BuiltinDoc.live, api.conversationId);
+	const run = Run.view(live);
+	if (Option.isNone(run.yielded)) return yield* missing;
+	const answerId = run.yielded.value;
+	const entries = yield* Stream.runCollect(
+		api.entries({
+			order: "ascending",
+			maxEntryId: answerId,
+			...(Option.isSome(run.first) ? { minEntryId: run.first.value } : {}),
+		}),
+	);
+	const message = Option.getOrUndefined(Option.flatMap(Arr.last(entries), (entry) => Arr.head(entry.model ?? [])));
+	if (message?.role !== "assistant") return yield* missing;
+	const read = yield* Effect.forEach(entries, (entry) => VerdictEntry.read(entry), { concurrency: 1 });
+	const earlier = Arr.getSomes(read);
+	const yielded: Yielded = {
+		answerId,
+		inputs: run.inputs,
+		message,
+		transcript: Arr.flatMap(entries, (entry) => entry.model ?? []),
+		// Per answer: an earlier answer whose review was deferred and asked again has two verdicts and one pass.
+		pass: Arr.dedupe(Arr.map(earlier, (verdict) => verdict.data.answer)).length + 1,
+		corrections: Arr.filter(earlier, (verdict) => Outcome.guards.Corrected(verdict.data.outcome)).length,
+	};
+	return yielded;
+});
 
 /** The model that wrote the answer: what the answer's own message names, not what the conversation runs with. */
 function authorOf(yielded: Yielded): ModelRef {
-	return { provider: yielded.message.provider, modelId: yielded.message.model };
+	return fromPiModelRef({ provider: yielded.message.provider, modelId: yielded.message.model });
 }
 
 /**
@@ -194,9 +208,13 @@ function authorOf(yielded: Yielded): ModelRef {
  * for a request that got no answer.
  */
 function answeredBy(policy: Policy, author: ModelRef, reply: ModelReview.Reply): Pairing {
-	return reply._tag === "Unanswered"
-		? pair(policy, author)
-		: pair(policy, author, { provider: reply.call.provider, modelId: reply.call.model });
+	const servedBy = ({ call }: { readonly call: ModelReview.Reply["call"] }) =>
+		pair(policy, author, ModelRef.make({ provider: call.provider, modelId: call.model }));
+	return ModelReview.Reply.match(reply, {
+		Reviewed: servedBy,
+		Undecodable: servedBy,
+		Unanswered: () => pair(policy, author),
+	});
 }
 
 /** What every verdict of one review says, whatever its outcome. */
@@ -205,6 +223,7 @@ type About = Pick<Verdict, "answer" | "inputs" | "pass" | "corrections" | "autho
 /** A verdict before the harness clock is read for it. */
 type Undated = Omit<Verdict, "time">;
 
+/** What every verdict about `yielded` says, with the parties of `pairing`. */
 function aboutOf(yielded: Yielded, pairing: Pairing): About {
 	return {
 		answer: yielded.answerId,
@@ -214,6 +233,12 @@ function aboutOf(yielded: Yielded, pairing: Pairing): About {
 		author: pairing.author,
 		reviewer: pairing.reviewer,
 	};
+}
+
+/** A check's report, with the name of the check. */
+interface Named {
+	readonly check: Check.Name;
+	readonly report: Report.Report;
 }
 
 /**
@@ -231,38 +256,43 @@ function decided<R>(
 	about: About,
 	turn: { readonly task: TaskId; readonly attempt: number },
 	reply: ModelReview.Reply,
-	others: ReadonlyArray<{ readonly check: string; readonly report: Report.Report }>,
+	others: ReadonlyArray<Named>,
 ): { readonly verdict: Undated; readonly step: Step } {
-	const reports = [{ check: ModelReview.NAME, report: ModelReview.report(reply) }, ...others];
-	const findings = reports.flatMap(({ check, report }) =>
-		report._tag === "Found" ? report.findings.map((finding) => ({ check, ...finding })) : [],
+	const reports: ReadonlyArray<Named> = [{ check: ModelReview.NAME, report: ModelReview.report(reply) }, ...others];
+	const findings = Arr.flatMap(reports, ({ check, report }) =>
+		Report.Report.match(report, {
+			Found: ({ findings: found }) => Arr.map(found, (finding) => ({ check, ...finding })),
+			Failed: () => [],
+		}),
 	);
-	const failures = reports.flatMap(({ check, report }) =>
-		report._tag === "Failed" ? [{ check, error: report.error }] : [],
+	const failures = Arr.flatMap(reports, ({ check, report }) =>
+		Report.Report.match(report, { Found: () => [], Failed: ({ error }) => [{ check, error }] }),
 	);
 	const reviewed = { ...about, findings, failures };
-	const blocking = findings.filter((finding) => blocks(finding.severity, options.policy.blocking));
-	if (blocking.length === 0) {
-		if (failures.length === 0) return { verdict: { ...reviewed, outcome: { _tag: "Passed" } }, step: STANDS };
+	const [blocking, remarks] = Arr.partition(findings, (finding) =>
+		blocks(finding.severity, options.policy.blocking) ? Result.succeed(finding) : Result.fail(finding),
+	);
+	if (!Arr.isReadonlyArrayNonEmpty(blocking)) {
+		if (!Arr.isReadonlyArrayNonEmpty(failures)) {
+			return { verdict: { ...reviewed, outcome: Outcome.cases.Passed.make({}) }, step: STANDS };
+		}
 		if (reply._tag === "Unanswered") {
 			return {
-				verdict: { ...reviewed, outcome: { _tag: "Deferred", ...turn } },
+				verdict: { ...reviewed, outcome: Outcome.cases.Deferred.make({ task: turn.task, attempt: turn.attempt }) },
 				step: waitingToRetry(turn.attempt),
 			};
 		}
-		return { verdict: { ...reviewed, outcome: { _tag: "NotReviewed", reason: "check_failed" } }, step: STANDS };
+		const failed = Outcome.cases.NotReviewed.make({ reason: "check_failed" });
+		return { verdict: { ...reviewed, outcome: failed }, step: STANDS };
 	}
 	// Written so that a count that is no number leaves no correction: the run is then held, never corrected forever.
 	if (!(about.corrections < options.policy.maxCorrections)) {
-		return { verdict: { ...reviewed, outcome: { _tag: "Held", task: turn.task } }, step: waiting(about.answer) };
+		const held = Outcome.cases.Held.make({ task: turn.task });
+		return { verdict: { ...reviewed, outcome: held }, step: waiting(about.answer) };
 	}
-	const message = Correction.write(options.correction, {
-		pass: about.pass,
-		blocking,
-		remarks: findings.filter((finding) => !blocking.includes(finding)),
-	});
+	const message = Correction.write(options.correction, { pass: about.pass, blocking, remarks });
 	return {
-		verdict: { ...reviewed, corrections: about.corrections + 1, outcome: { _tag: "Corrected" } },
+		verdict: { ...reviewed, corrections: about.corrections + 1, outcome: Outcome.cases.Corrected.make({}) },
 		step: Task.complete(Hook.continueWith(message)),
 	};
 }
@@ -285,47 +315,48 @@ function waitingToRetry(attempt: number): Step {
 
 /** Ends a review that was not made: the verdict says why, and the run ends with the answer. */
 function unreviewed(api: Api, about: About, reason: Unreviewed) {
-	return conclude(api, { ...about, findings: [], failures: [], outcome: { _tag: "NotReviewed", reason } }, STANDS);
+	const outcome = Outcome.cases.NotReviewed.make({ reason });
+	return conclude(api, { ...about, findings: [], failures: [], outcome }, STANDS);
 }
 
 /** Stores the verdict, dated by the harness clock, and the task's step in one commit: together, or not at all. */
-function conclude(api: Api, verdict: Undated, step: Step) {
-	return Effect.flatMap(api.now, (time) =>
-		api.commit((tx) => Effect.as(tx.append(VerdictEntry, api.conversationId, { data: { ...verdict, time } }), step)),
+const conclude = Effect.fn("ReviewTask.conclude")(function* (api: Api, verdict: Undated, step: Step) {
+	const time = yield* api.now;
+	return yield* api.commit((tx) =>
+		Effect.as(tx.append(VerdictEntry, api.conversationId, { data: { ...verdict, time } }), step),
 	);
-}
+});
 
 /**
  * Runs when a held task wakes: reads the person's decision and ends the hold with it, the decision's entry and the
  * task's result in one commit. A task that woke without a decision sleeps again on the same key.
  */
-function released(answer: EntryId, api: Api) {
-	return Effect.gen(function* () {
-		const state = yield* api.readSignal(Hold.Released, Hold.KEY);
-		if (Option.isNone(state) || state.value.kind !== "value") return waiting(answer);
-		const decision = state.value.value;
-		const result = decision._tag === "Accept" ? Hook.stand : Hook.continueWith(decision.correction);
-		const time = yield* api.now;
-		return yield* api.commit((tx) =>
-			Effect.as(
-				tx.append(Hold.ReleaseEntry, api.conversationId, { data: { answer, decision, time } }),
-				Task.complete(result),
-			),
-		);
+const released = Effect.fn("ReviewTask.released")(function* (answer: EntryId, api: Api) {
+	const state = yield* api.readSignal(Hold.Released, Hold.KEY);
+	if (Option.isNone(state) || state.value.kind !== "value") return waiting(answer);
+	const decision = state.value.value;
+	const result = Hold.Decision.match(decision, {
+		Accept: () => Hook.stand,
+		Correct: ({ correction }) => Hook.continueWith(correction),
 	});
-}
+	const time = yield* api.now;
+	return yield* api.commit((tx) =>
+		Effect.as(
+			tx.append(Hold.ReleaseEntry, api.conversationId, { data: { answer, decision, time } }),
+			Task.complete(result),
+		),
+	);
+});
 
 /**
  * Runs when a deferred task wakes: asked again, it reviews the same answer with the next request; woken without
  * being asked, it sleeps again on the same key.
  */
 function retried(attempt: number, api: Api) {
-	return Effect.map(
-		api.readSignal(Deferral.Retried, Deferral.key(attempt)),
-		(state): Step =>
-			Option.isSome(state) && state.value.kind === "value"
-				? Task.next({ phase: "review", attempt: attempt + 1 })
-				: waitingToRetry(attempt),
+	return Effect.map(api.readSignal(Deferral.Retried, Deferral.key(attempt)), (state): Step =>
+		Option.isSome(state) && state.value.kind === "value"
+			? Task.next({ phase: "review", attempt: attempt + 1 })
+			: waitingToRetry(attempt),
 	);
 }
 
@@ -334,9 +365,9 @@ function retried(attempt: number, api: Api) {
  * that says it was aborted, in the commit that ends the task, so the answer does not read as one no review was asked
  * for. A held answer has its verdict already, and the state reads the ended hold from it.
  */
-function aborted<R>(options: Options<R>, state: typeof State.Type, api: Api) {
-	if (state.phase === "held") return Effect.succeed(Task.aborted());
-	return Effect.gen(function* () {
+const aborted = Effect.fn("ReviewTask.aborted")(
+	function* (policy: Policy, state: typeof State.Type, api: Api) {
+		if (state.phase === "held") return Task.aborted();
 		const yielded = yield* examined(api);
 		const author = authorOf(yielded);
 		// A reply the reviewer gave before the abort was paid for, so the verdict keeps its call. The failed request
@@ -344,19 +375,15 @@ function aborted<R>(options: Options<R>, state: typeof State.Type, api: Api) {
 		const reply =
 			state.phase === "review"
 				? yield* ModelReview.kept(api.memo, memoName(state.attempt, 0, ModelReview.NAME))
-				: Option.none();
+				: Option.none<ModelReview.Reply>();
 		const about = Option.match(reply, {
-			onNone: () => aboutOf(yielded, pair(options.policy, author)),
-			onSome: (kept) => ({ ...aboutOf(yielded, answeredBy(options.policy, author, kept)), call: kept.call }),
+			onNone: () => aboutOf(yielded, pair(policy, author)),
+			onSome: (kept) => ({ ...aboutOf(yielded, answeredBy(policy, author, kept)), call: kept.call }),
 		});
-		return yield* conclude(
-			api,
-			{ ...about, findings: [], failures: [], outcome: { _tag: "NotReviewed", reason: "review_aborted" } },
-			Task.aborted(),
-		);
-	}).pipe(
-		// A failing abort handler faults the task. Without an answer to name, or with a commit Pi refuses, the task
-		// ends aborted and stores nothing, as it did before it could say more.
-		Effect.catch(() => Effect.succeed(Task.aborted())),
-	);
-}
+		const outcome = Outcome.cases.NotReviewed.make({ reason: "review_aborted" });
+		return yield* conclude(api, { ...about, findings: [], failures: [], outcome }, Task.aborted());
+	},
+	// A failing abort handler faults the task. Without an answer to name, or with a commit Pi refuses, the task ends
+	// aborted and stores nothing, as it did before it could say more.
+	Effect.orElseSucceed(() => Task.aborted()),
+);

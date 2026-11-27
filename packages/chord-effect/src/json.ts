@@ -1,7 +1,7 @@
 // `@effectified/pi-chord/json`: Chord's strict JSON, the value type of its documents and deltas, copied as an Effect.
 
 import { type CopyJsonOptions, type JsonValue, copyJson as piCopyJson } from "@earendil-works/chord/json";
-import { Effect } from "effect";
+import { Effect, Predicate } from "effect";
 import { NotJson } from "./errors.ts";
 
 // Chord's JSON types (`JsonValue`, `JsonRepresentation`, `CopyJsonOptions`).
@@ -18,6 +18,6 @@ export function copyJson(value: unknown, options?: CopyJsonOptions): Effect.Effe
 	return Effect.try({
 		try: () => piCopyJson(value, options),
 		// Chord's copy throws only a `TypeError` that names what is not JSON.
-		catch: (thrown) => new NotJson({ message: thrown instanceof Error ? thrown.message : String(thrown) }),
+		catch: (thrown) => NotJson.make({ message: Predicate.isError(thrown) ? thrown.message : String(thrown) }),
 	});
 }

@@ -3,7 +3,8 @@
 import { refusalOf } from "@effectified/pi-budget";
 import type { Conversation, Doc, Harness, RunFailureReason, SubmissionRecord } from "@effectified/pi-durable";
 import * as Review from "@effectified/pi-review";
-import { Effect, Option } from "effect";
+import { Array as Arr, Effect, Match, Option, Predicate } from "effect";
+import type { ThreadKey } from "./ids.ts";
 import type { Outcome } from "./outcome.ts";
 import * as Thread from "./thread.ts";
 
@@ -24,62 +25,58 @@ export interface Sight extends Thread.Newest {
  * its waiting task), and the refusal in a failed run's detail or in a deferred review's reason (the budget's). So it
  * says the same in a process that just opened the storage. A handful of reads, and no pass over the transcript.
  */
-export function sight(
-	thread: string,
+export const sight = Effect.fn("Standing.sight")(function* (
+	thread: ThreadKey,
 	conversation: Conversation.Conversation,
-): Effect.Effect<Option.Option<Sight>, Doc.Failure, Harness.Harness> {
-	return Effect.gen(function* () {
-		const newest = yield* Thread.newest(conversation.id, thread);
-		if (Option.isNone(newest)) return Option.none();
-		const ending = yield* endingOf(newest.value.record, conversation);
-		return Option.some({ ...newest.value, ending });
-	});
-}
+): Effect.fn.Return<Option.Option<Sight>, Doc.Failure, Harness.Harness> {
+	const newest = yield* Thread.newest(conversation.id, thread);
+	if (Option.isNone(newest)) return Option.none();
+	const ending = yield* endingOf(newest.value.record, conversation);
+	return Option.some({ ...newest.value, ending });
+});
 
 /**
  * How the thread ended by its submission `record`; none while it works. A submission that waits for its review ends
  * the thread as far as it goes by itself, and one that settled by what the review says of the newest answer, or by
  * the reason Pi gave when no answer came.
  */
-export function endingOf(
+export const endingOf = Effect.fn("Standing.endingOf")(function* (
 	record: SubmissionRecord,
 	conversation: Conversation.Conversation,
-): Effect.Effect<Option.Option<Ending>, Review.Failure, Harness.Harness> {
-	switch (record.status) {
-		case "queued":
-		case "placed":
+): Effect.fn.Return<Option.Option<Ending>, Review.Failure, Harness.Harness> {
+	return yield* Match.value(record).pipe(
+		Match.discriminatorsExhaustive("status")({
 			// A held answer and a deferred review never settle their submission: the thread has ended as far as it goes
 			// by itself.
-			return Effect.flatMap(Review.state(conversation), waiting);
-		case "unanswered":
-			return Effect.asSome(unanswered(record.reason, record.detail));
-		case "done":
-			return Effect.flatMap(Review.state(conversation), (state) =>
-				Effect.map(
-					waiting(state),
-					Option.orElse(() => answered(state)),
+			queued: () => Effect.flatMap(Review.state(conversation), waiting),
+			placed: () => Effect.flatMap(Review.state(conversation), waiting),
+			unanswered: (settled) => Effect.asSome(unanswered(settled.reason, settled.detail)),
+			done: () =>
+				Effect.flatMap(Review.state(conversation), (state) =>
+					Effect.map(
+						waiting(state),
+						Option.orElse(() => answered(state)),
+					),
 				),
-			);
-	}
-}
+		}),
+	);
+});
 
 /**
  * How a thread whose run is open ended, when its review waits for somebody: held for a person, or deferred until
  * its reviewer can be asked again. None while the run works, a decision is being applied, or a retry is under way.
  */
 function waiting(state: Review.State): Effect.Effect<Option.Option<Ending>> {
-	switch (state._tag) {
-		case "Held":
-		case "Deferred":
-			return Effect.asSome(waited(state));
-		case "InReview":
-		case "Released":
-		case "Reviewed":
-		case "Accepted":
-		case "NotRequired":
-		case "NotReviewed":
-			return Effect.succeedNone;
-	}
+	return Review.State.match(state, {
+		Held: (held) => Effect.asSome(waited(held)),
+		Deferred: (deferred) => Effect.asSome(waited(deferred)),
+		InReview: () => Effect.succeedNone,
+		Released: () => Effect.succeedNone,
+		Reviewed: () => Effect.succeedNone,
+		Accepted: () => Effect.succeedNone,
+		NotRequired: () => Effect.succeedNone,
+		NotReviewed: () => Effect.succeedNone,
+	});
 }
 
 /**
@@ -88,21 +85,18 @@ function waiting(state: Review.State): Effect.Effect<Option.Option<Ending>> {
  * same for a wait read from its verdict alone (`Review.waitOf`), long after it ended.
  */
 export function waited(wait: Review.Wait): Effect.Effect<Ending> {
-	switch (wait._tag) {
-		case "Held":
-			return Effect.succeed({ _tag: "Held", verdict: wait.verdict });
-		case "Deferred": {
-			const { verdict, attempt, reason } = wait;
+	return Review.Wait.match(wait, {
+		Held: ({ verdict }): Effect.Effect<Ending> => Effect.succeed({ _tag: "Held", verdict }),
+		Deferred: ({ verdict, attempt, reason }): Effect.Effect<Ending> =>
 			// The budget's refusal reaches the review as the error text of the reviewer's request.
-			return Effect.map(
+			Effect.map(
 				refusalOf(reason),
 				Option.match({
 					onNone: (): Ending => ({ _tag: "ReviewDeferred", verdict, attempt, reason }),
 					onSome: (refusal): Ending => ({ _tag: "BudgetStopped", refusal, review: verdict }),
 				}),
-			);
-		}
-	}
+			),
+	});
 }
 
 /** Pi's reason of a submission whose run `Conversation.abort` ended before it answered: one of its run failures. */
@@ -115,7 +109,7 @@ function unanswered(reason: string, detail: unknown): Effect.Effect<Ending> {
 		refusalOf(detail),
 		Option.match({
 			// Stored input: Pi types a detail as any JSON value, and gives a failed run's as text.
-			onNone: (): Ending => ({ _tag: "Errored", reason, detail: typeof detail === "string" ? detail : null }),
+			onNone: (): Ending => ({ _tag: "Errored", reason, detail: Predicate.isString(detail) ? detail : null }),
 			onSome: (refusal): Ending => ({ _tag: "BudgetStopped", refusal }),
 		}),
 	);
@@ -129,24 +123,19 @@ const ABORTED_REVIEW: ReadonlyArray<Review.Reason> = ["review_aborted", "hold_en
 
 /** How a run that answered ended the thread, by what the review says of the answer; none while a run goes on. */
 function answered(state: Review.State): Option.Option<Ending> {
-	switch (state._tag) {
-		case "Reviewed":
-			return Option.some({ _tag: "Reviewed", verdict: state.verdict, accepted: false });
-		case "Accepted":
-			return Option.some({ _tag: "Reviewed", verdict: state.verdict, accepted: true });
-		case "NotRequired":
-			return Option.some({ _tag: "Answered" });
-		case "NotReviewed": {
+	return Review.State.match(state, {
+		Reviewed: ({ verdict }): Option.Option<Ending> => Option.some({ _tag: "Reviewed", verdict, accepted: false }),
+		Accepted: ({ verdict }): Option.Option<Ending> => Option.some({ _tag: "Reviewed", verdict, accepted: true }),
+		NotRequired: (): Option.Option<Ending> => Option.some({ _tag: "Answered" }),
+		NotReviewed: ({ reason, verdict }): Option.Option<Ending> =>
 			// Pi settles the inputs of a run aborted under review `done`: the review's reason tells it from an answer.
-			if (ABORTED_REVIEW.includes(state.reason)) return Option.some({ _tag: "Cancelled" });
-			const { reason, verdict } = state;
-			return Option.some({ _tag: "NotReviewed", reason, ...(verdict === undefined ? {} : { verdict }) });
-		}
+			Arr.contains(ABORTED_REVIEW, reason)
+				? Option.some({ _tag: "Cancelled" })
+				: Option.some({ _tag: "NotReviewed", reason, ...(verdict === undefined ? {} : { verdict }) }),
 		// The states of an open run, which `waiting` reads.
-		case "InReview":
-		case "Released":
-		case "Held":
-		case "Deferred":
-			return Option.none();
-	}
+		InReview: () => Option.none(),
+		Released: () => Option.none(),
+		Held: () => Option.none(),
+		Deferred: () => Option.none(),
+	});
 }

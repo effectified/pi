@@ -1,12 +1,12 @@
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
-import { Section, Tool } from "../src/index.ts";
+import { Section, Tool, ToolName } from "../src/index.ts";
 
 describe("a wrapper's registration", () => {
 	it("is Pi's wrapper of a tool or a section, by name or key", async () => {
 		const wraps = await Effect.runPromise(
 			Effect.all([
-				Tool.wrap("echo", () => ({})).registration,
+				Tool.wrap(ToolName.make("echo"), () => ({})).registration,
 				Section.wrap("motto", () => ({ render: () => Effect.succeed(Option.none()) })).registration,
 			]),
 		);

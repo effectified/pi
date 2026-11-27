@@ -11,24 +11,16 @@ export {
 	NotHeld,
 	ReviewerRequestFailed,
 	UndecodableReview,
+	VerificationFailed,
 } from "./errors.ts";
 export { extension, NAME, type Options, type Review } from "./extension.ts";
 export { blocks, Finding, Severity } from "./finding.ts";
 export { Decision, Release, ReleaseEntry } from "./hold.ts";
 export * as Policy from "./policy.ts";
-export { type Delivery, release, waitForHoldEnd } from "./release.ts";
-export { type Retrial, retry } from "./retry.ts";
+export { Delivery, release, waitForHoldEnd } from "./release.ts";
+export { Retrial, retry } from "./retry.ts";
 export type { ReviewTask } from "./review-task.ts";
-export {
-	type Failure,
-	Reason,
-	State,
-	state,
-	type VerdictsQuery,
-	verdicts,
-	type Wait,
-	waitOf,
-} from "./state.ts";
+export { type Failure, Reason, State, state, VerdictsQuery, verdicts, Wait, waitOf } from "./state.ts";
 export {
 	Call,
 	CheckFailure,

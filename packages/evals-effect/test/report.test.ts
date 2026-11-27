@@ -1,9 +1,9 @@
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { runLive } from "@effectified/pi-ai/testing";
-import { Effect } from "effect";
+import { runLive, runTest } from "@effectified/pi-ai/testing";
+import { Effect, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { ArtifactFailed, Report } from "../src/index.ts";
+import { ArtifactFailed, type EvalObservation, Report, summarizeEvalObservations } from "../src/index.ts";
 import { temporaryDirectory } from "./fixtures.ts";
 import { SESSION, TASK, vitestReport } from "./vitest-report.ts";
 
@@ -62,4 +62,44 @@ describe("readTaskObservation", () => {
 				expect(failure.message).toContain("vitest.json");
 			}),
 		));
+});
+
+describe("summarize", () => {
+	it("is a Sink that gives Pi's report of the observations it collects", async () => {
+		const tasks = [
+			{ ...TASK, variant: "without_docs" as const },
+			{ ...TASK, variant: "with_docs" as const },
+		];
+		const observations = tasks.map((task): EvalObservation => ({
+			...task,
+			outcome: "scored",
+			score: task.variant === "with_docs" ? 1 : 0,
+		}));
+		const report = await runTest(Stream.run(Stream.fromIterable(observations), Report.summarize("protocol", tasks)));
+		expect(report).toEqual(summarizeEvalObservations("protocol", tasks, observations));
+		expect(report.comparisons[0]?.lift).toBe(1);
+	});
+});
+
+describe("EvalObservation", () => {
+	const Line = Schema.fromJsonString(Report.EvalObservation);
+
+	it("keeps Pi's observation as a line of JSON and reads it back, its unreported metrics left out", () =>
+		runLive(
+			Effect.gen(function* () {
+				const { observation } = yield* observe(vitestReport(0.5));
+				const line = yield* Schema.encodeEffect(Line)(observation);
+				expect(line).not.toContain("cacheReadTokens");
+				expect(yield* Schema.decodeEffect(Line)(line)).toEqual(observation);
+			}),
+		));
+
+	it("rejects a line that is no observation", async () => {
+		const failure = await runTest(
+			Effect.flip(
+				Schema.decodeEffect(Line)('{"evalSet":"Set","caseId":"c","variant":"x","model":"m","runNumber":1}'),
+			),
+		);
+		expect(failure._tag).toBe("SchemaError");
+	});
 });

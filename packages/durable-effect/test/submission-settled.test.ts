@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { Effect, Option, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { Conversation, Entry, Extension, Harness, Registry, Signal, Task, Tool } from "../src/index.ts";
+import { Conversation, Entry, Extension, Harness, Registry, Signal, Task, Tool, ToolName } from "../src/index.ts";
 import { answer, held, TestHarness, toolCall } from "../src/testing/index.ts";
 import { runBoth } from "./parity.ts";
 import { AGENT } from "./scripted.ts";
@@ -209,7 +209,7 @@ describe("SubmissionSettled", () => {
 							const existing = (yield* tx.scanConversations({ ownerTaskId: api.taskId }, 1)).items[0];
 							if (existing !== undefined) return existing.id;
 							const created = yield* tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
-							yield* tx.configure(created.id, { tools: { remove: ["delegate"] } });
+							yield* tx.configure(created.id, { tools: { remove: [ToolName.make("delegate")] } });
 							return created.id;
 						}),
 					);

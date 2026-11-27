@@ -9,14 +9,16 @@ import {
 } from "@earendil-works/pi-durable";
 import { runTest } from "@effectified/pi-ai/testing";
 import { type SchemaConversionError, toJsonSchema } from "@effectified/pi-schema";
-import { Context, Effect, Layer, Schema, Stream } from "effect";
+import { Context, Effect, Layer, Option, Schema, Stream, Tracer } from "effect";
 import { Tool as AiTool, Toolkit } from "effect/ai";
 import { describe, expect, it } from "vitest";
-import { Extension, Harness, Registry, Tool } from "../src/index.ts";
+import { Extension, Harness, Registry, Tool, ToolName } from "../src/index.ts";
 import { runBoth } from "./parity.ts";
 import { AGENT, answer, harnessLayer } from "./scripted.ts";
 
-class NotFound extends Schema.TaggedError<NotFound>()("NotFound", { id: Schema.String }) {
+class NotFound extends Schema.TaggedError<NotFound, { readonly brand: unique symbol }>()("NotFound", {
+	id: Schema.String,
+}) {
 	override get message(): string {
 		return `No record ${this.id}`;
 	}
@@ -64,7 +66,7 @@ describe("make", () => {
 			typeof Lookup.registration,
 			Effect.Effect<ToolRegistration, SchemaConversionError, Records>
 		> = true;
-		const name: Equal<typeof Lookup.name, "lookup"> = true;
+		const name: Equal<typeof Lookup.name, "lookup" & Tool.Name> = true;
 		expect([parameters, requirements, name]).toEqual([true, true, true]);
 	});
 
@@ -88,6 +90,37 @@ describe("make", () => {
 
 describe("a call from the model", () => {
 	const app = Registry.layer([Extension.make({ name: "app", tools: [Lookup] })]);
+
+	it("runs in a span of its own that names the tool, the call, its task and its conversation", async () => {
+		const spans: Array<Tracer.Span> = [];
+		const recording = Tracer.make({
+			span(options) {
+				const span = Tracer.nativeTracer.span(options);
+				spans.push(span);
+				return span;
+			},
+		});
+		await Effect.runPromise(
+			ask.pipe(
+				Effect.provide(
+					harnessLayer({
+						responses: [toolCall("lookup", { id: "42" }), answer("It is titled Answer.")],
+						// Built under a span of the application's start, which ends long before the call.
+						registry: Layer.withSpan(app, "app.start"),
+					}),
+				),
+				Effect.provide(records),
+				Effect.provide(Layer.succeed(Tracer.Tracer, recording)),
+			),
+		);
+		const call = spans.find((span) => span.name === "Tool.execute");
+		expect(call?.attributes.get("tool")).toBe("lookup");
+		expect(call?.attributes.get("callId")).toBe("call-1");
+		expect(call?.attributes.get("conversationId")).toBe(1);
+		expect(call?.attributes.get("taskId")).toEqual(expect.any(Number));
+		// A call is no part of the registry's build: its span starts a trace of its own.
+		expect(Option.isNone(call?.parent ?? Option.some(undefined))).toBe(true);
+	});
 
 	it("runs the handler with the service from the Layer and gives the model the result as JSON", async () => {
 		const { settled, results } = await Effect.runPromise(
@@ -580,7 +613,7 @@ describe("the other options of Pi's defineTool", () => {
 		const { results } = await Effect.runPromise(
 			Effect.gen(function* () {
 				// A deferred tool is offered only once `modelTools` names it.
-				const root = yield* Harness.rootWith({ agent: { ...AGENT, modelTools: { add: ["join"] } } });
+				const root = yield* Harness.rootWith({ agent: { ...AGENT, modelTools: { add: [ToolName.make("join")] } } });
 				const settled = yield* root.prompt("Join them.");
 				yield* root.waitForIdle;
 				const entries = yield* Stream.runCollect(root.entries({ order: "ascending" }));
@@ -762,7 +795,7 @@ describe("wrap", () => {
 		const audit = Extension.make({
 			name: "audit",
 			wraps: [
-				Tool.wrap("echo", (tool) => ({
+				Tool.wrap(Echo.name, (tool) => ({
 					description: `${tool.tool.description} Audited.`,
 					execute: (args, api) =>
 						Effect.flatMap(tool.execute(args, api), (result) =>
@@ -803,10 +836,10 @@ describe("wrap", () => {
 		expect(results[0]?.model?.[0]).toMatchObject({ isError: false, content: [{ type: "text", text: "Answer: hi" }] });
 	});
 
-	it("turns a failure of the wrapping execution into Pi's tool_error result", async () => {
+	it("turns a defect of the wrapping execution into Pi's tool_error result", async () => {
 		const broken = Extension.make({
 			name: "broken",
-			wraps: [Tool.wrap("echo", () => ({ execute: () => Effect.fail(new Error("wrapper failed")) }))],
+			wraps: [Tool.wrap(Echo.name, () => ({ execute: () => Effect.die(new Error("wrapper failed")) }))],
 		});
 		const { settled, results } = await Effect.runPromise(
 			ask.pipe(

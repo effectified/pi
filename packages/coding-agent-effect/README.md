@@ -204,14 +204,17 @@ server's namespace, results converted and limited as Pi does.
 ```ts
 import { Effect } from "effect";
 import { Extension, McpTools } from "@effectified/pi-coding-agent";
-import type { McpClientService } from "@effectified/pi-mcp";
+import { type McpClientService, McpServerName } from "@effectified/pi-mcp";
 
 const docsExtension = (client: McpClientService) =>
-	Effect.map(McpTools.tools(client, { server: "docs" }), (tools) => Extension.make("docs", { tools }));
+	Effect.map(McpTools.tools(client, { server: McpServerName.make("docs") }), (tools) =>
+		Extension.make("docs", { tools }),
+	);
 ```
 
 The client is `@effectified/pi-mcp`'s `McpClient`, connected for as long as its scope lives. A call's progress
-notifications are the tool's updates; interrupting it cancels the request on the server.
+notifications are the tool's updates; interrupting it cancels the request on the server. Each call is a span,
+`McpTools.call`, with the server and the tool as its attributes; a result's `details` are `McpTools.Details`.
 
 ## Modes and the RPC client
 
@@ -293,7 +296,19 @@ The components of interactive mode, for a program that composes its own screen:
 
 Every call into Pi fails with `CodingAgentFailure`: `CredentialSynchronizationError` (a credential change stored but
 not synchronized), `SessionImportFileNotFound`, or `CodingAgentError` with Pi's message and its error as the cause.
+It is a union schema: `CodingAgentFailure.match` picks a handler per tag, `CodingAgentFailure.guards` tests for one.
 Building a tool fails with `@effectified/pi-schema`'s `SchemaConversionError` when its schema has no JSON Schema.
+
+## Names, ids and secrets
+
+- Tool names are `@effectified/pi-agent`'s `ToolName` (`Tool.make`, the built-in tools, `McpTools.tools` and
+  `ToolContext.executeTool` brand or take them); an MCP server is `@effectified/pi-mcp`'s `McpServerName`.
+- The model runtime and registry take `@effectified/pi-ai`'s `ProviderId` and `ModelId`.
+- API keys are `Redacted`: `setRuntimeApiKey` and the summary requests of `Compaction` take one,
+  `ModelRegistry.getApiKeyForProvider` gives one.
+- A session's own operations (`AgentSession.make`, `prompt`, `compact`, `navigateTree`, ...), the constructors of
+  the managers and the dialogs and selectors are spans named for them; Pi's members lifted under their own names
+  are not.
 
 ## Not wrapped yet
 

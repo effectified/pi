@@ -17,22 +17,31 @@ describe("the package's exports", () => {
 			"ActorDefect",
 			"ActorEngine",
 			"ActorGone",
+			"ActorId",
 			"ActorInfo",
+			"ActorKey",
 			"ActorSql",
+			"CallError",
 			"Client",
 			"EngineUnavailable",
 			"Fork",
 			"ForkKeyHeld",
+			"ForkLink",
 			"ForkTooDeep",
 			"Host",
+			"HostError",
+			"Identity",
 			"NotIdle",
 			"Self",
 			"SqliteDatabase",
+			"Status",
+			"StorageOptions",
 			"storage",
 		]);
 		expect(Object.keys(Main.Action).sort()).toEqual(["boundary", "make"]);
 		expect(Object.keys(Main.Actor).sort()).toEqual(["make"]);
 		expect(Object.keys(Main.Client).sort()).toEqual([
+			"Destroyed",
 			"RivetClient",
 			"call",
 			"destroy",
@@ -41,11 +50,12 @@ describe("the package's exports", () => {
 			"getOrCreate",
 			"isIdle",
 			"layer",
+			"layerConfig",
 			"lineage",
 			"status",
 			"waitForIdle",
 		]);
-		expect(Object.keys(Main.Fork).sort()).toEqual(["lineage"]);
+		expect(Object.keys(Main.Fork).sort()).toEqual(["Lineage", "lineage"]);
 		expect(Object.keys(Main.Host).sort()).toEqual(["holdBackExit", "serve", "use"]);
 		expect(Object.keys(Main.Self).sort()).toEqual(["client", "definition", "find", "getOrCreate", "handle"]);
 		expect(Object.keys(Main.SqliteDatabase).sort()).toEqual(["make"]);
@@ -58,6 +68,8 @@ describe("the package's exports", () => {
 
 	it("are these, from the testing entry, which has no platform code", () => {
 		expect(Object.keys(Testing).sort()).toEqual([
+			"Lifecycle",
+			"Scheduled",
 			"hosted",
 			"lifecycle",
 			"observed",

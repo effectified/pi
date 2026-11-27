@@ -1,7 +1,7 @@
 // A local execution environment: Pi Durable's Node environment, listing files through a daemon on this machine.
 
 import { LocalExecutionEnv, type LocalExecutionEnvOptions } from "@earendil-works/pi-env";
-import { Effect, type Layer, type Scope } from "effect";
+import { Effect, type Layer } from "effect";
 import * as Env from "../env.ts";
 import type { Connection } from "./connection.ts";
 
@@ -12,9 +12,10 @@ import type { Connection } from "./connection.ts";
 export type Options = Omit<LocalExecutionEnvOptions, "connection"> & { readonly connection: Connection };
 
 /** A local environment; closing the scope kills the commands it still runs. */
-export function make(options: Options): Effect.Effect<Env.Env, never, Scope.Scope> {
-	return Effect.flatMap(Env.owned(create(options)), Env.fromPi);
-}
+export const make = Effect.fn("Local.make")(function* (options: Options) {
+	const pi = yield* Env.owned(create(options));
+	return yield* Env.fromPi(pi);
+});
 
 /** `Env.Current` as a local environment, its commands killed when the Layer is released. */
 export function layer(options: Options): Layer.Layer<Env.Current> {

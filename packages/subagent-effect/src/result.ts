@@ -1,7 +1,7 @@
 // Typed results: what a child is told to answer with for a declared result Schema, and its answer decoded against it.
 
 import { SchemaConversionError } from "@effectified/pi-durable";
-import { Effect, Predicate, Schema } from "effect";
+import { Effect, Formatter, Predicate, Record, Schema, String as Str } from "effect";
 import { ResultMismatch } from "./errors.ts";
 import type { ResultSchema, Subagent } from "./subagent.ts";
 
@@ -25,7 +25,7 @@ export interface Typed {
  * checked here, and a mismatch is sent back to the child (see `correction`) a bounded number of times.
  */
 export function compile(subagent: Subagent, schema: ResultSchema): Effect.Effect<Typed, SchemaConversionError> {
-	const mismatch = (issues: string) => new ResultMismatch({ subagent: subagent.name, issues });
+	const mismatch = (issues: string) => ResultMismatch.make({ subagent: subagent.name, issues });
 	return Effect.try({
 		// Effect throws for a schema without a JSON form, from the codec and from the JSON Schema alike.
 		try: (): Typed => {
@@ -33,24 +33,26 @@ export function compile(subagent: Subagent, schema: ResultSchema): Effect.Effect
 			const decodeJson = Schema.decodeUnknownEffect(codec, { errors: "all" });
 			const encodeJson = Schema.encodeEffect(codec);
 			const document = Schema.toJsonSchemaDocument(schema);
-			const jsonSchema =
-				Object.keys(document.definitions).length === 0
-					? document.schema
-					: { ...document.schema, $defs: document.definitions };
+			const jsonSchema = Record.isEmptyRecord(document.definitions)
+				? document.schema
+				: { ...document.schema, $defs: document.definitions };
 			return {
-				contract: `Your final answer must be one JSON value that matches this JSON Schema, with no other text:\n${JSON.stringify(jsonSchema)}`,
+				contract: `Your final answer must be one JSON value that matches this JSON Schema, with no other text:\n${Formatter.formatJson(jsonSchema)}`,
 				decode: (answer) =>
 					decodeJsonText(unfenced(answer)).pipe(
 						Effect.mapError(() => mismatch("it is not JSON")),
-						Effect.flatMap((json) => Effect.flatMap(decodeJson(json), encodeJson)),
-						Effect.mapError((error) => (error._tag === "ResultMismatch" ? error : mismatch(error.message))),
-						// A decode boundary: the JSON codec of a schema encodes to JSON, which its `Encoded` type cannot say.
-						Effect.map((encoded) => encoded as Schema.Json),
+						Effect.flatMap((json) =>
+							Effect.mapBoth(Effect.flatMap(decodeJson(json), encodeJson), {
+								onFailure: (error) => mismatch(error.message),
+								// A decode boundary: the JSON codec of a schema encodes to JSON, which its `Encoded` type cannot say.
+								onSuccess: (encoded) => encoded as Schema.Json,
+							}),
+						),
 					),
 			};
 		},
 		catch: (cause) =>
-			new SchemaConversionError({
+			SchemaConversionError.make({
 				reason: `Subagent ${subagent.name}: its result has no JSON Schema (${Predicate.isError(cause) ? cause.message : String(cause)})`,
 			}),
 	});
@@ -68,5 +70,5 @@ export function correction(mismatch: ResultMismatch): string {
 /** The JSON text of an answer: what its first fenced code block holds, or the answer as it is. */
 function unfenced(answer: string): string {
 	const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(answer);
-	return (fenced?.[1] ?? answer).trim();
+	return Str.trim(fenced?.[1] ?? answer);
 }

@@ -44,19 +44,25 @@ export const WRITES = [
 /** Pi's options of `exec`, without the signal: interrupting the fiber kills the command. */
 export type CommandOptions = Omit<ExecOptions, "signal">;
 
-/** A virtual model whose `route` is an Effect that runs with the context of the request. */
-export interface VirtualModel<R> extends Omit<ExtensionVirtualModel, "route"> {
+/**
+ * A virtual model whose `route` is an Effect that runs with the context of the request. A failure (`E`) fails the
+ * request, as a throw of Pi's `route` does.
+ */
+export interface VirtualModel<R, E = unknown> extends Omit<ExtensionVirtualModel, "route"> {
 	readonly route: (
 		request: Parameters<ExtensionVirtualModel["route"]>[0],
-	) => Effect.Effect<Awaited<ReturnType<ExtensionVirtualModel["route"]>>, unknown, R | ExtensionContext>;
+	) => Effect.Effect<Awaited<ReturnType<ExtensionVirtualModel["route"]>>, E, R | ExtensionContext>;
 }
 
-/** A keyboard shortcut of interactive mode whose handler is an Effect with the extension context. */
-export interface Shortcut<R> {
+/**
+ * A keyboard shortcut of interactive mode whose handler is an Effect with the extension context. A failure (`E`) is
+ * reported by Pi as an extension error.
+ */
+export interface Shortcut<R, E = unknown> {
 	/** The key, as pi-tui names it (`"ctrl+shift+p"`). */
 	readonly shortcut: Parameters<ExtensionAPI["registerShortcut"]>[0];
 	readonly description?: string;
-	readonly handler: Effect.Effect<void, unknown, R | ExtensionContext>;
+	readonly handler: Effect.Effect<void, E, R | ExtensionContext>;
 }
 
 /**
@@ -65,8 +71,7 @@ export interface Shortcut<R> {
  * given to `Extension.make`.
  */
 export interface ExtensionApiHandle
-	extends Reads<ExtensionAPI, (typeof READS)[number]>,
-		Writes<ExtensionAPI, (typeof WRITES)[number]> {
+	extends Reads<ExtensionAPI, (typeof READS)[number]>, Writes<ExtensionAPI, (typeof WRITES)[number]> {
 	/** Runs a program to its end; interrupting the fiber kills it. A non-zero exit is a result, not a failure. */
 	readonly exec: (
 		command: string,
@@ -80,13 +85,13 @@ export interface ExtensionApiHandle
 	/** Registers (or replaces) a command while the session runs. */
 	readonly registerCommand: <R>(command: Command.Any<R>) => Effect.Effect<void, CodingAgentFailure, R>;
 	/** Registers a keyboard shortcut of interactive mode. */
-	readonly registerShortcut: <R>(shortcut: Shortcut<R>) => Effect.Effect<void, CodingAgentFailure, R>;
+	readonly registerShortcut: <R, E>(shortcut: Shortcut<R, E>) => Effect.Effect<void, CodingAgentFailure, R>;
 	/** Registers (or replaces) a pi-ai provider, such as one of `@effectified/pi-ai`'s `EffectProvider.make`. */
 	readonly registerProvider: (provider: PiProvider) => Effect.Effect<void, CodingAgentFailure>;
 	/** Registers (or overrides) the provider `name` from configuration, as `models.json` declares one: Pi's other form. */
 	readonly registerProviderConfig: (name: string, config: ProviderConfig) => Effect.Effect<void, CodingAgentFailure>;
 	/** Registers a virtual model, which routes each request to a physical model. */
-	readonly registerVirtualModel: <R>(model: VirtualModel<R>) => Effect.Effect<void, CodingAgentFailure, R>;
+	readonly registerVirtualModel: <R, E>(model: VirtualModel<R, E>) => Effect.Effect<void, CodingAgentFailure, R>;
 	/** Sends `data` to the listeners of `channel` on the bus the session's extensions share. */
 	readonly emit: (channel: string, data: unknown) => Effect.Effect<void>;
 	/** What is sent on `channel` from when the Stream starts until it ends. */
@@ -95,7 +100,7 @@ export interface ExtensionApiHandle
 
 /** The API of the extension whose handler, tool, command or setup is running. */
 export class ExtensionApi extends Context.Service<ExtensionApi, ExtensionApiHandle>()(
-	"@effectified/pi-coding-agent/ExtensionApi",
+	"@effectified/pi-coding-agent/extension-api/ExtensionApi",
 ) {}
 
 /** Pi's extension API as a handle. */
@@ -104,15 +109,18 @@ export function fromPiApi(pi: ExtensionAPI): ExtensionApiHandle {
 	return {
 		...reads(pi, READS),
 		...writes(pi, WRITES),
-		exec: (command, args, options) =>
+		exec: Effect.fn("ExtensionApi.exec")((command: string, args: ReadonlyArray<string>, options?: CommandOptions) =>
 			Effect.tryPromise({ try: (signal) => pi.exec(command, [...args], { ...options, signal }), catch: fromPi }),
-		setModel: (model) => Effect.tryPromise({ try: () => pi.setModel(model), catch: fromPi }),
+		),
+		setModel: Effect.fn("ExtensionApi.setModel")((model: Parameters<ExtensionAPI["setModel"]>[0]) =>
+			Effect.tryPromise({ try: () => pi.setModel(model), catch: fromPi }),
+		),
 		registerTool: (tool) => Effect.flatMap(tool.definition, (definition) => write(() => pi.registerTool(definition))),
 		registerCommand: (command) =>
 			Effect.flatMap(command.registration, (registration) =>
 				write(() => pi.registerCommand(command.name, registration)),
 			),
-		registerShortcut: <R>(shortcut: Shortcut<R>) =>
+		registerShortcut: <R, E>(shortcut: Shortcut<R, E>) =>
 			Effect.flatMap(Effect.context<R>(), (context) => {
 				const run = runner(context);
 				return write(() =>
@@ -124,7 +132,7 @@ export function fromPiApi(pi: ExtensionAPI): ExtensionApiHandle {
 			}),
 		registerProvider: (provider) => write(() => pi.registerProvider(provider)),
 		registerProviderConfig: (name, config) => write(() => pi.registerProvider(name, config)),
-		registerVirtualModel: <R>(model: VirtualModel<R>) =>
+		registerVirtualModel: <R, E>(model: VirtualModel<R, E>) =>
 			Effect.flatMap(Effect.context<R>(), (context) => {
 				const run = runner(context);
 				return write(() =>

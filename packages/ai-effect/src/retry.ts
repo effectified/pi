@@ -7,7 +7,8 @@ import {
 	type RetryPolicy,
 	retryDelayMs,
 } from "@earendil-works/pi-ai";
-import { Effect } from "effect";
+import { Effect, String as Str } from "effect";
+import { dual } from "effect/Function";
 
 /** pi-ai's `RetryCallbacks` as Effects, run in order by `retryAssistantCall`. */
 export interface RetryNotifications<R = never> {
@@ -34,39 +35,51 @@ export interface RetryNotifications<R = never> {
  * policy has retries left, after `retryDelayMs` of the policy (exponential from `baseDelayMs`, capped by
  * `maxAgentDelayMs`); the last response is returned otherwise. Without a policy, or with one not `enabled`, the
  * first response is returned. The backoff is `Effect.sleep`, so `TestClock` moves it. Interrupting the fiber is
- * interruption: unlike pi-ai, which turns an abort during the backoff into an `aborted` response.
+ * interruption: unlike pi-ai, which turns an abort during the backoff into an `aborted` response. Data-first, or
+ * data-last in a pipe: `complete(model, context).pipe(retryAssistantCall(policy))`.
  */
-export function retryAssistantCall<E, R, R2 = never>(
-	produce: Effect.Effect<AssistantMessage, E, R>,
-	policy: RetryPolicy | undefined,
-	notifications: RetryNotifications<R2> = {},
-): Effect.Effect<AssistantMessage, E, R | R2> {
-	const maxAttempts = policy?.enabled ? policy.maxRetries : 0;
-	const finish = (lastAttempt: number | undefined, success: boolean, finalError?: string) =>
-		lastAttempt === undefined || notifications.onRetryFinished === undefined
-			? Effect.void
-			: notifications.onRetryFinished({
-					success,
-					attempt: lastAttempt,
-					...(finalError === undefined ? {} : { finalError }),
-				});
-	const loop = (attempt: number, lastAttempt: number | undefined): Effect.Effect<AssistantMessage, E, R | R2> =>
-		Effect.flatMap(produce, (response) => {
-			if (response.stopReason === "aborted") return Effect.as(finish(lastAttempt, false), response);
-			if (response.stopReason !== "error") return Effect.as(finish(lastAttempt, true), response);
+export const retryAssistantCall: {
+	<R2 = never>(
+		policy: RetryPolicy | undefined,
+		notifications?: RetryNotifications<R2>,
+	): <E, R>(produce: Effect.Effect<AssistantMessage, E, R>) => Effect.Effect<AssistantMessage, E, R | R2>;
+	<E, R, R2 = never>(
+		produce: Effect.Effect<AssistantMessage, E, R>,
+		policy: RetryPolicy | undefined,
+		notifications?: RetryNotifications<R2>,
+	): Effect.Effect<AssistantMessage, E, R | R2>;
+} = dual(
+	(args) => Effect.isEffect(args[0]),
+	Effect.fn("Retry.retryAssistantCall")(function* <E, R, R2 = never>(
+		produce: Effect.Effect<AssistantMessage, E, R>,
+		policy: RetryPolicy | undefined,
+		notifications: RetryNotifications<R2> = {},
+	): Effect.fn.Return<AssistantMessage, E, R | R2> {
+		const maxAttempts = policy?.enabled === true ? policy.maxRetries : 0;
+		// pi-ai tells the end only of a loop that retried: a first call that settles it is not reported.
+		const finish = (attempt: number, success: boolean, finalError?: string): Effect.Effect<void, never, R2> =>
+			attempt === 0 || notifications.onRetryFinished === undefined
+				? Effect.void
+				: notifications.onRetryFinished({ success, attempt, ...(finalError === undefined ? {} : { finalError }) });
+		for (let attempt = 0; ; attempt++) {
+			const response = yield* produce;
+			if (response.stopReason !== "error") {
+				yield* finish(attempt, response.stopReason !== "aborted");
+				return response;
+			}
 			if (policy === undefined || attempt >= maxAttempts || !isRetryableAssistantError(response)) {
-				return Effect.as(finish(lastAttempt, false, response.errorMessage), response);
+				yield* finish(attempt, false, response.errorMessage);
+				return response;
 			}
 			const next = attempt + 1;
 			const delayMs = retryDelayMs(policy, next);
-			const errorMessage = response.errorMessage || "Unknown error";
-			return Effect.andThen(
-				notifications.onRetryScheduled?.({ attempt: next, maxAttempts, delayMs, errorMessage }) ?? Effect.void,
-				Effect.andThen(
-					Effect.sleep(delayMs),
-					Effect.andThen(notifications.onRetryAttemptStart ?? Effect.void, loop(next, next)),
-				),
-			);
-		});
-	return Effect.suspend(() => loop(0, undefined));
-}
+			const message = response.errorMessage;
+			const errorMessage = message !== undefined && Str.isNonEmpty(message) ? message : "Unknown error";
+			if (notifications.onRetryScheduled !== undefined) {
+				yield* notifications.onRetryScheduled({ attempt: next, maxAttempts, delayMs, errorMessage });
+			}
+			yield* Effect.sleep(delayMs);
+			if (notifications.onRetryAttemptStart !== undefined) yield* notifications.onRetryAttemptStart;
+		}
+	}),
+);

@@ -16,7 +16,7 @@ describe.skipIf(daemon === undefined || process.platform === "win32")(
 				Effect.gen(function* () {
 					const directory = yield* tempDir;
 					const connection = yield* Connection.make({ command: [daemon!] });
-					const env = yield* Remote.make({ connection, id: "pi-env:test", cwd: directory });
+					const env = yield* Remote.make({ connection, id: Env.Id.make("pi-env:test"), cwd: directory });
 					yield* env.writeFile("dir/a.txt", "one\ntwo\n");
 					const lines = yield* Stream.runCollect(env.textLines("dir/a.txt"));
 					const output = yield* Stream.runCollect(env.execOutput("cat dir/a.txt; exit 1"));
@@ -56,7 +56,7 @@ describe.skipIf(daemon === undefined || process.platform === "win32")(
 				Effect.gen(function* () {
 					const directory = yield* tempDir;
 					const connection = yield* Connection.make({ command: [daemon!] });
-					const env = yield* Remote.make({ connection, id: "pi-env:test", cwd: directory });
+					const env = yield* Remote.make({ connection, id: Env.Id.make("pi-env:test"), cwd: directory });
 					const fiber = yield* Effect.forkChild(env.exec("exec sleep 30"), { startImmediately: true });
 					yield* Fiber.interrupt(fiber);
 					return yield* Fiber.await(fiber);
@@ -70,7 +70,9 @@ describe.skipIf(daemon === undefined || process.platform === "win32")(
 				Effect.gen(function* () {
 					const directory = yield* tempDir;
 					const connection = yield* Connection.make({ command: [daemon!] });
-					const services = yield* Layer.build(Remote.layer({ connection, id: "pi-env:test", cwd: directory }));
+					const services = yield* Layer.build(
+						Remote.layer({ connection, id: Env.Id.make("pi-env:test"), cwd: directory }),
+					);
 					return yield* Effect.exit(Context.get(services, Env.Current).readTextFile("missing"));
 				}),
 			);

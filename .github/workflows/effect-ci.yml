@@ -78,12 +78,13 @@ jobs:
         continue-on-error: true
         run: npm run check
 
-      # The parts of upstream's check that read the pi-effect packages and no catalog: format and lint, pinned
-      # versions, declared runtime dependencies, import style. Their types are the fast type check below.
+      # Format and lint of the pi-effect packages (oxfmt and oxlint, with the idiom rules of effect/AGENTS.md), and
+      # the parts of upstream's check that read them and no catalog: pinned versions, declared runtime dependencies,
+      # import style. Their types are the step "Types and Effect rules" below.
       - name: Check the pi-effect packages
         if: ${{ !cancelled() }}
         run: |
-          node_modules/.bin/biome check packages/*-effect effect .github/workflows/effect-ci.yml
+          node effect/scripts/style.ts
           npm run check:pinned-deps
           npm run check:runtime-deps
           npm run check:ts-imports
@@ -101,15 +102,13 @@ jobs:
         if: ${{ !cancelled() && steps.upstream.outcome == 'success' }}
         run: node effect/scripts/build.ts
 
-      - name: Fast type check
+      # The types of sources and tests and the rules of effect/AGENTS.md (the plugin block of effect/tsconfig.json) in
+      # one pass of the Effect-patched tsrs, the Rust port of TypeScript 7 that @effect/tsgo ships. @effect/tsgo is
+      # fetched by npm exec at an exact version, not installed by npm ci. The release build above checks the sources
+      # again with upstream's pinned TypeScript 7.0.2.
+      - name: Types and Effect rules
         if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
-        run: node_modules/.bin/tsc --noEmit -p effect/tsconfig.json
-
-      # The rules of effect/AGENTS.md as errors of the Effect language service (the plugin block of
-      # effect/tsconfig.json). @effect/tsgo is fetched by npm exec at an exact version, not installed by npm ci.
-      - name: Effect diagnostics
-        if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
-        run: node effect/scripts/effect-diagnostics.ts
+        run: node effect/scripts/types.ts
 
       # Storage conformance runs in both lanes: on node:sqlite here, on bun:sqlite in the Bun lane.
       - name: Tests on Node

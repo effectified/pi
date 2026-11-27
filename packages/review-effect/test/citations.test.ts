@@ -2,7 +2,7 @@ import { answer } from "@effectified/pi-durable/testing";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import type { Subject } from "../src/check.ts";
-import { Citations, state } from "../src/index.ts";
+import { Citations, state, VerificationFailed } from "../src/index.ts";
 import { ask, findings, scene, textOf, transcript } from "./scene.ts";
 
 /** Citations as `[source]` at the end of a sentence, which is the claim. */
@@ -76,14 +76,19 @@ describe("Citations.check", () => {
 	});
 
 	it("fails, and finds nothing, when the verifier fails", async () => {
-		const down = Layer.succeed(Citations.Verifier, { verify: () => Effect.fail("The index is down") });
+		const down = Layer.succeed(Citations.Verifier, {
+			verify: () => Effect.fail(VerificationFailed.make({ reason: "The index is down" })),
+		});
 		const check = Citations.check(extract);
 		const failed = await Effect.runPromise(
 			Effect.flip(check.run({ answer: "The sky is blue [atlas]." } as unknown as Subject)).pipe(
 				Effect.provide(down),
 			),
 		);
-		expect([check.name, failed]).toEqual(["review.citations", "The index is down"]);
+		expect([check.name, failed.message]).toEqual([
+			"review.citations",
+			"The citation could not be verified: The index is down",
+		]);
 	});
 });
 
@@ -124,7 +129,9 @@ describe("the citation check in a review", () => {
 			author: [answer("The sky is blue [atlas].")],
 			reviewer: [findings()],
 		});
-		const down = Layer.succeed(Citations.Verifier, { verify: () => Effect.fail(new Error("The index is down")) });
+		const down = Layer.succeed(Citations.Verifier, {
+			verify: () => Effect.fail(VerificationFailed.make({ reason: "The index is down" })),
+		});
 		const result = await Effect.runPromise(
 			Effect.gen(function* () {
 				const { root, submission } = yield* ask("What colour is the sky?");
@@ -137,7 +144,7 @@ describe("the citation check in a review", () => {
 			reason: "check_failed",
 			verdict: {
 				findings: [],
-				failures: [{ check: "review.citations", error: "The index is down" }],
+				failures: [{ check: "review.citations", error: "The citation could not be verified: The index is down" }],
 				outcome: { _tag: "NotReviewed", reason: "check_failed" },
 			},
 		});

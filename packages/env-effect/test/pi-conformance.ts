@@ -6,10 +6,13 @@ import type {
 	ExecutionErrorCode,
 	FileErrorCode,
 	BinaryReader as PiBinaryReader,
+	ShellExecResult,
+	ShellOutputInfo,
 } from "@earendil-works/pi-durable/env";
 import type * as PiEnv from "@earendil-works/pi-env";
 import type {
 	Connection as PiConnection,
+	Reply as PiReply,
 	RemoteProcess,
 	RemoteTerminal,
 	RequestOptions,
@@ -18,7 +21,8 @@ import type {
 import type { Assert, Conform, Covers } from "../../../effect/conformance.ts";
 import type { Env } from "../src/env.ts";
 import type { EXECUTION_ERROR_CODES, FILE_ERROR_CODES } from "../src/errors.ts";
-import type { Connection, RequestInput } from "../src/node/connection.ts";
+import type { ExecEvent, ExecResult } from "../src/exec.ts";
+import type { Connection, Reply, RequestInput } from "../src/node/connection.ts";
 import type { Scanned } from "../src/node/host-key.ts";
 import type { Process } from "../src/node/process.ts";
 import type { BY_CLASS } from "../src/node/rejection.ts";
@@ -64,6 +68,18 @@ export type ProcessCovers = Assert<Covers<RemoteProcess, Process, "close">>;
 
 /** A terminal has every public member of Pi's, but `close`, which its scope does. */
 export type TerminalCovers = Assert<Covers<RemoteTerminal, Terminal, "close">>;
+
+/** `ExecResult` is Pi's `ShellExecResult`. */
+export type ExecResultConforms = Assert<Conform<ExecResult, ShellExecResult>>;
+
+/** An output chunk of `ExecEvent` is the text Pi's `onOutput` gets with its `ShellOutputInfo`. */
+export type ExecOutputConforms = Assert<
+	Conform<Omit<Extract<ExecEvent, { readonly kind: "output" }>, "kind">, { text: string } & ShellOutputInfo>
+>;
+
+/** `Reply` is Pi's `Reply`, its session branded: a `SessionId` is the number Pi gives. */
+export type ReplyConforms = Assert<Conform<Omit<Reply, "session">, Omit<PiReply, "session">>>;
+export type ReplySession = Assert<Reply["session"] extends PiReply["session"] ? true : false>;
 
 /** `HostKey.scan` gives what Pi's `scanHostKey` resolves with. */
 export type ScannedConforms = Assert<Conform<Scanned, Awaited<ReturnType<typeof scanHostKey>>>>;

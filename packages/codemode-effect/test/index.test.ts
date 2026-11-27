@@ -133,10 +133,12 @@ describe("the exports", () => {
 		expect(Object.keys(Package).sort()).toEqual(
 			[
 				...offeredNames(COVERAGE),
+				"AdmissionDenied",
 				"CodemodeSourceError",
 				"DeliveryRejected",
 				"InlineSandbox",
 				"RemoteSandbox",
+				"Run",
 				"RunRejected",
 				"Sandbox",
 				"SandboxClosed",
@@ -161,6 +163,7 @@ describe("the exports", () => {
 			"parse",
 		]);
 		expect(Object.keys(Package.Wasm)).toEqual(["load"]);
+		expect(Object.keys(Package.Run).sort()).toEqual(["Answer", "CallId", "Event", "HostCall", "Outcome"]);
 	});
 
 	it("are Pi's functions alone in the declarations entry", () => {
@@ -171,10 +174,12 @@ describe("the exports", () => {
 		expect(Object.keys(Portable).sort()).toEqual(
 			[
 				...offeredNames(PORTABLE_COVERAGE),
+				"AdmissionDenied",
 				"CodemodeSourceError",
 				"DeliveryRejected",
 				"InlineSandbox",
 				"RemoteSandbox",
+				"Run",
 				"RunRejected",
 				"Sandbox",
 				"SandboxClosed",

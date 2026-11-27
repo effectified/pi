@@ -1,7 +1,7 @@
 import { fauxProvider } from "@earendil-works/pi-ai";
 import { Effect, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
-import { Credentials, getAuth, Models, ProviderAuthContext } from "../src/index.ts";
+import { Credentials, getAuth, Models, ProviderAuthContext, ProviderId } from "../src/index.ts";
 
 describe("Models.layer", () => {
 	it("provides pi-ai's own collection holding the providers", async () => {
@@ -62,7 +62,7 @@ describe("Models.layerWithAuth", () => {
 		});
 		const { provider } = fauxProvider({ provider: "faux" });
 		const auth = await Effect.runPromise(
-			getAuth("faux").pipe(
+			getAuth(ProviderId.make("faux")).pipe(
 				Effect.provide(Models.layerWithAuth([provider]).pipe(Layer.provide(Layer.merge(credentials, authContext)))),
 			),
 		);

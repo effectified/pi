@@ -3,7 +3,7 @@
 
 import { type InteractiveModeOptions, InteractiveMode as PiInteractiveMode } from "@earendil-works/pi-coding-agent";
 import { type TUI, Tui } from "@effectified/pi-tui";
-import { Context, Deferred, Effect, Layer, type Scope } from "effect";
+import { Context, Deferred, Effect, Layer, Schema, type Scope } from "effect";
 import { AgentSessionRuntime, type AgentSessionRuntimeHandle } from "./agent-session-runtime.ts";
 import { type CodingAgentFailure, fromPi } from "./errors.ts";
 
@@ -11,7 +11,10 @@ import { type CodingAgentFailure, fromPi } from "./errors.ts";
  * Why interactive mode ended: the user quit (Ctrl+D on an empty editor, Ctrl+C twice, `/quit`, the session selector's
  * exit, an extension's `shutdown`), or the process got SIGTERM or SIGHUP.
  */
-export type Ending = "quit" | "signal";
+export const Ending = Schema.Literals(["quit", "signal"]);
+
+/** Why interactive mode ended. */
+export type Ending = typeof Ending.Type;
 
 /**
  * Pi's options of interactive mode: the first messages to send, the startup notices, `tuiMode` (`"regular"` or
@@ -56,7 +59,7 @@ export interface InteractiveModeHandle {
 
 /** The interactive mode of the program. */
 export class InteractiveMode extends Context.Service<InteractiveMode, InteractiveModeHandle>()(
-	"@effectified/pi-coding-agent/InteractiveMode",
+	"@effectified/pi-coding-agent/interactive-mode/InteractiveMode",
 ) {
 	/**
 	 * Interactive mode over the program's `AgentSessionRuntime`, for the Layer's scope, and its TUI as pi-tui's `Tui`
@@ -67,7 +70,8 @@ export class InteractiveMode extends Context.Service<InteractiveMode, Interactiv
 	): Layer.Layer<InteractiveMode | Tui.Tui, CodingAgentFailure, AgentSessionRuntime> {
 		return Layer.effectContext(
 			Effect.gen(function* () {
-				const mode = yield* InteractiveMode.make(yield* AgentSessionRuntime, options);
+				const runtime = yield* AgentSessionRuntime;
+				const mode = yield* InteractiveMode.make(runtime, options);
 				return Context.make(InteractiveMode, mode).pipe(Context.add(Tui.Tui, mode.tui));
 			}),
 		);
@@ -81,24 +85,22 @@ export class InteractiveMode extends Context.Service<InteractiveMode, Interactiv
 	 * caller's, so the runtime's scope ends the session. Pi sets the process's keybindings, theme and terminal
 	 * capabilities from the settings, and leaves them set.
 	 */
-	static make(
+	static readonly make = Effect.fn("InteractiveMode.make")(function* (
 		runtime: AgentSessionRuntimeHandle,
 		options: Options = {},
-	): Effect.Effect<InteractiveModeHandle, CodingAgentFailure, Scope.Scope> {
-		return Effect.gen(function* () {
-			const ended = yield* Deferred.make<Ending>();
-			const pi = yield* Effect.acquireRelease(
-				Effect.sync(() => {
-					const made = new PiInteractiveMode(runtime.pi, options);
-					endInsteadOfExit(made, ended);
-					return made;
-				}),
-				(made) => stopped(made),
-			);
-			yield* Effect.tryPromise({ try: () => pi.init(), catch: fromPi });
-			return handle(pi, ended);
-		});
-	}
+	): Effect.fn.Return<InteractiveModeHandle, CodingAgentFailure, Scope.Scope> {
+		const ended = yield* Deferred.make<Ending>();
+		const pi = yield* Effect.acquireRelease(
+			Effect.sync(() => {
+				const made = new PiInteractiveMode(runtime.pi, options);
+				endInsteadOfExit(made, ended);
+				return made;
+			}),
+			(made) => stopped(made),
+		);
+		yield* Effect.tryPromise({ try: () => pi.init(), catch: fromPi });
+		return handle(pi, ended);
+	});
 }
 
 /** Pi's quit and signal handling as `ended`, instead of ending the process. */
@@ -138,7 +140,7 @@ function handle(pi: PiInteractiveMode, ended: Deferred.Deferred<Ending>): Intera
 				// Pi's loop never ends on its own: it waits for the user's next text.
 				() => Effect.never,
 			),
-		),
+		).pipe(Effect.withSpan("InteractiveMode.run")),
 		getUserInput: Effect.promise(() => pi.getUserInput()),
 		renderInitialMessages: Effect.sync(() => pi.renderInitialMessages()),
 		clearEditor: Effect.sync(() => pi.clearEditor()),

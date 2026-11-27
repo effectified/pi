@@ -65,21 +65,31 @@ export function make(options?: Options): Effect.Effect<EvalHarness<string>>;
 export function make<TOutput extends JsonValue, E, R>(
 	options: Options & { readonly output?: Output<TOutput, E, R> } = {},
 ): Effect.Effect<EvalHarness<TOutput, E>, never, R> {
-	const { output, ...piOptions } = options;
-	return Effect.map(Effect.context<R>(), (context) =>
-		harness(
-			(piOutput) =>
-				Effect.sync(() =>
-					piOutput === undefined
-						? createPiCodingAgentHarness(piOptions)
-						: createPiCodingAgentHarness({ ...piOptions, output: piOutput }),
-				),
-			createPiCodingAgentHarness(piOptions).name,
-			output,
-			context,
-		),
-	);
+	return makeCodingAgent(options);
 }
+
+/** `make` with the signature of its implementation, in a span. */
+const makeCodingAgent: <TOutput extends JsonValue, E, R>(
+	options: Options & { readonly output?: Output<TOutput, E, R> },
+) => Effect.Effect<EvalHarness<TOutput, E>, never, R> = Effect.fn("Harness.make")(function* <
+	TOutput extends JsonValue,
+	E,
+	R,
+>(options: Options & { readonly output?: Output<TOutput, E, R> }) {
+	const { output, ...piOptions } = options;
+	const context = yield* Effect.context<R>();
+	return harness(
+		(piOutput) =>
+			Effect.sync(() =>
+				piOutput === undefined
+					? createPiCodingAgentHarness(piOptions)
+					: createPiCodingAgentHarness({ ...piOptions, output: piOutput }),
+			),
+		createPiCodingAgentHarness(piOptions).name,
+		output,
+		context,
+	);
+});
 
 /**
  * A harness of the documentation comparison, for a run inside its container: named by its variant
@@ -97,6 +107,17 @@ export function makeDocumentation(
 export function makeDocumentation<TOutput extends JsonValue, E, R>(
 	options: DocumentationOptions & { readonly output?: Output<TOutput, E, R> } = {},
 ): Effect.Effect<EvalHarness<TOutput, E | InvalidSetting>, InvalidSetting, R> {
+	return makeDocumentationEval(options);
+}
+
+/** `makeDocumentation` with the signature of its implementation, in a span. */
+const makeDocumentationEval: <TOutput extends JsonValue, E, R>(
+	options: DocumentationOptions & { readonly output?: Output<TOutput, E, R> },
+) => Effect.Effect<EvalHarness<TOutput, E | InvalidSetting>, InvalidSetting, R> = Effect.fn(
+	"Harness.makeDocumentation",
+)(function* <TOutput extends JsonValue, E, R>(
+	options: DocumentationOptions & { readonly output?: Output<TOutput, E, R> },
+) {
 	const { output, ...piOptions } = options;
 	const create = (piOutput: PiOutput | undefined): Effect.Effect<PiHarness, InvalidSetting> =>
 		Effect.try({
@@ -104,12 +125,13 @@ export function makeDocumentation<TOutput extends JsonValue, E, R>(
 				piOutput === undefined
 					? createPiDocumentationEvalHarness(piOptions)
 					: createPiDocumentationEvalHarness({ ...piOptions, output: piOutput }),
-			catch: (cause) => new InvalidSetting({ message: messageOf(cause) }),
+			catch: (cause) => InvalidSetting.make({ message: messageOf(cause) }),
 		});
-	return Effect.flatMap(create(undefined), (first) =>
-		Effect.map(Effect.context<R>(), (context) => harness(create, first.name, output, context)),
-	);
-}
+	// Made once now, so a harness outside its container fails here and not at its first run.
+	const first = yield* create(undefined);
+	const context = yield* Effect.context<R>();
+	return harness(create, first.name, output, context);
+});
 
 /** Pi's harness: a vitest-evals adapter whose run is a promise. */
 type PiHarness = Harness<PiCodingAgentInput, JsonValue>;
@@ -128,34 +150,34 @@ function harness<TOutput extends JsonValue, E, R, CreateError>(
 	context: Context.Context<R>,
 ): EvalHarness<TOutput, E | CreateError> {
 	const runExit = Effect.runPromiseExitWith(context);
-	const run = (input: PiCodingAgentInput) =>
-		Effect.suspend(() => {
-			const state: { signal?: AbortSignal; failure?: Cause.Cause<E> } = {};
-			const piOutput: PiOutput | undefined =
-				output &&
-				((args) =>
-					runExit(output(args), { signal: state.signal }).then((exit) => {
-						if (Exit.isSuccess(exit)) return exit.value;
-						state.failure = exit.cause;
-						// A new error: vitest-evals attaches its run to what Pi rejects with, which must not be the caller's.
-						return Promise.reject(new Error(Cause.pretty(exit.cause)));
-					}));
-			return Effect.flatMap(create(piOutput), (piHarness) =>
-				abortable<HarnessRun<TOutput>, RunFailed | E>(
-					(signal) => {
-						state.signal = signal;
-						const artifacts: Record<string, JsonValue> = {};
-						const setArtifact = (key: string, value: JsonValue): void => {
-							artifacts[key] = value;
-						};
-						// With an output, Pi's overload makes the run's output that output's value: `TOutput`; without one
-						// it is the agent's answer, and `make` without an output is typed `string`.
-						return piHarness.run(input, { signal, artifacts, setArtifact }) as Promise<HarnessRun<TOutput>>;
-					},
-					(cause) => (state.failure === undefined ? runFailed(cause) : Effect.failCause(state.failure)),
-				),
-			);
-		});
+	const run = Effect.fn("EvalHarness.run")(function* (input: PiCodingAgentInput) {
+		// What this run's output callback, which Pi calls, shares with the run: the run's signal, and its failure.
+		const state: { signal?: AbortSignal; failure?: Cause.Cause<E> } = {};
+		const piOutput: PiOutput | undefined =
+			output === undefined
+				? undefined
+				: (args) =>
+						runExit(output(args), { signal: state.signal }).then((exit) => {
+							if (Exit.isSuccess(exit)) return exit.value;
+							state.failure = exit.cause;
+							// A new error: vitest-evals attaches its run to what Pi rejects with, which must not be the caller's.
+							return Promise.reject(new Error(Cause.pretty(exit.cause)));
+						});
+		const piHarness = yield* create(piOutput);
+		return yield* abortable<HarnessRun<TOutput>, RunFailed | E>(
+			(signal) => {
+				state.signal = signal;
+				const artifacts: Record<string, JsonValue> = {};
+				const setArtifact = (key: string, value: JsonValue): void => {
+					artifacts[key] = value;
+				};
+				// With an output, Pi's overload makes the run's output that output's value: `TOutput`; without one it is
+				// the agent's answer, and `make` without an output is typed `string`.
+				return piHarness.run(input, { signal, artifacts, setArtifact }) as Promise<HarnessRun<TOutput>>;
+			},
+			(cause) => (state.failure === undefined ? runFailed(cause) : Effect.failCause(state.failure)),
+		);
+	});
 	return { name, run };
 }
 
@@ -163,7 +185,7 @@ function runFailed(cause: unknown): Effect.Effect<never, RunFailed> {
 	const run = getHarnessRunFromError(cause);
 	// vitest-evals attaches a run to every rejection of a harness it made; one without is not Pi's harness failing.
 	if (run === undefined) return Effect.die(cause);
-	return Effect.fail(new RunFailed({ message: messageOf(cause), run, cause }));
+	return Effect.fail(RunFailed.make({ message: messageOf(cause), run, cause }));
 }
 
 /**
@@ -175,11 +197,13 @@ function abortable<A, E>(
 	onRejection: (cause: unknown) => Effect.Effect<never, E>,
 ): Effect.Effect<A, E> {
 	return Effect.callback<A, E>((resume, signal) => {
-		// A promise executor turns a synchronous throw of `run` into a rejection too.
-		const done = new Promise<A>((resolve) => resolve(run(signal))).then(
-			(value) => resume(Effect.succeed(value)),
-			(cause: unknown) => resume(onRejection(cause)),
-		);
+		// Started as a promise reaction, so a synchronous throw of `run` is a rejection too.
+		const done = Promise.resolve(signal)
+			.then(run)
+			.then(
+				(value) => resume(Effect.succeed(value)),
+				(cause: unknown) => resume(onRejection(cause)),
+			);
 		return Effect.promise(() => done);
 	});
 }

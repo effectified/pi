@@ -258,7 +258,11 @@ describe("a refusal with a retry hint, met by ActorSql", () => {
 					seen.push(yield* Effect.orDie(Effect.flip(insert(sql, 2, "after the refusal"))));
 				});
 				const ended = yield* onTheClock(sql.withTransaction(body));
-				expect([...seen, ...Option.toArray(Result.getFailure(ended))].map(hintOf)).toEqual([100, 100, 100]);
+				expect([...seen, ...Option.toArray(Result.getFailure(ended))].map(hintOf)).toEqual([
+					Option.some(100),
+					Option.some(100),
+					Option.some(100),
+				]);
 				expect({ statements: asked.statements, transactions: asked.transactions }).toEqual({
 					statements: 0,
 					transactions: 1,

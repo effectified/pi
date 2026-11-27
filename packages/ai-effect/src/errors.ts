@@ -2,13 +2,17 @@
 // the failures of pi-ai's auth, credential, JSON, tool-validation and session-cleanup operations.
 
 import type { AssistantMessage, ModelsErrorCode } from "@earendil-works/pi-ai";
-import { Predicate, Schema } from "effect";
+import { Array as Arr, Predicate, Schema } from "effect";
+import { ModelId, ProviderId } from "./ids.ts";
 
 /** No registered provider lists a chat model with this id. */
-export class ModelNotFound extends Schema.TaggedError<ModelNotFound>()("ModelNotFound", {
-	provider: Schema.String,
-	modelId: Schema.String,
-}) {
+export class ModelNotFound extends Schema.TaggedError<ModelNotFound, { readonly brand: unique symbol }>()(
+	"ModelNotFound",
+	{
+		provider: ProviderId,
+		modelId: ModelId,
+	},
+) {
 	override get message(): string {
 		return `No chat model "${this.modelId}" is registered for provider "${this.provider}"`;
 	}
@@ -19,13 +23,16 @@ export class ModelNotFound extends Schema.TaggedError<ModelNotFound>()("ModelNot
  * before the failure, its usage, and `errorMessage`. `reason` is `"aborted"` when the provider gave the request up
  * (a timeout, a closed connection); interrupting the fiber is interruption and never this error.
  */
-export class ModelRequestError extends Schema.TaggedError<ModelRequestError>()("ModelRequestError", {
-	reason: Schema.Literals(["error", "aborted"]),
-	// pi-ai has no schema for its messages; the role is what tells an assistant message from the other kinds.
-	response: Schema.declare(
-		(value: unknown): value is AssistantMessage => Predicate.isObject(value) && value.role === "assistant",
-	),
-}) {
+export class ModelRequestError extends Schema.TaggedError<ModelRequestError, { readonly brand: unique symbol }>()(
+	"ModelRequestError",
+	{
+		reason: Schema.Literals(["error", "aborted"]),
+		// pi-ai has no schema for its messages; the role is what tells an assistant message from the other kinds.
+		response: Schema.declare(
+			(value: unknown): value is AssistantMessage => Predicate.isObject(value) && value.role === "assistant",
+		),
+	},
+) {
 	override get message(): string {
 		return this.response.errorMessage ?? `The request ended with stop reason "${this.reason}"`;
 	}
@@ -36,42 +43,57 @@ export class ModelRequestError extends Schema.TaggedError<ModelRequestError>()("
  * code of pi-ai's `ModelsError`: `provider` (no such provider), `auth` (the provider has no such login, the API key
  * could not be resolved, or the credential store failed) or `oauth` (refreshing the token failed; the stored
  * credential is kept, and logging in again fixes it). `login` is the provider's own login flow failing (denied,
- * expired, a malformed answer of the authorization server). `message` is pi-ai's.
+ * expired, a malformed answer of the authorization server). `message` is pi-ai's; `cause` is what pi-ai rejected
+ * with.
  */
-export class AuthError extends Schema.TaggedError<AuthError>()("AuthError", {
+export class AuthError extends Schema.TaggedError<AuthError, { readonly brand: unique symbol }>()("AuthError", {
 	reason: Schema.Literals(["model_source", "model_validation", "provider", "stream", "auth", "oauth", "login"]),
 	message: Schema.String,
+	cause: Schema.Defect(),
 }) {}
 
 /** The reasons of `AuthError`: pi-ai's `ModelsError` codes, and `login`. */
 export type AuthErrorReason = ModelsErrorCode | "login";
 
-/** A credential store could not read, list, write or delete. `message` says why. */
-export class CredentialStoreError extends Schema.TaggedError<CredentialStoreError>()("CredentialStoreError", {
-	providerId: Schema.UndefinedOr(Schema.String),
-	message: Schema.String,
-}) {}
+/** A credential store could not read, list, write or delete. `message` says why; `cause` is the store's own error. */
+export class CredentialStoreError extends Schema.TaggedError<CredentialStoreError, { readonly brand: unique symbol }>()(
+	"CredentialStoreError",
+	{
+		providerId: Schema.UndefinedOr(ProviderId),
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
 
 /** Text a model sent is not JSON, even after pi-ai's repair. `message` is the parser's. */
-export class MalformedJson extends Schema.TaggedError<MalformedJson>()("MalformedJson", {
-	text: Schema.String,
-	message: Schema.String,
-}) {}
+export class MalformedJson extends Schema.TaggedError<MalformedJson, { readonly brand: unique symbol }>()(
+	"MalformedJson",
+	{
+		text: Schema.String,
+		message: Schema.String,
+	},
+) {}
 
 /**
  * A tool call pi-ai's validation rejects: no tool has its name, its arguments were malformed JSON, or they do not
  * match the tool's JSON Schema. `message` is pi-ai's, written for the model to read and correct the call.
  */
-export class InvalidToolCall extends Schema.TaggedError<InvalidToolCall>()("InvalidToolCall", {
-	toolName: Schema.String,
-	message: Schema.String,
-}) {}
+export class InvalidToolCall extends Schema.TaggedError<InvalidToolCall, { readonly brand: unique symbol }>()(
+	"InvalidToolCall",
+	{
+		toolName: Schema.String,
+		message: Schema.String,
+	},
+) {}
 
 /** One or more of the cleanups registered with pi-ai's session resources threw. `messages` are theirs. */
-export class SessionCleanupError extends Schema.TaggedError<SessionCleanupError>()("SessionCleanupError", {
-	messages: Schema.Array(Schema.String),
-}) {
+export class SessionCleanupError extends Schema.TaggedError<SessionCleanupError, { readonly brand: unique symbol }>()(
+	"SessionCleanupError",
+	{
+		messages: Schema.Array(Schema.String),
+	},
+) {
 	override get message(): string {
-		return `Failed to clean up session resources: ${this.messages.join("; ")}`;
+		return `Failed to clean up session resources: ${Arr.join(this.messages, "; ")}`;
 	}
 }

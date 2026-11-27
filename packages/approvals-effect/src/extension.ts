@@ -15,8 +15,8 @@ export type Hooks<R> = readonly [Hook.Hook<R | Inbox>, Hook.Hook<never>];
  * person, and arguments a later hook rewrote would run without anyone having seen them. `NoInfer`: `R` is read from
  * the policy only, so a call written inside the array of `Registry.layer` does not take it from there.
  */
-export function extension<R = never>(
-	policy: Policy<R>,
+export function extension<R = never, E = never>(
+	policy: Policy<R, E>,
 ): Extension.Extension<readonly [], Hooks<NoInfer<R>>, readonly [], readonly [], readonly []> {
 	return { name: "approvals", hooks: [gate(policy), record] };
 }

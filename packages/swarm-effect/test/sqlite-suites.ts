@@ -1,12 +1,13 @@
 // Test helper: the suites that need a real SQLite `SqlClient`, registered once per driver by a platform test file:
-// kill and resume of a swarm on a SQLite file (kill-resume.ts), and the Rivet driver's record of forks
-// (records-suite.ts).
+// kill and resume of a swarm on a SQLite file (kill-resume.ts), the Rivet driver's record of forks
+// (records-suite.ts), and the Rivet driver without an engine (rivet-driver-suite.ts).
 
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ClientLayer, registerKillResume } from "./kill-resume.ts";
 import { registerRecords } from "./records-suite.ts";
+import { registerDriver } from "./rivet-driver-suite.ts";
 
 /** Vitest's `describe`, or its `skipIf` for the driver the runtime cannot load. */
 export type Describe = (name: string, body: () => void) => void;
@@ -16,6 +17,7 @@ export function registerSqliteSuites(describe: Describe, driver: string, client:
 	describe(`kill and resume of a swarm (${driver})`, () =>
 		registerKillResume(client, withDatabaseFile, copyDatabaseFile));
 	describe(`the Rivet driver's record of forks (${driver})`, () => registerRecords(client));
+	describe(`the Rivet driver without an engine (${driver})`, () => registerDriver(client));
 }
 
 /** Runs `use` with the path of a database file in a fresh temporary directory, removed afterwards. */

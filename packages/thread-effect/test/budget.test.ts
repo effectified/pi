@@ -8,7 +8,7 @@ import { answer, toolCall } from "@effectified/pi-durable/testing";
 import type { RouteTable } from "@effectified/pi-router";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
-import { Routing, Session, Threads } from "../src/index.ts";
+import { Routing, Session, ThreadKey, Threads } from "../src/index.ts";
 import {
 	BACKUP,
 	committed,
@@ -49,12 +49,12 @@ describe("a lease fenced in the middle of a thread", () => {
 				const paused = {
 					steps: state.lease.steps.map((step) => step.step),
 					requests: [labs.author.state.callCount, labs.reviewer.state.callCount],
-					probe: yield* threads.probe("t1"),
+					probe: yield* threads.probe(ThreadKey.make("t1")),
 					// A resume while the lease is still fenced stops again, without a request.
-					again: yield* threads.resume("t1"),
+					again: yield* threads.resume(ThreadKey.make("t1")),
 				};
 				state.lease.fenced = undefined;
-				return { stopped, paused, continued: yield* threads.resume("t1") };
+				return { stopped, paused, continued: yield* threads.resume(ThreadKey.make("t1")) };
 			}),
 		);
 		const first = reservations(state)[0]?.settlements[0]?.cost ?? 0n;
@@ -121,9 +121,9 @@ describe("a route that fails with a retryable error", () => {
 				const outcome = yield* threads.work(work("t1", "What is six times seven?"));
 				return {
 					outcome,
-					conversation: (yield* threads.conversation("t1")).id,
+					conversation: (yield* threads.conversation(ThreadKey.make("t1"))).id,
 					events: [...(yield* routed(state, 3))],
-					stored: yield* threads.outcome("t1"),
+					stored: yield* threads.outcome(ThreadKey.make("t1")),
 				};
 			}),
 		);
@@ -438,10 +438,10 @@ describe("what a thread says of its routes", () => {
 					routing: { regions: ["test"] },
 				});
 				const events = [...(yield* routed(state, 4))];
-				const parent = (yield* threads.conversation("t1")).id;
+				const parent = (yield* threads.conversation(ThreadKey.make("t1"))).id;
 				// Every request named a provider session the index knows: the parent's, or the child's.
 				const conversations = yield* Effect.forEach(events, (event) =>
-					Session.conversationOf(event.sessionId ?? ""),
+					event.sessionId === undefined ? Effect.succeedNone : Session.conversationOf(event.sessionId),
 				);
 				const owners = [
 					...new Set(conversations.map((found) => (found._tag === "Some" ? found.value : undefined))),

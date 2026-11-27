@@ -1,10 +1,13 @@
 import { Clock, Effect, Exit, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-import { Limiter, type LimiterOptions } from "../src/index.ts";
+import { ConcurrencyKey, Limiter, type LimiterOptions } from "../src/index.ts";
+
+/** The concurrency key `name`. */
+const key = (name: string) => ConcurrencyKey.make(name);
 
 /** Runs `program` with a fresh limiter on a test clock that starts at 0. */
-function withLimiter<A>(options: LimiterOptions, program: Effect.Effect<A, never, Limiter>): Promise<A> {
+function withLimiter<A>(options: typeof LimiterOptions.Encoded, program: Effect.Effect<A, never, Limiter>): Promise<A> {
 	return Effect.runPromise(program.pipe(Effect.provide(Limiter.layer(options)), Effect.provide(TestClock.layer())));
 }
 
@@ -29,7 +32,7 @@ describe("Limiter.withPermit", () => {
 			Effect.gen(function* () {
 				const limiter = yield* Limiter;
 				const fibers = yield* Effect.forEach([1, 2, 3, 4, 5], () =>
-					Effect.forkChild(limiter.withPermit("k", work)),
+					Effect.forkChild(limiter.withPermit(key("k"), work)),
 				);
 				const steps: number[] = [];
 				for (let step = 0; step < 3; step++) {
@@ -57,9 +60,9 @@ describe("Limiter.withPermit", () => {
 					Effect.forkChild(
 						Effect.all(
 							[
-								limiter.withPermit("a", a.work),
-								limiter.withPermit("b", b.work),
-								limiter.withPermit("x", unknown.work),
+								limiter.withPermit(key("a"), a.work),
+								limiter.withPermit(key("b"), b.work),
+								limiter.withPermit(key("x"), unknown.work),
 							],
 							{ concurrency: "unbounded" },
 						),
@@ -78,11 +81,11 @@ describe("Limiter.withPermit", () => {
 			{ limits: { k: { maxInFlight: 1 } } },
 			Effect.gen(function* () {
 				const limiter = yield* Limiter;
-				yield* Effect.exit(limiter.withPermit("k", Effect.fail("boom")));
-				const stuck = yield* Effect.forkChild(limiter.withPermit("k", Effect.never));
+				yield* Effect.exit(limiter.withPermit(key("k"), Effect.fail("boom")));
+				const stuck = yield* Effect.forkChild(limiter.withPermit(key("k"), Effect.never));
 				yield* Effect.yieldNow;
 				yield* Fiber.interrupt(stuck);
-				return yield* limiter.withPermit("k", Effect.succeed("ran"));
+				return yield* limiter.withPermit(key("k"), Effect.succeed("ran"));
 			}),
 		);
 		expect(ran).toBe("ran");
@@ -96,8 +99,8 @@ describe("Limiter.backOff", () => {
 			{ limits: { k: { maxInFlight: 1 } }, backoff: { baseMillis: 1_000, maxMillis: 60_000 } },
 			Effect.gen(function* () {
 				const limiter = yield* Limiter;
-				const wait = yield* limiter.backOff("k");
-				const fiber = yield* Effect.forkChild(limiter.withPermit("k", Clock.currentTimeMillis));
+				const wait = yield* limiter.backOff(key("k"));
+				const fiber = yield* Effect.forkChild(limiter.withPermit(key("k"), Clock.currentTimeMillis));
 				yield* TestClock.adjust("999 millis");
 				const early = fiber.pollUnsafe() !== undefined;
 				yield* TestClock.adjust("1 millis");
@@ -115,7 +118,7 @@ describe("Limiter.backOff", () => {
 				const limiter = yield* Limiter;
 				const waits: number[] = [];
 				for (let index = 0; index < 6; index++) {
-					const wait = yield* limiter.backOff("k");
+					const wait = yield* limiter.backOff(key("k"));
 					waits.push(wait);
 					// The next rate limit comes from a request that started after this wait had passed.
 					yield* TestClock.adjust(wait);
@@ -131,12 +134,12 @@ describe("Limiter.backOff", () => {
 			{ limits: { k: { maxInFlight: 1 } }, backoff: { baseMillis: 100, maxMillis: 1_000 } },
 			Effect.gen(function* () {
 				const limiter = yield* Limiter;
-				const first = yield* limiter.backOff("k");
+				const first = yield* limiter.backOff(key("k"));
 				yield* TestClock.adjust(first);
-				const second = yield* limiter.backOff("k");
+				const second = yield* limiter.backOff(key("k"));
 				yield* TestClock.adjust(second);
-				yield* limiter.recover("k");
-				return [first, second, yield* limiter.backOff("k")];
+				yield* limiter.recover(key("k"));
+				return [first, second, yield* limiter.backOff(key("k"))];
 			}),
 		);
 		expect(waits).toEqual([100, 200, 100]);
@@ -148,10 +151,14 @@ describe("Limiter.backOff", () => {
 			Effect.gen(function* () {
 				const limiter = yield* Limiter;
 				// Four requests of one burst are all answered with a rate limit.
-				const burst = [yield* limiter.backOff("k"), yield* limiter.backOff("k"), yield* limiter.backOff("k")];
+				const burst = [
+					yield* limiter.backOff(key("k")),
+					yield* limiter.backOff(key("k")),
+					yield* limiter.backOff(key("k")),
+				];
 				yield* TestClock.adjust("50 millis");
-				burst.push(yield* limiter.backOff("k"));
-				const fiber = yield* Effect.forkChild(limiter.withPermit("k", Clock.currentTimeMillis));
+				burst.push(yield* limiter.backOff(key("k")));
+				const fiber = yield* Effect.forkChild(limiter.withPermit(key("k"), Clock.currentTimeMillis));
 				// The last one of the burst extends the wait: 50 + 100.
 				yield* TestClock.adjust("100 millis");
 				return { burst, ranAt: yield* Fiber.join(fiber) };
@@ -165,13 +172,13 @@ describe("Limiter.backOff", () => {
 			{ limits: { k: { maxInFlight: 1 } }, backoff: { baseMillis: 100, maxMillis: 10_000 } },
 			Effect.gen(function* () {
 				const limiter = yield* Limiter;
-				const hinted = yield* limiter.backOff("k", 7_000);
-				const fiber = yield* Effect.forkChild(limiter.withPermit("k", Clock.currentTimeMillis));
+				const hinted = yield* limiter.backOff(key("k"), 7_000);
+				const fiber = yield* Effect.forkChild(limiter.withPermit(key("k"), Clock.currentTimeMillis));
 				yield* TestClock.adjust("6999 millis");
 				const early = fiber.pollUnsafe() !== undefined;
 				yield* TestClock.adjust("1 millis");
 				const ranAt = yield* Fiber.join(fiber);
-				return { hinted, early, ranAt, capped: yield* limiter.backOff("k", 3_600_000) };
+				return { hinted, early, ranAt, capped: yield* limiter.backOff(key("k"), 3_600_000) };
 			}),
 		);
 		expect(result).toEqual({ hinted: 7_000, early: false, ranAt: 7_000, capped: 10_000 });
@@ -182,8 +189,8 @@ describe("Limiter.backOff", () => {
 			{ limits: { a: { maxInFlight: 1 }, b: { maxInFlight: 1 } } },
 			Effect.gen(function* () {
 				const limiter = yield* Limiter;
-				yield* limiter.backOff("a");
-				return yield* limiter.withPermit("b", Clock.currentTimeMillis);
+				yield* limiter.backOff(key("a"));
+				return yield* limiter.withPermit(key("b"), Clock.currentTimeMillis);
 			}),
 		);
 		expect(ranAt).toBe(0);
@@ -196,7 +203,7 @@ describe("Limiter.backOff", () => {
 				const limiter = yield* Limiter;
 				const waits: number[] = [];
 				for (let index = 0; index < 8; index++) {
-					const wait = yield* limiter.backOff("k");
+					const wait = yield* limiter.backOff(key("k"));
 					waits.push(wait);
 					yield* TestClock.adjust(wait);
 				}
@@ -211,11 +218,11 @@ describe("Limiter.backOff", () => {
 			{ limits: { k: { maxInFlight: 1 } } },
 			Effect.gen(function* () {
 				const limiter = yield* Limiter;
-				yield* limiter.backOff("k");
+				yield* limiter.backOff(key("k"));
 				let ran = false;
 				const waiting = yield* Effect.forkChild(
 					limiter.withPermit(
-						"k",
+						key("k"),
 						Effect.sync(() => {
 							ran = true;
 						}),
@@ -224,7 +231,7 @@ describe("Limiter.backOff", () => {
 				yield* TestClock.adjust("500 millis");
 				yield* Fiber.interrupt(waiting);
 				const exit = yield* Effect.exit(Fiber.join(waiting));
-				const next = yield* Effect.forkChild(limiter.withPermit("k", Clock.currentTimeMillis));
+				const next = yield* Effect.forkChild(limiter.withPermit(key("k"), Clock.currentTimeMillis));
 				yield* TestClock.adjust("500 millis");
 				return { ran, interrupted: Exit.hasInterrupts(exit), nextRanAt: yield* Fiber.join(next) };
 			}),

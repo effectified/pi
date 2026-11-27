@@ -1,6 +1,7 @@
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { constraintsFromMetadata, constraintsToMetadata, METADATA_KEY } from "../src/index.ts";
+import { FAST } from "./scripted.ts";
 
 describe("constraintsToMetadata", () => {
 	it("puts the constraints under the router's metadata key", () => {
@@ -23,17 +24,17 @@ describe("constraintsFromMetadata", () => {
 	it("reads back what constraintsToMetadata wrote, beside other metadata", async () => {
 		const constraints = { classification: "secret", regions: ["eu"], requires: ["zero-data-retention"] };
 		const metadata = { user_id: "u1", ...constraintsToMetadata(constraints) };
-		expect(await Effect.runPromise(constraintsFromMetadata("fast", metadata))).toEqual(constraints);
+		expect(await Effect.runPromise(constraintsFromMetadata(FAST, metadata))).toEqual(Option.some(constraints));
 	});
 
-	it("is undefined for a request without metadata or without the key", async () => {
-		expect(await Effect.runPromise(constraintsFromMetadata("fast", undefined))).toBeUndefined();
-		expect(await Effect.runPromise(constraintsFromMetadata("fast", { user_id: "u1" }))).toBeUndefined();
+	it("is none for a request without metadata or without the key", async () => {
+		expect(await Effect.runPromise(constraintsFromMetadata(FAST, undefined))).toEqual(Option.none());
+		expect(await Effect.runPromise(constraintsFromMetadata(FAST, { user_id: "u1" }))).toEqual(Option.none());
 	});
 
 	it("fails with InvalidConstraints for a value that is not constraints, never with a default", async () => {
 		const regions = await Effect.runPromise(
-			Effect.flip(constraintsFromMetadata("fast", { "pi-router": { regions: "eu" } })),
+			Effect.flip(constraintsFromMetadata(FAST, { "pi-router": { regions: "eu" } })),
 		);
 		expect(regions._tag).toBe("InvalidConstraints");
 		expect(regions.alias).toBe("fast");
@@ -41,15 +42,15 @@ describe("constraintsFromMetadata", () => {
 		expect(regions.reason).toContain('["regions"]');
 		expect(regions.message).toBe(`The constraints of a request to alias "fast" are not usable: ${regions.reason}`);
 
-		const text = await Effect.runPromise(Effect.flip(constraintsFromMetadata("fast", { "pi-router": "secret" })));
+		const text = await Effect.runPromise(Effect.flip(constraintsFromMetadata(FAST, { "pi-router": "secret" })));
 		expect(text._tag).toBe("InvalidConstraints");
 		const label = await Effect.runPromise(
-			Effect.flip(constraintsFromMetadata("fast", { "pi-router": { classification: 3 } })),
+			Effect.flip(constraintsFromMetadata(FAST, { "pi-router": { classification: 3 } })),
 		);
 		expect(label.reason).toContain('["classification"]');
 		// A required label is checked as a table's labels are: not empty, no white space.
 		const required = await Effect.runPromise(
-			Effect.flip(constraintsFromMetadata("fast", { "pi-router": { requires: ["zero data retention"] } })),
+			Effect.flip(constraintsFromMetadata(FAST, { "pi-router": { requires: ["zero data retention"] } })),
 		);
 		expect(required._tag).toBe("InvalidConstraints");
 		expect(required.reason).toContain('["requires"][0]');

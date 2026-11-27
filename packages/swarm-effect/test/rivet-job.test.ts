@@ -3,7 +3,7 @@
 
 import { Conversation, Doc, Harness } from "@effectified/pi-durable";
 import { TestHarness } from "@effectified/pi-durable/testing";
-import { ActorInfo, ActorSql, type Identity } from "@effectified/pi-durable-rivet";
+import { ActorId, ActorInfo, ActorSql, type Identity } from "@effectified/pi-durable-rivet";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 import * as Reactivity from "effect/reactivity/Reactivity";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -13,11 +13,12 @@ import type * as ForkSetup from "../src/fork-setup.ts";
 import type { Assignment } from "../src/rivet/assignment.ts";
 import * as Job from "../src/rivet/job.ts";
 import { type Asked, asked, Granted, measured, model, primed, recordingSetup } from "./support.ts";
+import { JobKey, RequestId, SwarmId } from "../src/ids.ts";
 
 /** An actor forked with `forkInput`; an actor that is no fork has no fork chain, so its hygiene is not asked for. */
 function actor(forkInput: Option.Option<Schema.Json>): Identity {
 	return {
-		actorId: "fork-1",
+		actorId: ActorId.make("fork-1"),
 		name: "agent",
 		key: ["primed", "swarm", "s", "k"],
 		namespace: "default",
@@ -56,7 +57,12 @@ const run = <A, E>(
 	return Effect.runPromise(Effect.provide(program, live));
 };
 
-const request = { swarmId: "s", jobKey: "k", requestId: "s/k/0", prompt: "Measure the word alpha." };
+const request = {
+	swarmId: SwarmId.make("s"),
+	jobKey: JobKey.make("k"),
+	requestId: RequestId.make("s/k/0"),
+	prompt: "Measure the word alpha.",
+};
 
 describe("a job in its fork actor", () => {
 	it("runs on the context as of the swarm's entry, in a conversation of its own, once per request id", async () => {
@@ -72,8 +78,8 @@ describe("a job in its fork actor", () => {
 				yield* root.prompt("Prime 3", { requestId: "prime-3" });
 				const assignment: Assignment = {
 					_tag: "swarm.rivet.job",
-					swarmId: "s",
-					jobKey: "k",
+					swarmId: SwarmId.make("s"),
+					jobKey: JobKey.make("k"),
 					sourceConversationId: root.id,
 					at,
 					agent: null,
@@ -91,7 +97,7 @@ describe("a job in its fork actor", () => {
 				const conversations = yield* Harness.commit((tx) => tx.scanConversations({}, 100));
 				const turns = yield* Stream.runCollect(root.entries({ order: "ascending" }));
 				// Another job's request, and a request in an actor that was forked for nothing.
-				const other = yield* Effect.flip(forked(Job.accept({ ...request, jobKey: "other" })));
+				const other = yield* Effect.flip(forked(Job.accept({ ...request, jobKey: JobKey.make("other") })));
 				const plain = yield* Effect.flip(
 					Effect.provideService(Job.accept(request), ActorInfo, actor(Option.none())),
 				);
@@ -150,8 +156,8 @@ describe("a job in its fork actor", () => {
 					const root = yield* primed(1);
 					const assignment: Assignment = {
 						_tag: "swarm.rivet.job",
-						swarmId: "s",
-						jobKey: "k",
+						swarmId: SwarmId.make("s"),
+						jobKey: JobKey.make("k"),
 						sourceConversationId: root.id,
 						at: Option.getOrThrow(yield* root.head),
 						agent: null,
@@ -190,8 +196,8 @@ describe("a job in its fork actor", () => {
 				const root = yield* primed(1);
 				const assignment: Assignment = {
 					_tag: "swarm.rivet.job",
-					swarmId: "s",
-					jobKey: "k",
+					swarmId: SwarmId.make("s"),
+					jobKey: JobKey.make("k"),
 					sourceConversationId: Conversation.Id.make(root.id + 41),
 					at: Option.getOrThrow(yield* root.head),
 					agent: null,
@@ -237,8 +243,8 @@ describe("a job in its fork actor", () => {
 				const root = yield* primed(1);
 				const assignment: Assignment = {
 					_tag: "swarm.rivet.job",
-					swarmId: "s",
-					jobKey: "k",
+					swarmId: SwarmId.make("s"),
+					jobKey: JobKey.make("k"),
 					sourceConversationId: root.id,
 					at: Option.getOrThrow(yield* root.head),
 					agent: null,

@@ -15,11 +15,18 @@ describe("ScriptedModels.layer", () => {
 					sameProvider: models.getProvider("faux") === scripted.provider,
 					providers: models.getProviders().map((provider) => provider.id),
 					model: `${scripted.model.provider}/${scripted.model.id}`,
+					ref: scripted.ref,
 					listed: scripted.models.map((model) => model.id),
 				};
 			}).pipe(Effect.provide(ScriptedModels.layer())),
 		);
-		expect(result).toEqual({ sameProvider: true, providers: ["faux"], model: "faux/faux-1", listed: ["faux-1"] });
+		expect(result).toEqual({
+			sameProvider: true,
+			providers: ["faux"],
+			model: "faux/faux-1",
+			ref: { provider: "faux", modelId: "faux-1" },
+			listed: ["faux-1"],
+		});
 	});
 
 	it("answers requests with the queued responses in order and counts the calls", async () => {

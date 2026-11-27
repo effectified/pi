@@ -3,10 +3,10 @@
 import { runTest } from "@effectified/pi-ai/testing";
 import { Extension, Gate, Harness, Hook, Registry, Storage } from "@effectified/pi-durable";
 import { answer, ScriptedModels, TestHarness, toolCall } from "@effectified/pi-durable/testing";
-import { Context, Effect, Latch, Layer, Option, Schedule } from "effect";
+import { Context, Effect, Formatter, Latch, Layer, Option, Schedule, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-import { Advisory, Cursor, onStorageFork, Recorder, RecordSink, RecordSinkError, type Records } from "../src/index.ts";
+import { Advisory, Cursor, onStorageFork, Recorder, RecordSink, RecordSinkError, Records } from "../src/index.ts";
 import { Echo } from "./support.ts";
 
 describe("README", () => {
@@ -41,26 +41,19 @@ describe("README", () => {
 	});
 
 	it("records: a product maps each kind onto its own command", async () => {
-		const command = (record: Records.Record): string => {
-			switch (record._tag) {
-				case "Message":
-					return `message ${record.role}: ${record.text}`;
-				case "ModelCall":
-					return record.stopReason === "error" || record.stopReason === "aborted"
-						? `model call failed: ${record.error}`
-						: `model call returned: ${record.usage.totalTokens} tokens, ${record.cost.total}`;
-				case "ToolCallRequested":
-					return `tool ${record.name} requested`;
-				case "ToolCallResult":
-					return record.isError
-						? `tool ${record.name} failed: ${record.codes.join()}`
-						: `tool ${record.name} returned`;
-				case "Entry":
-					return `entry ${record.kind}: ${JSON.stringify(record.data)}`;
-				case "ModelCallRequested":
-					return "model call requested";
-			}
-		};
+		const command = (record: Records.Record): string =>
+			Records.Record.match(record, {
+				Message: (message) => `message ${message.role}: ${message.text}`,
+				ModelCall: (call) =>
+					call.stopReason === "error" || call.stopReason === "aborted"
+						? `model call failed: ${call.error}`
+						: `model call returned: ${call.usage.totalTokens} tokens, ${call.cost.total}`,
+				ToolCallRequested: (call) => `tool ${call.name} requested`,
+				ToolCallResult: (result) =>
+					result.isError ? `tool ${result.name} failed: ${result.codes.join()}` : `tool ${result.name} returned`,
+				Entry: (entry) => `entry ${entry.kind}: ${Formatter.formatJson(entry.data)}`,
+				ModelCallRequested: () => "model call requested",
+			});
 
 		const commands: Array<string> = [];
 		const Sink = Layer.succeed(RecordSink, {
@@ -106,10 +99,14 @@ describe("README", () => {
 	});
 
 	it("the sink: a service of the product behind the port, idempotent by record id, retried by a schedule", async () => {
-		// A service of your program: here, a table with an upsert.
+		// A service of your program: here, a table with an upsert, and what its store fails with.
+		class RowsError extends Schema.TaggedError<RowsError, { readonly brand: unique symbol }>()("RowsError", {
+			cause: Schema.Defect(),
+		}) {}
+
 		class Rows extends Context.Service<
 			Rows,
-			{ readonly upsert: (id: string, row: Records.Record) => Effect.Effect<void, Error> }
+			{ readonly upsert: (id: Records.Id, row: Records.Record) => Effect.Effect<void, RowsError> }
 		>()("app/Rows") {}
 
 		const Sink = Layer.effect(
@@ -118,9 +115,10 @@ describe("README", () => {
 				const rows = yield* Rows;
 				return {
 					deliver: (records: ReadonlyArray<Records.Record>) =>
-						Effect.forEach(records, (record) => rows.upsert(record.id, record), { discard: true }).pipe(
-							Effect.mapError((cause) => new RecordSinkError({ cause })),
-						),
+						Effect.forEach(records, (record) => rows.upsert(record.id, record), {
+							concurrency: 1,
+							discard: true,
+						}).pipe(Effect.mapError((cause) => RecordSinkError.make({ cause }))),
 				};
 			}),
 		);
@@ -134,7 +132,7 @@ describe("README", () => {
 			// The first write fails, so the pump delivers the batch a second time.
 			upsert: (id, row) =>
 				writes++ === 0
-					? Effect.andThen(failed.open, Effect.fail(new Error("busy")))
+					? Effect.andThen(failed.open, Effect.fail(RowsError.make({ cause: "busy" })))
 					: Effect.sync(() => void table.set(id, row)),
 		});
 		const again = await runTest(

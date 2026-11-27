@@ -29,8 +29,14 @@ export type ClipboardOperations = Assert<Conform<ClipboardError["operation"], ke
 /** `InvalidColor.value` is what pi-tui's `parseColor` takes. */
 export type InvalidColorValue = Assert<Conform<InvalidColor["value"], Parameters<typeof piParseColor>[0]>>;
 
-/** An `InputSequence` has a kind for each event of pi-tui's `StdinBuffer`. */
-export type InputSequenceKinds = Assert<Conform<InputSequence["kind"], keyof StdinBufferEventMap>>;
+/** An `InputSequence` has a kind for each event of pi-tui's `StdinBuffer`, carrying what that event is called with. */
+export type InputSequenceKinds = Assert<Conform<InputSequence["kind"], keyof StdinBufferEventMap>> &
+	Assert<
+		Conform<
+			[Extract<InputSequence, { kind: "data" }>["sequence"], Extract<InputSequence, { kind: "paste" }>["content"]],
+			[StdinBufferEventMap["data"][0], StdinBufferEventMap["paste"][0]]
+		>
+	>;
 
 /** A `change` event of `settingsList` carries what pi-tui's `onChange` is called with. */
 export type SettingsListChange = Assert<

@@ -1,17 +1,18 @@
+import { ProviderId, SessionId } from "@effectified/pi-ai";
 import { runTest } from "@effectified/pi-ai/testing";
 import { Deferred, Effect, Fiber, Latch } from "effect";
 import { describe, expect, it } from "vitest";
 import { settledBy } from "../src/attempt-settlement.ts";
-import { AttemptSettlement, AttemptUnsettled, type RouteEvent } from "../src/index.ts";
-import { failing, route } from "./scripted.ts";
+import { AttemptSettlement, AttemptUnsettled, type RouteEvent, RouterRequestId } from "../src/index.ts";
+import { FAST, failing, route } from "./scripted.ts";
 
 /** The route event of a first attempt that failed after it was billed, and that the next route is taking over. */
 const EVENT: RouteEvent = {
-	router: "router",
+	router: ProviderId.make("router"),
 	request: 1,
-	requestId: "router-a-1",
-	sessionId: "session-7",
-	alias: "fast",
+	requestId: RouterRequestId.make("router-a-1"),
+	sessionId: SessionId.make("session-7"),
+	alias: FAST,
 	route: route("a"),
 	attempt: 1,
 	outcome: "failed",

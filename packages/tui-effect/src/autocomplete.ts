@@ -1,6 +1,6 @@
 // A request for autocomplete suggestions as an Effect: interrupting it aborts the provider's request.
 
-import type { AutocompleteProvider, AutocompleteSuggestions } from "@earendil-works/pi-tui";
+import type { AutocompleteProvider } from "@earendil-works/pi-tui";
 import { Effect } from "effect";
 import { AutocompleteError } from "./errors.ts";
 
@@ -13,15 +13,16 @@ type Request = Parameters<AutocompleteProvider["getSuggestions"]>;
  * as an explicit Tab does. Interrupting the fiber aborts the request through the provider's signal (a file search
  * stops); a rejection is `AutocompleteError`.
  */
-export function getSuggestions(
-	provider: AutocompleteProvider,
-	lines: Request[0],
-	cursorLine: Request[1],
-	cursorCol: Request[2],
-	options: Omit<Request[3], "signal"> = {},
-): Effect.Effect<AutocompleteSuggestions | null, AutocompleteError> {
-	return Effect.tryPromise({
-		try: (signal) => provider.getSuggestions(lines, cursorLine, cursorCol, { ...options, signal }),
-		catch: (cause) => new AutocompleteError({ cause }),
-	});
-}
+export const getSuggestions = Effect.fn("Tui.getSuggestions")(
+	(
+		provider: AutocompleteProvider,
+		lines: Request[0],
+		cursorLine: Request[1],
+		cursorCol: Request[2],
+		options: Omit<Request[3], "signal"> = {},
+	) =>
+		Effect.tryPromise({
+			try: (signal) => provider.getSuggestions(lines, cursorLine, cursorCol, { ...options, signal }),
+			catch: (cause) => AutocompleteError.make({ cause }),
+		}),
+);

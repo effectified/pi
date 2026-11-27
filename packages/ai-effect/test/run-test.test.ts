@@ -1,10 +1,14 @@
 // The run of a test's Effect: time that stands still until the test moves it, a scope that closes with the test, and
 // the failure of the Effect as the promise's rejection.
 
-import { Effect, Fiber } from "effect";
+import { Effect, Fiber, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { runLive, runTest } from "../src/testing/index.ts";
+
+class Refused extends Schema.TaggedError<Refused, { readonly brand: unique symbol }>()("Refused", {
+	message: Schema.String,
+}) {}
 
 describe("runTest", () => {
 	it("passes an hour's sleep when the test moves the clock, without waiting", async () => {
@@ -34,7 +38,7 @@ describe("runTest", () => {
 	});
 
 	it("rejects with the failure of the Effect", async () => {
-		await expect(runTest(Effect.fail(new Error("no")))).rejects.toThrow("no");
+		await expect(runTest(Effect.fail(Refused.make({ message: "no" })))).rejects.toThrow("no");
 	});
 });
 

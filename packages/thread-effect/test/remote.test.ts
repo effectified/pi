@@ -6,12 +6,15 @@ import { Action, Client } from "@effectified/pi-durable-rivet";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { type ClientRaw, RivetError } from "rivetkit/client";
 import { describe, expect, it } from "vitest";
-import { ThreadNotFound } from "../src/index.ts";
+import * as Swarm from "@effectified/pi-swarm";
+import { RequestKey, ThreadKey, ThreadNotFound } from "../src/index.ts";
 import { Remote, ThreadActor } from "../src/rivet.ts";
 import { config, outside, ports, providers, work } from "./world.ts";
 
 /** What the product action `brief` refuses with. */
-class Refused extends Schema.TaggedError<Refused>()("Refused", { reason: Schema.String }) {}
+class Refused extends Schema.TaggedError<Refused, { readonly brand: unique symbol }>()("Refused", {
+	reason: Schema.String,
+}) {}
 
 /** A thread actor with one product action, which nothing hosts here: only its name and its schemas are used. */
 const Desk = (() => {
@@ -104,8 +107,10 @@ describe("the actor of a thread, as a caller finds it", () => {
 	it("is the actor under the thread's key when the product says nothing else", async () => {
 		const served = engine(ANSWERS);
 		const remote = remoteOn(served);
-		const started = await Effect.runPromise(remote.threads.start(work("desk/a", "Say hi."), "job-1"));
-		const probed = await Effect.runPromise(remote.threads.probe("desk/a"));
+		const started = await Effect.runPromise(
+			remote.threads.start(work("desk/a", "Say hi."), RequestKey.make("job-1")),
+		);
+		const probed = await Effect.runPromise(remote.threads.probe(ThreadKey.make("desk/a")));
 		expect([started, probed]).toEqual([{ created: true, key: "job-1" }, { alive: true }]);
 		expect(served.asked.filter((request) => request.kind !== "action")).toEqual([
 			{ kind: "getOrCreate", key: ["desk/a"] },
@@ -120,15 +125,18 @@ describe("the actor of a thread, as a caller finds it", () => {
 			Effect.gen(function* () {
 				return {
 					// Two threads of one actor: each is started and asked under its own key, in the actor of both.
-					first: yield* remote.threads.start(work("desk/a", "Say hi."), "job-1"),
-					second: yield* remote.threads.start(work("desk/b", "Say hi again."), "job-2"),
-					probe: yield* remote.threads.probe("desk/b"),
+					first: yield* remote.threads.start(work("desk/a", "Say hi."), RequestKey.make("job-1")),
+					second: yield* remote.threads.start(work("desk/b", "Say hi again."), RequestKey.make("job-2")),
+					probe: yield* remote.threads.probe(ThreadKey.make("desk/b")),
 					// A swarm id names its thread, and the thread names the actor.
-					swarm: yield* remote.swarms.probe("desk/a/covers-1"),
-					fork: yield* remote.forks.destroy({ swarmId: "desk/a/covers-1", jobKey: "rust" }),
+					swarm: yield* remote.swarms.probe(Swarm.SwarmId.make("desk/a/covers-1")),
+					fork: yield* remote.forks.destroy({
+						swarmId: Swarm.SwarmId.make("desk/a/covers-1"),
+						jobKey: Swarm.JobKey.make("rust"),
+					}),
 					// An actor nothing created is not created to be asked.
-					absent: yield* remote.threads.probe("shelf/a"),
-					missing: yield* Effect.flip(remote.threads.outcome("shelf/a")),
+					absent: yield* remote.threads.probe(ThreadKey.make("shelf/a")),
+					missing: yield* Effect.flip(remote.threads.outcome(ThreadKey.make("shelf/a"))),
 				};
 			}),
 		);
@@ -139,7 +147,7 @@ describe("the actor of a thread, as a caller finds it", () => {
 			swarm: { alive: false, jobKeys: ["rust"] },
 			fork: { bytesWritten: Option.some(4096) },
 			absent: { alive: false },
-			missing: new ThreadNotFound({ thread: "shelf/a" }),
+			missing: new ThreadNotFound({ thread: ThreadKey.make("shelf/a") }),
 		});
 		expect(served.asked.filter((request) => request.kind !== "action")).toEqual([
 			{ kind: "getOrCreate", key: ["desk"] },
@@ -173,14 +181,16 @@ describe("a product action of a thread actor, called for a thread", () => {
 		const served = engine(ANSWERS);
 		const product = productOn(served);
 		// No actor yet: `call` creates none and says so.
-		const before = await Effect.runPromise(Effect.flip(product.call("desk/a", "brief", { text: "hello" })));
-		expect(before).toEqual(new ThreadNotFound({ thread: "desk/a" }));
+		const before = await Effect.runPromise(
+			Effect.flip(product.call(ThreadKey.make("desk/a"), "brief", { text: "hello" })),
+		);
+		expect(before).toEqual(new ThreadNotFound({ thread: ThreadKey.make("desk/a") }));
 		expect(served.asked).toEqual([{ kind: "get", key: ["desk"] }]);
 		// `callOrCreate` gives the actor its work before anything started in it.
 		const created: { readonly length: number } = await Effect.runPromise(
-			product.callOrCreate("desk/a", "brief", { text: "hello" }),
+			product.callOrCreate(ThreadKey.make("desk/a"), "brief", { text: "hello" }),
 		);
-		const found = await Effect.runPromise(product.call("desk/b", "brief", { text: "again" }));
+		const found = await Effect.runPromise(product.call(ThreadKey.make("desk/b"), "brief", { text: "again" }));
 		expect([created, found]).toEqual([{ length: 5 }, { length: 5 }]);
 		expect(served.asked.slice(1)).toEqual([
 			{ kind: "getOrCreate", key: ["desk"] },
@@ -200,10 +210,12 @@ describe("a product action of a thread actor, called for a thread", () => {
 		const served = engine(ANSWERS, { brief: wire(Refused, new Refused({ reason: "empty" })) });
 		const product = productOn(served);
 		const refused: Refused | Remote.Failure = await Effect.runPromise(
-			Effect.flip(product.callOrCreate("desk/a", "brief", { text: "" })),
+			Effect.flip(product.callOrCreate(ThreadKey.make("desk/a"), "brief", { text: "" })),
 		);
 		expect(refused).toEqual(new Refused({ reason: "empty" }));
-		const missing = await Effect.runPromise(Effect.flip(product.call("shelf/a", "brief", { text: "" })));
-		expect(missing).toEqual(new ThreadNotFound({ thread: "shelf/a" }));
+		const missing = await Effect.runPromise(
+			Effect.flip(product.call(ThreadKey.make("shelf/a"), "brief", { text: "" })),
+		);
+		expect(missing).toEqual(new ThreadNotFound({ thread: ThreadKey.make("shelf/a") }));
 	});
 });

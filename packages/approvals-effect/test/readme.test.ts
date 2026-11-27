@@ -2,7 +2,7 @@
 // "README:" comment are the README's, line for line; only the imports differ (the README names the package, this
 // file its sources).
 
-import { Tool } from "@effectified/pi-durable";
+import { Tool, ToolName } from "@effectified/pi-durable";
 import { answer, TestHarness, toolCall } from "@effectified/pi-durable/testing";
 import { Context, Effect, Latch, Layer, Option, Queue, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
@@ -25,7 +25,7 @@ const live = TestHarness.layer({
 	extensions: [
 		{ name: "app", tools: [Transfer] },
 		// After every extension that blocks or rewrites tool calls.
-		Approvals.extension({ tools: ["transfer"], expiresAfter: "1 day" }),
+		Approvals.extension({ tools: [Transfer.name], expiresAfter: "1 day" }),
 	],
 	// No provider and no key: the model answers with these turns, in order.
 	responses: [toolCall("transfer", { to: "bob", amount: 250 }), answer("Sent.")],
@@ -79,7 +79,7 @@ describe("the README", () => {
 
 		const policy: Approvals.Policy<Limits> = {
 			// Every call of these tools needs approval.
-			tools: ["close_account"],
+			tools: [ToolName.make("close_account")],
 			// A call of any other tool needs it when this says so. A rule that fails means it does.
 			rule: (call) =>
 				Limits.use((limits) =>

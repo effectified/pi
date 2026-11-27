@@ -5,7 +5,7 @@ import { type DurableError, UnexpectedError } from "@effectified/pi-durable";
 import { Effect, Option, Schema } from "effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
-import type { ForkLink } from "./actor-context.ts";
+import { ForkLink } from "./actor-context.ts";
 
 /** The durable record of the forks an actor's storage went through, in a table of this host under the prefix. */
 export interface ForkRecord {
@@ -15,61 +15,55 @@ export interface ForkRecord {
 	readonly mark: (link: ForkLink, input: Option.Option<Schema.Json>, at: number) => Effect.Effect<void, DurableError>;
 }
 
+/** The `input` column as SQLite gives it: NULL for a fork made without an input, else JSON text. */
+const Stored = Schema.Struct({ input: Schema.NullOr(Schema.String) });
+
 /**
  * The fork record of an actor database, on its `SqlClient`. The table is made on first use, so only forks have one; a
  * fork of a fork inherits its source's rows, which is why a row names the fork it is for. A row whose `input` is no
  * JSON fails `find` with an `UnexpectedError`.
  */
-export function record(sql: SqlClient.SqlClient, prefix: string): Effect.Effect<ForkRecord, DurableError> {
-	return Effect.gen(function* () {
-		// The prefix becomes part of a table name: Chord's rule for an identifier, the one Pi's storage applies too.
-		yield* Effect.mapError(validateSqliteSchemaPrefix(prefix), unexpected);
-		const table = sql(`${prefix}rivet_fork`);
-		yield* Effect.mapError(
-			sql`CREATE TABLE IF NOT EXISTS ${table} (
-				source_actor_id TEXT NOT NULL,
-				forked_at INTEGER NOT NULL,
-				input TEXT,
-				hygiene_at INTEGER NOT NULL,
-				PRIMARY KEY (source_actor_id, forked_at)
-			) STRICT`,
-			unexpected,
-		);
-		const find = SqlSchema.findOneOption({
-			Request: Link,
-			Result: Stored,
-			execute: (link) =>
-				sql`SELECT input FROM ${table} WHERE source_actor_id = ${link.actorId} AND forked_at = ${link.forkedAt}`,
-		});
-		return {
-			find: (link) =>
-				Effect.mapError(
-					Effect.flatMap(
-						find(link),
-						Option.match({
-							onNone: () => Effect.succeedNone,
-							onSome: (stored) => Effect.asSome(decodeInput(stored.input)),
-						}),
-					),
-					unexpected,
-				),
-			mark: (link, input, at) =>
-				Effect.mapError(
-					Effect.flatMap(encodeInput(input), (text) => {
-						const row = { source_actor_id: link.actorId, forked_at: link.forkedAt, input: text, hygiene_at: at };
-						return sql`INSERT INTO ${table} ${sql.insert(row)} ON CONFLICT (source_actor_id, forked_at) DO NOTHING`;
-					}),
-					unexpected,
-				),
-		};
+export const record: (sql: SqlClient.SqlClient, prefix: string) => Effect.Effect<ForkRecord, DurableError> = Effect.fn(
+	"ForkRecord.record",
+)(function* (sql: SqlClient.SqlClient, prefix: string) {
+	// The prefix becomes part of a table name: Chord's rule for an identifier, the one Pi's storage applies too.
+	yield* validateSqliteSchemaPrefix(prefix);
+	const table = sql(`${prefix}rivet_fork`);
+	yield* sql`CREATE TABLE IF NOT EXISTS ${table} (
+		source_actor_id TEXT NOT NULL,
+		forked_at INTEGER NOT NULL,
+		input TEXT,
+		hygiene_at INTEGER NOT NULL,
+		PRIMARY KEY (source_actor_id, forked_at)
+	) STRICT`;
+	const find = SqlSchema.findOneOption({
+		Request: ForkLink,
+		Result: Stored,
+		execute: (link) =>
+			sql`SELECT input FROM ${table} WHERE source_actor_id = ${link.actorId} AND forked_at = ${link.forkedAt}`,
 	});
-}
-
-/** A fork, as the record is asked about it. */
-const Link = Schema.Struct({ actorId: Schema.String, forkedAt: Schema.Number });
-
-/** The `input` column as SQLite gives it: NULL for a fork made without an input, else JSON text. */
-const Stored = Schema.Struct({ input: Schema.NullOr(Schema.String) });
+	return {
+		find: (link) =>
+			Effect.mapError(
+				Effect.flatMap(
+					find(link),
+					Option.match({
+						onNone: () => Effect.succeedNone,
+						onSome: (stored) => Effect.asSome(decodeInput(stored.input)),
+					}),
+				),
+				unexpected,
+			),
+		mark: (link, input, at) =>
+			Effect.mapError(
+				Effect.flatMap(encodeInput(input), (text) => {
+					const row = { source_actor_id: link.actorId, forked_at: link.forkedAt, input: text, hygiene_at: at };
+					return sql`INSERT INTO ${table} ${sql.insert(row)} ON CONFLICT (source_actor_id, forked_at) DO NOTHING`;
+				}),
+				unexpected,
+			),
+	} satisfies ForkRecord;
+}, Effect.mapError(unexpected));
 
 /**
  * The input a stored column holds. A decode boundary: the column is read back from the database, where anything could
@@ -91,6 +85,7 @@ const decodeJsonText = Schema.decodeEffect(JsonText);
 
 const encodeJsonText = Schema.encodeEffect(JsonText);
 
+/** Any failure of the record, as Pi Durable's error for one it has no tag for. */
 function unexpected(cause: unknown): UnexpectedError {
-	return new UnexpectedError({ cause });
+	return UnexpectedError.make({ cause });
 }

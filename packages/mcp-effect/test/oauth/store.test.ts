@@ -1,7 +1,7 @@
 // The OAuth state store as Effects: Pi's memory store, and any store handed to Pi as its own.
 
 import { McpRefreshLockBusyError as PiMcpRefreshLockBusyError } from "@earendil-works/pi-mcp/oauth";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { McpRefreshLockBusyError, memoryOAuthStore, type OAuthStore } from "../../src/oauth/index.ts";
 import { toPiStore } from "../../src/oauth/store.ts";
@@ -11,24 +11,35 @@ describe("memoryOAuthStore", () => {
 	it("keeps the last state saved, a copy, and its lock only runs the Effect", async () => {
 		const seen = await Effect.runPromise(
 			Effect.gen(function* () {
-				const store = yield* memoryOAuthStore();
+				const store = yield* memoryOAuthStore;
 				const empty = yield* store.load;
 				const state = { serverUrl: "https://mcp.example/mcp", tokens: { access_token: "a", token_type: "Bearer" } };
 				yield* store.save(state);
-				const loaded = yield* store.load;
+				const loaded = Option.getOrThrow(yield* store.load);
 				const locked = yield* store.withRefreshLock(Effect.succeed("ran"));
-				return { empty, loaded, same: loaded === state, locked };
+				return { empty: Option.isNone(empty), loaded, same: loaded === state, locked };
 			}),
 		);
-		expect(seen).toMatchObject({ empty: undefined, same: false, locked: "ran" });
-		expect(seen.loaded?.tokens?.access_token).toBe("a");
+		expect(seen).toMatchObject({ empty: true, same: false, locked: "ran" });
+		expect(seen.loaded.tokens?.access_token).toBe("a");
+	});
+
+	it("is a new store each time it runs", async () => {
+		const other = await Effect.runPromise(
+			Effect.gen(function* () {
+				const first = yield* memoryOAuthStore;
+				yield* first.save({ serverUrl: "https://mcp.example/mcp" });
+				return yield* (yield* memoryOAuthStore).load;
+			}),
+		);
+		expect(Option.isNone(other)).toBe(true);
 	});
 });
 
 describe("toPiStore", () => {
 	it("gives Pi the store, and a busy lock as Pi's McpRefreshLockBusyError, which sign-in checks for", async () => {
 		const busy: OAuthStore = {
-			load: Effect.succeed(undefined),
+			load: Effect.succeedNone,
 			save: () => Effect.void,
 			withRefreshLock: () => Effect.fail(new McpRefreshLockBusyError({ message: "busy" })),
 		};
@@ -41,7 +52,7 @@ describe("toPiStore", () => {
 	it("runs Pi's function under the lock, and passes on what it rejects with", async () => {
 		const order: string[] = [];
 		const logged: OAuthStore = {
-			load: Effect.succeed(undefined),
+			load: Effect.succeedNone,
 			save: () => Effect.void,
 			withRefreshLock: (effect) =>
 				Effect.sync(() => order.push("locked")).pipe(
