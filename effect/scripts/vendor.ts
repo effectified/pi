@@ -14,9 +14,6 @@ import { buildOrder, effectPackages, ROOT } from "./packages.ts";
 import { productPins, sourceRecord } from "./pins.ts";
 
 const SCOPE = "@effectified/pi-";
-// The packages' names before 2026-11-26. A product vendored then still holds them, and they must go before the
-// renamed ones land in the same directories. Remove it once PatentOS has vendored the renamed packages.
-const FORMER_SCOPE = "@gunta/pi-";
 const SOURCE_MAP_COMMENT = /\n\/\/# sourceMappingURL=\S+\s*$/;
 
 const args = process.argv.slice(2);
@@ -69,8 +66,7 @@ function removeVendored(directory: string): void {
 		if (!entry.isDirectory() || !existsSync(manifestPath)) continue;
 		// Trust boundary: a manifest is a file, read as untyped JSON.
 		const name: unknown = JSON.parse(readFileSync(manifestPath, "utf8")).name;
-		const ours = typeof name === "string" && (name.startsWith(SCOPE) || name.startsWith(FORMER_SCOPE));
-		if (ours) rmSync(join(directory, entry.name), { recursive: true });
+		if (typeof name === "string" && name.startsWith(SCOPE)) rmSync(join(directory, entry.name), { recursive: true });
 	}
 }
 
